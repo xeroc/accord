@@ -1,28 +1,28 @@
 # VeriDAO — Domain Language
 
-The ubiquitous language for both the Court and Mutual contexts. Terms are opinionated: when multiple words exist for the same concept, one is canonical and the others are listed under _Avoid_.
+The ubiquitous language for both the Accord and Mutual contexts. Terms are opinionated: when multiple words exist for the same concept, one is canonical and the others are listed under _Avoid_.
 
-> **Why "Mutual", not "Insurance":** what we build is a **discretionary mutual** — members pool risk collectively; the pool _may_ pay claims at its discretion (the Court can deny). There is no binding indemnity contract, no insurance license, no guaranteed payout. Calling it "insurance" would be legally inaccurate (it isn't licensed insurance), regulatorially risky (the word "insurance" is heavily regulated in most jurisdictions), and structurally dishonest (payouts are discretionary, not contractual). "Mutual" accurately describes the risk-pooling structure, avoids the regulated word, and matches the proven crypto template (Nexus Mutual since 2019). We use "insurance" only when referring to the existing licensed-insurance sector as a market reference — never to describe our own product.
+> **Why "Mutual", not "Insurance":** what we build is a **discretionary mutual** — members pool risk collectively; the pool _may_ pay claims at its discretion (the Accord can deny). There is no binding indemnity contract, no insurance license, no guaranteed payout. Calling it "insurance" would be legally inaccurate (it isn't licensed insurance), regulatorially risky (the word "insurance" is heavily regulated in most jurisdictions), and structurally dishonest (payouts are discretionary, not contractual). "Mutual" accurately describes the risk-pooling structure, avoids the regulated word, and matches the proven crypto template (Nexus Mutual since 2019). We use "insurance" only when referring to the existing licensed-insurance sector as a market reference — never to describe our own product.
 
 ---
 
-## Court Context
+## Accord Context
 
-**Court**:
-The arbitration program — a general-purpose Schelling-point dispute resolution system on Solana. Any program can file Disputes; the Court draws Jurors, collects votes, and emits Rulings.
+**Accord**:
+The arbitration program — a general-purpose Schelling-point dispute resolution system on Solana. Any program can file Disputes; the Accord draws Jurors, collects votes, and emits Rulings.
 _Avoid_: Kleros-clone, arbitration engine, judge program
 
-**Subcourt**:
-A specialized Juror pool within the Court. Each Subcourt defines its staking token, minimum stake, review window, and dispute parameters. Jurors self-select into Subcourts matching their expertise. Permissionless — anyone can create one.
-_Avoid_: court branch, tribunal, panel
+**Subaccord**:
+A specialized Juror pool within the Accord. Each Subaccord defines its staking token, minimum stake, review window, and dispute parameters. Jurors self-select into Subaccords matching their expertise. Permissionless — anyone can create one.
+_Avoid_: accord branch, tribunal, panel
 
 **Juror**:
-A participant who stakes capital into a Subcourt and is eligible to be drawn to vote on Disputes. Selected randomly, weighted by stake. Compensated for Coherent votes; slashed for Incoherent votes.
+A participant who stakes capital into a Subaccord and is eligible to be drawn to vote on Disputes. Selected randomly, weighted by stake. Compensated for Coherent votes; slashed for Incoherent votes.
 _Avoid_: judge, arbitrator, voter
 
 **Dispute**:
-A case filed with the Court by any program (the Arbitrable). Contains the disputed question, evidence commitment hash, and vote options. Progresses through Draw → Commit → Reveal → Ruling, with optional Appeals.
-_Avoid_: case, claim (in the Court context), trial
+A case filed with the Accord by any program (the Arbitrable). Contains the disputed question, evidence commitment hash, and vote options. Progresses through Draw → Commit → Reveal → Ruling, with optional Appeals.
+_Avoid_: case, claim (in the Accord context), trial
 
 **Draw**:
 The random selection of Jurors for a Dispute, weighted by staked capital. Uses Switchboard VRF for manipulation resistance.
@@ -33,12 +33,12 @@ A Juror's secret submission of `hash(vote, salt)`. Prevents vote-copying so the 
 _Avoid_: sealed bid, secret ballot
 
 **Reveal**:
-A Juror's disclosure of `{vote, salt}` after all Commits are in. The Court verifies the hash matches the Commit.
+A Juror's disclosure of `{vote, salt}` after all Commits are in. The Accord verifies the hash matches the Commit.
 _Avoid_: unseal, open
 
 **Ruling**:
-The Court's verdict on a Dispute — the option that received the majority of Juror votes. Written on-chain; readable by the Arbitrable program.
-_Avoid_: verdict, judgment, decision (in the Court context — "Settlement" is reserved for the Mutual context)
+The Accord's verdict on a Dispute — the option that received the majority of Juror votes. Written on-chain; readable by the Arbitrable program.
+_Avoid_: verdict, judgment, decision (in the Accord context — "Settlement" is reserved for the Mutual context)
 
 **Coherence**:
 Voting with the Ruling majority. Coherent Jurors earn arbitration fees + slashed stake from Incoherent Jurors.
@@ -53,15 +53,15 @@ Escalation of a Dispute to a larger Juror panel (2N+1). Exponentially rising cos
 _Avoid_: retrial, reconsideration
 
 **Arbitrable**:
-Any Solana program that files Disputes with the Court. The interface: `create_dispute(subcourt, options, evidence_hash, fee) → dispute_id` and `get_ruling(dispute_id) → winning_option`.
-_Avoid_: client, consumer (of the court)
+Any Solana program that files Disputes with the Accord. The interface: `create_dispute(subaccord, options, evidence_hash, fee) → dispute_id` and `get_ruling(dispute_id) → winning_option`.
+_Avoid_: client, consumer (of the accord)
 
 ---
 
 ## Mutual Context
 
 **Mutual**:
-A single-purpose, sovereign risk-pooling entity created by the factory. Each Mutual covers exactly one risk type (car accidents, dental, drug-raid legal defense). Has its own Premium Fund, Reserve Fund, policies, and Subcourt designation. Structured as a discretionary mutual — payouts are at the pool's discretion (the Court can deny), not a binding indemnity contract. This is NOT licensed insurance.
+A single-purpose, sovereign risk-pooling entity created by the factory. Each Mutual covers exactly one risk type (car accidents, dental, drug-raid legal defense). Has its own Premium Fund, Reserve Fund, policies, and Subaccord designation. Structured as a discretionary mutual — payouts are at the pool's discretion (the Accord can deny), not a binding indemnity contract. This is NOT licensed insurance.
 _Avoid_: insurance DAO, insurance protocol, coverage pool, insurance product
 
 **Insured**:
@@ -93,7 +93,7 @@ An on-chain account (PDA) recording a Staker's deposit, entry timestamp, accumul
 _Avoid_: stake, deposit, bond
 
 **Claim**:
-A request for payout filed by an Insured. Specifies event details and claimed amount. Routed to the Court as a Dispute. If the Court Rules in favor, the Claim is paid from the Premium Fund (then Reserve Fund if exhausted). Filing a Claim resets the Insured's Coverage Tier to base.
+A request for payout filed by an Insured. Specifies event details and claimed amount. Routed to the Accord as a Dispute. If the Accord Rules in favor, the Claim is paid from the Premium Fund (then Reserve Fund if exhausted). Filing a Claim resets the Insured's Coverage Tier to base.
 _Avoid_: payout request, insurance claim, incident report
 
 **Coverage Tier**:
@@ -133,7 +133,7 @@ _Avoid_: reactivation period, probation
 ## Shared / Platform
 
 **Founder**:
-The entity that creates a Mutual via the factory. Sets initial configuration (risk type, premium, coverage terms, Subcourt designation). Controls mutable parameters via a multisig (v1), transitioning to Staker governance (v2) and futarchy (v3).
+The entity that creates a Mutual via the factory. Sets initial configuration (risk type, premium, coverage terms, Subaccord designation). Controls mutable parameters via a multisig (v1), transitioning to Staker governance (v2) and futarchy (v3).
 _Avoid_: creator, deployer, admin
 
 **Cranker**:
@@ -141,5 +141,5 @@ Any permissionless actor who triggers time-based operations: Settlement, Claim f
 _Avoid_: bot, keeper, operator
 
 **Schelling Point**:
-The game-theoretic concept underpinning the Court: independent agents converge on the most salient answer without communication. In VeriDAO, the Schelling Point is honesty — Jurors vote truthfully because they expect others to, because they expect others to expect it. Named after Thomas Schelling.
+The game-theoretic concept underpinning the Accord: independent agents converge on the most salient answer without communication. In VeriDAO, the Schelling Point is honesty — Jurors vote truthfully because they expect others to, because they expect others to expect it. Named after Thomas Schelling.
 _Avoid_: focal point (use in prose, not as a defined term), Nash equilibrium

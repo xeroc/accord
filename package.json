@@ -2,7 +2,7 @@
   "name": "veridao",
   "private": true,
   "version": "0.1.0",
-  "description": "VeriDAO — Schelling-point arbitration court + permissionless mutual DAO factory on Solana",
+  "description": "VeriDAO — Schelling-point arbitration accord + permissionless mutual DAO factory on Solana",
   "packageManager": "pnpm@9.15.0",
   "license": "UNLICENSED"
 }

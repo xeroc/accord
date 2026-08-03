@@ -17,4 +17,4 @@ default = []
 
 [dependencies]
 anchor-lang.workspace = true
-# court = { path = "../court", features = ["cpi"] }  // enabled once Court IDL lands
+# accord = { path = "../accord", features = ["cpi"] }  // enabled once Accord IDL lands

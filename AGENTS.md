@@ -1,7 +1,7 @@
 # AGENTS.md
 
 > **Status: greenfield scaffold.** The monorepo structure, tooling, and command
-> set below are the _target_. Both programs (`court`, `mutual`) are currently
+> set below are the _target_. Both programs (`accord`, `mutual`) are currently
 > stub crates with no instructions; build/test commands resolve once the first
 > feature lands (TDD). The design docs and ADRs are the authority on _what_ to
 > build; this file is the authority on _how_ to build and verify it.
@@ -12,8 +12,8 @@
 
 | Program    | Crate             | Role                                                                                                                                                                                                                   | Ships   |
 | ---------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| **Court**  | `programs/court`  | General-purpose Schelling-point arbitration court. Any program files a Dispute via the Arbitrable CPI interface; the Court draws stake-weighted Jurors (Switchboard VRF), collects commit-reveal votes, emits Rulings. | **1st** |
-| **Mutual** | `programs/mutual` | Factory of single-purpose discretionary mutuals. Client of the Court: files Claims as Disputes, reads Rulings, pays/denies. Two-tier funds, tenure-based coverage, Settlement crank.                                   | **2nd** |
+| **Accord**  | `programs/accord`  | General-purpose Schelling-point arbitration accord. Any program files a Dispute via the Arbitrable CPI interface; the Accord draws stake-weighted Jurors (Switchboard VRF), collects commit-reveal votes, emits Rulings. | **1st** |
+| **Mutual** | `programs/mutual` | Factory of single-purpose discretionary mutuals. Client of the Accord: files Claims as Disputes, reads Rulings, pays/denies. Two-tier funds, tenure-based coverage, Settlement crank.                                   | **2nd** |
 
 The name fuses _veritas_ + _DAO_. The Schelling Point here is **honesty** — Jurors
 vote truthfully because coherent-with-majority is the profitable strategy.
@@ -22,7 +22,7 @@ vote truthfully because coherent-with-majority is the profitable strategy.
 
 ```
 programs/
-  court/            VeriDAO Court — Schelling-point arbitration (program B, built 1st)
+  accord/            VeriDAO Accord — Schelling-point arbitration (program B, built 1st)
   mutual/           VeriDAO Mutual — single-purpose mutual factory (program A, built 2nd)
 packages/
   sdk/              @veridao/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers)
@@ -30,9 +30,9 @@ tests/              @veridao/tests — jest integration suite (runs vs test-vali
 apps/               User-facing applications (web/landing/docs) — land per build phase
 docs/adr/           Architecture Decision Records (numbered, immutable-once-deployed)
 CONTEXT.md          Domain language / ubiquitous language (both contexts)
-PROJECT.md          Court rationale (program B)
+PROJECT.md          Accord rationale (program B)
 MUTUAL.md           Mutual rationale (program A)
-CONTEXT-MAP.md      How the two programs relate (Court ← CPI ← Mutual)
+CONTEXT-MAP.md      How the two programs relate (Accord ← CPI ← Mutual)
 context/            Design grilling output + research (design-decisions.md, grilling-beans.md, …)
 Cargo.toml          Rust workspace (members = programs/*)
 Anchor.toml         Anchor workspace + provider + test script
@@ -43,7 +43,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ```
 
 > **Reading order for new agents:** `CONTEXT.md` (domain language) →
-> `CONTEXT-MAP.md` (how Court & Mutual relate) → `AGENTS.md` (this file —
+> `CONTEXT-MAP.md` (how Accord & Mutual relate) → `AGENTS.md` (this file —
 > build/test, conventions, gotchas) → `docs/adr/` (the _why_ behind every
 > locked architectural decision). ADRs are authority on rationale; code is
 > authority on current state.
@@ -64,7 +64,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - `cd tests && npx jest` — run only the `tests/` TypeScript integration suite (needs Surfpool: `make run_surfpool`)
 - `cd tests && npx jest -t "<name>"` — run a single test by name
 - `cd packages/sdk && pnpm run build` — build the SDK
-- `cd programs/court && cargo test` — Rust unit tests for the Court in isolation
+- `cd programs/accord && cargo test` — Rust unit tests for the Accord in isolation
 
 ## Code Style
 
@@ -92,18 +92,18 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
   failing test first, then implement to pass. No exceptions.
 - Integration tests live in `tests/` (jest, run against a live validator).
 - Rust unit tests live inline (`#[cfg(test)]`) in the program crates.
-- First real test ships with the first Court instruction (`create_subcourt`).
+- First real test ships with the first Accord instruction (`create_subaccord`).
 - Run `make lint` and the relevant test before committing. A milestone is
   `completed` only when all its leaf tests are green.
 
-## Court (Program B — built first)
+## Accord (Program B — built first)
 
 Standalone Schelling-point arbitration primitive. v1 instruction set target:
 
 ```
-create_subcourt(staking_token, min_stake, review/commit/reveal windows, alpha)
-stake(amount) / unstake(amount)        — juror capital into a Subcourt
-create_dispute(subcourt, options, evidence_hash, fee) → dispute_id   [Arbitrable CPI]
+create_subaccord(staking_token, min_stake, review/commit/reveal windows, alpha)
+stake(amount) / unstake(amount)        — juror capital into a Subaccord
+create_dispute(subaccord, options, evidence_hash, fee) → dispute_id   [Arbitrable CPI]
 draw(dispute_id)                        — random stake-weighted via Switchboard VRF
 commit(dispute_id, hash(vote, salt))    — secret
 reveal(dispute_id, vote, salt)          — after all commits
@@ -111,18 +111,18 @@ appeal(dispute_id)                      — 2N+1 jurors; loser posts appeal bond
 execute_ruling(dispute_id)              — writes winning option; lazy-read by filer
 ```
 
-Authority: `PROJECT.md`, `docs/adr/0002` (Schelling court), `docs/adr/0005` (USDC stake, no court token in v1).
+Authority: `PROJECT.md`, `docs/adr/0002` (Schelling accord), `docs/adr/0005` (USDC stake, no accord token in v1).
 
 ## Mutual (Program A — built second)
 
-Factory of single-purpose discretionary mutuals; client of the Court. v1 instruction set target:
+Factory of single-purpose discretionary mutuals; client of the Accord. v1 instruction set target:
 
 ```
-create_mutual(risk_type, evidence_spec[immutable], terms, subcourt, capital config)
+create_mutual(risk_type, evidence_spec[immutable], terms, subaccord, capital config)
 stake(amount) / request_withdraw()      — Staker capital → Reserve Fund
 pay_premium()                           — recurring Premium → Premium Fund (rail TBD, BEAN-5)
-file_claim(...)                         — Insured claim → Court Dispute via CPI
-settle_claim(dispute_id)                — read Court Ruling; pay (Premium→Reserve) or deny
+file_claim(...)                         — Insured claim → Accord Dispute via CPI
+settle_claim(dispute_id)                — read Accord Ruling; pay (Premium→Reserve) or deny
 settle_period()                         — permissionless crank: surplus split, yield, withdrawals
 ```
 
@@ -134,16 +134,16 @@ Authority: `MUTUAL.md`, `docs/adr/0003` (consumed premium), `docs/adr/0004` (sin
 
 ## Build Order
 
-1. **VeriDAO Court** — standalone arbitration. Ships first, its own product.
-2. **VeriDAO Mutual** — factory; plugs into the Court via Arbitrable CPI.
-3. **v2** — dynamic premium, tranched staking, position transferability, Arcium MPC evidence, court token.
+1. **VeriDAO Accord** — standalone arbitration. Ships first, its own product.
+2. **VeriDAO Mutual** — factory; plugs into the Accord via Arbitrable CPI.
+3. **v2** — dynamic premium, tranched staking, position transferability, Arcium MPC evidence, accord token.
 4. **v3** — futarchy governance, evidence markets, AI risk pricing, ZK proofs, licensed captive structures.
 
-## v1 Defaults (configurable per Mutual / Subcourt)
+## v1 Defaults (configurable per Mutual / Subaccord)
 
 | Parameter            | Default    | Notes                          |
 | -------------------- | ---------- | ------------------------------ |
-| Jurors per dispute   | 3          | Per Subcourt                   |
+| Jurors per dispute   | 3          | Per Subaccord                   |
 | Review window        | 7 days     | Jurors assess evidence         |
 | Commit window        | 2 days     | `hash(vote, salt)`             |
 | Reveal window        | 2 days     | `{vote, salt}`                 |
@@ -187,7 +187,7 @@ in `.beans.yml` (prefix `VeriDAO-`).
 3. **Design decisions → milestone body.** Capture grilling resolutions as a
    "Design decisions" section (struct layouts, flow diagrams, rationale). Leaf
    tasks carry the TDD acceptance criteria.
-4. **Program changes ⇒ update the program's `.qedspec`.** When the Court/Mutual
+4. **Program changes ⇒ update the program's `.qedspec`.** When the Accord/Mutual
    gain instructions, create/update `programs/<name>/<name>.qedspec` and
    regenerate the formal-verification directory. (No qedspec exists yet — add
    with the first non-trivial instruction set.)
@@ -199,8 +199,8 @@ in `.beans.yml` (prefix `VeriDAO-`).
 
 ## Gotchas
 
-- **Court is deployed before Mutual.** The Mutual crate's `court` CPI import
-  (`programs/mutual/Cargo.toml`) stays commented out until the Court IDL is
+- **Accord is deployed before Mutual.** The Mutual crate's `accord` CPI import
+  (`programs/mutual/Cargo.toml`) stays commented out until the Accord IDL is
   generated by `anchor build`.
 - **Program IDs are placeholders.** `declare_id!` in both programs and the
   `[programs.*]` entries in `Anchor.toml` use the system-program placeholder.

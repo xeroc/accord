@@ -1,6 +1,6 @@
 # Single-purpose Mutuals (not multi-product)
 
-Each Mutual covers exactly one risk type. The factory spawns sovereign Mutuals (Car Accident Mutual, Dental Mutual, Drug-Raid Legal Defense Mutual), each with its own funds, policies, and Subcourt. There is no "cover everything" mega-entity.
+Each Mutual covers exactly one risk type. The factory spawns sovereign Mutuals (Car Accident Mutual, Dental Mutual, Drug-Raid Legal Defense Mutual), each with its own funds, policies, and Subaccord. There is no "cover everything" mega-entity.
 
 ## Considered Options
 

@@ -6,7 +6,7 @@ What we build is a **discretionary mutual**, not licensed insurance. The distinc
 
 | | Licensed Insurance | Discretionary Mutual (what we build) |
 |---|---|---|
-| Payout obligation | **Contractual** — the insurer must pay valid claims | **Discretionary** — the pool *may* pay; the Court can deny |
+| Payout obligation | **Contractual** — the insurer must pay valid claims | **Discretionary** — the pool *may* pay; the Accord can deny |
 | Regulatory status | Licensed, regulated, solvency-overseen | Unlicensed (arguably) — no binding indemnity contract |
 | Capital requirements | Regulator-mandated minimums | DAO-governed MCR gate |
 | The word itself | Heavily regulated in most jurisdictions | Not a regulated term |
@@ -31,12 +31,12 @@ Three structural reasons killed every attempt:
 
 ## What
 
-**VeriDAO Mutual** is a factory of single-purpose Mutuals on Solana. Each Mutual covers exactly one real-world risk type (car accidents, dental problems, drug-raid legal defense — anything the Founder defines). Each Mutual is sovereign: its own funds, its own policies, its own Subcourt. The factory provides the shared infrastructure (fund management, premium payments, settlement, coverage logic); each Mutual configures its own parameters.
+**VeriDAO Mutual** is a factory of single-purpose Mutuals on Solana. Each Mutual covers exactly one real-world risk type (car accidents, dental problems, drug-raid legal defense — anything the Founder defines). Each Mutual is sovereign: its own funds, its own policies, its own Subaccord. The factory provides the shared infrastructure (fund management, premium payments, settlement, coverage logic); each Mutual configures its own parameters.
 
 ### The two-program architecture
 
 ```
-VeriDAO Court (program B — built first)
+VeriDAO Accord (program B — built first)
      ↑
      │ files Disputes, reads Rulings
      │
@@ -44,7 +44,7 @@ VeriDAO Mutual (program A — built second)
      │
      └── reads premium payment system (rail TBD — see BEAN-5)
 
-The Mutual program is a **client** of the Court. When an Insured files a Claim, the Mutual program files a Dispute with the Court ("should this claim be approved?"). The Court adjudicates via the Schelling mechanism. The Mutual program reads the Ruling and pays or denies.
+The Mutual program is a **client** of the Accord. When an Insured files a Claim, the Mutual program files a Dispute with the Accord ("should this claim be approved?"). The Accord adjudicates via the Schelling mechanism. The Mutual program reads the Ruling and pays or denies.
 
 ### Capital model
 
@@ -83,7 +83,7 @@ Recurring payments aren't just a bill — they maintain the Insured's coverage, 
 
 ### Evidence and privacy
 
-Claim evidence (car photos, medical records, police reports) is **PII that cannot appear on a public chain.** Only the evidence commitment hash is posted on-chain. Cleartext evidence is encrypted and accessible only to drawn Jurors (via the Court's evidence-access layer). No cleartext PII ever touches the public ledger.
+Claim evidence (car photos, medical records, police reports) is **PII that cannot appear on a public chain.** Only the evidence commitment hash is posted on-chain. Cleartext evidence is encrypted and accessible only to drawn Jurors (via the Accord's evidence-access layer). No cleartext PII ever touches the public ledger.
 
 ### Governance
 
@@ -94,11 +94,11 @@ Progressive decentralization per Mutual:
 
 No governance token at any stage. v1 = multisig, v2 = stake-weight, v3 = futarchy.
 
-Jurors never govern. The Juror roster is governed by the Court program; the Mutual designates a Subcourt. No conflict of interest between rule-makers and rule-appliers.
+Jurors never govern. The Juror roster is governed by the Accord program; the Mutual designates a Subaccord. No conflict of interest between rule-makers and rule-appliers.
 
 ### Legal posture
 
-Each Mutual operates as a **discretionary mutual** — "cover, not insurance." Members contribute Premiums to a pool; the pool *may* pay Claims at its discretion (the Court can deny). No binding indemnity contract → no insurance license required (arguably). This is the proven crypto template (Nexus Mutual since 2019). Founders who want regulatory credibility for a specific Mutual can pursue a licensed captive/SPV structure for that Mutual individually.
+Each Mutual operates as a **discretionary mutual** — "cover, not insurance." Members contribute Premiums to a pool; the pool *may* pay Claims at its discretion (the Accord can deny). No binding indemnity contract → no insurance license required (arguably). This is the proven crypto template (Nexus Mutual since 2019). Founders who want regulatory credibility for a specific Mutual can pursue a licensed captive/SPV structure for that Mutual individually.
 
 ### What this is NOT
 
@@ -106,4 +106,4 @@ Each Mutual operates as a **discretionary mutual** — "cover, not insurance." M
 - Not a single shared pool (each Mutual is sovereign with isolated capital)
 - Not crypto-asset cover only (the vision is arbitrary real-world risk: cars, dental, legal)
 - Not a protocol token play (no governance token; the Mutual governs itself through its capital structure)
-- Not built without the Court (the Court is the adjudication layer — the Mutual cannot function without it)
+- Not built without the Accord (the Accord is the adjudication layer — the Mutual cannot function without it)

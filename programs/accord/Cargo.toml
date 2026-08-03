@@ -1,12 +1,12 @@
 [package]
-name = "court"
+name = "accord"
 version.workspace = true
 edition.workspace = true
-description = "VeriDAO Court — general-purpose Schelling-point arbitration court on Solana"
+description = "VeriDAO Accord — general-purpose Schelling-point arbitration accord on Solana"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "court"
+name = "accord"
 
 [features]
 no-entrypoint = []
