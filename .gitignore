@@ -7,7 +7,6 @@
 test-ledger
 target/deploy/*.json
 !target/deploy/accord.json
-!target/deploy/mutual.json
 
 # Node / pnpm
 node_modules

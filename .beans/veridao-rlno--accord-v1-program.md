@@ -13,7 +13,7 @@ Implement the VeriDAO Accord — a general-purpose, Schelling-point arbitration 
 ## Authority (read first)
 
 - Build spec: `programs/accord/SPEC.md` (account model, instructions, state machine, economics)
-- Rationale: `docs/adr/0007`-`0011` (+ `0002`, `0005`)
+- Rationale: `docs/adr/0003`-`0007` (+ `0001`, `0002`)
 - Domain language: `CONTEXT.md`
 - Prior art: `context/kleros-whitepaper.md` (mechanism + economics inherited; EVM tech does NOT transfer)
 
@@ -23,11 +23,11 @@ Vaults holding staked USDC, multi-CPI (Switchboard VRF, Arbitrable), admin keys 
 
 ## Design decisions (locked — see ADRs)
 
-- Draw: Merkle-snapshot + off-chain sortition, distinct Jurors, Switchboard VRF, 1-day fraud-proof (ADR-0007)
-- Party-agnostic Arbitrable + permissionless appeal (ADR-0008)
-- Subaccord authority via `Pubkey::default` + on-chain 48h timelock (ADR-0009)
-- Evidence: on-chain hash only + trusted re-encryption operator (ADR-0010)
-- Upgrade: Squads multisig -> post-audit freeze (ADR-0011)
+- Draw: Merkle-snapshot + off-chain sortition, distinct Jurors, Switchboard VRF, 1-day fraud-proof (ADR-0003)
+- Party-agnostic Arbitrable + permissionless appeal (ADR-0004)
+- Subaccord authority via `Pubkey::default` + on-chain 48h timelock (ADR-0005)
+- Evidence: on-chain hash only + trusted re-encryption operator (ADR-0006)
+- Upgrade: Squads multisig -> post-audit freeze (ADR-0007)
 - Economics: flat `alpha * min_stake` slash, equal coherent split (Kleros-inherited, weight=1)
 
 ## Open decision (resolve at Epic 1 start)

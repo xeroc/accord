@@ -19,11 +19,12 @@
 //!
 //! ## Spec authority
 //!
-//! - `PROJECT.md` (rationale), `CONTEXT.md` (domain language), `CONTEXT-MAP.md`
-//! - `docs/adr/0001` two-program split, `docs/adr/0002` Schelling accord,
-//!   `docs/adr/0005` USDC stake (no accord token in v1)
+//! - `PROJECT.md` (rationale), `CONTEXT.md` (domain language), `programs/accord/SPEC.md` (build spec)
+//! - `docs/adr/0001` Schelling, `0002` per-Subaccord staking token, `0003` draw,
+//!   `0004` party-agnostic, `0005` Subaccord authority, `0006` evidence, `0007` upgrade
 //!
-//! Build order: this program ships FIRST. Mutual (program A) is its client.
+//! Build order: this program ships FIRST. Client programs (the Arbitrable)
+//! integrate via the Arbitrable CPI.
 
 use anchor_lang::prelude::*;
 

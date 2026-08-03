@@ -17,7 +17,7 @@ Plumbing: project scaffold, all state definitions, the testing harness, and the 
 - [ ] State: account structs (Subaccord, JurorStake, Dispute, Round, Snapshot, PendingUpdate), error enum, events, constants (MAX options, MAX_JURORS=31)
 - [ ] create_subaccord(params, authority, evidence_operator) — permissionless; risk_type+evidence_spec immutable
 - [ ] propose/execute_subaccord_update — authority-gated (Pubkey::default = immutable), 48h on-chain timelock
-- [ ] pause/unpause — multisig circuit-breaker (ADR-0011)
+- [ ] pause/unpause — multisig circuit-breaker (ADR-0007)
 - [ ] stake(amount) — SPL transfer into Subaccord vault; init/update JurorStake
 - [ ] unstake(amount) — blocked while active_draws > 0
 

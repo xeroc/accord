@@ -39,22 +39,20 @@ Meanwhile, the demand for trustless adjudication is growing: DeFi insurance, fre
 
 ### Why this is a standalone product
 
-The Accord doesn't depend on mutuals or any specific application. It's a general-purpose primitive — the "Kleros of Solana." Any program that needs subjective dispute resolution can use it:
+The Accord doesn't depend on any specific application. It's a general-purpose primitive — the "Kleros of Solana." Any program that needs subjective dispute resolution can use it:
 
 | Use case | Dispute example |
 |---|---|
-| Mutual (VeriDAO Mutual) | "Was this car accident covered?" |
 | Freelancing escrow | "Did the developer deliver as specified?" |
 | NFT authenticity | "Is this token an authentic original?" |
 | Curated lists | "Does this token belong on the whitelist?" |
 | DAO governance | "Was this proposal executed correctly?" |
 | Prediction markets | "Did the event resolve YES or NO?" |
 
-The Accord ships first, proves the Schelling mechanism on Solana, then the Mutual layer plugs in on top.
+The Accord ships first and proves the Schelling mechanism on Solana; client programs plug in on top via the Arbitrable CPI.
 
 ### What this is NOT
 
 - Not an oracle (it doesn't provide data feeds — it adjudicates subjective questions)
 - Not a governance system (it resolves disputes, it doesn't set policy)
-- Not a mutual product (the mutual is a client of the Accord, built separately)
 - Not Kleros (it's a new Solana-native implementation with Switchboard VRF, per-Subaccord tokens, and the Arbitrable CPI interface)

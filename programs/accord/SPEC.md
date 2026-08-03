@@ -1,7 +1,7 @@
 # Accord — v1 Build Specification
 
 > **Status:** specified (not yet built). The authoritative rationale lives in
-> `docs/adr/0007`–`0011`; the domain language in `CONTEXT.md`. This file is the
+> `docs/adr/0003`–`0007`; the domain language in `CONTEXT.md`. This file is the
 > implementation reference: account model, instructions, state machine, economics.
 > Code is authority on current state; this spec is authority on intent.
 
@@ -10,11 +10,11 @@
 `programs/accord` is a general-purpose, Schelling-point arbitration primitive on
 Solana. It is **party-agnostic**: any Solana program (the *Arbitrable*) files a
 question via CPI; the Accord draws stake-weighted Jurors, collects commit-reveal
-votes, and writes a Ruling the filer reads lazily. It ships before the Mutual.
+votes, and writes a Ruling the filer reads lazily. It ships first as a standalone product.
 
 Mechanism and economics are inherited from Kleros (live since 2019, 1000+ disputes);
-the Solana-specific deviations are the draw (ADR-0007), the party model (ADR-0008),
-Subaccord authority (ADR-0009), evidence (ADR-0010), and upgrade (ADR-0011).
+the Solana-specific deviations are the draw (ADR-0003), the party model (ADR-0004),
+Subaccord authority (ADR-0005), evidence (ADR-0006), and upgrade (ADR-0007).
 
 ## Account / PDA model
 
@@ -47,7 +47,7 @@ constants bounding account size.
 | 10 | `appeal(dispute)` | **permissionless**; pays `N_new · fee_per_juror` + bond; opens a new round at `2N+1`. Max 3 appeals. |
 | 11 | `finalize_round` / `finalize_dispute` | permissionless crank (advances on window expiry). Tallies, sets round result; on the final round redistributes and decrements `active_draws`. |
 | 12 | `get_ruling(dispute)` | read-only — the Arbitrable reads `final_ruling` from the `Dispute` account. |
-| 13 | `pause()` / `unpause()` | multisig circuit-breaker (ADR-0011). |
+| 13 | `pause()` / `unpause()` | multisig circuit-breaker (ADR-0007). |
 
 ## Dispute state machine
 
@@ -64,7 +64,7 @@ window). Odd Juror counts (3 / 7 / 15 / 31) make ties impossible.
 ## Economics (Kleros-inherited; weight = 1 for distinct Jurors)
 
 - **Fee:** filer pays `N · fee_per_juror` (round 1); appellant pays `N_new · fee_per_juror` + bond.
-- **Slash:** each Incoherent Juror loses **`α · min_stake`** (flat — see ADR-0007 consequence).
+- **Slash:** each Incoherent Juror loses **`α · min_stake`** (flat — see ADR-0003 consequence).
 - **Redistribution:** forfeited fees + slashed stake → Coherent Jurors, **equal split**.
 - **Non-reveal penalty:** ≥ the Incoherent penalty (forces reveal; Kleros §4.6).
 - **Appeal bond:** forfeited → Coherent Jurors of the **final** round if the appeal does not *flip* the prior Ruling; returned if it flips.
@@ -73,9 +73,9 @@ window). Odd Juror counts (3 / 7 / 15 / 31) make ties impossible.
 ## Authority model
 
 - **Subaccord:** `authority: Pubkey` (`default` ⇒ immutable; on-chain 48h timelock via propose/execute). `evidence_operator: Pubkey`.
-- **Program upgrade:** Squads multisig → (post-sufficient-audit) `None` = frozen (ADR-0011).
+- **Program upgrade:** Squads multisig → (post-sufficient-audit) `None` = frozen (ADR-0007).
 
-## Evidence flow (ADR-0010)
+## Evidence flow (ADR-0006)
 
 ```
 claimant ──encrypt(evidence, evidence_operator_pubkey)──► encrypted blob ──► off-chain store
@@ -97,10 +97,10 @@ Juror decrypts, verifies cleartext vs on-chain evidence_hash
 
 ## Out of scope (v2+)
 
-Accord token · dynamic params · stake-weighted Subaccord self-governance (ADR-0009 alt) · Arcium encrypted vote-tally (Juror vote privacy) · any on-chain evidence crypto beyond the trusted-operator hash model.
+Accord token · dynamic params · stake-weighted Subaccord self-governance (ADR-0005 alt) · Arcium encrypted vote-tally (Juror vote privacy) · any on-chain evidence crypto beyond the trusted-operator hash model.
 
 ## References
 
-- `docs/adr/0007` draw · `0008` party-agnostic · `0009` Subaccord authority · `0010` evidence · `0011` upgrade
-- `docs/adr/0002` Schelling-over-hired-judges · `0005` USDC stake (no token v1)
+- `docs/adr/0003` draw · `0004` party-agnostic · `0005` Subaccord authority · `0006` evidence · `0007` upgrade
+- `docs/adr/0001` Schelling-over-hired-judges · `0002` per-Subaccord staking token (no token v1)
 - `CONTEXT.md` (domain language) · `PROJECT.md` (rationale) · `context/kleros-whitepaper.md` (prior art)
