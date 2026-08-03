@@ -1,0 +1,19 @@
+[package]
+name = "court"
+version.workspace = true
+edition.workspace = true
+description = "VeriDAO Court — general-purpose Schelling-point arbitration court on Solana"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "court"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang.workspace = true

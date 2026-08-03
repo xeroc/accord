@@ -1,0 +1,20 @@
+[package]
+name = "mutual"
+version.workspace = true
+edition.workspace = true
+description = "VeriDAO Mutual — factory of single-purpose discretionary mutuals on Solana"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mutual"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang.workspace = true
+# court = { path = "../court", features = ["cpi"] }  // enabled once Court IDL lands

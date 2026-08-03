@@ -1,0 +1,6 @@
+# Host toolchain for building anchor-cli and host crates.
+# `make prep` installs Solana v1.18.20, whose BPF SDK bundles its own rust.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

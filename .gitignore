@@ -1,0 +1,33 @@
+# Rust / Anchor
+/target
+**/*.rs.bk
+
+# Anchor
+.anchor
+test-ledger
+target/deploy/*.json
+!target/deploy/court.json
+!target/deploy/mutual.json
+
+# Node / pnpm
+node_modules
+dist
+build
+*.tsbuildinfo
+.pnpm-store
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE / OS
+.idea
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

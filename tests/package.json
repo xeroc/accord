@@ -1,0 +1,23 @@
+{
+  "name": "@veridao/tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VeriDAO integration suite — jest against a local validator / Surfpool",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.0",
+    "@solana/web3.js": "^1.95.0",
+    "@solana/spl-token": "^0.4.0",
+    "bn.js": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/bn.js": "^5.1.6",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.5.0"
+  }
+}

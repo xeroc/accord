@@ -54,7 +54,8 @@ repos:
         exclude: |
           (?x)^(
               .pre-commit-config.yaml|
-              pnpm-lock.yaml
+              pnpm-lock.yaml|
+              context/.*
           )$
 
   ######################################
@@ -65,6 +66,7 @@ repos:
     hooks:
       - id: markdownlint
         files: ".*.md"
+        exclude: "^context/"
         # MD013: line too long
         # MD033: no inline HTML
         # MD041: first line in a file should be a top-level heading
@@ -104,7 +106,7 @@ repos:
     hooks:
       - id: fmt
         files: ^programs/.*/.*.rs
-        args: [--manifest-path=programs/tributary/Cargo.toml, --check, --]
+        args: [--manifest-path=Cargo.toml, --all, --check, --]
       - id: cargo-check
         files: ^programs/
-        args: [--manifest-path=programs/tributary/Cargo.toml, --]
+        args: [--manifest-path=Cargo.toml, --all, --]

@@ -1,0 +1,7 @@
+packages:
+  # User-facing applications (dashboards, web UIs). Land per build phase.
+  - "apps/*"
+  # Shared TypeScript libraries (SDK, hooks, utilities).
+  - "packages/*"
+  # Jest/Surfpool integration suite.
+  - "tests"
