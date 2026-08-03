@@ -101,17 +101,21 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 Standalone Schelling-point arbitration primitive. v1 instruction set target:
 
 ```
-create_subaccord(staking_token, min_stake, review/commit/reveal windows, alpha)
-stake(amount) / unstake(amount)        — juror capital into a Subaccord
-create_dispute(subaccord, options, evidence_hash, fee) → dispute_id   [Arbitrable CPI]
-draw(dispute_id)                        — random stake-weighted via Switchboard VRF
-commit(dispute_id, hash(vote, salt))    — secret
-reveal(dispute_id, vote, salt)          — after all commits
-appeal(dispute_id)                      — 2N+1 jurors; loser posts appeal bond
-execute_ruling(dispute_id)              — writes winning option; lazy-read by filer
+create_subaccord(params, authority, evidence_operator)    — permissionless Subaccord
+propose/execute_subaccord_update                          — authority-gated, 48h on-chain timelock
+stake(amount) / unstake(amount)                           — Juror capital; unstake blocked while active_draws > 0
+create_dispute(subaccord, options, evidence_hash, fee)    — [Arbitrable CPI]; filer pays full fee
+post_snapshot(dispute, merkle_root)                       — off-chain indexer; 1× bond; 1-day challenge window
+challenge_snapshot(dispute, fraud_proof)                  — contest a wrong root within the window
+draw(dispute, vrf, memberships[])                         — Switchboard VRF; N distinct Jurors over the Snapshot
+commit / reveal                                           — hash(vote, salt, juror_pubkey) then {vote, salt}
+appeal(dispute)                                           — permissionless; 2N+1; bond forfeited if no flip
+finalize_round / finalize_dispute                         — permissionless crank; redistribution + active_draws--
+get_ruling(dispute)                                       — lazy read by the Arbitrable
+pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `docs/adr/0002` (Schelling accord), `docs/adr/0005` (USDC stake, no accord token in v1).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `docs/adr/0002` (Schelling), `0005` (USDC stake, no token v1), `0007` (draw), `0008` (party-agnostic), `0009` (Subaccord authority), `0010` (evidence), `0011` (upgrade).
 
 ## Mutual (Program A — built second)
 
@@ -136,7 +140,7 @@ Authority: `MUTUAL.md`, `docs/adr/0003` (consumed premium), `docs/adr/0004` (sin
 
 1. **VeriDAO Accord** — standalone arbitration. Ships first, its own product.
 2. **VeriDAO Mutual** — factory; plugs into the Accord via Arbitrable CPI.
-3. **v2** — dynamic premium, tranched staking, position transferability, Arcium MPC evidence, accord token.
+3. **v2** — dynamic premium, tranched staking, position transferability, Arcium encrypted vote-tally (Juror vote privacy), accord token.
 4. **v3** — futarchy governance, evidence markets, AI risk pricing, ZK proofs, licensed captive structures.
 
 ## v1 Defaults (configurable per Mutual / Subaccord)
