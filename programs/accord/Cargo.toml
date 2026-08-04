@@ -17,3 +17,19 @@ default = []
 
 [dependencies]
 anchor-lang.workspace = true
+
+# LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
+#
+# `anchor-litesvm` 0.1.x is the only line that targets anchor-lang 0.31 (0.2+
+# jumped to anchor 1.x; raw litesvm 0.11/0.15 pull a solana-crate split that
+# doesn't compile against anchor 0.31). It wraps litesvm 0.6 with a single,
+# self-consistent solana-2.x dep set and a typed Anchor builder:
+# `ctx.program().request().accounts(..).args(..).instruction()` ->
+# `ctx.execute_instruction(ix, &[&kp]).assert_success()`.
+#
+# The safe-solana-builder `references/litesvm.md` stays the *checklist/pattern*
+# authority for every instruction bean (happy/auth/reinit/time-lock/arithmetic/
+# closure, sysvar manipulation, CU profiling) — wiring differs, concepts don't.
+[target.'cfg(not(target_os = "solana"))'.dev-dependencies]
+anchor-litesvm = "0.1"
+solana-sdk = "2"

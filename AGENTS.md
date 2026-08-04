@@ -52,6 +52,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - `make lint` — `pnpm -r run lint` across every workspace that declares a lint script
 - `pnpm --filter <pkg> run lint:fix` — auto-fix lint in one package (not all packages define `lint:fix`)
 - `anchor test` — Rust unit tests + the `tests/` jest suite against a local validator
+- `make test_unit` — LiteSVM Rust unit/TDD tests (fast, no validator): builds the `.so` then runs `cargo test --features no-entrypoint` in `programs/accord`
 - `make run_surfpool` — start a Surfpool local fork (separate terminal)
 - `make test_surfpool` — full suite (Rust + jest) against a running Surfpool instance
 - `cd tests && npx jest` — run only the `tests/` TypeScript integration suite (needs Surfpool: `make run_surfpool`)
@@ -81,8 +82,32 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 
 ## Testing Instructions
 
+- **Two harnesses, complementary** (decision veridao-8ys4):
+  - **LiteSVM** (`programs/accord/tests/*.rs`, `make test_unit`) — fast in-process
+    Rust unit/TDD per instruction. Wired via `anchor-litesvm` 0.1.x (the only
+    line pinned to anchor-lang 0.31; 0.2+ jumped to anchor 1.x, and raw litesvm
+    0.11/0.15 pull a solana-crate split that doesn't compile against 0.31). The
+    safe-solana-builder `references/litesvm.md` is the **checklist/pattern
+    authority** for every instruction bean (happy/auth/reinit/time-lock/
+    arithmetic/closure, sysvar, CU) — wiring differs, concepts don't.
+  - **jest + Surfpool** (`tests/`) — full e2e: CPI chains, Switchboard VRF, real
+    validator behaviour.
 - **TDD only.** RED → GREEN → REFACTOR for every feature/instruction. Write the
   failing test first, then implement to pass. No exceptions.
+- **LiteSVM `--features no-entrypoint`.** The program's `entrypoint!` symbol
+  collides with a builtin when the program crate is statically linked into the
+  test binary, so Rust tests build `accord` with `no-entrypoint` (types only).
+  The `.so` (built separately via `cargo build-sbf` / `anchor build`, WITH the
+  entrypoint) is what LiteSVM loads. `make test_unit` handles both steps.
+- **Toolchain note:** `cargo build-sbf`/`anchor build` with the **default**
+  platform-tools (v1.48, bundled with Solana 2.3.11) is blocked — it ships
+  cargo 1.84, which can't parse `block-buffer 0.12.x`'s edition2024 manifest
+  (pulled by `solana-program → blake3 → digest 0.11`). Use
+  `cargo build-sbf --tools-version v1.52` (cargo ≥1.85) — `make test_unit`
+  does this. `anchor build` (needed for IDL generation + the jest/Surfpool
+  path) is still blocked; tracked as a follow-up. `declare_id!` /
+  `accord-keypair.json` were provisioned by hand (`solana-keygen`) until
+  `anchor build` works.
 - Integration tests live in `tests/` (jest, run against a live validator).
 - Rust unit tests live inline (`#[cfg(test)]`) in the program crate.
 - First real test ships with the first Accord instruction (`create_subaccord`).

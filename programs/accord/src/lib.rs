@@ -28,14 +28,35 @@
 
 use anchor_lang::prelude::*;
 
-// TODO: `anchor build` provisions a real keypair in target/deploy/accord.json
-// and writes the id here. Placeholder until first build.
-declare_id!("11111111111111111111111111111111");
+// Program id for the Accord. (`anchor build` normally provisions this; it is
+// blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
+// so the keypair was generated with `solana-keygen` into target/deploy/.)
+declare_id!("5DjgEFpkzXk37uENkfGptfARTEmr4aUoZXcSAXMYKzLZ");
 
 #[program]
 pub mod accord {
     use super::*;
 
-    // Instructions land feature-by-feature (TDD). See module docs above and
-    // AGENTS.md § Accord for the v1 instruction set.
+    /// Liveness probe and LiteSVM harness anchor (veridao-8ys4).
+    ///
+    /// No state, no accounts — returns `Ok(())` and emits a version event.
+    /// Arbitrables / ops may call it to confirm the program is reachable. It
+    /// exists so the testing harness has a trivial instruction to round-trip;
+    /// every subsequent instruction ships with its own LiteSVM `#[test]`.
+    pub fn health(_ctx: Context<Health>) -> Result<()> {
+        emit!(HealthChecked { version: 1 });
+        Ok(())
+    }
+}
+
+/// Account context for `health` — the caller signs (liveness probe), no state.
+#[derive(Accounts)]
+pub struct Health<'info> {
+    pub caller: Signer<'info>,
+}
+
+/// Emitted by `health`. Carries the program version byte.
+#[event]
+pub struct HealthChecked {
+    pub version: u8,
 }
