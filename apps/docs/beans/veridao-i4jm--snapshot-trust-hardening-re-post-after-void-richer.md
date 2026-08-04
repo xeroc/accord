@@ -1,10 +1,11 @@
 ---
 # veridao-i4jm
 title: 'Snapshot trust hardening: re-post after void + richer fraud proof'
-status: draft
+status: completed
 type: task
+priority: normal
 created_at: 2026-08-04T04:04:36Z
-updated_at: 2026-08-04T04:04:36Z
+updated_at: 2026-08-04T21:38:17Z
 ---
 
 Deferred gaps from veridao-rrxs (Dispute Intake & Snapshot Trust), surfaced for human review:
