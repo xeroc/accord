@@ -17,12 +17,13 @@ default = []
 
 [dependencies]
 anchor-lang.workspace = true
+anchor-spl.workspace = true
 
 # LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
 #
 # `anchor-litesvm` 0.1.x is the only line that targets anchor-lang 0.31 (0.2+
 # jumped to anchor 1.x; raw litesvm 0.11/0.15 pull a solana-crate split that
-# doesn't compile against anchor 0.31). It wraps litesvm 0.6 with a single,
+# doesn't compile against 0.31). It wraps litesvm 0.6 with a single,
 # self-consistent solana-2.x dep set and a typed Anchor builder:
 # `ctx.program().request().accounts(..).args(..).instruction()` ->
 # `ctx.execute_instruction(ix, &[&kp]).assert_success()`.
@@ -33,5 +34,11 @@ anchor-lang.workspace = true
 [target.'cfg(not(target_os = "solana"))'.dev-dependencies]
 anchor-litesvm = "0.1"
 anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }
 solana-program = "2"
 solana-sdk = "2"
+# For stake tests: derive the Subaccord PDA's vault ATA address + unpack SPL
+# token accounts for balance assertions. Pinned to match litesvm-utils'
+# resolved versions so no extra copies land in the dep tree.
+spl-associated-token-account = "6"
+spl-token = "7"

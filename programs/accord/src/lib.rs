@@ -27,6 +27,8 @@
 //! integrate via the Arbitrable CPI.
 
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 pub mod constants;
 pub mod errors;
@@ -183,6 +185,57 @@ pub mod accord {
         });
         Ok(())
     }
+
+    /// Stake Juror capital into a Subaccord. SPL-transfers `amount` of the
+    /// Subaccord's `staking_token` from the Juror's ATA into the Subaccord
+    /// PDA's vault ATA (lazily created on first stake). The `JurorStake` PDA is
+    /// init'd on first stake and topped up on subsequent stakes.
+    ///
+    /// Credits the **actual delta** the vault received (fee-on-transfer safe:
+    /// Token-2022 transfer fees would make delta < amount). Reverts while the
+    /// circuit breaker is paused (ADR-0007).
+    pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+        require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
+        require!(amount > 0, AccordError::InvalidAmount);
+
+        let before = ctx.accounts.vault.amount;
+
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.juror_token_account.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.juror.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        // Fee-on-transfer safe: reload + credit the real delta the vault got.
+        ctx.accounts.vault.reload()?;
+        let after = ctx.accounts.vault.amount;
+        let delta = after
+            .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        let js = &mut ctx.accounts.juror_stake;
+        js.subaccord = ctx.accounts.subaccord.key();
+        js.juror = ctx.accounts.juror.key();
+        js.bump = ctx.bumps.juror_stake;
+        // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
+        js.amount = js
+            .amount
+            .checked_add(delta)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        emit!(Staked {
+            subaccord: ctx.accounts.subaccord.key(),
+            juror: ctx.accounts.juror.key(),
+            amount: delta,
+        });
+        Ok(())
+    }
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -250,6 +303,59 @@ pub struct CreateSubaccord<'info> {
         bump,
     )]
     pub subaccord: Account<'info, Subaccord>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Account context for `stake` (veridao-ja2w).
+///
+/// - `subaccord` is re-derived from its stored seeds (`creator`, `risk_type`)
+///   + canonical bump so a wrong/forged pool is rejected.
+/// - `staking_token` is constrained to the Subaccord's declared mint.
+/// - `juror_token_account` is the Juror's canonical ATA for that mint.
+/// - `vault` is the **Subaccord PDA's** ATA (lazily created on first stake) so
+///   the program can move funds out on `unstake` (PDA-signed).
+/// - `juror_stake` is init'd on first stake, topped up thereafter
+///   (`init_if_needed`); `active_draws` is never touched here.
+/// - `pause_state` enforces the ADR-0007 circuit breaker.
+#[derive(Accounts)]
+pub struct Stake<'info> {
+    #[account(mut)]
+    pub juror: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    /// Circuit breaker (ADR-0007): stake reverts while paused.
+    #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
+    pub pause_state: Account<'info, PauseState>,
+    #[account(
+        init_if_needed,
+        payer = juror,
+        space = 8 + JurorStake::INIT_SPACE,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
+        bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+    /// Must be the Subaccord's declared staking token.
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = juror,
+    )]
+    pub juror_token_account: Account<'info, TokenAccount>,
+    /// Subaccord PDA's vault ATA; `authority` (wallet) is the Subaccord PDA.
+    #[account(
+        init_if_needed,
+        payer = juror,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 

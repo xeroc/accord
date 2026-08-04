@@ -7,7 +7,11 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-anchor-lang = "0.31.0"
+# `init-if-needed`: required for `stake`'s top-up pattern (init_or_update the
+# JurorStake PDA + lazily create the Subaccord vault ATA on first stake).
+# Safe here — both accounts are zero-fill on init with no privileged init logic.
+anchor-lang = { version = "0.31.0", features = ["init-if-needed"] }
+anchor-spl = { version = "0.31.0", features = ["token", "associated_token"] }
 
 [profile.release]
 overflow-checks = true

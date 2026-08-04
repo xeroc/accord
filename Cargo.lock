@@ -8,8 +8,11 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-litesvm",
+ "anchor-spl",
  "solana-program",
  "solana-sdk",
+ "spl-associated-token-account",
+ "spl-token",
 ]
 
 [[package]]
@@ -265,6 +268,21 @@ dependencies = [
  "spl-associated-token-account",
  "spl-token",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "anchor-spl"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c08cb5d762c0694f74bd02c9a5b04ea53cefc496e2c27b3234acffca5cd076b"
+dependencies = [
+ "anchor-lang",
+ "spl-associated-token-account",
+ "spl-pod",
+ "spl-token",
+ "spl-token-2022",
+ "spl-token-group-interface",
+ "spl-token-metadata-interface",
 ]
 
 [[package]]
