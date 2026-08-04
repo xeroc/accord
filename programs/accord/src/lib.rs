@@ -28,6 +28,16 @@
 
 use anchor_lang::prelude::*;
 
+pub mod constants;
+pub mod errors;
+pub mod events;
+pub mod state;
+
+pub use constants::*;
+pub use errors::AccordError;
+pub use events::*;
+pub use state::*;
+
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)

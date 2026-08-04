@@ -32,4 +32,6 @@ anchor-lang.workspace = true
 # closure, sysvar manipulation, CU profiling) — wiring differs, concepts don't.
 [target.'cfg(not(target_os = "solana"))'.dev-dependencies]
 anchor-litesvm = "0.1"
+anchor-lang = { workspace = true }
+solana-program = "2"
 solana-sdk = "2"
