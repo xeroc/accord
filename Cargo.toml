@@ -17,6 +17,7 @@ anchor-spl = { version = "1.0.2", features = ["token", "associated_token"] }
 # the separate-dep check (#4166), so we pull it directly for `hashv`
 # (commit/reveal hashing + merkle verification).
 solana-program = "3"
+ephemeral-vrf-sdk = { version = "0.4.1", features = ["anchor"] }
 
 [profile.release]
 overflow-checks = true

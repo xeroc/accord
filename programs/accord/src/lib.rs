@@ -29,6 +29,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use ephemeral_vrf_sdk::anchor::vrf;
+use ephemeral_vrf_sdk::instructions::{create_request_randomness_ix, RequestRandomnessParams};
+use ephemeral_vrf_sdk::types::SerializableAccountMeta;
 
 pub mod constants;
 pub mod errors;
@@ -782,14 +785,13 @@ pub mod accord {
 
     // --- Draw (ADR-0003/0009; veridao-fr1x/veridao-4nyi) ------------------------
 
-    /// Commit the VRF result for a dispute's draw (ADR-0009). One-shot:
-    /// stores `dispute.committed_vrf`, which `draw` reads immutably. Must be
-    /// called after `finalize_snapshot` and before `draw`. Permissionless —
-    /// any caller may commit. The VRF result is caller-supplied until the
-    /// magicblock VRF integration lands (bean veridao-utcu); this instruction
-    /// ensures the result can't be swapped between draw retries.
-    pub fn commit_vrf(ctx: Context<CommitVrf>, vrf_result: [u8; 32]) -> Result<()> {
-        let dispute = &mut ctx.accounts.dispute;
+    /// Request VRF randomness from the magicblock oracle (ADR-0009/veridao-crbf).
+    /// CPIs into the VRF program, which calls back `commit_vrf_callback` with
+    /// the verified random value. Permissionless — any cranker may request.
+    /// One-shot per dispute (errors if `committed_vrf` already set).
+    #[allow(unused_variables)]
+    pub fn request_vrf(ctx: Context<RequestVrf>) -> Result<()> {
+        let dispute = &ctx.accounts.dispute;
         require!(
             dispute.committed_vrf.is_none(),
             AccordError::VrfAlreadyCommitted
@@ -798,10 +800,48 @@ pub mod accord {
             ctx.accounts.snapshot.status == SnapshotStatus::Finalized,
             AccordError::SnapshotNotFinalized
         );
-        dispute.committed_vrf = Some(vrf_result);
+
+        let dispute_key = dispute.key();
+        let ix = create_request_randomness_ix(RequestRandomnessParams {
+            payer: ctx.accounts.caller.key(),
+            oracle_queue: ctx.accounts.oracle_queue.key(),
+            callback_program_id: crate::ID,
+            callback_discriminator: instruction::CommitVrfCallback::DISCRIMINATOR.to_vec(),
+            caller_seed: dispute_key.to_bytes(),
+            accounts_metas: Some(vec![SerializableAccountMeta {
+                pubkey: dispute_key,
+                is_signer: false,
+                is_writable: true,
+            }]),
+            ..Default::default()
+        });
+
+        ctx.accounts
+            .invoke_signed_vrf(&ctx.accounts.caller.to_account_info(), &ix)?;
+
+        emit!(VrfRequested {
+            dispute: dispute_key,
+        });
+        Ok(())
+    }
+
+    /// VRF callback: stores the oracle-verified random value (ADR-0009).
+    /// ONLY the VRF program can call this — `vrf_program_identity` is
+    /// constrained to `VRF_PROGRAM_IDENTITY` via Anchor's address check.
+    /// Replaces the old caller-supplied `commit_vrf`.
+    pub fn commit_vrf_callback(
+        ctx: Context<CommitVrfCallback>,
+        randomness: [u8; 32],
+    ) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.committed_vrf.is_none(),
+            AccordError::VrfAlreadyCommitted
+        );
+        dispute.committed_vrf = Some(randomness);
         emit!(VrfCommitted {
             dispute: dispute.key(),
-            vrf_result,
+            vrf_result: randomness,
         });
         Ok(())
     }
@@ -1982,10 +2022,11 @@ pub struct FinalizeSnapshot<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Account context for `commit_vrf` (ADR-0009). Permissionless: any caller
-/// commits the VRF result. Requires a finalized snapshot.
+/// Account context for `request_vrf` (ADR-0009/veridao-crbf). Uses `#[vrf]`
+/// to gain `invoke_signed_vrf` for the CPI into the VRF program.
+#[vrf]
 #[derive(Accounts)]
-pub struct CommitVrf<'info> {
+pub struct RequestVrf<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
@@ -2004,6 +2045,24 @@ pub struct CommitVrf<'info> {
         bump = snapshot.bump,
     )]
     pub snapshot: Box<Account<'info, Snapshot>>,
+    /// CHECK: VRF oracle queue (mainnet default).
+    #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
+    pub oracle_queue: AccountInfo<'info>,
+}
+
+/// Account context for `commit_vrf_callback` (ADR-0009/veridao-crbf).
+/// The `vrf_program_identity` signer is constrained to the VRF program's
+/// identity — ONLY the VRF program can call this instruction.
+#[derive(Accounts)]
+pub struct CommitVrfCallback<'info> {
+    #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
+    pub vrf_program_identity: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
 }
 
 /// Account context for `draw` (ADR-0003/0009). Permissionless: any caller

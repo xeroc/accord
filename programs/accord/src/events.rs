@@ -80,11 +80,17 @@ pub struct SnapshotFinalized {
 }
 
 /// Emitted when the VRF result is committed for a dispute (ADR-0009).
-/// `commit_vrf` is one-shot; `draw` reads the committed value immutably.
+/// `commit_vrf_callback` is one-shot; `draw` reads the committed value immutably.
 #[event]
 pub struct VrfCommitted {
     pub dispute: Pubkey,
     pub vrf_result: [u8; 32],
+}
+
+/// Emitted when a VRF request is submitted to the oracle (ADR-0009/veridao-crbf).
+#[event]
+pub struct VrfRequested {
+    pub dispute: Pubkey,
 }
 
 /// Emitted after a draw selects the round's Jurors. `vrf_seed` is the

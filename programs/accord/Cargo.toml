@@ -21,6 +21,7 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 anchor-lang.workspace = true
 anchor-spl.workspace = true
 solana-program.workspace = true
+ephemeral-vrf-sdk.workspace = true
 # `#[zero_copy]` macro references `bytemuck` at the crate root; anchor-lang
 # re-exports the traits but the derive macro emits `::bytemuck::Pod`.
 bytemuck = "1"

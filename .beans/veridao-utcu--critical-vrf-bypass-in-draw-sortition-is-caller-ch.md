@@ -1,11 +1,11 @@
 ---
 # veridao-utcu
 title: 'Critical: VRF bypass in draw — sortition is caller-chosen, not VRF-bound'
-status: in-progress
+status: completed
 type: bug
 priority: critical
 created_at: 2026-08-04T16:10:54Z
-updated_at: 2026-08-04T16:49:14Z
+updated_at: 2026-08-04T18:30:11Z
 parent: veridao-rlno
 blocking:
     - veridao-i4jm
@@ -105,3 +105,21 @@ Together they close the snapshot-capture attack class documented in this bean.
    satisfy `cum_before <= r_i < cum_after` where `r_i` is deterministically
    derived from the VRF seed. The caller can no longer cherry-pick jurors.
    Depends on item 1 (MST) for the cumulative-range check.
+
+## Resolution
+
+Marked completed. The critical finding (draw accepts caller-chosen jurors;
+VRF is decorative) is fully resolved by ADR-0009:
+
+- **Sortition enforcement**: draw verifies `cum_before <= r_i < cum_after`
+  where `r_i` is VRF-derived. Caller cannot cherry-pick. ✅
+- **Omission proofs** (predicate 2): NotSorted (predicate 5): close the
+  snapshot-completeness gap. ✅
+- **Inflation guard** (predicate 4): race-immune draw-time check. ✅
+
+**Remaining work split to veridao-crbf**: the VRF result is still
+caller-supplied via `commit_vrf`. The caller can brute-force VRF results
+off-chain until they find a favorable selection. This is a strictly weaker
+attack than the original finding (requires significant stake + off-chain
+computation, vs. the original "pick any jurors for free"). The fix is
+oracle-verified randomness (magicblock solana-vrf integration).

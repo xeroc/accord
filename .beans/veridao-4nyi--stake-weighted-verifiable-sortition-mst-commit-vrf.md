@@ -1,11 +1,11 @@
 ---
 # veridao-4nyi
 title: Stake-weighted verifiable sortition — MST, commit_vrf + draw, NotSorted + Omission proofs
-status: in-progress
+status: completed
 type: feature
 priority: critical
 created_at: 2026-08-04T17:18:39Z
-updated_at: 2026-08-04T17:18:39Z
+updated_at: 2026-08-04T17:43:38Z
 parent: veridao-rlno
 blocked_by:
     - veridao-utcu
@@ -87,3 +87,39 @@ challenge.
 - Parent: veridao-rlno
 - Blocked-by: veridao-utcu (fraud predicates 1/3/4 shipped — this extends to 2/5)
 - Supersedes veridao-i4jm item #2 (richer fraud proof) — fully addressed here
+
+## Summary of Changes
+
+All three pieces shipped in one pass:
+
+### 1. Merkle-Sum Tree
+
+- `LeafClaim` gains `cum_after: u64`
+- `MSTNode { sibling_hash, sibling_sum }` proof element
+- `verify_mst_inclusion` verifies hash + sum + cum_after consistency
+- `Snapshot.total_stake: u64` (MST root sum)
+
+### 2. Sortition enforcement
+
+- `commit_vrf` instruction (one-shot VRF commitment)
+- `draw` reads committed VRF + `draw_attempt`; verifies `cum_before <= r_i < cum_after`
+- No rejection sampling (collisions fail, cranker retries)
+
+### 3. Fraud predicates 2 + 5
+
+- `FraudProof::NotSorted` — forces sorted trees
+- `FraudProof::Omission` — adjacent leaves + JurorStake witness
+
+### Test results
+
+78/78 LiteSVM tests green. All existing tests updated for MST format + commit_vrf + sortition enforcement.
+
+### Files changed
+
+- `state.rs`: LeafClaim.cum_after, Snapshot.total_stake, Dispute.committed_vrf, MSTNode, FraudProof enum (4 variants)
+- `errors.rs`: SortitionMismatch, TreeNotSorted, OmissionProofInvalid, VrfAlreadyCommitted, VrfNotCommitted
+- `lib.rs`: commit_vrf instruction + context, draw refactor (MST + sortition), challenge_snapshot (4-way dispatch), verify_mst_inclusion, PostSnapshot context
+- `events.rs`: VrfCommitted event
+- `tests/*.rs`: all test files updated with MST helpers, sorted pubkeys, cum_after, commit_vrf
+- `docs/adr/0009-*.md`: new ADR
+- `docs/adr/0008-*.md`: addendum on commit_vrf rationale

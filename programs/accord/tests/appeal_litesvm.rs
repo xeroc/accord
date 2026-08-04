@@ -14,7 +14,7 @@ use accord::state::{
     Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, MSTNode, Round,
 };
 use accord::{accounts, instruction, ID};
-use anchor_lang::AccountDeserialize;
+use anchor_lang::{AccountDeserialize, AccountSerialize};
 use anchor_litesvm::{AnchorLiteSVM, TestHelpers};
 use solana_program::{clock::Clock, hash::hashv, pubkey::Pubkey};
 use solana_sdk::signer::Signer;
@@ -380,7 +380,7 @@ fn resolve_round(w: &mut World, votes: &[u8]) -> (Pubkey, Vec<Pubkey>) {
 
     // Commit VRF only on the first round (committed_vrf persists across appeals).
     if r_idx == 0 {
-        commit_vrf(&mut w.svm, &w.caller, &sub, &dispute, &snap, COMMITTED_VRF);
+        mock_commit_vrf(&mut w.svm, &dispute, COMMITTED_VRF);
     }
 
     // Find a draw_attempt that selects distinct jurors.
@@ -650,28 +650,30 @@ fn finalize_snapshot(
         .assert_success();
 }
 
-fn commit_vrf(
+fn mock_commit_vrf(
     svm: &mut anchor_litesvm::AnchorContext,
-    caller: &Kp,
-    subaccord: &Pubkey,
     dispute: &Pubkey,
-    snapshot: &Pubkey,
     vrf_result: [u8; 32],
 ) {
-    let ix = svm
-        .program()
-        .accounts(accounts::CommitVrf {
-            caller: caller.pubkey(),
-            subaccord: *subaccord,
-            dispute: *dispute,
-            snapshot: *snapshot,
-        })
-        .args(instruction::CommitVrf { vrf_result })
-        .instruction()
-        .unwrap();
-    svm.execute_instruction(ix, &[caller])
-        .unwrap()
-        .assert_success();
+    // Mirrors what the on-chain program does: deserialize, mutate, re-serialize
+    // into the existing fixed-size account buffer (preserving the allocated
+    // length). Resizing would break later instructions that write back the
+    // full struct (AccountDidNotSerialize).
+    let mut acc = svm.svm.get_account(dispute).expect("dispute exists");
+    let mut d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+    d.committed_vrf = Some(vrf_result);
+    let mut buf = Vec::new();
+    d.try_serialize(&mut buf).unwrap();
+    assert!(
+        buf.len() <= acc.data.len(),
+        "serialized dispute exceeds allocated space"
+    );
+    let len = buf.len();
+    acc.data[..len].copy_from_slice(&buf);
+    for b in &mut acc.data[len..] {
+        *b = 0;
+    }
+    svm.svm.set_account(*dispute, acc).unwrap();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1035,14 +1037,7 @@ fn appeal_before_resolved_reverts() {
         &poster_ata,
         &vault,
     );
-    commit_vrf(
-        &mut w.svm,
-        &w.caller,
-        &w.subaccord,
-        &w.dispute,
-        &snap,
-        COMMITTED_VRF,
-    );
+    mock_commit_vrf(&mut w.svm, &w.dispute, COMMITTED_VRF);
     let panel = panel_for_round(r_idx) as usize;
     let (attempt, picks) = find_distinct_attempt(
         &w.sorted_claims,
