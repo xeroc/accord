@@ -32,3 +32,7 @@ export * from "./methods/lifecycle.js";
 // VRF request + draw choreography + sortition slot derivation (ADR-0009 §2,
 // ADR-0010, bean veridao-j7tx).
 export * from "./methods/vrf.js";
+
+// Juror capital stake / unstake + the active_draws typed guard (ADR-0003/0007,
+// ADR-0010, bean veridao-o8ki).
+export * from "./methods/staking.js";
