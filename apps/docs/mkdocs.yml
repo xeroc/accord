@@ -1,0 +1,98 @@
+site_name: VeriDAO Accord — Schelling-point arbitration on Solana
+site_description: General-purpose decentralized dispute resolution. Any Solana program can file a dispute; stake-weighted jurors vote honestly because coherence is the profitable strategy.
+site_url: https://docs.veridao.org
+repo_url: https://github.com/veridao/accord
+repo_name: veridao/accord
+copyright: VeriDAO
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+
+nav:
+  - Overview: index.md
+  - Quickstart: quickstart.md
+  - Integration Guide:
+      - integration/index.md
+      - The Arbitrable Interface: integration/arbitrable-interface.md
+      - Subaccords: integration/subaccords.md
+      - Staking as a Juror: integration/staking.md
+      - Filing a Dispute: integration/disputes.md
+      - Draw & Voting: integration/draw-voting.md
+      - Appeals: integration/appeals.md
+      - Reading the Ruling: integration/get-ruling.md
+  - Protocol Reference:
+      - reference/index.md
+      - Accounts & PDAs: reference/accounts.md
+      - Instructions: reference/instructions.md
+      - State Machine: reference/state-machine.md
+      - Error Codes: reference/errors.md
+      - Constants: reference/constants.md
+  - Security:
+      - security/index.md
+      - Snapshot Fraud Proofs: security/fraud-proofs.md
+      - Sortition & VRF: security/sortition-vrf.md
+      - Circuit Breaker: security/circuit-breaker.md
+  - Architecture:
+      - Decisions (ADRs): adr/index.md
+  - SDK: sdk.md
+
+plugins:
+  - search:
+  - privacy:
+  - llmstxt:
+      full_output: llms-full.txt
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji ""
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg ""
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format ""
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/veridao/accord
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/veridao

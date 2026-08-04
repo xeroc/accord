@@ -13,6 +13,7 @@ repos:
       - id: check-executables-have-shebangs
       - id: end-of-file-fixer
       - id: check-yaml
+        exclude: ^apps/docs/mkdocs\.yml$
       - id: check-json
       - id: check-toml
       - id: check-merge-conflict
@@ -55,6 +56,7 @@ repos:
           (?x)^(
               .pre-commit-config.yaml|
               pnpm-lock.yaml|
+              apps/docs/.*|
               context/.*
           )$
 

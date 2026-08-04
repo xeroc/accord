@@ -25,7 +25,8 @@ packages/
   sdk/              @veridao/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers)
 tests/              @veridao/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
-docs/adr/           Architecture Decision Records (numbered, immutable-once-deployed)
+apps/docs/          MkDocs documentation site (developer-facing)
+apps/docs/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
 CONTEXT.md          Accord domain language (glossary)
 PROJECT.md          Accord rationale
 Cargo.toml          Rust workspace
@@ -37,7 +38,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ```
 
 > **Reading order for new agents:** `CONTEXT.md` (domain language) → `AGENTS.md`
-> (this file — build/test, conventions, gotchas) → `docs/adr/` (the _why_ behind
+> (this file — build/test, conventions, gotchas) → `apps/docs/docs/adr/` (the _why_ behind
 > every locked architectural decision). ADRs are authority on rationale; code is
 > authority on current state.
 
@@ -131,7 +132,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `docs/adr/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/docs/adr/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition).
 
 ## Build Order
 
