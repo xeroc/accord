@@ -1,11 +1,11 @@
 ---
 # veridao-rlno
 title: Accord v1 Program
-status: todo
+status: completed
 type: milestone
 priority: critical
 created_at: 2026-08-03T23:08:52Z
-updated_at: 2026-08-03T23:08:52Z
+updated_at: 2026-08-04T06:44:46Z
 ---
 
 Implement the VeriDAO Accord — a general-purpose, Schelling-point arbitration primitive on Solana (Anchor). Party-agnostic: any program (the Arbitrable) files a Dispute via CPI; the Accord draws stake-weighted Jurors, collects commit-reveal votes, and writes a Ruling the filer reads lazily.
