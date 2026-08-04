@@ -1,10 +1,11 @@
 ---
 # veridao-vxe9
 title: SDK foundation & codegen
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-04T21:51:00Z
-updated_at: 2026-08-04T21:51:00Z
+updated_at: 2026-08-04T22:43:17Z
 parent: veridao-pxfz
 ---
 
