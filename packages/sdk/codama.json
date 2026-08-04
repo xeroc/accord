@@ -1,0 +1,20 @@
+{
+  "idl": "../../target/idl/accord.json",
+  "scripts": {
+    "js": [
+      {
+        "from": "@codama/renderers-js",
+        "args": [
+          ".",
+          {
+            "syncPackageJson": false,
+            "kitImportStrategy": "rootOnly",
+            "dependencyVersions": {
+              "@solana/kit": "^7.0.0"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
