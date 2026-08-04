@@ -33,6 +33,24 @@ export {
 } from "./pda";
 export * from "./constants";
 export {
+  fetchAppealBond,
+  fetchAppealBondMaybe,
+  fetchDispute,
+  fetchDisputeMaybe,
+  fetchJurorStake,
+  fetchJurorStakeMaybe,
+  fetchPauseState,
+  fetchPauseStateMaybe,
+  fetchPendingUpdate,
+  fetchPendingUpdateMaybe,
+  fetchRound,
+  fetchRoundMaybe,
+  fetchSnapshot,
+  fetchSnapshotMaybe,
+  fetchSubaccord,
+  fetchSubaccordMaybe,
+} from "./fetch";
+export {
   AccordErrors,
   ACCORD_ERROR_CODE_OFFSET,
   type AccordErrorCode,
