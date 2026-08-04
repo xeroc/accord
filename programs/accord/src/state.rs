@@ -131,6 +131,24 @@ pub struct PendingUpdate {
     pub bump: u8,
 }
 
+/// Program-level circuit breaker (ADR-0007). Singleton seeded `["pause"]`.
+/// `pause()` is instant and authority-gated; `unpause()` is timelocked
+/// (`propose_unpause` arms `pending_unpause_after`, `execute_unpause` lands
+/// once the slot passes — permissionless, so a freeze is always recoverable on
+/// a known schedule). When `paused`, `create_dispute` / `stake` / `appeal`
+/// revert; in-flight disputes resolve normally.
+#[account]
+#[derive(InitSpace)]
+pub struct PauseState {
+    /// The multisig/upgrade-authority permitted to pause and propose unpause.
+    pub authority: Pubkey,
+    pub paused: bool,
+    /// `Some(slot)` once `propose_unpause` has armed an unpause; cleared on
+    /// `execute_unpause` (or on a fresh `pause`).
+    pub pending_unpause_after: Option<u64>,
+    pub bump: u8,
+}
+
 /// Dispute lifecycle (SPEC state machine). A permissionless crank advances
 /// states when their windows elapse.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]

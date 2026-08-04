@@ -57,12 +57,125 @@ pub mod accord {
         emit!(HealthChecked { version: 1 });
         Ok(())
     }
+
+    // --- Circuit breaker (ADR-0007; veridao-63v3) ---
+    // `pause` is instant + authority-gated; `unpause` is timelocked
+    // (propose_unpause arms it, execute_unpause lands after the notice slot).
+    // While paused, create_dispute / stake / appeal revert; in-flight disputes
+    // resolve normally. The halt is enforced inside each of those instructions
+    // (`require!(!pause_state.paused, ProgramPaused)`); this module only owns
+    // the breaker itself.
+
+    /// One-time init of the pause singleton. The caller becomes the pause
+    /// authority (typically the Squads multisig / upgrade authority). Call at
+    /// deploy; front-running is an ops concern (bundle init with deploy).
+    pub fn initialize_pause(ctx: Context<InitializePause>) -> Result<()> {
+        ctx.accounts.pause_state.authority = ctx.accounts.authority.key();
+        ctx.accounts.pause_state.paused = false;
+        ctx.accounts.pause_state.pending_unpause_after = None;
+        ctx.accounts.pause_state.bump = ctx.bumps.pause_state;
+        Ok(())
+    }
+
+    /// Instant, authority-gated emergency freeze.
+    pub fn pause(ctx: Context<Pause>) -> Result<()> {
+        require!(
+            ctx.accounts.authority.key() == ctx.accounts.pause_state.authority,
+            AccordError::NotPauseAuthority
+        );
+        require!(!ctx.accounts.pause_state.paused, AccordError::AlreadyPaused);
+        ctx.accounts.pause_state.paused = true;
+        // a fresh pause cancels any pending unpause
+        ctx.accounts.pause_state.pending_unpause_after = None;
+        emit!(Paused {
+            authority: ctx.accounts.authority.key(),
+        });
+        Ok(())
+    }
+
+    /// Authority-gated: arms an unpause executable after `UNPAUSE_TIMELOCK_SLOTS`.
+    pub fn propose_unpause(ctx: Context<ProposeUnpause>) -> Result<()> {
+        require!(
+            ctx.accounts.authority.key() == ctx.accounts.pause_state.authority,
+            AccordError::NotPauseAuthority
+        );
+        require!(ctx.accounts.pause_state.paused, AccordError::NotPaused);
+        let slot = Clock::get()?.slot;
+        let execute_after = slot
+            .checked_add(UNPAUSE_TIMELOCK_SLOTS)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        ctx.accounts.pause_state.pending_unpause_after = Some(execute_after);
+        emit!(UnpauseProposed {
+            execute_after_slot: execute_after,
+        });
+        Ok(())
+    }
+
+    /// Permissionless crank: lands the unpause once the notice slot has passed.
+    pub fn execute_unpause(ctx: Context<ExecuteUnpause>) -> Result<()> {
+        let execute_after = ctx
+            .accounts
+            .pause_state
+            .pending_unpause_after
+            .ok_or(AccordError::NoPendingUnpause)?;
+        let slot = Clock::get()?.slot;
+        require!(
+            slot >= execute_after,
+            AccordError::UnpauseTimelockNotElapsed
+        );
+        let authority = ctx.accounts.pause_state.authority;
+        ctx.accounts.pause_state.paused = false;
+        ctx.accounts.pause_state.pending_unpause_after = None;
+        emit!(Unpaused { authority });
+        Ok(())
+    }
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
 #[derive(Accounts)]
 pub struct Health<'info> {
     pub caller: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct InitializePause<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + PauseState::INIT_SPACE,
+        seeds = [SEED_PAUSE],
+        bump,
+    )]
+    pub pause_state: Account<'info, PauseState>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Pause<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
+    pub pause_state: Account<'info, PauseState>,
+}
+
+#[derive(Accounts)]
+pub struct ProposeUnpause<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
+    pub pause_state: Account<'info, PauseState>,
+}
+
+#[derive(Accounts)]
+pub struct ExecuteUnpause<'info> {
+    /// Any cranker pays the tx fee; no authority check on execute (ADR-0007:
+    /// the notice period, not the signer, gates the unpause).
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
+    pub pause_state: Account<'info, PauseState>,
 }
 
 /// Emitted by `health`. Carries the program version byte.

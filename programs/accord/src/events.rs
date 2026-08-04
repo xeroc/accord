@@ -125,3 +125,24 @@ pub struct Appealed {
     pub dispute: Pubkey,
     pub new_round_idx: u32,
 }
+
+// --- circuit breaker (ADR-0007) ---
+
+/// Emitted when the program is paused (instant, authority-gated).
+#[event]
+pub struct Paused {
+    pub authority: Pubkey,
+}
+
+/// Emitted when an unpause is armed (authority-gated); `execute_after_slot` is
+/// the earliest slot `execute_unpause` may land.
+#[event]
+pub struct UnpauseProposed {
+    pub execute_after_slot: u64,
+}
+
+/// Emitted once the timelocked unpause lands (permissionless crank).
+#[event]
+pub struct Unpaused {
+    pub authority: Pubkey,
+}

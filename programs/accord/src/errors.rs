@@ -15,6 +15,20 @@ pub enum AccordError {
     #[msg("No pending update to execute.")]
     NoPendingUpdate,
 
+    // --- circuit breaker (ADR-0007) ---
+    #[msg("Signer is not the pause authority.")]
+    NotPauseAuthority,
+    #[msg("Program is already paused.")]
+    AlreadyPaused,
+    #[msg("Program is not paused.")]
+    NotPaused,
+    #[msg("No pending unpause to execute.")]
+    NoPendingUnpause,
+    #[msg("Unpause timelock has not elapsed yet.")]
+    UnpauseTimelockNotElapsed,
+    #[msg("Program is paused; this instruction is halted.")]
+    ProgramPaused,
+
     // --- staking ---
     #[msg("Staked amount is below the Subaccord minimum.")]
     InsufficientStake,

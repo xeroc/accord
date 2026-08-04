@@ -16,6 +16,10 @@ pub const UPDATE_TIMELOCK_SLOTS: u64 = 432_000;
 /// Snapshot fraud-proof challenge window (ADR-0003): 1 day, in seconds.
 pub const SNAPSHOT_CHALLENGE_WINDOW_SECS: i64 = 24 * 60 * 60;
 
+/// Timelock on `execute_unpause` (ADR-0007): a paused program cannot be
+/// unpaused without a notice period. 24h in slots (~400ms mainnet).
+pub const UNPAUSE_TIMELOCK_SLOTS: u64 = 24 * 60 * 60 / 400;
+
 // --- Canonical PDA seed prefixes (SPEC account table) -----------------------
 
 pub const SEED_SUBACCORD: &[u8] = b"subaccord";
@@ -24,6 +28,8 @@ pub const SEED_DISPUTE: &[u8] = b"dispute";
 pub const SEED_ROUND: &[u8] = b"round";
 pub const SEED_SNAPSHOT: &[u8] = b"snapshot";
 pub const SEED_PENDING_UPDATE: &[u8] = b"update";
+/// Singleton program-level pause flag (ADR-0007 circuit breaker).
+pub const SEED_PAUSE: &[u8] = b"pause";
 
 // --- v1 default economics (per-Subaccord configurable; these are the
 //     milestone defaults table) ----------------------------------------------
