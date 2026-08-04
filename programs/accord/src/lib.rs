@@ -798,9 +798,23 @@ pub mod accord {
         }
 
         // Record jurors in the Round (zero-copy: load_init writes discriminator).
+        let now_ts = Clock::get()?.unix_timestamp;
+        let review_end = now_ts
+            .checked_add(sub.review_window as i64)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let commit_end = review_end
+            .checked_add(sub.commit_window as i64)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let reveal_end = commit_end
+            .checked_add(sub.reveal_window as i64)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
         let mut round = ctx.accounts.round.load_init()?;
         round.dispute = dispute_key;
         round.round_idx = round_idx;
+        round.review_end = review_end;
+        round.commit_end = commit_end;
+        round.reveal_end = reveal_end;
         for (i, juror) in drawn.iter().enumerate() {
             round.jurors[i] = *juror;
         }
@@ -821,6 +835,281 @@ pub mod accord {
             vrf_seed,
         });
         Ok(())
+    }
+
+    // --- Voting & Ruling (veridao-pq1s) ---------------------------------------
+
+    /// Commit a vote hash. `h = hash(vote_le ‖ salt ‖ juror_pubkey)` — the
+    /// juror's pubkey is bound into the hash to prevent commit-copying (a juror
+    /// who copies another's hash can never reveal it). One per drawn Juror;
+    /// immutable after commit. Allowed during the commit window
+    /// (`review_end ≤ now < commit_end`).
+    pub fn commit(ctx: Context<Commit>, commitment: [u8; 32]) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::Drawn || dispute.state == DisputeState::Commit,
+            AccordError::InvalidState
+        );
+
+        let round = &mut ctx.accounts.round.load_mut()?;
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= round.review_end, AccordError::CommitWindowClosed);
+        require!(now < round.commit_end, AccordError::CommitWindowClosed);
+
+        let juror_key = ctx.accounts.juror.key();
+        let idx = round.jurors[..round.juror_count as usize]
+            .iter()
+            .position(|j| *j == juror_key)
+            .ok_or(AccordError::NotDrawnJuror)?;
+
+        require!(
+            round.commits[idx] == [0u8; 32],
+            AccordError::CommitAlreadyExists
+        );
+        round.commits[idx] = commitment;
+        round.commit_count = round
+            .commit_count
+            .checked_add(1)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        if dispute.state == DisputeState::Drawn {
+            dispute.state = DisputeState::Commit;
+        }
+
+        emit!(Committed {
+            dispute: dispute.key(),
+            round_idx: round.round_idx,
+            juror: juror_key,
+        });
+        Ok(())
+    }
+
+    /// Reveal a committed vote. Verifies `hash(vote_le ‖ salt ‖ juror_pubkey)`
+    /// matches the stored commit, then records the vote. Allowed during the
+    /// reveal window (`commit_end ≤ now < reveal_end`). Jurors who committed
+    /// but do not reveal are penalized ≥ incoherent at finalization.
+    pub fn reveal(ctx: Context<Reveal>, vote: u8, salt: [u8; 32]) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::Commit || dispute.state == DisputeState::Reveal,
+            AccordError::InvalidState
+        );
+
+        require!(vote < dispute.num_options, AccordError::InvalidVote);
+
+        let round = &mut ctx.accounts.round.load_mut()?;
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= round.commit_end, AccordError::RevealWindowClosed);
+        require!(now < round.reveal_end, AccordError::RevealWindowClosed);
+
+        let juror_key = ctx.accounts.juror.key();
+        let idx = round.jurors[..round.juror_count as usize]
+            .iter()
+            .position(|j| *j == juror_key)
+            .ok_or(AccordError::NotDrawnJuror)?;
+
+        let committed = round.commits[idx];
+        require!(committed != [0u8; 32], AccordError::CommitMissing);
+        require!(round.reveals[idx] == u8::MAX, AccordError::AlreadyRevealed);
+
+        use anchor_lang::solana_program::hash::hashv;
+        let computed = hashv(&[&[vote], &salt, juror_key.as_ref()]).to_bytes();
+        require!(computed == committed, AccordError::RevealMismatch);
+
+        round.reveals[idx] = vote;
+        round.reveal_count = round
+            .reveal_count
+            .checked_add(1)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        if dispute.state == DisputeState::Commit {
+            dispute.state = DisputeState::Reveal;
+        }
+
+        emit!(Revealed {
+            dispute: dispute.key(),
+            round_idx: round.round_idx,
+            juror: juror_key,
+            vote,
+        });
+        Ok(())
+    }
+
+    /// Permissionless crank: after the reveal window elapses, tallies the
+    /// round by plurality and transitions to `RoundResolved`. Handles all
+    /// active states (Drawn/Commit/Reveal) — if no one committed or revealed,
+    /// the result defaults to option 0.
+    pub fn finalize_round(ctx: Context<FinalizeRound>) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::Drawn
+                || dispute.state == DisputeState::Commit
+                || dispute.state == DisputeState::Reveal,
+            AccordError::InvalidState
+        );
+
+        let round = &mut ctx.accounts.round.load_mut()?;
+        let now = Clock::get()?.unix_timestamp;
+        require!(now >= round.reveal_end, AccordError::RoundNotFinalizable);
+
+        let mut counts = [0u32; MAX_OPTIONS];
+        for i in 0..round.juror_count as usize {
+            let v = round.reveals[i];
+            if v != u8::MAX && (v as usize) < MAX_OPTIONS {
+                counts[v as usize] += 1;
+            }
+        }
+
+        let winner = (0..dispute.num_options as usize)
+            .max_by_key(|&i| counts[i])
+            .unwrap_or(0) as u8;
+        round.result = winner;
+
+        dispute.state = DisputeState::RoundResolved;
+
+        emit!(RoundResolved {
+            dispute: dispute.key(),
+            round_idx: round.round_idx,
+            result: winner,
+        });
+        Ok(())
+    }
+
+    /// Permissionless crank: once the appeal window elapses without an appeal,
+    /// settles the final round's economics and writes the ruling. Pure ledger
+    /// accounting — the tokens are already in the vault, so no SPL transfers
+    /// are needed:
+    ///
+    /// 1. Determine coherence (revealed vote == final ruling).
+    /// 2. Slash each incoherent/non-revealing juror: `α · min_stake`.
+    /// 3. Pool = slash_total + round_fee (`panel · fee_per_juror`).
+    /// 4. Equal split of pool among coherent jurors (integer div; remainder
+    ///    stays in vault as protocol surplus).
+    /// 5. Decrement `active_draws` for ALL drawn jurors (unfreezes stake).
+    /// 6. Write `final_ruling` and transition to `Final`.
+    ///
+    /// Drawn `JurorStake` accounts are passed as `remaining_accounts`, verified
+    /// against the round's juror list + PDA derivation (same pattern as `draw`).
+    pub fn finalize_dispute(ctx: Context<FinalizeDispute>) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::RoundResolved,
+            AccordError::InvalidState
+        );
+
+        let round = ctx.accounts.round.load()?;
+        let now = Clock::get()?.unix_timestamp;
+        let appeal_deadline = round
+            .reveal_end
+            .checked_add(APPEAL_WINDOW_SECS)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(now >= appeal_deadline, AccordError::AppealWindowOpen);
+
+        let final_ruling = round.result;
+        require!(final_ruling != u8::MAX, AccordError::InvalidState);
+
+        let sub = &ctx.accounts.subaccord;
+        let panel = round.juror_count as usize;
+        require!(
+            ctx.remaining_accounts.len() == panel,
+            AccordError::InvalidPanelSize
+        );
+
+        let slash_per_juror = (sub.alpha_bps as u64)
+            .checked_mul(sub.min_stake)
+            .and_then(|v| v.checked_div(10_000))
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // --- First pass: verify PDAs + compute coherence stats ---
+        let mut coherent_count: u32 = 0;
+        let mut slash_total: u64 = 0;
+        let sub_key = sub.key();
+        for i in 0..panel {
+            let expected_pda = Pubkey::find_program_address(
+                &[SEED_JUROR_STAKE, sub_key.as_ref(), round.jurors[i].as_ref()],
+                &crate::ID,
+            )
+            .0;
+            require!(
+                ctx.remaining_accounts[i].key == &expected_pda,
+                AccordError::InvalidMembershipProof
+            );
+
+            let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
+            if is_coherent {
+                coherent_count += 1;
+            } else {
+                slash_total = slash_total
+                    .checked_add(slash_per_juror)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
+        }
+
+        let round_fee = (panel as u64)
+            .checked_mul(sub.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let pool = slash_total
+            .checked_add(round_fee)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let share = if coherent_count > 0 {
+            pool / coherent_count as u64
+        } else {
+            0 // no coherent jurors: pool stays in vault (SPEC §4.6 fn.10, flagged)
+        };
+
+        // --- Second pass: apply slashes + redistributions + decrement draws ---
+        const AMOUNT_OFFSET: usize = 8 + 32 + 32; // disc + subaccord + juror
+        const ACTIVE_DRAWS_OFFSET: usize = AMOUNT_OFFSET + 8;
+
+        for i in 0..panel {
+            let acct_info = &ctx.remaining_accounts[i];
+            let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
+
+            let (amount, active_draws) = {
+                let data = acct_info.try_borrow_data()?;
+                if data.len() < ACTIVE_DRAWS_OFFSET + 4 {
+                    return Err(AccordError::InvalidMembershipProof.into());
+                }
+                let amt =
+                    u64::from_le_bytes(data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].try_into().unwrap());
+                let draws = u32::from_le_bytes(
+                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                        .try_into()
+                        .unwrap(),
+                );
+                (amt, draws)
+            };
+
+            let new_amount = if is_coherent {
+                amount
+                    .checked_add(share)
+                    .ok_or(AccordError::ArithmeticOverflow)?
+            } else {
+                amount.checked_sub(slash_per_juror.min(amount)).unwrap_or(0)
+            };
+            let new_draws = active_draws.saturating_sub(1);
+
+            let mut data = acct_info.try_borrow_mut_data()?;
+            data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].copy_from_slice(&new_amount.to_le_bytes());
+            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                .copy_from_slice(&new_draws.to_le_bytes());
+        }
+
+        dispute.final_ruling = Some(final_ruling);
+        dispute.state = DisputeState::Final;
+
+        emit!(RulingFinalized {
+            dispute: dispute.key(),
+            ruling: final_ruling,
+        });
+        Ok(())
+    }
+
+    /// Read-only: returns the dispute's `final_ruling`. The Arbitrable calls
+    /// this via CPI to lazily read the outcome. Returns `None` until the
+    /// dispute reaches `Final`.
+    pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
+        Ok(ctx.accounts.dispute.final_ruling)
     }
 }
 
@@ -1322,6 +1611,119 @@ pub struct Draw<'info> {
     )]
     pub round: AccountLoader<'info, Round>,
     pub system_program: Program<'info, System>,
+}
+
+// --- Voting & Ruling account contexts (veridao-pq1s) --------------------------
+
+/// Account context for `commit`. The juror signs; the round is zero-copy
+/// (`AccountLoader`), re-derived from the dispute + current round.
+#[derive(Accounts)]
+pub struct Commit<'info> {
+    #[account(mut)]
+    pub juror: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        mut,
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+}
+
+/// Account context for `reveal`. Same shape as `Commit`.
+#[derive(Accounts)]
+pub struct Reveal<'info> {
+    #[account(mut)]
+    pub juror: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        mut,
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+}
+
+/// Account context for `finalize_round` — permissionless crank.
+#[derive(Accounts)]
+pub struct FinalizeRound<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        mut,
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+}
+
+/// Account context for `finalize_dispute` — permissionless crank. Drawn
+/// `JurorStake` accounts are passed as `remaining_accounts` (mut), verified
+/// against the round's juror list + PDA derivation inside the handler.
+#[derive(Accounts)]
+pub struct FinalizeDispute<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+}
+
+/// Account context for `get_ruling` — read-only CPI entry for Arbitrables.
+#[derive(Accounts)]
+pub struct GetRuling<'info> {
+    /// Fee payer for the transaction (CPI caller or cranker).
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
 }
 
 /// Emitted by `health`. Carries the program version byte.

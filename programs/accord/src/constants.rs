@@ -16,6 +16,10 @@ pub const UPDATE_TIMELOCK_SLOTS: u64 = 432_000;
 /// Snapshot fraud-proof challenge window (ADR-0003): 1 day, in seconds.
 pub const SNAPSHOT_CHALLENGE_WINDOW_SECS: i64 = 24 * 60 * 60;
 
+/// Appeal window after a round is resolved, before the dispute becomes final
+/// (SPEC state machine: RoundResolved →(appeal window)→ Final). 3 days.
+pub const APPEAL_WINDOW_SECS: i64 = 3 * 24 * 60 * 60;
+
 /// Timelock on `execute_unpause` (ADR-0007): a paused program cannot be
 /// unpaused without a notice period. 24h in slots (~400ms mainnet).
 pub const UNPAUSE_TIMELOCK_SLOTS: u64 = 24 * 60 * 60 / 400;

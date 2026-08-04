@@ -103,6 +103,13 @@ pub struct Round {
     pub juror_count: u32,
     pub commit_count: u32,
     pub reveal_count: u32,
+    // --- i64 window deadlines (8-byte aligned at offset 16) ---
+    /// Commit opens at this timestamp (= draw_time + review_window).
+    pub review_end: i64,
+    /// Reveal opens at this timestamp (= review_end + commit_window).
+    pub commit_end: i64,
+    /// Round can be finalized after this timestamp (= commit_end + reveal_window).
+    pub reveal_end: i64,
     // --- u8 fields ---
     pub result: u8, // u8::MAX = not set
     pub bump: u8,
@@ -114,7 +121,7 @@ pub struct Round {
     pub commits: [[u8; 32]; MAX_JURORS],
     /// Revealed vote option index per drawn Juror; `u8::MAX` until revealed.
     pub reveals: [u8; MAX_JURORS],
-    pub _pad1: [u8; 1], // total size = multiple of 4
+    pub _pad1: [u8; 5], // total = multiple of 8 (max alignment = i64)
 }
 
 /// A committed Merkle root over the Subaccord's Juror set + cumulative stakes,

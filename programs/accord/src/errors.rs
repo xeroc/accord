@@ -80,6 +80,16 @@ pub enum AccordError {
     CommitWindowClosed,
     #[msg("Reveal window is closed.")]
     RevealWindowClosed,
+    #[msg("Signer is not a drawn Juror for this round.")]
+    NotDrawnJuror,
+    #[msg("Revealed vote index is out of range.")]
+    InvalidVote,
+    #[msg("Juror has already revealed.")]
+    AlreadyRevealed,
+
+    // --- finalization ---
+    #[msg("Appeal window has not elapsed yet.")]
+    AppealWindowOpen,
 
     // --- appeals (ADR-0004) ---
     #[msg("Maximum appeals reached for this dispute.")]
