@@ -88,22 +88,33 @@ pub struct Dispute {
 /// Per-round draw/vote state. One `Round` per dispute round (initial + appeals).
 ///
 /// Seeds: `["round", dispute, round_idx]`.
-#[account]
-#[derive(InitSpace)]
+///
+/// `#[zero_copy]`: `Round` is too large for BPF's 4096-byte stack when
+/// deserialized via `Account<Round>`. Zero-copy maps the account data buffer
+/// directly as the struct — no Borsh (de)serialization, no stack copy.
+/// `reveals` and `result` use `u8::MAX` sentinels instead of `Option<u8>`
+/// (which is not `Pod`). Fields are reordered (u32 first) + explicit padding
+/// to satisfy `bytemuck::Pod` (no implicit gaps).
+#[account(zero_copy)]
+#[repr(C)]
 pub struct Round {
-    pub dispute: Pubkey,
+    // --- u32 fields (4-byte aligned, no gaps) ---
     pub round_idx: u32,
-    pub jurors: [Pubkey; MAX_JURORS],
-    /// `hash(vote, salt, juror_pubkey)` per drawn Juror; `[0;32]` until committed.
-    pub commits: [[u8; 32]; MAX_JURORS],
-    /// Revealed vote option index per drawn Juror; `None` until revealed.
-    pub reveals: [Option<u8>; MAX_JURORS],
     pub juror_count: u32,
     pub commit_count: u32,
     pub reveal_count: u32,
-    /// Winning option index for this round once tallied.
-    pub result: Option<u8>,
+    // --- u8 fields ---
+    pub result: u8, // u8::MAX = not set
     pub bump: u8,
+    pub _pad0: [u8; 2], // align next field group to 4
+    // --- byte arrays (1-byte aligned) ---
+    pub dispute: Pubkey,
+    pub jurors: [Pubkey; MAX_JURORS],
+    /// `hash(vote, salt, juror_pubkey)` per drawn Juror; `[0;32]` until committed.
+    pub commits: [[u8; 32]; MAX_JURORS],
+    /// Revealed vote option index per drawn Juror; `u8::MAX` until revealed.
+    pub reveals: [u8; MAX_JURORS],
+    pub _pad1: [u8; 1], // total size = multiple of 4
 }
 
 /// A committed Merkle root over the Subaccord's Juror set + cumulative stakes,
@@ -196,6 +207,21 @@ pub enum UpdatePayload {
     FeePerJuror(u64),
     Authority(Pubkey),
     EvidenceOperator(Pubkey),
+}
+
+// --- Draw (ADR-0003; veridao-fr1x) -------------------------------------------
+
+/// A drawn Juror's Merkle membership proof: the leaf claim, the sibling hashes
+/// rootward, and the leaf's position in the tree. The on-chain `draw` verifies
+/// each proof against the finalized snapshot root, checks stake eligibility,
+/// and enforces distinctness. The stake-weighted cumulative lookup is computed
+/// off-chain; the on-chain program trusts the finalized root (ADR-0003
+/// fraud-proof is the trust anchor).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct JurorMembership {
+    pub leaf: LeafClaim,
+    pub proof: Vec<[u8; 32]>,
+    pub index: u32,
 }
 
 // --- Snapshot fraud proof (ADR-0003; veridao-rrxs) ---------------------------

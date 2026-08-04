@@ -9,6 +9,7 @@ dependencies = [
  "anchor-lang",
  "anchor-litesvm",
  "anchor-spl",
+ "bytemuck",
  "solana-program",
  "solana-sdk",
  "spl-associated-token-account",

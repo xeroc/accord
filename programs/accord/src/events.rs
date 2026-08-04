@@ -79,12 +79,16 @@ pub struct SnapshotFinalized {
     pub round_idx: u32,
 }
 
-/// Emitted after a draw selects the round's Jurors.
+/// Emitted after a draw selects the round's Jurors. `vrf_seed` is the
+/// deterministic hash binding the Switchboard VRF result to this specific
+/// dispute + round, providing an on-chain audit trail for the off-chain
+/// sortition.
 #[event]
 pub struct JurorsDrawn {
     pub dispute: Pubkey,
     pub round_idx: u32,
     pub jurors: Vec<Pubkey>,
+    pub vrf_seed: [u8; 32],
 }
 
 /// Emitted on each Juror commit.

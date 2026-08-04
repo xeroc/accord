@@ -66,6 +66,8 @@ pub enum AccordError {
     DuplicateJuror,
     #[msg("Juror Merkle membership/weight proof is invalid.")]
     InvalidMembershipProof,
+    #[msg("Number of juror memberships does not match the required panel size.")]
+    InvalidPanelSize,
 
     // --- voting ---
     #[msg("Juror has already committed.")]

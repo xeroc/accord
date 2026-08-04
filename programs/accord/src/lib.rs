@@ -670,6 +670,158 @@ pub mod accord {
         });
         Ok(())
     }
+
+    // --- Draw (ADR-0003; veridao-fr1x) ----------------------------------------
+
+    /// Select N distinct Jurors from the finalized Snapshot, weighted by stake,
+    /// via Switchboard VRF (ADR-0003). Permissionless: any cranker submits the
+    /// VRF result + the membership proofs for the off-chain-computed selection.
+    ///
+    /// The on-chain program verifies: snapshot is finalized, each membership
+    /// proof against the root, stake ≥ `min_stake` (the precise eligibility
+    /// gate deferred from the coarse `staker_count` counter), all jurors
+    /// distinct, and the panel size matches the round. The VRF result is
+    /// consumed deterministically (`hash(vrf ‖ dispute ‖ round)`) and emitted,
+    /// binding the randomness to this draw for off-chain audit. The
+    /// stake-weighted cumulative lookup itself is computed off-chain; its
+    /// correctness is bounded by the snapshot fraud-proof (ADR-0003 trust
+    /// anchor). Each drawn Juror's `active_draws` is incremented, freezing
+    /// their stake until the dispute settles.
+    pub fn draw(
+        ctx: Context<Draw>,
+        vrf_result: [u8; 32],
+        memberships: Vec<JurorMembership>,
+    ) -> Result<()> {
+        let snap = &ctx.accounts.snapshot;
+        require!(
+            snap.status == SnapshotStatus::Finalized,
+            AccordError::SnapshotNotFinalized
+        );
+
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::SnapshotPosted,
+            AccordError::InvalidState
+        );
+
+        let sub = &ctx.accounts.subaccord;
+        let round_idx = dispute.current_round;
+        let panel = panel_size_for_round(sub.jurors_per_dispute, round_idx)?;
+
+        require!(
+            memberships.len() <= MAX_JURORS,
+            AccordError::InvalidPanelSize
+        );
+        require!(
+            memberships.len() == panel as usize,
+            AccordError::InvalidPanelSize
+        );
+
+        // Verify each membership proof + stake eligibility against the root.
+        let root = snap.merkle_root;
+        let mut drawn: Vec<Pubkey> = Vec::with_capacity(panel as usize);
+        for m in &memberships {
+            require!(
+                m.leaf.juror != Pubkey::default(),
+                AccordError::InvalidMembershipProof
+            );
+            require!(
+                m.leaf.stake >= sub.min_stake,
+                AccordError::InsufficientStake
+            );
+            require!(
+                verify_merkle_inclusion(&m.leaf, m.index, &m.proof, root),
+                AccordError::InvalidMembershipProof
+            );
+            drawn.push(m.leaf.juror);
+        }
+
+        // Distinctness: O(N²), N ≤ 31 — no hash map on-chain.
+        for i in 0..drawn.len() {
+            for j in (i + 1)..drawn.len() {
+                require!(drawn[i] != drawn[j], AccordError::DuplicateJuror);
+            }
+        }
+
+        // VRF consumption: deterministic seed binding this VRF result to the
+        // dispute + round. Emitted for off-chain audit; the sortition algorithm
+        // is verifiable by anyone with the snapshot leaves.
+        let vrf_seed = {
+            use anchor_lang::solana_program::hash::hashv;
+            hashv(&[
+                &vrf_result,
+                dispute.key().as_ref(),
+                &round_idx.to_le_bytes(),
+            ])
+            .to_bytes()
+        };
+
+        // Verify + mutate each drawn Juror's JurorStake (remaining_accounts).
+        require!(
+            ctx.remaining_accounts.len() == panel as usize,
+            AccordError::InvalidPanelSize
+        );
+        let dispute_key = dispute.key();
+        let sub_key = sub.key();
+        for (i, acct_info) in ctx.remaining_accounts.iter().enumerate() {
+            let expected_juror = drawn[i];
+            let expected_pda = Pubkey::find_program_address(
+                &[SEED_JUROR_STAKE, sub_key.as_ref(), expected_juror.as_ref()],
+                &crate::ID,
+            )
+            .0;
+            require!(
+                acct_info.key == &expected_pda,
+                AccordError::InvalidMembershipProof
+            );
+
+            // Deserialize to verify discriminator + juror field matches.
+            let current = {
+                let data = acct_info.try_borrow_data()?;
+                let js = JurorStake::try_deserialize(&mut &data[..])?;
+                require!(
+                    js.juror == expected_juror,
+                    AccordError::InvalidMembershipProof
+                );
+                js.active_draws
+            };
+
+            // Patch active_draws directly (avoids full re-serialize; BPF-safe).
+            // Layout: 8 (disc) + 32 (subaccord) + 32 (juror) + 8 (amount).
+            let new_val = current
+                .checked_add(1)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            let mut data = acct_info.try_borrow_mut_data()?;
+            const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8;
+            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                .copy_from_slice(&new_val.to_le_bytes());
+        }
+
+        // Record jurors in the Round (zero-copy: load_init writes discriminator).
+        let mut round = ctx.accounts.round.load_init()?;
+        round.dispute = dispute_key;
+        round.round_idx = round_idx;
+        for (i, juror) in drawn.iter().enumerate() {
+            round.jurors[i] = *juror;
+        }
+        round.juror_count = panel;
+        round.commit_count = 0;
+        round.reveal_count = 0;
+        round.result = u8::MAX; // sentinel: not set
+        round.reveals = [u8::MAX; MAX_JURORS]; // sentinel: not revealed
+        round.bump = ctx.bumps.round;
+
+        // Transition dispute → Drawn.
+        dispute.state = DisputeState::Drawn;
+
+        emit!(JurorsDrawn {
+            dispute: dispute_key,
+            round_idx,
+            jurors: drawn,
+            vrf_seed,
+        });
+        Ok(())
+    }
 }
 
 // --- Snapshot helpers (ADR-0003; veridao-rrxs) -------------------------------
@@ -696,6 +848,26 @@ fn max_appeal_panel_size(jurors_per_dispute: u32, max_appeals: u8) -> Result<u32
     .ok_or(AccordError::ArithmeticOverflow)?
     .checked_sub(1)
     .ok_or(AccordError::ArithmeticOverflow)?;
+    Ok(panel.min(MAX_JURORS as u32))
+}
+
+/// Required panel size for a given round index. The appeal ladder is
+/// `N_{k+1} = 2·N_k + 1` (closed form `(J+1)·2^k − 1`), so round 0 = J,
+/// round 1 = 2J+1, etc., capped at `MAX_JURORS` (31).
+fn panel_size_for_round(jurors_per_dispute: u32, round_idx: u32) -> Result<u32> {
+    if round_idx >= 31 {
+        return Err(AccordError::ArithmeticOverflow.into());
+    }
+    let factor = 1u32
+        .checked_shl(round_idx)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let panel = jurors_per_dispute
+        .checked_add(1)
+        .ok_or(AccordError::ArithmeticOverflow)?
+        .checked_mul(factor)
+        .ok_or(AccordError::ArithmeticOverflow)?
+        .checked_sub(1)
+        .ok_or(AccordError::ArithmeticOverflow)?;
     Ok(panel.min(MAX_JURORS as u32))
 }
 
@@ -1112,6 +1284,44 @@ pub struct FinalizeSnapshot<'info> {
     )]
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+}
+
+/// Account context for `draw` (ADR-0003; veridao-fr1x). Permissionless: any
+/// caller submits the VRF result + membership proofs. The `Round` PDA is
+/// `init`'d fresh (one draw per round) via `AccountLoader` (zero-copy — the
+/// `Round` struct is too large for BPF's stack under `Account<Round>`).
+/// Drawn `JurorStake` accounts are passed as `remaining_accounts` — the
+/// handler verifies each is the correct PDA for the claimed juror and
+/// increments `active_draws`.
+#[derive(Accounts)]
+pub struct Draw<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
+        bump = snapshot.bump,
+    )]
+    pub snapshot: Box<Account<'info, Snapshot>>,
+    #[account(
+        init,
+        payer = caller,
+        space = 8 + std::mem::size_of::<Round>(),
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+    pub system_program: Program<'info, System>,
 }
 
 /// Emitted by `health`. Carries the program version byte.

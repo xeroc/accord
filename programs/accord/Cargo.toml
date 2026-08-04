@@ -18,6 +18,9 @@ default = []
 [dependencies]
 anchor-lang.workspace = true
 anchor-spl.workspace = true
+# `#[zero_copy]` macro references `bytemuck` at the crate root; anchor-lang
+# re-exports the traits but the derive macro emits `::bytemuck::Pod`.
+bytemuck = "1"
 
 # LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
 #

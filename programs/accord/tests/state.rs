@@ -112,20 +112,23 @@ fn dispute_state_round_trips_and_progresses() {
 fn round_fits_max_jurors() {
     assert_eq!(MAX_JURORS, 31); // 3 -> 7 -> 15 -> 31 (3rd appeal)
     let r = Round {
-        dispute: Pubkey::new_unique(),
         round_idx: 0,
-        jurors: [Pubkey::default(); MAX_JURORS],
-        commits: [[0u8; 32]; MAX_JURORS],
-        reveals: [None; MAX_JURORS],
         juror_count: 3,
         commit_count: 0,
         reveal_count: 0,
-        result: None,
+        result: u8::MAX,
         bump: 251,
+        _pad0: [0; 2],
+        dispute: Pubkey::new_unique(),
+        jurors: [Pubkey::default(); MAX_JURORS],
+        commits: [[0u8; 32]; MAX_JURORS],
+        reveals: [u8::MAX; MAX_JURORS],
+        _pad1: [0; 1],
     };
-    let decoded = round_trip(&r);
-    assert_eq!(decoded.jurors.len(), MAX_JURORS);
-    assert_eq!(decoded.commits.len(), MAX_JURORS);
+    // zero-copy Round is Copy; verify field access works
+    assert_eq!(r.jurors.len(), MAX_JURORS);
+    assert_eq!(r.commits.len(), MAX_JURORS);
+    assert_eq!(r.result, u8::MAX);
 }
 
 #[test]
