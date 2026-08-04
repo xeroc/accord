@@ -84,6 +84,7 @@ fn dispute_state_round_trips_and_progresses() {
         current_round: 0,
         final_ruling: None,
         fee_paid: 3_000_000,
+        committed_vrf: None,
         bump: 252,
     };
     let decoded = round_trip(&d);
@@ -147,6 +148,7 @@ fn snapshot_round_trips() {
         status: SnapshotStatus::Posted,
         bump: 250,
         anchor_slot: 0,
+        total_stake: 0,
     };
     let decoded = round_trip(&s);
     assert_eq!(decoded.status, SnapshotStatus::Posted);

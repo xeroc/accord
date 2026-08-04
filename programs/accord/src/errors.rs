@@ -72,6 +72,18 @@ pub enum AccordError {
         "Drawn juror's live stake is below the snapshot leaf's claim (inflation guard, ADR-0008)."
     )]
     InflatedStake,
+    #[msg("Submitted membership does not match the VRF-derived sortition selection (ADR-0009).")]
+    SortitionMismatch,
+    #[msg("Snapshot tree is not sorted by juror pubkey (ADR-0009 predicate 5).")]
+    TreeNotSorted,
+    #[msg(
+        "Omission proof is invalid (non-adjacent leaves, wrong order, or witness stake changed since anchor)."
+    )]
+    OmissionProofInvalid,
+    #[msg("VRF result already committed for this dispute.")]
+    VrfAlreadyCommitted,
+    #[msg("No VRF result committed for this dispute; call commit_vrf first.")]
+    VrfNotCommitted,
 
     // --- voting ---
     #[msg("Juror has already committed.")]

@@ -89,6 +89,10 @@ pub struct Dispute {
     /// Total fee deposited by the filer (N * fee_per_juror at creation; appeals
     /// add to the round's pool). Drives the redistribution economics.
     pub fee_paid: u64,
+    /// VRF result committed once via `commit_vrf` (ADR-0009). `None` until
+    /// committed; `Some(vrf_result)` after. The draw reads this; the caller
+    /// cannot swap it between retries.
+    pub committed_vrf: Option<[u8; 32]>,
     pub bump: u8,
 }
 
@@ -156,6 +160,9 @@ pub struct Snapshot {
     /// equals the anchor-time amount — the witness for omission and wrong-stake
     /// fraud predicates.
     pub anchor_slot: u64,
+    /// MST root sum: the total stake committed to by the snapshot tree
+    /// (ADR-0009). Used for sortition: `r_i % total_stake` selects a juror.
+    pub total_stake: u64,
 }
 
 /// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per
@@ -258,69 +265,103 @@ pub enum UpdatePayload {
     EvidenceOperator(Pubkey),
 }
 
-// --- Draw (ADR-0003; veridao-fr1x) -------------------------------------------
+// --- Draw (ADR-0003/0009; veridao-fr1x/veridao-4nyi) ------------------------
 
-/// A drawn Juror's Merkle membership proof: the leaf claim, the sibling hashes
-/// rootward, and the leaf's position in the tree. The on-chain `draw` verifies
-/// each proof against the finalized snapshot root, checks stake eligibility,
-/// and enforces distinctness. The stake-weighted cumulative lookup is computed
-/// off-chain; the on-chain program trusts the finalized root (ADR-0003
-/// fraud-proof is the trust anchor).
+/// Merkle-Sum Tree proof element (ADR-0009). Each level of the proof carries
+/// the sibling's hash AND the sibling's stake sum, allowing the chain to verify
+/// both structural integrity (hash) and cumulative-range consistency (sum)
+/// along the root path.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MSTNode {
+    pub sibling_hash: [u8; 32],
+    pub sibling_sum: u64,
+}
+
+/// A drawn Juror's MST membership proof: the leaf claim (with cumulative stake),
+/// the sibling nodes rootward, and the leaf's position in the tree. The on-chain
+/// `draw` verifies each proof against the finalized snapshot root hash + total
+/// stake, checks the sortition criterion (`cum_before ≤ r_i < cum_after`),
+/// enforces the inflation guard (`JurorStake.amount ≥ leaf.stake`), and
+/// enforces distinctness.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct JurorMembership {
     pub leaf: LeafClaim,
-    pub proof: Vec<[u8; 32]>,
+    pub proof: Vec<MSTNode>,
     pub index: u32,
 }
 
 // --- Snapshot fraud proof (ADR-0003; veridao-rrxs) ---------------------------
 
-/// A single leaf claim from the posted Merkle tree: the Juror pubkey and the
-/// stake the leaf attributes to them. On-chain this is hashed
-/// `H(juror || stake_le)` to form the leaf node.
+/// A single leaf claim from the posted Merkle-Sum tree (ADR-0009). The leaf
+/// is hashed as `H(juror || stake_le || cum_after_le)`. `cum_after` is the
+/// running stake total up to and including this leaf (in pubkey-sorted order),
+/// enabling the on-chain sortition check: `cum_before ≤ r_i < cum_after` where
+/// `cum_before = cum_after - stake`.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LeafClaim {
     pub juror: Pubkey,
     pub stake: u64,
+    pub cum_after: u64,
 }
 
-/// Fraud proof for `challenge_snapshot` (ADR-0003 + ADR-0008). Tagged union
-/// covering the two on-chain-verifiable fraud classes:
+/// Fraud proof for `challenge_snapshot` (ADR-0003 + ADR-0008 + ADR-0009).
+/// Tagged union covering all five on-chain-verifiable fraud classes:
 ///
-/// - `Duplicate`: two leaves with the same juror pubkey. Time-independent — no
-///   comparison to live state. (ADR-0003 predicate 1.)
-/// - `WrongStake`: a leaf whose `stake` differs from the juror's actual
-///   anchor-time stake. Requires `JurorStake.last_change_slot < anchor_slot` as
-///   the witness (the live amount equals the anchor-time amount). The
-///   `JurorStake` is passed as `remaining_accounts[0]`. (ADR-0008 predicate 3.)
+/// - `Duplicate` (pred 1): two leaves with the same juror pubkey.
+/// - `WrongStake` (pred 3): a leaf whose `stake` differs from the juror's
+///   actual anchor-time stake. Requires `JurorStake.last_change_slot <
+///   anchor_slot` as the witness.
+/// - `NotSorted` (pred 5): two leaves at indices i < j where
+///   `leaf[i].juror > leaf[j].juror` — proves the tree is not sorted by pubkey,
+///   which breaks omission proofs. Forces sorted trees.
+/// - `Omission` (pred 2): two adjacent sorted leaves bracketing the challenger's
+///   pubkey + the challenger's JurorStake showing `last_change_slot <
+///   anchor_slot` and `amount > 0` — proves the snapshot omitted a staked juror.
 ///
-/// Inflation (leaf overstates stake) is also caught at `draw` time via
-/// `JurorStake.amount >= leaf.stake` (predicate 4), which is race-immune
-/// because it reads current live state regardless of `last_change_slot`.
-///
-/// Omission (predicate 2: a staked juror missing from the root) requires
-/// non-inclusion range proofs over sorted leaves — deferred to v1.1 alongside
-/// the Merkle-Sum Tree migration.
+/// Inflation (pred 4, leaf overstates stake) is enforced at `draw` time via
+/// `JurorStake.amount >= leaf.stake`, which is race-immune.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub enum FraudProof {
     /// Two leaves at different indices with the same juror pubkey, both
-    /// verifying against the snapshot root. The direct way to skew the
-    /// cumulative-stake distribution.
+    /// verifying against the snapshot root.
     Duplicate {
         leaf_a: LeafClaim,
-        proof_a: Vec<[u8; 32]>,
+        proof_a: Vec<MSTNode>,
         index_a: u32,
         leaf_b: LeafClaim,
-        proof_b: Vec<[u8; 32]>,
+        proof_b: Vec<MSTNode>,
         index_b: u32,
     },
     /// A leaf whose `stake` field doesn't match the juror's actual stake at
     /// the anchor slot. The challenger passes the juror's `JurorStake` as
-    /// `remaining_accounts[0]`; the chain verifies `last_change_slot <
-    /// anchor_slot` (witness condition) and `amount != leaf.stake` (fraud).
+    /// `remaining_accounts[0]`.
     WrongStake {
         leaf: LeafClaim,
-        proof: Vec<[u8; 32]>,
+        proof: Vec<MSTNode>,
         index: u32,
+    },
+    /// Two leaves at indices `index_lo < index_hi` where
+    /// `leaf_lo.juror > leaf_hi.juror` — proves the tree is not sorted by
+    /// pubkey ascending, which breaks omission proofs.
+    NotSorted {
+        leaf_lo: LeafClaim,
+        proof_lo: Vec<MSTNode>,
+        index_lo: u32,
+        leaf_hi: LeafClaim,
+        proof_hi: Vec<MSTNode>,
+        index_hi: u32,
+    },
+    /// Two adjacent leaves (consecutive indices) where
+    /// `leaf_lo.juror < challenger.key() < leaf_hi.juror` — proves the
+    /// challenger is not in the tree. Combined with the challenger's
+    /// `JurorStake` (`remaining_accounts[0]`) showing `last_change_slot <
+    /// anchor_slot` and `amount > 0`, proves the snapshot omitted a staked juror.
+    Omission {
+        leaf_lo: LeafClaim,
+        proof_lo: Vec<MSTNode>,
+        index_lo: u32,
+        leaf_hi: LeafClaim,
+        proof_hi: Vec<MSTNode>,
+        index_hi: u32,
     },
 }

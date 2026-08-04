@@ -20,7 +20,9 @@ use accord::constants::{
     DEFAULT_ALPHA_BPS, SEED_DISPUTE, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SNAPSHOT, SEED_SUBACCORD,
     SNAPSHOT_CHALLENGE_WINDOW_SECS,
 };
-use accord::state::{Dispute, DisputeState, FraudProof, LeafClaim, Snapshot, SnapshotStatus};
+use accord::state::{
+    Dispute, DisputeState, FraudProof, LeafClaim, MSTNode, Snapshot, SnapshotStatus,
+};
 use accord::{accounts, instruction, ID};
 use anchor_lang::AccountDeserialize;
 use anchor_litesvm::{AnchorLiteSVM, TestHelpers};
@@ -85,42 +87,55 @@ fn warp_timestamp(svm: &mut anchor_litesvm::AnchorContext, ts: i64) {
 
 type Kp = solana_sdk::signature::Keypair;
 
-// --- minimal Merkle tree (SHA-256 via hashv, matching the on-chain verifier) ---
+// --- minimal Merkle-Sum Tree (SHA-256 via hashv, matching the on-chain verifier) ---
 
-fn leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
-    hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
+type HashSum = ([u8; 32], u64);
+
+fn leaf_hash(juror: &Pubkey, stake: u64, cum_after: u64) -> [u8; 32] {
+    hashv(&[
+        juror.as_ref(),
+        &stake.to_le_bytes(),
+        &cum_after.to_le_bytes(),
+    ])
+    .to_bytes()
 }
-fn parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+fn mst_parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     hashv(&[left, right]).to_bytes()
 }
 
-/// Build a perfect binary Merkle tree (leaves padded to a power of two with
-/// zero hashes). Returns (levels, root); `levels[0]` = leaves.
-fn build_tree(mut leaves: Vec<[u8; 32]>) -> (Vec<Vec<[u8; 32]>>, [u8; 32]) {
+/// Build a Merkle-Sum Tree from LeafClaims. Returns (levels, root_hash, root_sum).
+fn build_mst(claims: &[LeafClaim]) -> (Vec<Vec<HashSum>>, [u8; 32], u64) {
+    let mut leaves: Vec<HashSum> = claims
+        .iter()
+        .map(|c| (leaf_hash(&c.juror, c.stake, c.cum_after), c.stake))
+        .collect();
     let mut size = 1;
     while size < leaves.len().max(1) {
         size *= 2;
     }
-    leaves.resize(size, [0u8; 32]);
+    leaves.resize(size, ([0u8; 32], 0));
     let mut levels = vec![leaves];
     while levels.last().unwrap().len() > 1 {
-        let next: Vec<[u8; 32]> = levels
+        let next: Vec<HashSum> = levels
             .last()
             .unwrap()
             .chunks(2)
-            .map(|p| parent(&p[0], &p[1]))
+            .map(|p| (mst_parent(&p[0].0, &p[1].0), p[0].1 + p[1].1))
             .collect();
         levels.push(next);
     }
     let root = levels.last().unwrap()[0];
-    (levels, root)
+    (levels, root.0, root.1)
 }
 
-/// Authentication path for the leaf at `idx` (sibling hashes, rootward).
-fn merkle_proof(levels: &[Vec<[u8; 32]>], mut idx: usize) -> Vec<[u8; 32]> {
+fn mst_proof(levels: &[Vec<HashSum>], mut idx: usize) -> Vec<MSTNode> {
     let mut siblings = Vec::new();
     for lvl in levels.iter().take(levels.len() - 1) {
-        siblings.push(lvl[idx ^ 1]);
+        let s = lvl[idx ^ 1];
+        siblings.push(MSTNode {
+            sibling_hash: s.0,
+            sibling_sum: s.1,
+        });
         idx >>= 1;
     }
     siblings
@@ -333,6 +348,7 @@ fn post_snapshot_ix(
     poster_ata: &Pubkey,
     vault: &Pubkey,
     merkle_root: [u8; 32],
+    total_stake: u64,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
         .accounts(accounts::PostSnapshot {
@@ -346,7 +362,10 @@ fn post_snapshot_ix(
             token_program: spl_token::id(),
             system_program: SYS,
         })
-        .args(instruction::PostSnapshot { merkle_root })
+        .args(instruction::PostSnapshot {
+            merkle_root,
+            total_stake,
+        })
         .instruction()
         .unwrap()
 }
@@ -416,12 +435,17 @@ fn dispute_state(svm: &anchor_litesvm::AnchorContext, dispute: &Pubkey) -> Dispu
 fn make_leaf(
     juror: Pubkey,
     stake: u64,
+    cum_after: u64,
     idx: u32,
-    levels: &[Vec<[u8; 32]>],
-) -> (LeafClaim, Vec<[u8; 32]>, u32) {
+    levels: &[Vec<HashSum>],
+) -> (LeafClaim, Vec<MSTNode>, u32) {
     (
-        LeafClaim { juror, stake },
-        merkle_proof(levels, idx as usize),
+        LeafClaim {
+            juror,
+            stake,
+            cum_after,
+        },
+        mst_proof(levels, idx as usize),
         idx,
     )
 }
@@ -432,6 +456,7 @@ fn post_snapshot_bonds_and_sets_deadline() {
     let snapshot = snapshot_pda(&fx.dispute, 0);
     let vault = vault_ata(&fx.subaccord, &fx.mint);
     let root = [42u8; 32];
+    let total = 1u64;
     let ts_before = now_ts(&fx.svm);
     let poster_before = token_amount(&fx.svm, &fx.poster_ata);
 
@@ -447,6 +472,7 @@ fn post_snapshot_bonds_and_sets_deadline() {
                 &fx.poster_ata,
                 &vault,
                 root,
+                total,
             ),
             &[&fx.poster],
         )
@@ -485,13 +511,29 @@ fn challenge_fraud_voids_and_pays_challenger() {
     let ja = Pubkey::new_unique();
     let jb = Pubkey::new_unique();
     let jc = Pubkey::new_unique();
-    let leaves = vec![
-        leaf_hash(&ja, 100),
-        leaf_hash(&jb, 200),
-        leaf_hash(&ja, 300), // duplicate of JA
-        leaf_hash(&jc, 400),
+    let claims = vec![
+        LeafClaim {
+            juror: ja,
+            stake: 100,
+            cum_after: 100,
+        },
+        LeafClaim {
+            juror: jb,
+            stake: 200,
+            cum_after: 300,
+        },
+        LeafClaim {
+            juror: ja,
+            stake: 300,
+            cum_after: 600,
+        }, // duplicate of JA
+        LeafClaim {
+            juror: jc,
+            stake: 400,
+            cum_after: 1000,
+        },
     ];
-    let (levels, root) = build_tree(leaves);
+    let (levels, root, total) = build_mst(&claims);
 
     fx.svm
         .execute_instruction(
@@ -505,6 +547,7 @@ fn challenge_fraud_voids_and_pays_challenger() {
                 &fx.poster_ata,
                 &vault,
                 root,
+                total,
             ),
             &[&fx.poster],
         )
@@ -512,8 +555,8 @@ fn challenge_fraud_voids_and_pays_challenger() {
         .assert_success();
 
     let challenger_before = token_amount(&fx.svm, &fx.challenger_ata);
-    let (la, pa, ia) = make_leaf(ja, 100, 0, &levels);
-    let (lb, pb, ib) = make_leaf(ja, 300, 2, &levels);
+    let (la, pa, ia) = make_leaf(ja, 100, 100, 0, &levels);
+    let (lb, pb, ib) = make_leaf(ja, 300, 600, 2, &levels);
     let proof = FraudProof::Duplicate {
         leaf_a: la,
         proof_a: pa,
@@ -566,13 +609,29 @@ fn challenge_false_pays_poster() {
     let j2 = Pubkey::new_unique();
     let j3 = Pubkey::new_unique();
     let j4 = Pubkey::new_unique();
-    let leaves = vec![
-        leaf_hash(&j1, 100),
-        leaf_hash(&j2, 200),
-        leaf_hash(&j3, 300),
-        leaf_hash(&j4, 400),
+    let claims = vec![
+        LeafClaim {
+            juror: j1,
+            stake: 100,
+            cum_after: 100,
+        },
+        LeafClaim {
+            juror: j2,
+            stake: 200,
+            cum_after: 300,
+        },
+        LeafClaim {
+            juror: j3,
+            stake: 300,
+            cum_after: 600,
+        },
+        LeafClaim {
+            juror: j4,
+            stake: 400,
+            cum_after: 1000,
+        },
     ];
-    let (levels, root) = build_tree(leaves);
+    let (levels, root, total) = build_mst(&claims);
 
     fx.svm
         .execute_instruction(
@@ -586,6 +645,7 @@ fn challenge_false_pays_poster() {
                 &fx.poster_ata,
                 &vault,
                 root,
+                total,
             ),
             &[&fx.poster],
         )
@@ -595,8 +655,8 @@ fn challenge_false_pays_poster() {
     let challenger_before = token_amount(&fx.svm, &fx.challenger_ata);
     let poster_before = token_amount(&fx.svm, &fx.poster_ata);
     // challenger presents two valid leaves with DISTINCT jurors -> not fraud
-    let (la, pa, ia) = make_leaf(j1, 100, 0, &levels);
-    let (lb, pb, ib) = make_leaf(j2, 200, 1, &levels);
+    let (la, pa, ia) = make_leaf(j1, 100, 100, 0, &levels);
+    let (lb, pb, ib) = make_leaf(j2, 200, 300, 1, &levels);
     let proof = FraudProof::Duplicate {
         leaf_a: la,
         proof_a: pa,
@@ -649,6 +709,7 @@ fn challenge_after_window_reverts() {
     let snapshot = snapshot_pda(&fx.dispute, 0);
     let vault = vault_ata(&fx.subaccord, &fx.mint);
     let root = [9u8; 32];
+    let total = 1u64;
 
     fx.svm
         .execute_instruction(
@@ -662,6 +723,7 @@ fn challenge_after_window_reverts() {
                 &fx.poster_ata,
                 &vault,
                 root,
+                total,
             ),
             &[&fx.poster],
         )
@@ -676,12 +738,14 @@ fn challenge_after_window_reverts() {
         leaf_a: LeafClaim {
             juror: Pubkey::new_unique(),
             stake: 1,
+            cum_after: 1,
         },
         proof_a: vec![],
         index_a: 0,
         leaf_b: LeafClaim {
             juror: Pubkey::new_unique(),
             stake: 2,
+            cum_after: 3,
         },
         proof_b: vec![],
         index_b: 1,
@@ -722,6 +786,7 @@ fn finalize_before_window_reverts() {
     let snapshot = snapshot_pda(&fx.dispute, 0);
     let vault = vault_ata(&fx.subaccord, &fx.mint);
     let root = [9u8; 32];
+    let total = 1u64;
 
     fx.svm
         .execute_instruction(
@@ -735,6 +800,7 @@ fn finalize_before_window_reverts() {
                 &fx.poster_ata,
                 &vault,
                 root,
+                total,
             ),
             &[&fx.poster],
         )
@@ -776,6 +842,7 @@ fn finalize_after_window_returns_bond() {
     let snapshot = snapshot_pda(&fx.dispute, 0);
     let vault = vault_ata(&fx.subaccord, &fx.mint);
     let root = [9u8; 32];
+    let total = 1u64;
 
     fx.svm
         .execute_instruction(
@@ -789,6 +856,7 @@ fn finalize_after_window_returns_bond() {
                 &fx.poster_ata,
                 &vault,
                 root,
+                total,
             ),
             &[&fx.poster],
         )

@@ -79,6 +79,14 @@ pub struct SnapshotFinalized {
     pub round_idx: u32,
 }
 
+/// Emitted when the VRF result is committed for a dispute (ADR-0009).
+/// `commit_vrf` is one-shot; `draw` reads the committed value immutably.
+#[event]
+pub struct VrfCommitted {
+    pub dispute: Pubkey,
+    pub vrf_result: [u8; 32],
+}
+
 /// Emitted after a draw selects the round's Jurors. `vrf_seed` is the
 /// deterministic hash binding the Switchboard VRF result to this specific
 /// dispute + round, providing an on-chain audit trail for the off-chain

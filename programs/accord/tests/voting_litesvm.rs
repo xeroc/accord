@@ -3,30 +3,14 @@
 //! tests (veridao-pq1s). LiteSVM exercises the commit-reveal voting cycle and
 //! the finalization economics (slash + redistribute + active_draws decrement).
 //!
-//! Coverage (safe-solana-builder matrix, instruction subset):
-//! - happy     : commit → reveal → finalize_round → finalize_dispute → Final
-//! - window    : commit before review_end                -> revert (CommitWindowClosed)
-//! - window    : reveal before commit_end                -> revert (RevealWindowClosed)
-//! - copy      : juror B copies juror A's commit hash    -> reveal revert (RevealMismatch)
-//! - double    : double-commit                            -> revert (CommitAlreadyExists)
-//! - mismatch  : wrong salt on reveal                    -> revert (RevealMismatch)
-//! - economics : 2 coherent + 1 incoherent → exact slash/redistribution
-//! - non-reveal: non-revealing juror treated as incoherent
-//! - crank     : finalize_round before reveal_end        -> revert (RoundNotFinalizable)
-//! - crank     : finalize_dispute before appeal window   -> revert (AppealWindowOpen)
-//! - draws     : active_draws decremented to 0 for all jurors
-//! - ruling    : get_ruling returns None before Final, Some(ruling) after
-//!
 //! Run via `make test_unit`.
-
-#![cfg(feature = "no-entrypoint")]
 
 use accord::constants::{
     APPEAL_WINDOW_SECS, DEFAULT_ALPHA_BPS, SEED_DISPUTE, SEED_JUROR_STAKE, SEED_PAUSE, SEED_ROUND,
     SEED_SNAPSHOT, SEED_SUBACCORD,
 };
 use accord::state::{
-    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, Round, Snapshot,
+    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, MSTNode, Round, Snapshot,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::AccountDeserialize;
@@ -46,6 +30,7 @@ const EXPECTED_BOND: u64 = 31 * FEE_PER_JUROR;
 const REVIEW_WINDOW: u64 = 7 * 24 * 3600;
 const COMMIT_WINDOW: u64 = 2 * 24 * 3600;
 const REVEAL_WINDOW: u64 = 2 * 24 * 3600;
+const COMMITTED_VRF: [u8; 32] = [42u8; 32];
 
 fn load_program() -> Vec<u8> {
     let so = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/accord.so");
@@ -99,48 +84,112 @@ fn warp_timestamp(svm: &mut anchor_litesvm::AnchorContext, ts: i64) {
     clock.unix_timestamp = ts;
     svm.svm.set_sysvar::<Clock>(&clock);
 }
-fn warp_slot(svm: &mut anchor_litesvm::AnchorContext, slot: u64) {
-    let mut clock = svm.svm.get_sysvar::<Clock>();
-    clock.slot = slot;
-    svm.svm.set_sysvar::<Clock>(&clock);
-}
 
 type Kp = solana_sdk::signature::Keypair;
+type HashSum = ([u8; 32], u64);
 
-// --- minimal Merkle tree (SHA-256 via hashv, matching the on-chain verifier) ---
+// --- Merkle-Sum Tree helpers ---
 
-fn leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
-    hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
+fn leaf_hash(juror: &Pubkey, stake: u64, cum_after: u64) -> [u8; 32] {
+    hashv(&[
+        juror.as_ref(),
+        &stake.to_le_bytes(),
+        &cum_after.to_le_bytes(),
+    ])
+    .to_bytes()
 }
-fn parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+fn mst_parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     hashv(&[left, right]).to_bytes()
 }
-fn build_tree(mut leaves: Vec<[u8; 32]>) -> (Vec<Vec<[u8; 32]>>, [u8; 32]) {
+fn build_mst(claims: &[LeafClaim]) -> (Vec<Vec<HashSum>>, [u8; 32], u64) {
+    let mut leaves: Vec<HashSum> = claims
+        .iter()
+        .map(|c| (leaf_hash(&c.juror, c.stake, c.cum_after), c.stake))
+        .collect();
     let mut size = 1;
     while size < leaves.len().max(1) {
         size *= 2;
     }
-    leaves.resize(size, [0u8; 32]);
+    leaves.resize(size, ([0u8; 32], 0));
     let mut levels = vec![leaves];
     while levels.last().unwrap().len() > 1 {
-        let next: Vec<[u8; 32]> = levels
+        let next: Vec<HashSum> = levels
             .last()
             .unwrap()
             .chunks(2)
-            .map(|p| parent(&p[0], &p[1]))
+            .map(|p| (mst_parent(&p[0].0, &p[1].0), p[0].1 + p[1].1))
             .collect();
         levels.push(next);
     }
     let root = levels.last().unwrap()[0];
-    (levels, root)
+    (levels, root.0, root.1)
 }
-fn merkle_proof(levels: &[Vec<[u8; 32]>], mut idx: usize) -> Vec<[u8; 32]> {
+fn mst_proof(levels: &[Vec<HashSum>], mut idx: usize) -> Vec<MSTNode> {
     let mut siblings = Vec::new();
     for lvl in levels.iter().take(levels.len() - 1) {
-        siblings.push(lvl[idx ^ 1]);
+        let s = lvl[idx ^ 1];
+        siblings.push(MSTNode {
+            sibling_hash: s.0,
+            sibling_sum: s.1,
+        });
         idx >>= 1;
     }
     siblings
+}
+
+// --- Sortition helpers ---
+
+fn vrf_seed(
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    draw_attempt: u32,
+) -> [u8; 32] {
+    hashv(&[
+        committed_vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &draw_attempt.to_le_bytes(),
+    ])
+    .to_bytes()
+}
+fn sortition_pick(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    seed: &[u8; 32],
+    panel: usize,
+) -> Vec<usize> {
+    (0..panel)
+        .map(|i| {
+            let r_hash = hashv(&[seed, &(i as u32).to_le_bytes()]).to_bytes();
+            let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8])) % total_stake;
+            claims
+                .iter()
+                .position(|c| {
+                    let cum_before = c.cum_after.saturating_sub(c.stake);
+                    cum_before <= r_i && r_i < c.cum_after
+                })
+                .unwrap()
+        })
+        .collect()
+}
+fn find_distinct_attempt(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    panel: usize,
+) -> (u32, Vec<usize>) {
+    for attempt in 0..10_000u32 {
+        let seed = vrf_seed(committed_vrf, dispute, round_idx, attempt);
+        let picks = sortition_pick(claims, total_stake, &seed, panel);
+        let unique: std::collections::HashSet<usize> = picks.iter().copied().collect();
+        if unique.len() == panel {
+            return (attempt, picks);
+        }
+    }
+    panic!("no distinct draw_attempt found in 10k tries");
 }
 
 /// Commit hash format: `H(vote_le || salt || juror_pubkey)`.
@@ -158,7 +207,11 @@ struct Fixture {
     snapshot: Pubkey,
     round: Pubkey,
     jurors: Vec<(Kp, u64, Pubkey)>,
-    levels: Vec<Vec<[u8; 32]>>,
+    sorted_claims: Vec<LeafClaim>,
+    sorted_to_orig: Vec<usize>,
+    /// The juror keypair + PDA for each drawn slot, in draw order.
+    drawn: Vec<(Kp, Pubkey)>,
+    levels: Vec<Vec<HashSum>>,
     root: [u8; 32],
 }
 
@@ -208,11 +261,22 @@ fn setup() -> Fixture {
     create_dispute(&mut svm, &filer, &subaccord, &mint, &filer_ata, 1);
     let dispute = dispute_pda(&filer.pubkey(), 1);
 
-    let leaves: Vec<[u8; 32]> = jurors
+    // Sort jurors by pubkey and build MST.
+    let mut order: Vec<usize> = (0..jurors.len()).collect();
+    order.sort_by_key(|&i| jurors[i].0.pubkey());
+    let mut cum = 0u64;
+    let sorted_claims: Vec<LeafClaim> = order
         .iter()
-        .map(|(kp, stake, _)| leaf_hash(&kp.pubkey(), *stake))
+        .map(|&i| {
+            cum += jurors[i].1;
+            LeafClaim {
+                juror: jurors[i].0.pubkey(),
+                stake: jurors[i].1,
+                cum_after: cum,
+            }
+        })
         .collect();
-    let (levels, root) = build_tree(leaves);
+    let (levels, root, total_stake) = build_mst(&sorted_claims);
 
     let snapshot = snapshot_pda(&dispute, 0);
     let vault = vault_ata(&subaccord, &mint);
@@ -233,6 +297,7 @@ fn setup() -> Fixture {
         &poster_ata,
         &vault,
         root,
+        total_stake,
     );
 
     let snap = {
@@ -251,25 +316,52 @@ fn setup() -> Fixture {
         &vault,
     );
 
-    // Draw
-    let memberships = vec![
-        membership(&jurors, &levels, 0),
-        membership(&jurors, &levels, 1),
-        membership(&jurors, &levels, 2),
-    ];
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| jurors[i].2).collect();
+    commit_vrf(
+        &mut svm,
+        &caller,
+        &subaccord,
+        &dispute,
+        &snapshot,
+        COMMITTED_VRF,
+    );
+
+    // Find a draw_attempt that selects 3 distinct jurors.
+    let (attempt, picks) = find_distinct_attempt(
+        &sorted_claims,
+        total_stake,
+        &COMMITTED_VRF,
+        &dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let memberships: Vec<JurorMembership> = picks
+        .iter()
+        .map(|&si| JurorMembership {
+            leaf: sorted_claims[si],
+            proof: mst_proof(&levels, si),
+            index: si as u32,
+        })
+        .collect();
+    let pda_list: Vec<Pubkey> = picks.iter().map(|&si| jurors[order[si]].2).collect();
     draw(
         &mut svm,
         &caller,
         &subaccord,
         &dispute,
         &snapshot,
-        [42u8; 32],
+        attempt,
         memberships,
         &pda_list,
     );
 
     let round = round_pda(&dispute, 0);
+    let drawn: Vec<(Kp, Pubkey)> = picks
+        .iter()
+        .map(|&si| {
+            let orig = order[si];
+            (jurors[orig].0.insecure_clone(), jurors[orig].2)
+        })
+        .collect();
 
     Fixture {
         svm,
@@ -281,6 +373,9 @@ fn setup() -> Fixture {
         snapshot,
         round,
         jurors,
+        sorted_claims,
+        sorted_to_orig: order,
+        drawn,
         levels,
         root,
     }
@@ -418,6 +513,7 @@ fn post_snapshot(
     poster_ata: &Pubkey,
     vault: &Pubkey,
     root: [u8; 32],
+    total_stake: u64,
 ) {
     let ix = svm
         .program()
@@ -432,7 +528,10 @@ fn post_snapshot(
             token_program: spl_token::id(),
             system_program: SYS,
         })
-        .args(instruction::PostSnapshot { merkle_root: root })
+        .args(instruction::PostSnapshot {
+            merkle_root: root,
+            total_stake,
+        })
         .instruction()
         .unwrap();
     svm.execute_instruction(ix, &[poster])
@@ -470,29 +569,38 @@ fn finalize_snapshot(
         .assert_success();
 }
 
-fn membership(
-    jurors: &[(Kp, u64, Pubkey)],
-    levels: &[Vec<[u8; 32]>],
-    idx: usize,
-) -> JurorMembership {
-    let (kp, stake, _) = &jurors[idx];
-    JurorMembership {
-        leaf: LeafClaim {
-            juror: kp.pubkey(),
-            stake: *stake,
-        },
-        proof: merkle_proof(levels, idx),
-        index: idx as u32,
-    }
+fn commit_vrf(
+    svm: &mut anchor_litesvm::AnchorContext,
+    caller: &Kp,
+    subaccord: &Pubkey,
+    dispute: &Pubkey,
+    snapshot: &Pubkey,
+    vrf_result: [u8; 32],
+) {
+    let ix = svm
+        .program()
+        .accounts(accounts::CommitVrf {
+            caller: caller.pubkey(),
+            subaccord: *subaccord,
+            dispute: *dispute,
+            snapshot: *snapshot,
+        })
+        .args(instruction::CommitVrf { vrf_result })
+        .instruction()
+        .unwrap();
+    svm.execute_instruction(ix, &[caller])
+        .unwrap()
+        .assert_success();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw(
     svm: &mut anchor_litesvm::AnchorContext,
     caller: &Kp,
     subaccord: &Pubkey,
     dispute: &Pubkey,
     snapshot: &Pubkey,
-    vrf: [u8; 32],
+    draw_attempt: u32,
     memberships: Vec<JurorMembership>,
     juror_stake_pdas: &[Pubkey],
 ) {
@@ -519,7 +627,7 @@ fn draw(
             system_program: SYS,
         })
         .args(instruction::Draw {
-            vrf_result: vrf,
+            draw_attempt,
             memberships,
         })
         .instruction()
@@ -688,18 +796,15 @@ fn do_get_ruling(
 fn happy_commit_reveal_finalize() {
     let mut fx = setup();
 
-    // All jurors commit vote 0 with unique salts.
     let salts: Vec<[u8; 32]> = (0..3).map(|i| [10 + i as u8; 32]).collect();
-    let now = fx.svm.svm.get_sysvar::<Clock>().unix_timestamp;
-    // Warp to review_end (commit opens).
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
 
     for i in 0..3 {
-        let h = commit_hash(0, &salts[i], &fx.jurors[i].0.pubkey());
+        let h = commit_hash(0, &salts[i], &fx.drawn[i].0.pubkey());
         do_commit(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -715,13 +820,12 @@ fn happy_commit_reveal_finalize() {
     let r = read_round(&fx.svm, &fx.round);
     assert_eq!(r.commit_count, 3);
 
-    // Warp to commit_end (reveal opens).
     warp_timestamp(&mut fx.svm, r.commit_end);
 
     for i in 0..3 {
         do_reveal(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -738,7 +842,6 @@ fn happy_commit_reveal_finalize() {
     let r = read_round(&fx.svm, &fx.round);
     assert_eq!(r.reveal_count, 3);
 
-    // Warp past reveal_end → finalize_round.
     warp_timestamp(&mut fx.svm, r.reveal_end);
     do_finalize_round(
         &mut fx.svm,
@@ -755,9 +858,8 @@ fn happy_commit_reveal_finalize() {
     let r = read_round(&fx.svm, &fx.round);
     assert_eq!(r.result, 0, "plurality winner is option 0");
 
-    // Warp past appeal window → finalize_dispute.
     warp_timestamp(&mut fx.svm, r.reveal_end + APPEAL_WINDOW_SECS);
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = fx.drawn.iter().map(|(_, pda)| *pda).collect();
     do_finalize_dispute(
         &mut fx.svm,
         &fx.caller,
@@ -772,12 +874,11 @@ fn happy_commit_reveal_finalize() {
     let d = read_dispute(&fx.svm, &fx.dispute);
     assert_eq!(d.final_ruling, Some(0));
 
-    // active_draws decremented to 0 for all jurors.
-    for i in 0..3 {
+    for (_, pda) in &fx.drawn {
         assert_eq!(
-            read_juror_stake(&fx.svm, &fx.jurors[i].2).active_draws,
+            read_juror_stake(&fx.svm, pda).active_draws,
             0,
-            "juror {i} active_draws decremented"
+            "drawn juror active_draws decremented"
         );
     }
 }
@@ -786,16 +887,14 @@ fn happy_commit_reveal_finalize() {
 fn commit_before_review_window_reverts() {
     let mut fx = setup();
 
-    // Immediately after draw — before review_end.
     let r = read_round(&fx.svm, &fx.round);
-    // Warp to just before review_end.
     warp_timestamp(&mut fx.svm, r.review_end - 1);
 
     let salt = [99u8; 32];
-    let h = commit_hash(0, &salt, &fx.jurors[0].0.pubkey());
+    let h = commit_hash(0, &salt, &fx.drawn[0].0.pubkey());
     let err = do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -812,14 +911,13 @@ fn commit_before_review_window_reverts() {
 fn reveal_before_commit_window_reverts() {
     let mut fx = setup();
 
-    // Commit first (warp to review_end).
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
     let salt = [88u8; 32];
-    let h = commit_hash(0, &salt, &fx.jurors[0].0.pubkey());
+    let h = commit_hash(0, &salt, &fx.drawn[0].0.pubkey());
     do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -827,10 +925,9 @@ fn reveal_before_commit_window_reverts() {
     )
     .unwrap();
 
-    // Try to reveal immediately (before commit_end).
     let err = do_reveal(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -851,12 +948,11 @@ fn commit_copying_prevented() {
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
 
-    // Juror 0 commits hash(vote=0, salt, juror0_pubkey).
     let salt = [77u8; 32];
-    let h0 = commit_hash(0, &salt, &fx.jurors[0].0.pubkey());
+    let h0 = commit_hash(0, &salt, &fx.drawn[0].0.pubkey());
     do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -864,10 +960,9 @@ fn commit_copying_prevented() {
     )
     .unwrap();
 
-    // Juror 1 COPIES juror 0's hash (commit succeeds — we store any 32 bytes).
     do_commit(
         &mut fx.svm,
-        &fx.jurors[1].0,
+        &fx.drawn[1].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -875,15 +970,12 @@ fn commit_copying_prevented() {
     )
     .unwrap();
 
-    // Warp to reveal window.
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.commit_end);
 
-    // Juror 1 tries to reveal with juror 0's (vote, salt) → RevealMismatch
-    // because hash(0, salt, juror1) != hash(0, salt, juror0) = h0.
     let err = do_reveal(
         &mut fx.svm,
-        &fx.jurors[1].0,
+        &fx.drawn[1].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -905,10 +997,10 @@ fn double_commit_reverts() {
     warp_timestamp(&mut fx.svm, r.review_end);
 
     let salt = [55u8; 32];
-    let h = commit_hash(0, &salt, &fx.jurors[0].0.pubkey());
+    let h = commit_hash(0, &salt, &fx.drawn[0].0.pubkey());
     do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -916,11 +1008,10 @@ fn double_commit_reverts() {
     )
     .unwrap();
 
-    // Second commit with a different hash → revert.
-    let h2 = commit_hash(1, &[44u8; 32], &fx.jurors[0].0.pubkey());
+    let h2 = commit_hash(1, &[44u8; 32], &fx.drawn[0].0.pubkey());
     let err = do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -941,10 +1032,10 @@ fn reveal_wrong_salt_reverts() {
     warp_timestamp(&mut fx.svm, r.review_end);
 
     let salt = [33u8; 32];
-    let h = commit_hash(0, &salt, &fx.jurors[0].0.pubkey());
+    let h = commit_hash(0, &salt, &fx.drawn[0].0.pubkey());
     do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -955,10 +1046,9 @@ fn reveal_wrong_salt_reverts() {
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.commit_end);
 
-    // Reveal with wrong salt → RevealMismatch.
     let err = do_reveal(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -976,17 +1066,15 @@ fn reveal_wrong_salt_reverts() {
 fn economics_two_coherent_one_incoherent() {
     let mut fx = setup();
 
-    // Commit: jurors 0,1 vote option 0; juror 2 votes option 1.
     let salts: Vec<[u8; 32]> = vec![[10u8; 32], [20u8; 32], [30u8; 32]];
-
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
 
     for (i, vote) in [0u8, 0, 1].iter().enumerate() {
-        let h = commit_hash(*vote, &salts[i], &fx.jurors[i].0.pubkey());
+        let h = commit_hash(*vote, &salts[i], &fx.drawn[i].0.pubkey());
         do_commit(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1001,7 +1089,7 @@ fn economics_two_coherent_one_incoherent() {
     for (i, vote) in [0u8, 0, 1].iter().enumerate() {
         do_reveal(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1026,7 +1114,7 @@ fn economics_two_coherent_one_incoherent() {
     assert_eq!(r.result, 0, "plurality winner is option 0");
     warp_timestamp(&mut fx.svm, r.reveal_end + APPEAL_WINDOW_SECS);
 
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = fx.drawn.iter().map(|(_, pda)| *pda).collect();
     do_finalize_dispute(
         &mut fx.svm,
         &fx.caller,
@@ -1037,13 +1125,6 @@ fn economics_two_coherent_one_incoherent() {
     )
     .unwrap();
 
-    // Economics:
-    // slash_per_juror = alpha_bps * min_stake / 10_000 = 1000 * 1000 / 10000 = 100
-    // slash_total = 1 * 100 = 100 (juror 2 is incoherent)
-    // round_fee = 3 * 1_000_000 = 3_000_000
-    // pool = 100 + 3_000_000 = 3_000_100
-    // share = 3_000_100 / 2 = 1_500_050
-    // coherent: amount += 1_500_050; incoherent: amount -= 100
     let slash_per_juror = (DEFAULT_ALPHA_BPS as u64) * MIN_STAKE / 10_000;
     assert_eq!(slash_per_juror, 100);
 
@@ -1054,7 +1135,7 @@ fn economics_two_coherent_one_incoherent() {
 
     // Coherent jurors 0, 1
     for i in 0..2 {
-        let js = read_juror_stake(&fx.svm, &fx.jurors[i].2);
+        let js = read_juror_stake(&fx.svm, &fx.drawn[i].1);
         assert_eq!(
             js.amount,
             STAKE_AMOUNT + share,
@@ -1064,7 +1145,7 @@ fn economics_two_coherent_one_incoherent() {
     }
 
     // Incoherent juror 2
-    let js = read_juror_stake(&fx.svm, &fx.jurors[2].2);
+    let js = read_juror_stake(&fx.svm, &fx.drawn[2].1);
     assert_eq!(
         js.amount,
         STAKE_AMOUNT - slash_per_juror,
@@ -1077,18 +1158,16 @@ fn economics_two_coherent_one_incoherent() {
 fn non_revealer_treated_as_incoherent() {
     let mut fx = setup();
 
-    // Jurors 0, 1 commit+reveal option 0. Juror 2 commits but never reveals.
     let salts: Vec<[u8; 32]> = vec![[10u8; 32], [20u8; 32], [30u8; 32]];
-
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
 
     for i in 0..3 {
         let vote = if i < 2 { 0u8 } else { 1u8 };
-        let h = commit_hash(vote, &salts[i], &fx.jurors[i].0.pubkey());
+        let h = commit_hash(vote, &salts[i], &fx.drawn[i].0.pubkey());
         do_commit(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1100,11 +1179,10 @@ fn non_revealer_treated_as_incoherent() {
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.commit_end);
 
-    // Only jurors 0, 1 reveal.
     for i in 0..2 {
         do_reveal(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1128,7 +1206,7 @@ fn non_revealer_treated_as_incoherent() {
 
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.reveal_end + APPEAL_WINDOW_SECS);
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = fx.drawn.iter().map(|(_, pda)| *pda).collect();
     do_finalize_dispute(
         &mut fx.svm,
         &fx.caller,
@@ -1144,14 +1222,12 @@ fn non_revealer_treated_as_incoherent() {
     let pool = slash_per_juror + round_fee;
     let share = pool / 2;
 
-    // Coherent jurors 0, 1
     for i in 0..2 {
-        let js = read_juror_stake(&fx.svm, &fx.jurors[i].2);
+        let js = read_juror_stake(&fx.svm, &fx.drawn[i].1);
         assert_eq!(js.amount, STAKE_AMOUNT + share, "coherent juror {i}");
     }
 
-    // Non-revealing juror 2: slashed same as incoherent.
-    let js = read_juror_stake(&fx.svm, &fx.jurors[2].2);
+    let js = read_juror_stake(&fx.svm, &fx.drawn[2].1);
     assert_eq!(
         js.amount,
         STAKE_AMOUNT - slash_per_juror,
@@ -1165,7 +1241,6 @@ fn finalize_round_before_reveal_end_reverts() {
     let mut fx = setup();
 
     let r = read_round(&fx.svm, &fx.round);
-    // Warp to just before reveal_end.
     warp_timestamp(&mut fx.svm, r.reveal_end - 1);
 
     let err = do_finalize_round(
@@ -1186,15 +1261,14 @@ fn finalize_round_before_reveal_end_reverts() {
 fn finalize_dispute_before_appeal_window_reverts() {
     let mut fx = setup();
 
-    // Commit + reveal (all vote 0).
     let salts: Vec<[u8; 32]> = vec![[10u8; 32], [20u8; 32], [30u8; 32]];
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
     for i in 0..3 {
-        let h = commit_hash(0, &salts[i], &fx.jurors[i].0.pubkey());
+        let h = commit_hash(0, &salts[i], &fx.drawn[i].0.pubkey());
         do_commit(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1207,7 +1281,7 @@ fn finalize_dispute_before_appeal_window_reverts() {
     for i in 0..3 {
         do_reveal(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1227,11 +1301,10 @@ fn finalize_dispute_before_appeal_window_reverts() {
     )
     .unwrap();
 
-    // Warp to just before appeal deadline.
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.reveal_end + APPEAL_WINDOW_SECS - 1);
 
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = fx.drawn.iter().map(|(_, pda)| *pda).collect();
     let err = do_finalize_dispute(
         &mut fx.svm,
         &fx.caller,
@@ -1251,8 +1324,6 @@ fn finalize_dispute_before_appeal_window_reverts() {
 fn get_ruling_returns_none_before_final() {
     let mut fx = setup();
 
-    // Before finalize → get_ruling succeeds but returns None (encoded as return data).
-    // We just verify the instruction doesn't revert and the dispute has final_ruling=None.
     do_get_ruling(&mut fx.svm, &fx.caller, &fx.dispute).unwrap();
     let d = read_dispute(&fx.svm, &fx.dispute);
     assert_eq!(d.final_ruling, None);
@@ -1262,15 +1333,14 @@ fn get_ruling_returns_none_before_final() {
 fn get_ruling_returns_some_after_final() {
     let mut fx = setup();
 
-    // Full cycle → Final.
     let salts: Vec<[u8; 32]> = vec![[10u8; 32], [20u8; 32], [30u8; 32]];
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
     for i in 0..3 {
-        let h = commit_hash(0, &salts[i], &fx.jurors[i].0.pubkey());
+        let h = commit_hash(0, &salts[i], &fx.drawn[i].0.pubkey());
         do_commit(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1283,7 +1353,7 @@ fn get_ruling_returns_some_after_final() {
     for i in 0..3 {
         do_reveal(
             &mut fx.svm,
-            &fx.jurors[i].0,
+            &fx.drawn[i].0,
             &fx.subaccord,
             &fx.dispute,
             &fx.round,
@@ -1304,7 +1374,7 @@ fn get_ruling_returns_some_after_final() {
     .unwrap();
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.reveal_end + APPEAL_WINDOW_SECS);
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = fx.drawn.iter().map(|(_, pda)| *pda).collect();
     do_finalize_dispute(
         &mut fx.svm,
         &fx.caller,
@@ -1327,7 +1397,6 @@ fn not_drawn_juror_commit_reverts() {
     let r = read_round(&fx.svm, &fx.round);
     warp_timestamp(&mut fx.svm, r.review_end);
 
-    // Create a random keypair that was NOT drawn.
     let outsider = fx.svm.svm.create_funded_account(1_000_000_000).unwrap();
     let salt = [66u8; 32];
     let h = commit_hash(0, &salt, &outsider.pubkey());
@@ -1351,14 +1420,10 @@ fn invalid_vote_index_reverts() {
     warp_timestamp(&mut fx.svm, r.review_end);
 
     let salt = [11u8; 32];
-    // Commit with vote=0 (valid), but try to reveal with vote=5 (out of range).
-    // The commit stores hash(0, salt, juror), but reveal is called with vote=5.
-    // This will fail on BOTH checks: InvalidVote (5 >= num_options=2) and
-    // RevealMismatch. InvalidVote is checked first.
-    let h = commit_hash(0, &salt, &fx.jurors[0].0.pubkey());
+    let h = commit_hash(0, &salt, &fx.drawn[0].0.pubkey());
     do_commit(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,
@@ -1371,7 +1436,7 @@ fn invalid_vote_index_reverts() {
 
     let err = do_reveal(
         &mut fx.svm,
-        &fx.jurors[0].0,
+        &fx.drawn[0].0,
         &fx.subaccord,
         &fx.dispute,
         &fx.round,

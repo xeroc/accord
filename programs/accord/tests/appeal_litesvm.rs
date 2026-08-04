@@ -4,27 +4,15 @@
 //! exponential cost, bond custody) and the final bond routing (forfeit on
 //! no-flip → coherent pool; return on flip via `claim_appeal_refund`).
 //!
-//! Coverage (safe-solana-builder matrix):
-//! - happy     : round 0 resolved → appeal → round 1 opened at 2N+1 (7 jurors)
-//! - sizing    : panel grows 3 → 7 (exponential cost: fee + bond == 2·7·fee)
-//! - custody   : fee + bond move appellant ATA → vault; appeal_bond recorded
-//! - state     : appeal before RoundResolved         -> revert (InvalidState)
-//! - window    : appeal after the appeal window      -> revert (AppealWindowClosed)
-//! - jurors    : staker_count < new panel            -> revert (InsufficientJurors)
-//! - cap       : max_appeals=0                       -> revert (MaxAppealsReached)
-//! - cap       : max_appeals boundary honoured
-//! - flip      : round 1 differs from round 0 → bond returned to appellant
-//! - no-flip   : round 1 == round 0 → bond forfeited into coherent pool
-//!
 //! Run via `make test_unit`.
-
-#![cfg(feature = "no-entrypoint")]
 
 use accord::constants::{
     APPEAL_WINDOW_SECS, DEFAULT_ALPHA_BPS, SEED_APPEAL_BOND, SEED_DISPUTE, SEED_JUROR_STAKE,
     SEED_PAUSE, SEED_ROUND, SEED_SNAPSHOT, SEED_SUBACCORD,
 };
-use accord::state::{Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, Round};
+use accord::state::{
+    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, MSTNode, Round,
+};
 use accord::{accounts, instruction, ID};
 use anchor_lang::AccountDeserialize;
 use anchor_litesvm::{AnchorLiteSVM, TestHelpers};
@@ -38,10 +26,11 @@ const JURORS_PER_DISPUTE: u32 = 3;
 const FEE_PER_JUROR: u64 = 1_000_000;
 const MIN_STAKE: u64 = 1_000;
 const STAKE_AMOUNT: u64 = 5_000;
-const N_JURORS: usize = 7; // enough to fill the round-1 panel (2N+1 = 7)
+const N_JURORS: usize = 7;
 const REVIEW_WINDOW: u64 = 7 * 24 * 3600;
 const COMMIT_WINDOW: u64 = 2 * 24 * 3600;
 const REVEAL_WINDOW: u64 = 2 * 24 * 3600;
+const COMMITTED_VRF: [u8; 32] = [42u8; 32];
 
 fn load_program() -> Vec<u8> {
     let so = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/accord.so");
@@ -109,63 +98,116 @@ fn warp_timestamp(svm: &mut anchor_litesvm::AnchorContext, ts: i64) {
 }
 
 type Kp = solana_sdk::signature::Keypair;
+type HashSum = ([u8; 32], u64);
 
-// --- minimal Merkle tree (SHA-256 via hashv, matching the on-chain verifier) ---
+// --- Merkle-Sum Tree helpers ---
 
-fn leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
-    hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
+fn leaf_hash(juror: &Pubkey, stake: u64, cum_after: u64) -> [u8; 32] {
+    hashv(&[
+        juror.as_ref(),
+        &stake.to_le_bytes(),
+        &cum_after.to_le_bytes(),
+    ])
+    .to_bytes()
 }
-fn parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+fn mst_parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     hashv(&[left, right]).to_bytes()
 }
-fn build_tree(mut leaves: Vec<[u8; 32]>) -> (Vec<Vec<[u8; 32]>>, [u8; 32]) {
+fn build_mst(claims: &[LeafClaim]) -> (Vec<Vec<HashSum>>, [u8; 32], u64) {
+    let mut leaves: Vec<HashSum> = claims
+        .iter()
+        .map(|c| (leaf_hash(&c.juror, c.stake, c.cum_after), c.stake))
+        .collect();
     let mut size = 1;
     while size < leaves.len().max(1) {
         size *= 2;
     }
-    leaves.resize(size, [0u8; 32]);
+    leaves.resize(size, ([0u8; 32], 0));
     let mut levels = vec![leaves];
     while levels.last().unwrap().len() > 1 {
-        let next: Vec<[u8; 32]> = levels
+        let next: Vec<HashSum> = levels
             .last()
             .unwrap()
             .chunks(2)
-            .map(|p| parent(&p[0], &p[1]))
+            .map(|p| (mst_parent(&p[0].0, &p[1].0), p[0].1 + p[1].1))
             .collect();
         levels.push(next);
     }
     let root = levels.last().unwrap()[0];
-    (levels, root)
+    (levels, root.0, root.1)
 }
-fn merkle_proof(levels: &[Vec<[u8; 32]>], mut idx: usize) -> Vec<[u8; 32]> {
+fn mst_proof(levels: &[Vec<HashSum>], mut idx: usize) -> Vec<MSTNode> {
     let mut siblings = Vec::new();
     for lvl in levels.iter().take(levels.len() - 1) {
-        siblings.push(lvl[idx ^ 1]);
+        let s = lvl[idx ^ 1];
+        siblings.push(MSTNode {
+            sibling_hash: s.0,
+            sibling_sum: s.1,
+        });
         idx >>= 1;
     }
     siblings
 }
-fn membership(
-    jurors: &[(Kp, u64, Pubkey)],
-    levels: &[Vec<[u8; 32]>],
-    idx: usize,
-) -> JurorMembership {
-    let (kp, stake, _) = &jurors[idx];
-    JurorMembership {
-        leaf: LeafClaim {
-            juror: kp.pubkey(),
-            stake: *stake,
-        },
-        proof: merkle_proof(levels, idx),
-        index: idx as u32,
-    }
+
+// --- Sortition helpers ---
+
+fn vrf_seed(
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    draw_attempt: u32,
+) -> [u8; 32] {
+    hashv(&[
+        committed_vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &draw_attempt.to_le_bytes(),
+    ])
+    .to_bytes()
 }
+fn sortition_pick(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    seed: &[u8; 32],
+    panel: usize,
+) -> Vec<usize> {
+    (0..panel)
+        .map(|i| {
+            let r_hash = hashv(&[seed, &(i as u32).to_le_bytes()]).to_bytes();
+            let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8])) % total_stake;
+            claims
+                .iter()
+                .position(|c| {
+                    let cum_before = c.cum_after.saturating_sub(c.stake);
+                    cum_before <= r_i && r_i < c.cum_after
+                })
+                .unwrap()
+        })
+        .collect()
+}
+fn find_distinct_attempt(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    panel: usize,
+) -> (u32, Vec<usize>) {
+    for attempt in 0..10_000u32 {
+        let seed = vrf_seed(committed_vrf, dispute, round_idx, attempt);
+        let picks = sortition_pick(claims, total_stake, &seed, panel);
+        let unique: std::collections::HashSet<usize> = picks.iter().copied().collect();
+        if unique.len() == panel {
+            return (attempt, picks);
+        }
+    }
+    panic!("no distinct draw_attempt found in 10k tries for panel {panel}");
+}
+
 fn commit_hash(vote: u8, salt: &[u8; 32], juror: &Pubkey) -> [u8; 32] {
     hashv(&[&[vote], salt, juror.as_ref()]).to_bytes()
 }
 
-/// Panel size for a round index (closed form `(J+1)·2^k − 1`, capped 31),
-/// mirroring the on-chain `panel_size_for_round`.
 fn panel_for_round(round_idx: u32) -> u32 {
     let factor = 1u32 << round_idx;
     ((JURORS_PER_DISPUTE + 1) * factor - 1).min(31)
@@ -180,15 +222,16 @@ struct World {
     mint: Pubkey,
     subaccord: Pubkey,
     dispute: Pubkey,
-    jurors: Vec<(Kp, u64, Pubkey)>, // (keypair, stake, juror_stake PDA)
-    levels: Vec<Vec<[u8; 32]>>,
+    jurors: Vec<(Kp, u64, Pubkey)>,
+    sorted_claims: Vec<LeafClaim>,
+    sorted_to_orig: Vec<usize>,
+    levels: Vec<Vec<HashSum>>,
     root: [u8; 32],
+    total_stake: u64,
 }
 
-/// Build the world: max_appeals configurable, N_JURORS stakers, dispute filed
-/// (state == Created, round 0). The snapshot/draw/vote cycle is run per-round
-/// by `resolve_round` so each test controls the outcome.
-fn world(max_appeals: u8) -> World {
+/// Build the world with `n_jurors` stakers, max_appeals configurable.
+fn build_world(max_appeals: u8, n_jurors: usize) -> World {
     let mut svm = AnchorLiteSVM::build_with_program(ID, &load_program());
     let creator = svm.svm.create_funded_account(100_000_000_000).unwrap();
     let caller = svm.svm.create_funded_account(100_000_000_000).unwrap();
@@ -210,7 +253,7 @@ fn world(max_appeals: u8) -> World {
     );
 
     let mut jurors = Vec::new();
-    for _ in 0..N_JURORS {
+    for _ in 0..n_jurors {
         let juror = svm.svm.create_funded_account(100_000_000_000).unwrap();
         let juror_ata = svm
             .svm
@@ -242,14 +285,23 @@ fn world(max_appeals: u8) -> World {
     create_dispute(&mut svm, &filer, &subaccord, &mint, &filer_ata, 1);
     let dispute = dispute_pda(&filer.pubkey(), 1);
 
-    let leaves: Vec<[u8; 32]> = jurors
+    // Sort jurors by pubkey and build MST.
+    let mut order: Vec<usize> = (0..jurors.len()).collect();
+    order.sort_by_key(|&i| jurors[i].0.pubkey());
+    let mut cum = 0u64;
+    let sorted_claims: Vec<LeafClaim> = order
         .iter()
-        .map(|(kp, stake, _)| leaf_hash(&kp.pubkey(), *stake))
+        .map(|&i| {
+            cum += jurors[i].1;
+            LeafClaim {
+                juror: jurors[i].0.pubkey(),
+                stake: jurors[i].1,
+                cum_after: cum,
+            }
+        })
         .collect();
-    let (levels, root) = build_tree(leaves);
+    let (levels, root, total_stake) = build_mst(&sorted_claims);
 
-    // Fund the poster generously: snapshot bond (31·fee) is posted per round and
-    // returned on finalize_snapshot, so a few rounds' worth is enough.
     let poster_ata = svm
         .svm
         .create_associated_token_account(&mint, &poster)
@@ -268,19 +320,26 @@ fn world(max_appeals: u8) -> World {
         subaccord,
         dispute,
         jurors,
+        sorted_claims,
+        sorted_to_orig: order,
         levels,
         root,
+        total_stake,
     }
+}
+
+fn world(max_appeals: u8) -> World {
+    build_world(max_appeals, N_JURORS)
+}
+fn small_world(max_appeals: u8) -> World {
+    build_world(max_appeals, 3)
 }
 
 /// Run the full snapshot → draw → commit → reveal → finalize_round cycle for the
 /// dispute's current round, producing the given plurality winner. `votes[i]` is
-/// the vote the i-th drawn juror casts (must be 0 or 1). Returns the round PDA
-/// and the drawn jurors' stake PDAs.
-fn resolve_round(
-    w: &mut World,
-    votes: &[u8], // len == panel for the current round
-) -> (Pubkey, Vec<Pubkey>) {
+/// the vote the i-th drawn juror casts. Returns the round PDA and the drawn
+/// jurors' stake PDAs.
+fn resolve_round(w: &mut World, votes: &[u8]) -> (Pubkey, Vec<Pubkey>) {
     let dispute = w.dispute;
     let r_idx = current_round(&w.svm, &dispute);
     let panel = panel_for_round(r_idx) as usize;
@@ -301,6 +360,7 @@ fn resolve_round(
         &poster_ata,
         &vault,
         w.root,
+        w.total_stake,
     );
     let snap_acc = {
         let acc = w.svm.svm.get_account(&snap).unwrap();
@@ -318,11 +378,32 @@ fn resolve_round(
         &vault,
     );
 
-    // Draw the first `panel` jurors from the tree.
-    let memberships: Vec<JurorMembership> = (0..panel)
-        .map(|i| membership(&w.jurors, &w.levels, i))
+    // Commit VRF only on the first round (committed_vrf persists across appeals).
+    if r_idx == 0 {
+        commit_vrf(&mut w.svm, &w.caller, &sub, &dispute, &snap, COMMITTED_VRF);
+    }
+
+    // Find a draw_attempt that selects distinct jurors.
+    let (attempt, picks) = find_distinct_attempt(
+        &w.sorted_claims,
+        w.total_stake,
+        &COMMITTED_VRF,
+        &dispute,
+        r_idx,
+        panel,
+    );
+    let memberships: Vec<JurorMembership> = picks
+        .iter()
+        .map(|&si| JurorMembership {
+            leaf: w.sorted_claims[si],
+            proof: mst_proof(&w.levels, si),
+            index: si as u32,
+        })
         .collect();
-    let pda_list: Vec<Pubkey> = (0..panel).map(|i| w.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = picks
+        .iter()
+        .map(|&si| w.jurors[w.sorted_to_orig[si]].2)
+        .collect();
     draw(
         &mut w.svm,
         &w.caller,
@@ -330,20 +411,26 @@ fn resolve_round(
         &dispute,
         &snap,
         r_idx,
-        [42u8; 32],
+        attempt,
         memberships,
         &pda_list,
     );
 
     let round = round_pda(&dispute, r_idx);
 
+    // Collect the drawn juror keypairs (cloned for ergonomic borrow).
+    let drawn_kps: Vec<Kp> = picks
+        .iter()
+        .map(|&si| w.jurors[w.sorted_to_orig[si]].0.insecure_clone())
+        .collect();
+
     // Commit + reveal per drawn juror.
     let r = read_round(&w.svm, &round);
     warp_timestamp(&mut w.svm, r.review_end);
     for i in 0..panel {
         let salt = [10 + i as u8; 32];
-        let h = commit_hash(votes[i], &salt, &w.jurors[i].0.pubkey());
-        do_commit(&mut w.svm, &w.jurors[i].0, &sub, &dispute, &round, h).unwrap();
+        let h = commit_hash(votes[i], &salt, &drawn_kps[i].pubkey());
+        do_commit(&mut w.svm, &drawn_kps[i], &sub, &dispute, &round, h).unwrap();
     }
     let r = read_round(&w.svm, &round);
     warp_timestamp(&mut w.svm, r.commit_end);
@@ -351,7 +438,7 @@ fn resolve_round(
         let salt = [10 + i as u8; 32];
         do_reveal(
             &mut w.svm,
-            &w.jurors[i].0,
+            &drawn_kps[i],
             &sub,
             &dispute,
             &round,
@@ -366,6 +453,11 @@ fn resolve_round(
 
     assert_eq!(dispute_state(&w.svm, &dispute), DisputeState::RoundResolved);
     (round, pda_list)
+}
+
+/// Same as resolve_round but for the 3-staker world (round 0 only).
+fn resolve_round_small(w: &mut World, votes: &[u8]) -> (Pubkey, Vec<Pubkey>) {
+    resolve_round(w, votes)
 }
 
 // --- instruction helpers ---
@@ -502,6 +594,7 @@ fn post_snapshot(
     poster_ata: &Pubkey,
     vault: &Pubkey,
     root: [u8; 32],
+    total_stake: u64,
 ) {
     let ix = svm
         .program()
@@ -516,7 +609,10 @@ fn post_snapshot(
             token_program: spl_token::id(),
             system_program: SYS,
         })
-        .args(instruction::PostSnapshot { merkle_root: root })
+        .args(instruction::PostSnapshot {
+            merkle_root: root,
+            total_stake,
+        })
         .instruction()
         .unwrap();
     svm.execute_instruction(ix, &[poster])
@@ -554,6 +650,30 @@ fn finalize_snapshot(
         .assert_success();
 }
 
+fn commit_vrf(
+    svm: &mut anchor_litesvm::AnchorContext,
+    caller: &Kp,
+    subaccord: &Pubkey,
+    dispute: &Pubkey,
+    snapshot: &Pubkey,
+    vrf_result: [u8; 32],
+) {
+    let ix = svm
+        .program()
+        .accounts(accounts::CommitVrf {
+            caller: caller.pubkey(),
+            subaccord: *subaccord,
+            dispute: *dispute,
+            snapshot: *snapshot,
+        })
+        .args(instruction::CommitVrf { vrf_result })
+        .instruction()
+        .unwrap();
+    svm.execute_instruction(ix, &[caller])
+        .unwrap()
+        .assert_success();
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw(
     svm: &mut anchor_litesvm::AnchorContext,
@@ -562,7 +682,7 @@ fn draw(
     dispute: &Pubkey,
     snapshot: &Pubkey,
     round_idx: u32,
-    vrf: [u8; 32],
+    draw_attempt: u32,
     memberships: Vec<JurorMembership>,
     juror_stake_pdas: &[Pubkey],
 ) {
@@ -589,7 +709,7 @@ fn draw(
             system_program: SYS,
         })
         .args(instruction::Draw {
-            vrf_result: vrf,
+            draw_attempt,
             memberships,
         })
         .instruction()
@@ -740,8 +860,6 @@ fn read_appeal_bond(
     accord::state::AppealBond::try_deserialize(&mut &acc.data[..]).unwrap()
 }
 
-/// File an appeal. `appellant` must already have a funded ATA for `mint`.
-/// `prior_round` is the just-resolved `current_round` (the AppealBond PDA key).
 fn do_appeal(
     svm: &mut anchor_litesvm::AnchorContext,
     appellant: &Kp,
@@ -816,7 +934,6 @@ fn do_claim_refund(
     }
 }
 
-/// Fund a fresh appellant keypair with an ATA holding `amt` of the staking token.
 fn fund_appellant(w: &mut World, amt: u64) -> (Kp, Pubkey) {
     let appellant = w.svm.svm.create_funded_account(100_000_000_000).unwrap();
     let ata = w
@@ -835,7 +952,6 @@ fn fund_appellant(w: &mut World, amt: u64) -> (Kp, Pubkey) {
 #[test]
 fn appeal_opens_new_round_at_2n_plus_1() {
     let mut w = world(3);
-    // Resolve round 0 with all 3 jurors voting option 0.
     let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
     assert_eq!(current_round(&w.svm, &w.dispute), 0);
 
@@ -851,13 +967,12 @@ fn appeal_opens_new_round_at_2n_plus_1() {
         &w.subaccord,
         &w.dispute,
         &round0,
-        0, // prior_round = round 0 just resolved (AppealBond PDA key)
+        0,
         &w.mint,
         &vault,
     )
     .unwrap();
 
-    // New round opened at 2N+1 = 7; dispute reset for a fresh snapshot cycle.
     assert_eq!(current_round(&w.svm, &w.dispute), 1);
     assert_eq!(
         dispute_state(&w.svm, &w.dispute),
@@ -865,21 +980,12 @@ fn appeal_opens_new_round_at_2n_plus_1() {
         "appeal resets state to Created for the new round"
     );
 
-    // AppealBond custody (per-appeal PDA, not on Dispute).
     let bond_acc = read_appeal_bond(&w.svm, &appeal_bond_pda(&w.dispute, 0));
     assert_eq!(bond_acc.appellant, appellant.pubkey());
-    assert_eq!(
-        bond_acc.round_idx, 1,
-        "bond records the new round it opened"
-    );
-    // Bond == new-round fee == 7 · fee_per_juror.
+    assert_eq!(bond_acc.round_idx, 1);
     assert_eq!(bond_acc.amount, 7 * FEE_PER_JUROR);
-    assert_eq!(
-        bond_acc.prior_result, 0,
-        "prior ruling captured for flip detection"
-    );
+    assert_eq!(bond_acc.prior_result, 0);
 
-    // Exponential cost: fee (7·fee) + bond (7·fee) == 14·fee leaves the appellant.
     let cost = 7 * FEE_PER_JUROR + 7 * FEE_PER_JUROR;
     assert_eq!(
         before_appellant - token_balance(&w.svm, &appellant_ata),
@@ -887,7 +993,6 @@ fn appeal_opens_new_round_at_2n_plus_1() {
     );
     assert_eq!(token_balance(&w.svm, &vault) - before_vault, cost);
 
-    // The new round can be drawn: panel 7 jurors vote and resolve round 1.
     let (round1, _) = resolve_round(&mut w, &[1, 1, 1, 1, 0, 0, 0]);
     let r1 = read_round(&w.svm, &round1);
     assert_eq!(r1.round_idx, 1);
@@ -898,7 +1003,7 @@ fn appeal_opens_new_round_at_2n_plus_1() {
 #[test]
 fn appeal_before_resolved_reverts() {
     let mut w = world(3);
-    // Draw round 0 but do not finalize — state is Drawn.
+    // Draw round 0 but do not finalize_round — state is Drawn.
     let r_idx = current_round(&w.svm, &w.dispute);
     let snap = snapshot_pda(&w.dispute, r_idx);
     let vault = vault_ata(&w.subaccord, &w.mint);
@@ -913,6 +1018,7 @@ fn appeal_before_resolved_reverts() {
         &poster_ata,
         &vault,
         w.root,
+        w.total_stake,
     );
     let snap_acc = {
         let acc = w.svm.svm.get_account(&snap).unwrap();
@@ -929,10 +1035,35 @@ fn appeal_before_resolved_reverts() {
         &poster_ata,
         &vault,
     );
-    let memberships: Vec<JurorMembership> = (0..3)
-        .map(|i| membership(&w.jurors, &w.levels, i))
+    commit_vrf(
+        &mut w.svm,
+        &w.caller,
+        &w.subaccord,
+        &w.dispute,
+        &snap,
+        COMMITTED_VRF,
+    );
+    let panel = panel_for_round(r_idx) as usize;
+    let (attempt, picks) = find_distinct_attempt(
+        &w.sorted_claims,
+        w.total_stake,
+        &COMMITTED_VRF,
+        &w.dispute,
+        r_idx,
+        panel,
+    );
+    let memberships: Vec<JurorMembership> = picks
+        .iter()
+        .map(|&si| JurorMembership {
+            leaf: w.sorted_claims[si],
+            proof: mst_proof(&w.levels, si),
+            index: si as u32,
+        })
         .collect();
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| w.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = picks
+        .iter()
+        .map(|&si| w.jurors[w.sorted_to_orig[si]].2)
+        .collect();
     draw(
         &mut w.svm,
         &w.caller,
@@ -940,7 +1071,7 @@ fn appeal_before_resolved_reverts() {
         &w.dispute,
         &snap,
         r_idx,
-        [42u8; 32],
+        attempt,
         memberships,
         &pda_list,
     );
@@ -969,7 +1100,6 @@ fn appeal_before_resolved_reverts() {
 fn appeal_after_window_reverts() {
     let mut w = world(3);
     let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
-    // Warp past the appeal window.
     let r = read_round(&w.svm, &round0);
     warp_timestamp(&mut w.svm, r.reveal_end + APPEAL_WINDOW_SECS);
 
@@ -995,12 +1125,10 @@ fn appeal_after_window_reverts() {
 
 #[test]
 fn appeal_insufficient_jurors_reverts() {
-    // A Subaccord with only 3 distinct stakers cannot fill the round-1 panel of
-    // 7 — appeal must revert at the intake gate (SPEC edge case).
     let mut w = small_world(3);
     let (round0, _) = resolve_round_small(&mut w, &[0, 0, 0]);
     let vault = vault_ata(&w.subaccord, &w.mint);
-    let (appellant, appellant_ata) = fund_appellant_small(&mut w, 100 * FEE_PER_JUROR);
+    let (appellant, appellant_ata) = fund_appellant(&mut w, 100 * FEE_PER_JUROR);
     let err = do_appeal(
         &mut w.svm,
         &appellant,
@@ -1021,7 +1149,6 @@ fn appeal_insufficient_jurors_reverts() {
 
 #[test]
 fn appeal_max_appeals_cap_zero() {
-    // max_appeals = 0: no appeals permitted at all.
     let mut w = world(0);
     let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
     let vault = vault_ata(&w.subaccord, &w.mint);
@@ -1047,8 +1174,6 @@ fn appeal_max_appeals_cap_zero() {
 
 #[test]
 fn appeal_max_appeals_boundary() {
-    // max_appeals = 1: the first appeal (round 0 → 1) is allowed, the second
-    // (round 1 → 2) is rejected by the cap.
     let mut w = world(1);
     let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
     let vault = vault_ata(&w.subaccord, &w.mint);
@@ -1067,7 +1192,6 @@ fn appeal_max_appeals_boundary() {
     .unwrap();
     assert_eq!(current_round(&w.svm, &w.dispute), 1);
 
-    // Run round 1 to resolved, then attempt a second appeal.
     let (round1, _) = resolve_round(&mut w, &[1, 1, 1, 1, 0, 0, 0]);
     let err = do_appeal(
         &mut w.svm,
@@ -1090,7 +1214,6 @@ fn appeal_max_appeals_boundary() {
 #[test]
 fn flip_returns_bond_to_appellant() {
     let mut w = world(3);
-    // Round 0 → option 0.
     let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
     let vault = vault_ata(&w.subaccord, &w.mint);
     let (appellant, appellant_ata) = fund_appellant(&mut w, 100 * FEE_PER_JUROR);
@@ -1108,11 +1231,9 @@ fn flip_returns_bond_to_appellant() {
     )
     .unwrap();
 
-    // Round 1 → option 1 (FLIP). 4 vote 1, 3 vote 0.
     let (round1, juror_pdas1) = resolve_round(&mut w, &[1, 1, 1, 1, 0, 0, 0]);
     assert_eq!(read_round(&w.svm, &round1).result, 1);
 
-    // Finalize: appeal window elapsed. Pass the round-0 AppealBond (1 appeal).
     let r1 = read_round(&w.svm, &round1);
     warp_timestamp(&mut w.svm, r1.reveal_end + APPEAL_WINDOW_SECS);
     let bond_pdas = vec![appeal_bond_pda(&w.dispute, 0)];
@@ -1129,10 +1250,8 @@ fn flip_returns_bond_to_appellant() {
     assert_eq!(dispute_state(&w.svm, &w.dispute), DisputeState::Final);
     let d = read_dispute(&w.svm, &w.dispute);
     assert_eq!(d.final_ruling, Some(1));
-    // Flipped bond (prior 0 != final 1): still outstanding, awaiting claim.
     assert_eq!(read_appeal_bond(&w.svm, &bond_pdas[0]).amount, bond);
 
-    // Permissionless claim returns the flipped bond to the appellant.
     let before = token_balance(&w.svm, &appellant_ata);
     do_claim_refund(
         &mut w.svm,
@@ -1150,7 +1269,6 @@ fn flip_returns_bond_to_appellant() {
         bond,
         "flipped bond returned in full"
     );
-    // Idempotent: a second claim reverts (bond amount zeroed).
     let err = do_claim_refund(
         &mut w.svm,
         &w.caller,
@@ -1167,9 +1285,6 @@ fn flip_returns_bond_to_appellant() {
         "second claim must revert (bond already claimed): {err}"
     );
 
-    // active_draws for the FINAL round's jurors are decremented by finalize.
-    // (Jurors shared with round 0 keep a residual draw — cross-round settlement
-    // is a known finalization gap, out of scope for the appeal bean.)
     for pda in juror_pdas1.iter() {
         let js_acc = w.svm.svm.get_account(pda).expect("juror_stake exists");
         JurorStake::try_deserialize(&mut &js_acc.data[..]).unwrap();
@@ -1179,7 +1294,6 @@ fn flip_returns_bond_to_appellant() {
 #[test]
 fn no_flip_forfeits_bond_to_coherent_pool() {
     let mut w = world(3);
-    // Round 0 → option 0.
     let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
     let vault = vault_ata(&w.subaccord, &w.mint);
     let (appellant, appellant_ata) = fund_appellant(&mut w, 100 * FEE_PER_JUROR);
@@ -1197,14 +1311,12 @@ fn no_flip_forfeits_bond_to_coherent_pool() {
     )
     .unwrap();
 
-    // Round 1 → option 0 again (NO FLIP). 4 vote 0, 3 vote 1.
     let (round1, juror_pdas1) = resolve_round(&mut w, &[0, 0, 0, 0, 1, 1, 1]);
     assert_eq!(read_round(&w.svm, &round1).result, 0);
 
     let r1 = read_round(&w.svm, &round1);
     warp_timestamp(&mut w.svm, r1.reveal_end + APPEAL_WINDOW_SECS);
 
-    // Record pre-finalization balances of the 4 coherent (option-0) jurors.
     let coherent_pdas: Vec<Pubkey> = (0..4).map(|i| juror_pdas1[i]).collect();
     let coherent_before: Vec<u64> = coherent_pdas
         .iter()
@@ -1228,12 +1340,8 @@ fn no_flip_forfeits_bond_to_coherent_pool() {
     )
     .unwrap();
     assert_eq!(dispute_state(&w.svm, &w.dispute), DisputeState::Final);
-    // No-flip bond consumed (zeroed) into the coherent pool.
     assert_eq!(read_appeal_bond(&w.svm, &bond_pdas[0]).amount, 0);
 
-    // Economics: pool = slash_total + round_fee + forfeited bond.
-    // slash_per_juror = 1000·1000/10000 = 100; 3 incoherent → slash_total = 300.
-    // round_fee = 7·fee; forfeited bond = 7·fee. share = (300 + 14_000_000)/4.
     let slash_per_juror = (DEFAULT_ALPHA_BPS as u64) * MIN_STAKE / 10_000;
     let pool = 3 * slash_per_juror + 7 * FEE_PER_JUROR + bond;
     let share = pool / 4;
@@ -1249,7 +1357,6 @@ fn no_flip_forfeits_bond_to_coherent_pool() {
         );
     }
 
-    // The appellant gets nothing back (no flip): claim reverts (bond consumed).
     let before = token_balance(&w.svm, &appellant_ata);
     let err = do_claim_refund(
         &mut w.svm,
@@ -1271,179 +1378,4 @@ fn no_flip_forfeits_bond_to_coherent_pool() {
         before,
         "no-flip appeal bond is not returned"
     );
-}
-
-// --- a 3-staker world for the insufficient-jurors test -----------------------
-
-fn small_world(max_appeals: u8) -> World {
-    let mut svm = AnchorLiteSVM::build_with_program(ID, &load_program());
-    let creator = svm.svm.create_funded_account(100_000_000_000).unwrap();
-    let caller = svm.svm.create_funded_account(100_000_000_000).unwrap();
-    let filer = svm.svm.create_funded_account(100_000_000_000).unwrap();
-    let poster = svm.svm.create_funded_account(100_000_000_000).unwrap();
-
-    init_pause(&mut svm, &creator);
-    let mint = svm.svm.create_token_mint(&creator, 6).unwrap().pubkey();
-    let risk_type = [1u8; 32];
-    let subaccord = subaccord_pda(&creator.pubkey(), &risk_type);
-    create_subaccord(
-        &mut svm,
-        &creator,
-        &subaccord,
-        &mint,
-        risk_type,
-        max_appeals,
-    );
-
-    let mut jurors = Vec::new();
-    for _ in 0..3 {
-        let juror = svm.svm.create_funded_account(100_000_000_000).unwrap();
-        let juror_ata = svm
-            .svm
-            .create_associated_token_account(&mint, &juror)
-            .unwrap();
-        svm.svm
-            .mint_to(&mint, &juror_ata, &creator, 100_000)
-            .unwrap();
-        stake(
-            &mut svm,
-            &juror,
-            &subaccord,
-            &mint,
-            &juror_ata,
-            STAKE_AMOUNT,
-        );
-        let js_pda = juror_stake_pda(&subaccord, &juror.pubkey());
-        jurors.push((juror, STAKE_AMOUNT, js_pda));
-    }
-
-    let required_fee = (JURORS_PER_DISPUTE as u64) * FEE_PER_JUROR;
-    let filer_ata = svm
-        .svm
-        .create_associated_token_account(&mint, &filer)
-        .unwrap();
-    svm.svm
-        .mint_to(&mint, &filer_ata, &creator, required_fee)
-        .unwrap();
-    create_dispute(&mut svm, &filer, &subaccord, &mint, &filer_ata, 1);
-    let dispute = dispute_pda(&filer.pubkey(), 1);
-
-    let leaves: Vec<[u8; 32]> = jurors
-        .iter()
-        .map(|(kp, stake, _)| leaf_hash(&kp.pubkey(), *stake))
-        .collect();
-    let (levels, root) = build_tree(leaves);
-    let poster_ata = svm
-        .svm
-        .create_associated_token_account(&mint, &poster)
-        .unwrap();
-    svm.svm
-        .mint_to(&mint, &poster_ata, &creator, 31 * FEE_PER_JUROR * 10)
-        .unwrap();
-
-    World {
-        svm,
-        creator,
-        caller,
-        poster,
-        poster_ata,
-        mint,
-        subaccord,
-        dispute,
-        jurors,
-        levels,
-        root,
-    }
-}
-
-fn resolve_round_small(w: &mut World, votes: &[u8]) -> (Pubkey, Vec<Pubkey>) {
-    // Same as resolve_round but for the 3-staker world (round 0 only).
-    let dispute = w.dispute;
-    let r_idx = current_round(&w.svm, &dispute);
-    let panel = 3usize;
-    assert_eq!(votes.len(), panel);
-    let sub = w.subaccord;
-    let mint = w.mint;
-    let vault = vault_ata(&sub, &mint);
-    let snap = snapshot_pda(&dispute, r_idx);
-    let poster_ata = w.poster_ata;
-    post_snapshot(
-        &mut w.svm,
-        &w.poster,
-        &sub,
-        &dispute,
-        &snap,
-        &mint,
-        &poster_ata,
-        &vault,
-        w.root,
-    );
-    let snap_acc = {
-        let acc = w.svm.svm.get_account(&snap).unwrap();
-        accord::state::Snapshot::try_deserialize(&mut &acc.data[..]).unwrap()
-    };
-    warp_timestamp(&mut w.svm, snap_acc.challenge_deadline + 1);
-    finalize_snapshot(
-        &mut w.svm,
-        &w.creator,
-        &sub,
-        &dispute,
-        &snap,
-        &mint,
-        &poster_ata,
-        &vault,
-    );
-    let memberships: Vec<JurorMembership> = (0..panel)
-        .map(|i| membership(&w.jurors, &w.levels, i))
-        .collect();
-    let pda_list: Vec<Pubkey> = (0..panel).map(|i| w.jurors[i].2).collect();
-    draw(
-        &mut w.svm,
-        &w.caller,
-        &sub,
-        &dispute,
-        &snap,
-        r_idx,
-        [42u8; 32],
-        memberships,
-        &pda_list,
-    );
-    let round = round_pda(&dispute, r_idx);
-    let r = read_round(&w.svm, &round);
-    warp_timestamp(&mut w.svm, r.review_end);
-    for i in 0..panel {
-        let salt = [10 + i as u8; 32];
-        let h = commit_hash(votes[i], &salt, &w.jurors[i].0.pubkey());
-        do_commit(&mut w.svm, &w.jurors[i].0, &sub, &dispute, &round, h).unwrap();
-    }
-    let r = read_round(&w.svm, &round);
-    warp_timestamp(&mut w.svm, r.commit_end);
-    for i in 0..panel {
-        let salt = [10 + i as u8; 32];
-        do_reveal(
-            &mut w.svm,
-            &w.jurors[i].0,
-            &sub,
-            &dispute,
-            &round,
-            votes[i],
-            salt,
-        )
-        .unwrap();
-    }
-    let r = read_round(&w.svm, &round);
-    warp_timestamp(&mut w.svm, r.reveal_end);
-    do_finalize_round(&mut w.svm, &w.caller, &sub, &dispute, &round).unwrap();
-    (round, pda_list)
-}
-
-fn fund_appellant_small(w: &mut World, amt: u64) -> (Kp, Pubkey) {
-    let appellant = w.svm.svm.create_funded_account(100_000_000_000).unwrap();
-    let ata = w
-        .svm
-        .svm
-        .create_associated_token_account(&w.mint, &appellant)
-        .unwrap();
-    w.svm.svm.mint_to(&w.mint, &ata, &w.creator, amt).unwrap();
-    (appellant, ata)
 }

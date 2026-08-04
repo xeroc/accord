@@ -479,7 +479,11 @@ pub mod accord {
     /// the 1-day window. Sets the dispute to `SnapshotPosted` and arms the
     /// challenge deadline. One snapshot per round (`init`); re-posting after a
     /// void is a deferred concern (the dispute stalls, poster loses bond).
-    pub fn post_snapshot(ctx: Context<PostSnapshot>, merkle_root: [u8; 32]) -> Result<()> {
+    pub fn post_snapshot(
+        ctx: Context<PostSnapshot>,
+        merkle_root: [u8; 32],
+        total_stake: u64,
+    ) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
             dispute.state == DisputeState::Created,
@@ -526,6 +530,7 @@ pub mod accord {
         snap.challenge_deadline = deadline;
         snap.status = SnapshotStatus::Posted;
         snap.anchor_slot = Clock::get()?.slot;
+        snap.total_stake = total_stake;
         snap.bump = ctx.bumps.snapshot;
 
         dispute.state = DisputeState::SnapshotPosted;
@@ -575,13 +580,13 @@ pub mod accord {
             bond,
         )?;
 
-        let root = snap.merkle_root;
+        let root_hash = snap.merkle_root;
+        let total_stake = snap.total_stake;
         let anchor_slot = snap.anchor_slot;
         let sub_key = sub.key();
+        let challenger_key = ctx.accounts.challenger.key();
 
-        // ADR-0008: fraud predicate dispatch. Duplicate is time-independent;
-        // WrongStake reads the juror's live JurorStake (remaining_accounts[0])
-        // and uses the anchor-slot watermark as the witness.
+        // ADR-0008/0009: fraud predicate dispatch.
         let fraud = match &proof {
             FraudProof::Duplicate {
                 leaf_a,
@@ -592,15 +597,14 @@ pub mod accord {
                 index_b,
             } => {
                 *index_a != *index_b
-                    && verify_merkle_inclusion(leaf_a, *index_a, proof_a, root)
-                    && verify_merkle_inclusion(leaf_b, *index_b, proof_b, root)
+                    && verify_mst_inclusion(leaf_a, *index_a, proof_a, root_hash, total_stake)
+                    && verify_mst_inclusion(leaf_b, *index_b, proof_b, root_hash, total_stake)
                     && leaf_a.juror == leaf_b.juror
             }
             FraudProof::WrongStake { leaf, proof, index } => {
-                if !verify_merkle_inclusion(leaf, *index, proof, root) {
+                if !verify_mst_inclusion(leaf, *index, proof, root_hash, total_stake) {
                     false
                 } else {
-                    // Witness: the juror's JurorStake PDA.
                     require!(
                         !ctx.remaining_accounts.is_empty(),
                         AccordError::InvalidMembershipProof
@@ -617,9 +621,62 @@ pub mod accord {
                     );
                     let js_data = js_info.try_borrow_data()?;
                     let js = JurorStake::try_deserialize(&mut &js_data[..])?;
-                    // Witness: stake unchanged since anchor => live = anchor-time.
-                    // Fraud: leaf stake ≠ actual anchor-time stake.
                     js.last_change_slot < anchor_slot && js.amount != leaf.stake
+                }
+            }
+            FraudProof::NotSorted {
+                leaf_lo,
+                proof_lo,
+                index_lo,
+                leaf_hi,
+                proof_hi,
+                index_hi,
+            } => {
+                // Both leaves verify against the root.
+                verify_mst_inclusion(leaf_lo, *index_lo, proof_lo, root_hash, total_stake)
+                    && verify_mst_inclusion(leaf_hi, *index_hi, proof_hi, root_hash, total_stake)
+                    // lo comes before hi in the tree but has a HIGHER pubkey.
+                    && *index_lo < *index_hi
+                    && leaf_lo.juror > leaf_hi.juror
+            }
+            FraudProof::Omission {
+                leaf_lo,
+                proof_lo,
+                index_lo,
+                leaf_hi,
+                proof_hi,
+                index_hi,
+            } => {
+                // Both leaves verify against the root.
+                if !verify_mst_inclusion(leaf_lo, *index_lo, proof_lo, root_hash, total_stake)
+                    || !verify_mst_inclusion(leaf_hi, *index_hi, proof_hi, root_hash, total_stake)
+                {
+                    false
+                } else if *index_hi != *index_lo + 1 {
+                    // Must be consecutive (no leaf between them).
+                    false
+                } else if !(leaf_lo.juror < challenger_key && challenger_key < leaf_hi.juror) {
+                    // Challenger must fall in the gap.
+                    false
+                } else {
+                    // Witness: challenger's JurorStake was staked at anchor time.
+                    require!(
+                        !ctx.remaining_accounts.is_empty(),
+                        AccordError::InvalidMembershipProof
+                    );
+                    let js_info = &ctx.remaining_accounts[0];
+                    let expected_pda = Pubkey::find_program_address(
+                        &[SEED_JUROR_STAKE, sub_key.as_ref(), challenger_key.as_ref()],
+                        &crate::ID,
+                    )
+                    .0;
+                    require!(
+                        js_info.key == &expected_pda,
+                        AccordError::InvalidMembershipProof
+                    );
+                    let js_data = js_info.try_borrow_data()?;
+                    let js = JurorStake::try_deserialize(&mut &js_data[..])?;
+                    js.last_change_slot < anchor_slot && js.amount > 0
                 }
             }
         };
@@ -723,25 +780,47 @@ pub mod accord {
         Ok(())
     }
 
-    // --- Draw (ADR-0003; veridao-fr1x) ----------------------------------------
+    // --- Draw (ADR-0003/0009; veridao-fr1x/veridao-4nyi) ------------------------
+
+    /// Commit the VRF result for a dispute's draw (ADR-0009). One-shot:
+    /// stores `dispute.committed_vrf`, which `draw` reads immutably. Must be
+    /// called after `finalize_snapshot` and before `draw`. Permissionless —
+    /// any caller may commit. The VRF result is caller-supplied until the
+    /// magicblock VRF integration lands (bean veridao-utcu); this instruction
+    /// ensures the result can't be swapped between draw retries.
+    pub fn commit_vrf(ctx: Context<CommitVrf>, vrf_result: [u8; 32]) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.committed_vrf.is_none(),
+            AccordError::VrfAlreadyCommitted
+        );
+        require!(
+            ctx.accounts.snapshot.status == SnapshotStatus::Finalized,
+            AccordError::SnapshotNotFinalized
+        );
+        dispute.committed_vrf = Some(vrf_result);
+        emit!(VrfCommitted {
+            dispute: dispute.key(),
+            vrf_result,
+        });
+        Ok(())
+    }
 
     /// Select N distinct Jurors from the finalized Snapshot, weighted by stake,
-    /// via Switchboard VRF (ADR-0003). Permissionless: any cranker submits the
-    /// VRF result + the membership proofs for the off-chain-computed selection.
+    /// via the committed VRF (ADR-0003/0009). Permissionless: any cranker
+    /// submits `draw_attempt` + the membership proofs for the VRF-selected
+    /// jurors.
     ///
-    /// The on-chain program verifies: snapshot is finalized, each membership
-    /// proof against the root, stake ≥ `min_stake` (the precise eligibility
-    /// gate deferred from the coarse `staker_count` counter), all jurors
-    /// distinct, and the panel size matches the round. The VRF result is
-    /// consumed deterministically (`hash(vrf ‖ dispute ‖ round)`) and emitted,
-    /// binding the randomness to this draw for off-chain audit. The
-    /// stake-weighted cumulative lookup itself is computed off-chain; its
-    /// correctness is bounded by the snapshot fraud-proof (ADR-0003 trust
-    /// anchor). Each drawn Juror's `active_draws` is incremented, freezing
-    /// their stake until the dispute settles.
+    /// The on-chain program verifies: snapshot is finalized, VRF is committed,
+    /// each MST membership proof (hash + sum + cum_after consistency), the
+    /// sortition criterion (`cum_before ≤ r_i < cum_after` where `r_i` is
+    /// deterministically derived from the VRF seed + slot index), stake ≥
+    /// `min_stake`, `JurorStake.amount ≥ leaf.stake` (inflation guard), and all
+    /// jurors distinct. On collision (same juror drawn twice), the instruction
+    /// reverts; the cranker retries with `draw_attempt + 1` (same committed VRF).
     pub fn draw(
         ctx: Context<Draw>,
-        vrf_result: [u8; 32],
+        draw_attempt: u32,
         memberships: Vec<JurorMembership>,
     ) -> Result<()> {
         let snap = &ctx.accounts.snapshot;
@@ -769,10 +848,26 @@ pub mod accord {
             AccordError::InvalidPanelSize
         );
 
-        // Verify each membership proof + stake eligibility against the root.
-        let root = snap.merkle_root;
+        // Read committed VRF (ADR-0009: commit_vrf stores it; draw reads it).
+        let committed_vrf = dispute.committed_vrf.ok_or(AccordError::VrfNotCommitted)?;
+
+        // VRF seed: deterministic, binds committed VRF + dispute + round + attempt.
+        let vrf_seed = {
+            use solana_program::hash::hashv;
+            hashv(&[
+                &committed_vrf,
+                dispute.key().as_ref(),
+                &round_idx.to_le_bytes(),
+                &draw_attempt.to_le_bytes(),
+            ])
+            .to_bytes()
+        };
+
+        // Verify each MST membership proof + stake eligibility + sortition.
+        let root_hash = snap.merkle_root;
+        let total_stake = snap.total_stake;
         let mut drawn: Vec<Pubkey> = Vec::with_capacity(panel as usize);
-        for m in &memberships {
+        for (i, m) in memberships.iter().enumerate() {
             require!(
                 m.leaf.juror != Pubkey::default(),
                 AccordError::InvalidMembershipProof
@@ -782,8 +877,21 @@ pub mod accord {
                 AccordError::InsufficientStake
             );
             require!(
-                verify_merkle_inclusion(&m.leaf, m.index, &m.proof, root),
+                verify_mst_inclusion(&m.leaf, m.index, &m.proof, root_hash, total_stake),
                 AccordError::InvalidMembershipProof
+            );
+            // ADR-0009 sortition enforcement: r_i is deterministically derived
+            // from the VRF seed + slot index. The submitted leaf's cumulative
+            // range must contain r_i — the caller cannot cherry-pick.
+            let r_hash = {
+                use solana_program::hash::hashv;
+                hashv(&[&vrf_seed, &(i as u32).to_le_bytes()]).to_bytes()
+            };
+            let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8])) % total_stake;
+            let cum_before = m.leaf.cum_after.saturating_sub(m.leaf.stake);
+            require!(
+                cum_before <= r_i && r_i < m.leaf.cum_after,
+                AccordError::SortitionMismatch
             );
             drawn.push(m.leaf.juror);
         }
@@ -794,19 +902,6 @@ pub mod accord {
                 require!(drawn[i] != drawn[j], AccordError::DuplicateJuror);
             }
         }
-
-        // VRF consumption: deterministic seed binding this VRF result to the
-        // dispute + round. Emitted for off-chain audit; the sortition algorithm
-        // is verifiable by anyone with the snapshot leaves.
-        let vrf_seed = {
-            use solana_program::hash::hashv;
-            hashv(&[
-                &vrf_result,
-                dispute.key().as_ref(),
-                &round_idx.to_le_bytes(),
-            ])
-            .to_bytes()
-        };
 
         // Verify + mutate each drawn Juror's JurorStake (remaining_accounts).
         require!(
@@ -1442,30 +1537,60 @@ fn panel_size_for_round(jurors_per_dispute: u32, round_idx: u32) -> Result<u32> 
     Ok(panel.min(MAX_JURORS as u32))
 }
 
-/// Verify a `LeafClaim` is included in the posted Merkle root at `index`.
-/// Leaf node = `H(juror || stake_le)`; internal nodes = `H(left || right)`
-/// (SHA-256 via `hashv`). `proof` is the sibling hashes rootward; bit `i` of
-/// `index` gives the side at level `i` (0 ⇒ computed node is the left child).
-fn verify_merkle_inclusion(
+/// Verify a `LeafClaim` is included in the posted Merkle-Sum Tree root at
+/// `index`. Leaf node = `H(juror ‖ stake_le ‖ cum_after_le)`; internal nodes =
+/// `H(left_hash ‖ right_hash)` with `sum = left_sum + right_sum`. The proof
+/// carries `(sibling_hash, sibling_sum)` at each level.
+///
+/// Verifies THREE things:
+/// 1. Root hash matches (structural integrity).
+/// 2. Root sum matches `total_stake` (stake consistency).
+/// 3. `leaf.cum_after == cum_from_left + leaf.stake` (cumulative-range
+///    consistency — ensures non-overlapping ranges for sortition).
+///
+/// `cum_from_left` is the sum of all left-subtree siblings encountered on the
+/// proof path (sibling is left when the leaf is the right child at that level).
+/// This equals the total stake of all leaves to the left of the target leaf.
+fn verify_mst_inclusion(
     leaf: &LeafClaim,
     index: u32,
-    proof: &[[u8; 32]],
-    root: [u8; 32],
+    proof: &[MSTNode],
+    root_hash: [u8; 32],
+    root_sum: u64,
 ) -> bool {
     use solana_program::hash::hashv;
-    let mut acc = hashv(&[leaf.juror.as_ref(), &leaf.stake.to_le_bytes()]).to_bytes();
+    let mut acc_hash = hashv(&[
+        leaf.juror.as_ref(),
+        &leaf.stake.to_le_bytes(),
+        &leaf.cum_after.to_le_bytes(),
+    ])
+    .to_bytes();
+    let mut acc_sum = leaf.stake;
+    let mut cum_from_left: u64 = 0;
     for (depth, sibling) in proof.iter().enumerate() {
         if depth >= 31 {
             return false;
         }
-        let left = (index >> depth) & 1 == 0;
-        acc = if left {
-            hashv(&[&acc, sibling]).to_bytes()
+        let is_left = (index >> depth) & 1 == 0;
+        if is_left {
+            acc_hash = hashv(&[&acc_hash, &sibling.sibling_hash]).to_bytes();
         } else {
-            hashv(&[sibling, &acc]).to_bytes()
+            acc_hash = hashv(&[&sibling.sibling_hash, &acc_hash]).to_bytes();
+            // Leaf is right child → sibling is left → contributes to cum_from_left
+            cum_from_left = match cum_from_left.checked_add(sibling.sibling_sum) {
+                Some(v) => v,
+                None => return false,
+            };
+        }
+        acc_sum = match acc_sum.checked_add(sibling.sibling_sum) {
+            Some(v) => v,
+            None => return false,
         };
     }
-    acc == root
+    // Verify root hash + root sum + cum_after consistency
+    acc_hash == root_hash
+        && acc_sum == root_sum
+        && leaf.cum_after == cum_from_left.saturating_add(leaf.stake)
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -1857,13 +1982,34 @@ pub struct FinalizeSnapshot<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Account context for `draw` (ADR-0003; veridao-fr1x). Permissionless: any
-/// caller submits the VRF result + membership proofs. The `Round` PDA is
-/// `init`'d fresh (one draw per round) via `AccountLoader` (zero-copy — the
-/// `Round` struct is too large for BPF's stack under `Account<Round>`).
-/// Drawn `JurorStake` accounts are passed as `remaining_accounts` — the
-/// handler verifies each is the correct PDA for the claimed juror and
-/// increments `active_draws`.
+/// Account context for `commit_vrf` (ADR-0009). Permissionless: any caller
+/// commits the VRF result. Requires a finalized snapshot.
+#[derive(Accounts)]
+pub struct CommitVrf<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
+        bump = snapshot.bump,
+    )]
+    pub snapshot: Box<Account<'info, Snapshot>>,
+}
+
+/// Account context for `draw` (ADR-0003/0009). Permissionless: any caller
+/// submits `draw_attempt` + membership proofs. Reads the committed VRF from
+/// the dispute. The `Round` PDA is `init`'d fresh via `AccountLoader`
+/// (zero-copy). Drawn `JurorStake` accounts are passed as `remaining_accounts`.
 #[derive(Accounts)]
 pub struct Draw<'info> {
     #[account(mut)]

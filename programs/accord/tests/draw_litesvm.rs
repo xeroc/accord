@@ -1,30 +1,16 @@
 #![cfg(feature = "no-entrypoint")]
-//! `draw` tests (veridao-fr1x). LiteSVM exercises the ADR-0003 juror draw:
-//! Switchboard VRF consumption, Merkle membership verification against the
-//! finalized Snapshot root, stake eligibility, distinctness, and the
-//! `active_draws` freeze.
-//!
-//! Coverage (safe-solana-builder matrix, instruction subset):
-//! - happy  : finalized snapshot + valid memberships → Drawn + jurors recorded + active_draws++
-//! - state  : snapshot not finalized                 -> revert (SnapshotNotFinalized)
-//! - proof  : tampered Merkle proof                  -> revert (InvalidMembershipProof)
-//! - dup    : same juror drawn twice                 -> revert (DuplicateJuror)
-//! - panel  : wrong number of memberships            -> revert (InvalidPanelSize)
-//! - stake  : leaf stake < min_stake                 -> revert (InsufficientStake)
-//! - pda    : wrong JurorStake PDA in remaining      -> revert (InvalidMembershipProof)
-//! - vrf    : VRF seed is deterministic
-//! - double : re-draw same dispute                   -> revert (Round already exists / InvalidState)
+//! `draw` tests (veridao-fr1x). LiteSVM exercises the ADR-0003/0009 juror draw:
+//! committed VRF consumption, Merkle-Sum-Tree membership verification, sortition
+//! enforcement, stake eligibility, distinctness, and the `active_draws` freeze.
 //!
 //! Run via `make test_unit`.
-
-#![cfg(feature = "no-entrypoint")]
 
 use accord::constants::{
     DEFAULT_ALPHA_BPS, SEED_DISPUTE, SEED_JUROR_STAKE, SEED_PAUSE, SEED_ROUND, SEED_SNAPSHOT,
     SEED_SUBACCORD,
 };
 use accord::state::{
-    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, Round, Snapshot,
+    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, MSTNode, Round, Snapshot,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::AccountDeserialize;
@@ -41,6 +27,7 @@ const REQUIRED_FEE: u64 = (JURORS_PER_DISPUTE as u64) * FEE_PER_JUROR;
 const MIN_STAKE: u64 = 1_000;
 const STAKE_AMOUNT: u64 = 5_000;
 const EXPECTED_BOND: u64 = 31 * FEE_PER_JUROR;
+const COMMITTED_VRF: [u8; 32] = [42u8; 32];
 
 fn load_program() -> Vec<u8> {
     let so = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/accord.so");
@@ -92,41 +79,135 @@ fn warp_timestamp(svm: &mut anchor_litesvm::AnchorContext, ts: i64) {
 }
 
 type Kp = solana_sdk::signature::Keypair;
+type HashSum = ([u8; 32], u64);
 
-// --- minimal Merkle tree (SHA-256 via hashv, matching the on-chain verifier) ---
+// --- Merkle-Sum Tree helpers (match the on-chain MST verifier) ---
 
-fn leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
-    hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
+fn leaf_hash(juror: &Pubkey, stake: u64, cum_after: u64) -> [u8; 32] {
+    hashv(&[
+        juror.as_ref(),
+        &stake.to_le_bytes(),
+        &cum_after.to_le_bytes(),
+    ])
+    .to_bytes()
 }
-fn parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+fn mst_parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     hashv(&[left, right]).to_bytes()
 }
-fn build_tree(mut leaves: Vec<[u8; 32]>) -> (Vec<Vec<[u8; 32]>>, [u8; 32]) {
+fn build_mst(claims: &[LeafClaim]) -> (Vec<Vec<HashSum>>, [u8; 32], u64) {
+    let mut leaves: Vec<HashSum> = claims
+        .iter()
+        .map(|c| (leaf_hash(&c.juror, c.stake, c.cum_after), c.stake))
+        .collect();
     let mut size = 1;
     while size < leaves.len().max(1) {
         size *= 2;
     }
-    leaves.resize(size, [0u8; 32]);
+    leaves.resize(size, ([0u8; 32], 0));
     let mut levels = vec![leaves];
     while levels.last().unwrap().len() > 1 {
-        let next: Vec<[u8; 32]> = levels
+        let next: Vec<HashSum> = levels
             .last()
             .unwrap()
             .chunks(2)
-            .map(|p| parent(&p[0], &p[1]))
+            .map(|p| (mst_parent(&p[0].0, &p[1].0), p[0].1 + p[1].1))
             .collect();
         levels.push(next);
     }
     let root = levels.last().unwrap()[0];
-    (levels, root)
+    (levels, root.0, root.1)
 }
-fn merkle_proof(levels: &[Vec<[u8; 32]>], mut idx: usize) -> Vec<[u8; 32]> {
+fn mst_proof(levels: &[Vec<HashSum>], mut idx: usize) -> Vec<MSTNode> {
     let mut siblings = Vec::new();
     for lvl in levels.iter().take(levels.len() - 1) {
-        siblings.push(lvl[idx ^ 1]);
+        let s = lvl[idx ^ 1];
+        siblings.push(MSTNode {
+            sibling_hash: s.0,
+            sibling_sum: s.1,
+        });
         idx >>= 1;
     }
     siblings
+}
+
+// --- Sortition helpers ---
+
+/// Deterministic VRF seed (must match the on-chain computation exactly).
+fn vrf_seed(
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    draw_attempt: u32,
+) -> [u8; 32] {
+    hashv(&[
+        committed_vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &draw_attempt.to_le_bytes(),
+    ])
+    .to_bytes()
+}
+
+/// Which sorted-claim index does r_i land in for each panel slot?
+fn sortition_pick(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    seed: &[u8; 32],
+    panel: usize,
+) -> Vec<usize> {
+    (0..panel)
+        .map(|i| {
+            let r_hash = hashv(&[seed, &(i as u32).to_le_bytes()]).to_bytes();
+            let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8])) % total_stake;
+            claims
+                .iter()
+                .position(|c| {
+                    let cum_before = c.cum_after.saturating_sub(c.stake);
+                    cum_before <= r_i && r_i < c.cum_after
+                })
+                .unwrap()
+        })
+        .collect()
+}
+
+/// Find a draw_attempt whose sortition gives `panel` distinct jurors.
+fn find_distinct_attempt(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    panel: usize,
+) -> (u32, Vec<usize>) {
+    for attempt in 0..10_000u32 {
+        let seed = vrf_seed(committed_vrf, dispute, round_idx, attempt);
+        let picks = sortition_pick(claims, total_stake, &seed, panel);
+        let unique: std::collections::HashSet<usize> = picks.iter().copied().collect();
+        if unique.len() == panel {
+            return (attempt, picks);
+        }
+    }
+    panic!("no distinct draw_attempt found in 10k tries");
+}
+
+/// Find a draw_attempt whose sortition produces a collision (for DuplicateJuror test).
+fn find_collision_attempt(
+    claims: &[LeafClaim],
+    total_stake: u64,
+    committed_vrf: &[u8; 32],
+    dispute: &Pubkey,
+    round_idx: u32,
+    panel: usize,
+) -> (u32, Vec<usize>) {
+    for attempt in 0..10_000u32 {
+        let seed = vrf_seed(committed_vrf, dispute, round_idx, attempt);
+        let picks = sortition_pick(claims, total_stake, &seed, panel);
+        let unique: std::collections::HashSet<usize> = picks.iter().copied().collect();
+        if unique.len() < panel {
+            return (attempt, picks);
+        }
+    }
+    panic!("no collision draw_attempt found in 10k tries");
 }
 
 struct Fixture {
@@ -138,8 +219,13 @@ struct Fixture {
     dispute: Pubkey,
     snapshot: Pubkey,
     jurors: Vec<(Kp, u64, Pubkey)>,
-    levels: Vec<Vec<[u8; 32]>>,
+    /// Claims sorted by juror pubkey ascending (as the MST requires).
+    sorted_claims: Vec<LeafClaim>,
+    /// sorted_idx → original jurors[] index.
+    sorted_to_orig: Vec<usize>,
+    levels: Vec<Vec<HashSum>>,
     root: [u8; 32],
+    total_stake: u64,
 }
 
 fn setup() -> Fixture {
@@ -188,11 +274,22 @@ fn setup() -> Fixture {
     create_dispute(&mut svm, &filer, &subaccord, &mint, &filer_ata, 1);
     let dispute = dispute_pda(&filer.pubkey(), 1);
 
-    let leaves: Vec<[u8; 32]> = jurors
+    // Sort jurors by pubkey ascending and build LeafClaims with cum_after.
+    let mut order: Vec<usize> = (0..jurors.len()).collect();
+    order.sort_by_key(|&i| jurors[i].0.pubkey());
+    let mut cum = 0u64;
+    let sorted_claims: Vec<LeafClaim> = order
         .iter()
-        .map(|(kp, stake, _)| leaf_hash(&kp.pubkey(), *stake))
+        .map(|&i| {
+            cum += jurors[i].1;
+            LeafClaim {
+                juror: jurors[i].0.pubkey(),
+                stake: jurors[i].1,
+                cum_after: cum,
+            }
+        })
         .collect();
-    let (levels, root) = build_tree(leaves);
+    let (levels, root, total_stake) = build_mst(&sorted_claims);
 
     let snapshot = snapshot_pda(&dispute, 0);
     let vault = vault_ata(&subaccord, &mint);
@@ -213,6 +310,7 @@ fn setup() -> Fixture {
         &poster_ata,
         &vault,
         root,
+        total_stake,
     );
 
     let snap = {
@@ -231,6 +329,16 @@ fn setup() -> Fixture {
         &vault,
     );
 
+    // Commit the VRF (required before draw).
+    commit_vrf(
+        &mut svm,
+        &caller,
+        &subaccord,
+        &dispute,
+        &snapshot,
+        COMMITTED_VRF,
+    );
+
     Fixture {
         svm,
         creator,
@@ -240,8 +348,11 @@ fn setup() -> Fixture {
         dispute,
         snapshot,
         jurors,
+        sorted_claims,
+        sorted_to_orig: order,
         levels,
         root,
+        total_stake,
     }
 }
 
@@ -377,6 +488,7 @@ fn post_snapshot(
     poster_ata: &Pubkey,
     vault: &Pubkey,
     root: [u8; 32],
+    total_stake: u64,
 ) {
     let ix = svm
         .program()
@@ -391,7 +503,10 @@ fn post_snapshot(
             token_program: spl_token::id(),
             system_program: SYS,
         })
-        .args(instruction::PostSnapshot { merkle_root: root })
+        .args(instruction::PostSnapshot {
+            merkle_root: root,
+            total_stake,
+        })
         .instruction()
         .unwrap();
     svm.execute_instruction(ix, &[poster])
@@ -429,30 +544,50 @@ fn finalize_snapshot(
         .assert_success();
 }
 
-fn membership(
-    jurors: &[(Kp, u64, Pubkey)],
-    levels: &[Vec<[u8; 32]>],
-    idx: usize,
-) -> JurorMembership {
-    let (kp, stake, _) = &jurors[idx];
-    JurorMembership {
-        leaf: LeafClaim {
-            juror: kp.pubkey(),
-            stake: *stake,
-        },
-        proof: merkle_proof(levels, idx),
-        index: idx as u32,
-    }
+fn commit_vrf(
+    svm: &mut anchor_litesvm::AnchorContext,
+    caller: &Kp,
+    subaccord: &Pubkey,
+    dispute: &Pubkey,
+    snapshot: &Pubkey,
+    vrf_result: [u8; 32],
+) {
+    let ix = svm
+        .program()
+        .accounts(accounts::CommitVrf {
+            caller: caller.pubkey(),
+            subaccord: *subaccord,
+            dispute: *dispute,
+            snapshot: *snapshot,
+        })
+        .args(instruction::CommitVrf { vrf_result })
+        .instruction()
+        .unwrap();
+    svm.execute_instruction(ix, &[caller])
+        .unwrap()
+        .assert_success();
 }
 
-/// Build a draw Instruction against fx.dispute / fx.snapshot with the given
-/// caller, VRF, memberships, and juror-stake remaining-accounts.
+// --- membership / PDA helpers operating on the Fixture's sorted claims ---
+
+fn membership_for(fx: &Fixture, sorted_idx: usize) -> JurorMembership {
+    JurorMembership {
+        leaf: fx.sorted_claims[sorted_idx],
+        proof: mst_proof(&fx.levels, sorted_idx),
+        index: sorted_idx as u32,
+    }
+}
+fn juror_pda_for(fx: &Fixture, sorted_idx: usize) -> Pubkey {
+    fx.jurors[fx.sorted_to_orig[sorted_idx]].2
+}
+
+/// Build a draw instruction against fx.dispute / fx.snapshot.
 fn draw_ix(
     fx: &Fixture,
     caller: &Pubkey,
     dispute: &Pubkey,
     snapshot: &Pubkey,
-    vrf: [u8; 32],
+    draw_attempt: u32,
     memberships: Vec<JurorMembership>,
     juror_stake_pdas: &[Pubkey],
 ) -> solana_sdk::instruction::Instruction {
@@ -480,7 +615,7 @@ fn draw_ix(
             system_program: SYS,
         })
         .args(instruction::Draw {
-            vrf_result: vrf,
+            draw_attempt,
             memberships,
         })
         .instruction()
@@ -500,17 +635,24 @@ fn draw_ix(
 #[test]
 fn happy_draw_selects_jurors_and_increments_active_draws() {
     let mut fx = setup();
-    let vrf = [42u8; 32];
 
-    let memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-        membership(&fx.jurors, &fx.levels, 2),
-    ];
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let (attempt, picks) = find_distinct_attempt(
+        &fx.sorted_claims,
+        fx.total_stake,
+        &COMMITTED_VRF,
+        &fx.dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let memberships: Vec<JurorMembership> =
+        picks.iter().map(|&si| membership_for(&fx, si)).collect();
+    let pda_list: Vec<Pubkey> = picks.iter().map(|&si| juror_pda_for(&fx, si)).collect();
 
-    for i in 0..3 {
-        assert_eq!(read_juror_stake(&fx.svm, &fx.jurors[i].2).active_draws, 0);
+    for &si in &picks {
+        assert_eq!(
+            read_juror_stake(&fx.svm, &juror_pda_for(&fx, si)).active_draws,
+            0
+        );
     }
 
     fx.svm
@@ -520,7 +662,7 @@ fn happy_draw_selects_jurors_and_increments_active_draws() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                vrf,
+                attempt,
                 memberships,
                 &pda_list,
             ),
@@ -538,15 +680,15 @@ fn happy_draw_selects_jurors_and_increments_active_draws() {
     let round = read_round(&fx.svm, &round_pda(&fx.dispute, 0));
     assert_eq!(round.round_idx, 0);
     assert_eq!(round.juror_count, JURORS_PER_DISPUTE);
-    for i in 0..JURORS_PER_DISPUTE as usize {
-        assert_eq!(round.jurors[i], fx.jurors[i].0.pubkey());
+    for (i, &si) in picks.iter().enumerate() {
+        assert_eq!(round.jurors[i], fx.sorted_claims[si].juror);
     }
 
-    for i in 0..3 {
+    for &si in &picks {
         assert_eq!(
-            read_juror_stake(&fx.svm, &fx.jurors[i].2).active_draws,
+            read_juror_stake(&fx.svm, &juror_pda_for(&fx, si)).active_draws,
             1,
-            "juror {i} active_draws incremented"
+            "drawn juror active_draws incremented"
         );
     }
 }
@@ -591,14 +733,17 @@ fn draw_before_finalize_reverts() {
         &poster_ata,
         &vault,
         fx.root,
+        fx.total_stake,
     );
 
+    // No commit_vrf for this dispute → draw reverts (SnapshotNotFinalized fires
+    // first since the second snapshot was never finalized).
     let memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-        membership(&fx.jurors, &fx.levels, 2),
+        membership_for(&fx, 0),
+        membership_for(&fx, 1),
+        membership_for(&fx, 2),
     ];
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = (0..3).map(|si| juror_pda_for(&fx, si)).collect();
 
     let r = fx
         .svm
@@ -608,7 +753,7 @@ fn draw_before_finalize_reverts() {
                 &fx.caller.pubkey(),
                 &dispute2,
                 &snapshot2,
-                [1u8; 32],
+                0,
                 memberships,
                 &pda_list,
             ),
@@ -626,13 +771,19 @@ fn draw_before_finalize_reverts() {
 fn invalid_membership_proof_reverts() {
     let mut fx = setup();
 
-    let mut memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-        membership(&fx.jurors, &fx.levels, 2),
-    ];
+    let (attempt, picks) = find_distinct_attempt(
+        &fx.sorted_claims,
+        fx.total_stake,
+        &COMMITTED_VRF,
+        &fx.dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let mut memberships: Vec<JurorMembership> =
+        picks.iter().map(|&si| membership_for(&fx, si)).collect();
+    // Tamper: swap proof of first membership with the second's.
     memberships[0].proof = memberships[1].proof.clone();
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = picks.iter().map(|&si| juror_pda_for(&fx, si)).collect();
 
     let r = fx
         .svm
@@ -642,7 +793,7 @@ fn invalid_membership_proof_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                attempt,
                 memberships,
                 &pda_list,
             ),
@@ -664,13 +815,18 @@ fn invalid_membership_proof_reverts() {
 fn duplicate_juror_reverts() {
     let mut fx = setup();
 
-    let memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 0), // duplicate
-        membership(&fx.jurors, &fx.levels, 2),
-    ];
-    // remaining_accounts: juror 0's PDA twice then juror 2's.
-    let pda_list = vec![fx.jurors[0].2, fx.jurors[0].2, fx.jurors[2].2];
+    // Find a draw_attempt whose sortition naturally produces a collision.
+    let (attempt, picks) = find_collision_attempt(
+        &fx.sorted_claims,
+        fx.total_stake,
+        &COMMITTED_VRF,
+        &fx.dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let memberships: Vec<JurorMembership> =
+        picks.iter().map(|&si| membership_for(&fx, si)).collect();
+    let pda_list: Vec<Pubkey> = picks.iter().map(|&si| juror_pda_for(&fx, si)).collect();
 
     let r = fx
         .svm
@@ -680,7 +836,7 @@ fn duplicate_juror_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                attempt,
                 memberships,
                 &pda_list,
             ),
@@ -698,11 +854,8 @@ fn duplicate_juror_reverts() {
 fn wrong_panel_size_reverts() {
     let mut fx = setup();
 
-    let memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-    ];
-    let pda_list = vec![fx.jurors[0].2, fx.jurors[1].2];
+    let memberships = vec![membership_for(&fx, 0), membership_for(&fx, 1)];
+    let pda_list = vec![juror_pda_for(&fx, 0), juror_pda_for(&fx, 1)];
 
     let r = fx
         .svm
@@ -712,7 +865,7 @@ fn wrong_panel_size_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                0,
                 memberships,
                 &pda_list,
             ),
@@ -730,13 +883,18 @@ fn wrong_panel_size_reverts() {
 fn insufficient_stake_reverts() {
     let mut fx = setup();
 
-    let mut memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-        membership(&fx.jurors, &fx.levels, 2),
-    ];
+    let (attempt, picks) = find_distinct_attempt(
+        &fx.sorted_claims,
+        fx.total_stake,
+        &COMMITTED_VRF,
+        &fx.dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let mut memberships: Vec<JurorMembership> =
+        picks.iter().map(|&si| membership_for(&fx, si)).collect();
     memberships[0].leaf.stake = 1; // below MIN_STAKE
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let pda_list: Vec<Pubkey> = picks.iter().map(|&si| juror_pda_for(&fx, si)).collect();
 
     let r = fx
         .svm
@@ -746,7 +904,7 @@ fn insufficient_stake_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                attempt,
                 memberships,
                 &pda_list,
             ),
@@ -764,14 +922,19 @@ fn insufficient_stake_reverts() {
 fn wrong_juror_stake_pda_order_reverts() {
     let mut fx = setup();
 
-    let memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-        membership(&fx.jurors, &fx.levels, 2),
-    ];
-    // Swap remaining_accounts order: [0, 2, 1] — juror 1's membership gets
-    // paired with juror 2's PDA.
-    let pda_list = vec![fx.jurors[0].2, fx.jurors[2].2, fx.jurors[1].2];
+    let (attempt, picks) = find_distinct_attempt(
+        &fx.sorted_claims,
+        fx.total_stake,
+        &COMMITTED_VRF,
+        &fx.dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let memberships: Vec<JurorMembership> =
+        picks.iter().map(|&si| membership_for(&fx, si)).collect();
+    // Build correct PDAs then swap two to create a mismatch.
+    let mut pda_list: Vec<Pubkey> = picks.iter().map(|&si| juror_pda_for(&fx, si)).collect();
+    pda_list.swap(1, 2);
 
     let r = fx
         .svm
@@ -781,7 +944,7 @@ fn wrong_juror_stake_pda_order_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                attempt,
                 memberships,
                 &pda_list,
             ),
@@ -800,15 +963,29 @@ fn vrf_seed_is_deterministic() {
     let dispute = Pubkey::new_unique();
     let round_idx: u32 = 0u32;
     let vrf = [42u8; 32];
-    let expected = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let attempt: u32 = 0;
+    let expected = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &attempt.to_le_bytes(),
+    ])
+    .to_bytes();
 
-    let again = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let again = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &attempt.to_le_bytes(),
+    ])
+    .to_bytes();
     assert_eq!(expected, again);
 
     let other = hashv(&[
         [43u8; 32].as_ref(),
         dispute.as_ref(),
         &round_idx.to_le_bytes(),
+        &attempt.to_le_bytes(),
     ])
     .to_bytes();
     assert_ne!(expected, other, "different VRF must produce different seed");
@@ -818,12 +995,17 @@ fn vrf_seed_is_deterministic() {
 fn double_draw_reverts() {
     let mut fx = setup();
 
-    let memberships = vec![
-        membership(&fx.jurors, &fx.levels, 0),
-        membership(&fx.jurors, &fx.levels, 1),
-        membership(&fx.jurors, &fx.levels, 2),
-    ];
-    let pda_list: Vec<Pubkey> = (0..3).map(|i| fx.jurors[i].2).collect();
+    let (attempt, picks) = find_distinct_attempt(
+        &fx.sorted_claims,
+        fx.total_stake,
+        &COMMITTED_VRF,
+        &fx.dispute,
+        0,
+        JURORS_PER_DISPUTE as usize,
+    );
+    let memberships: Vec<JurorMembership> =
+        picks.iter().map(|&si| membership_for(&fx, si)).collect();
+    let pda_list: Vec<Pubkey> = picks.iter().map(|&si| juror_pda_for(&fx, si)).collect();
 
     // First draw succeeds.
     fx.svm
@@ -833,7 +1015,7 @@ fn double_draw_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                attempt,
                 memberships.clone(),
                 &pda_list,
             ),
@@ -852,7 +1034,7 @@ fn double_draw_reverts() {
                 &fx.caller.pubkey(),
                 &fx.dispute,
                 &fx.snapshot,
-                [42u8; 32],
+                attempt,
                 memberships,
                 &pda_list,
             ),

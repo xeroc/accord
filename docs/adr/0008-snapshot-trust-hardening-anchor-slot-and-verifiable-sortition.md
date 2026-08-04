@@ -386,3 +386,24 @@ cum_after` where `r_i` is VRF-derived.
 - Bean `veridao-rrxs` — shipped the original snapshot trust lifecycle
 - Bean `veridao-fr1x` — shipped the original draw instruction
 - VRF integration reference: <https://github.com/magicblock-labs/solana-vrf/blob/main/README.md>
+
+## Addendum: commit_vrf / draw retry rationale (ADR-0009 design)
+
+The sortition enforcement in ADR-0009 requires the VRF result to be **committed
+once and immutable across retries**. A single `draw(vrf_result, ...)` instruction
+that both stores the VRF and checks the selection has a revert problem: if the
+draw fails (collision between VRF-selected jurors), the entire transaction
+reverts — including the VRF commitment write. The retry starts with no committed
+VRF; the caller could pass a different `vrf_result`, brute-forcing VRF results
+until one selects favorable jurors.
+
+**Fix**: split into two transactions. `commit_vrf(vrf_result)` writes
+`dispute.committed_vrf` in a standalone tx that always succeeds. `draw(draw_attempt,
+memberships)` reads the committed VRF — it cannot be swapped. Failed draws
+revert the Round init but the VRF commitment persists on the Dispute account. The
+cranker retries with incremented `draw_attempt`, which mixes into the VRF seed to
+produce different `r_i` values without a new oracle call.
+
+This is why the VRF commit must be separate from the draw execution: Solana's
+transaction atomicity means a failed instruction reverts all writes in the tx.
+The commit must survive the draw failure, which requires a separate tx.
