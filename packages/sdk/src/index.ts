@@ -16,3 +16,7 @@ export const SDK_VERSION = "0.1.0";
 
 // Arbitrable CPI API — the primary external surface (ADR-0010, bean veridao-50qy).
 export * from "./methods/dispute.js";
+
+// Commit-reveal voting + finalization cranks + the commit-hash helper
+// (ADR-0010, bean veridao-a0mc).
+export * from "./methods/voting.js";
