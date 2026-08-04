@@ -20,3 +20,7 @@ export * from "./methods/dispute.js";
 // Commit-reveal voting + finalization cranks + the commit-hash helper
 // (ADR-0010, bean veridao-a0mc).
 export * from "./methods/voting.js";
+
+// Snapshot trust (post/challenge/finalize) + Merkle-Sum Tree membership builder
+// for ADR-0009 sortition (ADR-0010, bean veridao-dsc2).
+export * from "./methods/snapshot.js";
