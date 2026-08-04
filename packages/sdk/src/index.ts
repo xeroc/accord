@@ -3,14 +3,16 @@
  *
  * Barrel exports are filled in as the programs gain instructions. Each program
  * module re-exports its IDL type, program client, and PDA helpers:
- *   - `accord/`    → Arbitrable CPI helpers (create_dispute / get_ruling)
- *   - `pda.ts`    → canonical PDA derivations
+ *   - `methods/dispute` → Arbitrable CPI API (create_dispute / get_ruling)
+ *   - `pda.ts`          → canonical PDA derivations
  *
  * Conventions (see AGENTS.md § Code Style):
- *   - `PublicKey` for all addresses; `anchor.BN` for all numbers.
- *   - Prefer `accountsStrict()` over `accounts()` for type safety.
+ *   - `Address` for all addresses; `bigint` for all on-chain numbers.
  *   - camelCase identifiers; snake_case only where matching on-chain field names.
  */
 
 export const SDK_NAME = "@veridao/sdk";
 export const SDK_VERSION = "0.1.0";
+
+// Arbitrable CPI API — the primary external surface (ADR-0010, bean veridao-50qy).
+export * from "./methods/dispute.js";
