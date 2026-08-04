@@ -22,10 +22,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@anchor-lang/core": "^1.0.2",
     "@solana/kit": "^7.0.0",
-    "@solana/web3.js": "^1.95.0",
-    "@solana/spl-token": "^0.4.0",
     "bn.js": "^5.2.1"
   },
   "devDependencies": {
