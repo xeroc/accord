@@ -28,3 +28,7 @@ export * from "./methods/snapshot.js";
 // Subaccord lifecycle + circuit breaker (ADR-0005/0007) + timelock helpers
 // (ADR-0010, bean veridao-erv7).
 export * from "./methods/lifecycle.js";
+
+// VRF request + draw choreography + sortition slot derivation (ADR-0009 §2,
+// ADR-0010, bean veridao-j7tx).
+export * from "./methods/vrf.js";
