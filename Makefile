@@ -6,7 +6,7 @@
 SOLANA_VERSION ?= 3.1.10
 ANCHOR_VERSION ?= 1.0.2
 
-.PHONY: prep build test test_unit test_surfpool run_surfpool lint clean help
+.PHONY: prep build codegen sdk test test_unit test_surfpool run_surfpool lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -20,6 +20,13 @@ prep: ## Install Solana + Anchor toolchains, then workspace deps
 build: ## Build programs + packages + docs
 	anchor build
 	pnpm -r run build
+
+codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anchor build`)
+	anchor build
+	cd packages/sdk && pnpm exec codama run js
+
+sdk: ## Build the SDK package only
+	cd packages/sdk && pnpm run build
 
 test: ## Run Rust unit tests + jest integration suite against a local validator
 	anchor test
