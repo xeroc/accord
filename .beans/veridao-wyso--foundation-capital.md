@@ -1,11 +1,11 @@
 ---
 # veridao-wyso
 title: Foundation & Capital
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-03T23:09:55Z
-updated_at: 2026-08-03T23:09:55Z
+updated_at: 2026-08-04T03:20:14Z
 parent: veridao-rlno
 ---
 
