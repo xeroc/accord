@@ -3,8 +3,9 @@
 title: jest integration suite vs Surfpool (Kit SDK)
 status: todo
 type: task
+priority: normal
 created_at: 2026-08-04T21:52:11Z
-updated_at: 2026-08-04T21:52:11Z
+updated_at: 2026-08-04T22:10:02Z
 parent: veridao-5y8e
 ---
 
