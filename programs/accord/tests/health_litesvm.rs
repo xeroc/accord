@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! LiteSVM harness for the Accord program (veridao-8ys4).
 //!
 //! Testing decision — BOTH harnesses, complementary:
@@ -9,8 +10,8 @@
 //! Wiring uses `anchor-litesvm` 0.1.x — the only line pinned to anchor-lang
 //! 0.31 (0.2+ jumped to anchor 1.x; raw litesvm 0.11/0.15 pull a solana-crate
 //! split that doesn't compile against anchor 0.31). It wraps litesvm 0.6 with a
-//! single, self-consistent solana-2.x dep set and a typed Anchor builder:
-//! `ctx.program().request().accounts(..).args(..).instruction()` ->
+//! single, self-consistent solana-3.x dep set and a typed Anchor builder:
+//! `ctx.program().accounts(..).args(..).instruction()` ->
 //! `ctx.execute_instruction(ix, &[&kp]).assert_success()`.
 //!
 //! The safe-solana-builder `references/litesvm.md` remains the *checklist/pattern*
@@ -53,7 +54,6 @@ fn health_round_trips() {
 
     let ix = ctx
         .program()
-        .request()
         .accounts(HealthAccts {
             caller: caller.pubkey(),
         })

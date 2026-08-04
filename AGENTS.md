@@ -84,12 +84,11 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 
 - **Two harnesses, complementary** (decision veridao-8ys4):
   - **LiteSVM** (`programs/accord/tests/*.rs`, `make test_unit`) — fast in-process
-    Rust unit/TDD per instruction. Wired via `anchor-litesvm` 0.1.x (the only
-    line pinned to anchor-lang 0.31; 0.2+ jumped to anchor 1.x, and raw litesvm
-    0.11/0.15 pull a solana-crate split that doesn't compile against 0.31). The
-    safe-solana-builder `references/litesvm.md` is the **checklist/pattern
-    authority** for every instruction bean (happy/auth/reinit/time-lock/
-    arithmetic/closure, sysvar, CU) — wiring differs, concepts don't.
+    Rust unit/TDD per instruction. Wired via `anchor-litesvm` 0.4.x (tracks
+    anchor-lang 1.x). The safe-solana-builder `references/litesvm.md` is the
+    **checklist/pattern authority** for every instruction bean (happy/auth/
+    reinit/time-lock/arithmetic/closure, sysvar, CU) — wiring differs, concepts
+    don't.
   - **jest + Surfpool** (`tests/`) — full e2e: CPI chains, Switchboard VRF, real
     validator behaviour.
 - **TDD only.** RED → GREEN → REFACTOR for every feature/instruction. Write the
@@ -99,15 +98,14 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
   test binary, so Rust tests build `accord` with `no-entrypoint` (types only).
   The `.so` (built separately via `cargo build-sbf` / `anchor build`, WITH the
   entrypoint) is what LiteSVM loads. `make test_unit` handles both steps.
-- **Toolchain note:** `cargo build-sbf`/`anchor build` with the **default**
-  platform-tools (v1.48, bundled with Solana 2.3.11) is blocked — it ships
-  cargo 1.84, which can't parse `block-buffer 0.12.x`'s edition2024 manifest
-  (pulled by `solana-program → blake3 → digest 0.11`). Use
-  `cargo build-sbf --tools-version v1.52` (cargo ≥1.85) — `make test_unit`
-  does this. `anchor build` (needed for IDL generation + the jest/Surfpool
-  path) is still blocked; tracked as a follow-up. `declare_id!` /
-  `accord-keypair.json` were provisioned by hand (`solana-keygen`) until
-  `anchor build` works.
+  All `*_litesvm.rs` test files are gated with `#![cfg(feature = "no-entrypoint")]`
+  so `anchor build` (which doesn't pass the feature) skips them during IDL gen.
+- **Toolchain note:** `anchor build` works end-to-end on anchor 1.0.2 + Solana
+  3.x deps — IDL generation is unblocked. `cargo build-sbf` invoked directly
+  still needs `--tools-version v1.52` while Solana CLI < 3.x is installed (it
+  bundles platform-tools v1.48 / cargo 1.84, which can't parse `edition2024`
+  manifests). `make prep` installs Solana 3.1.10, which drops the flag.
+  `anchor build` manages its own toolchain and is unaffected.
 - Integration tests live in `tests/` (jest, run against a live validator).
 - Rust unit tests live inline (`#[cfg(test)]`) in the program crate.
 - First real test ships with the first Accord instruction (`create_subaccord`).
@@ -183,8 +181,8 @@ in `.beans.yml` (prefix `VeriDAO-`).
 
 ## Gotchas
 
-- **Program IDs are placeholders.** `declare_id!` in the program and the
-  `[programs.*]` entries in `Anchor.toml` use the system-program placeholder.
-  First `anchor build` provisions a real keypair in `target/deploy/accord.json`.
+- **Program ID.** `declare_id!` and `Anchor.toml [programs.*]` are kept in sync
+  with `target/deploy/accord-keypair.json` via `anchor keys sync`. The keypair
+  was provisioned by `solana-keygen`; `anchor build` uses it for the `.so`.
 - **Per-Subaccord staking token.** Each Subaccord defines its `staking_token` at
   creation (ADR-0002); USDC is the common default, not hard-coded.

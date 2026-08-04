@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! Circuit-breaker tests (veridao-63v3). LiteSVM exercises the full pause /
 //! unpause flow end-to-end including the on-chain slot timelock.
 //!
@@ -58,11 +59,10 @@ fn read_pause(svm: &anchor_litesvm::AnchorContext) -> PauseState {
 fn init(svm: &mut anchor_litesvm::AnchorContext, authority: &Keypair) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::InitializePause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),
-            system_program: solana_program::system_program::ID,
+            system_program: anchor_lang::system_program::ID,
         })
         .args(instruction::InitializePause {})
         .instruction()
@@ -82,7 +82,6 @@ fn full_pause_unpause_flow() {
     // pause: instant
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Pause {
             authority: authority.pubkey(),
             pause_state: pda,
@@ -103,7 +102,6 @@ fn full_pause_unpause_flow() {
         .slot;
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::ProposeUnpause {
             authority: authority.pubkey(),
             pause_state: pda,
@@ -123,7 +121,6 @@ fn full_pause_unpause_flow() {
     // execute_unpause BEFORE the notice slot: must fail
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::ExecuteUnpause {
             caller: authority.pubkey(),
             pause_state: pda,
@@ -143,7 +140,6 @@ fn full_pause_unpause_flow() {
     svm.svm.warp_to_slot(slot + UNPAUSE_TIMELOCK_SLOTS + 1);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::ExecuteUnpause {
             caller: authority.pubkey(),
             pause_state: pda,
@@ -167,7 +163,6 @@ fn non_authority_cannot_pause() {
 
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Pause {
             authority: attacker.pubkey(),
             pause_state: pda,
@@ -192,7 +187,6 @@ fn double_pause_fails() {
 
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Pause {
             authority: authority.pubkey(),
             pause_state: pda,
@@ -216,7 +210,6 @@ fn propose_unpause_while_unpaused_fails() {
 
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::ProposeUnpause {
             authority: authority.pubkey(),
             pause_state: pda,

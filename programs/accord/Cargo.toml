@@ -14,34 +14,35 @@ no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
+# Required by `anchor build` for IDL generation since anchor 0.30 (#2824).
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
 anchor-lang.workspace = true
 anchor-spl.workspace = true
+solana-program.workspace = true
 # `#[zero_copy]` macro references `bytemuck` at the crate root; anchor-lang
 # re-exports the traits but the derive macro emits `::bytemuck::Pod`.
 bytemuck = "1"
 
 # LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
 #
-# `anchor-litesvm` 0.1.x is the only line that targets anchor-lang 0.31 (0.2+
-# jumped to anchor 1.x; raw litesvm 0.11/0.15 pull a solana-crate split that
-# doesn't compile against 0.31). It wraps litesvm 0.6 with a single,
-# self-consistent solana-2.x dep set and a typed Anchor builder:
-# `ctx.program().request().accounts(..).args(..).instruction()` ->
+# `anchor-litesvm` 0.4.x tracks anchor-lang 1.x (the 0.1 line was the 0.31 pin).
+# It wraps litesvm 0.11 with a solana-3.x dep set and the same typed Anchor
+# builder: `ctx.program().request().accounts(..).args(..).instruction()` ->
 # `ctx.execute_instruction(ix, &[&kp]).assert_success()`.
 #
 # The safe-solana-builder `references/litesvm.md` stays the *checklist/pattern*
 # authority for every instruction bean (happy/auth/reinit/time-lock/arithmetic/
 # closure, sysvar manipulation, CU profiling) — wiring differs, concepts don't.
 [target.'cfg(not(target_os = "solana"))'.dev-dependencies]
-anchor-litesvm = "0.1"
+anchor-litesvm = "0.4"
 anchor-lang = { workspace = true }
 anchor-spl = { workspace = true }
-solana-program = "2"
-solana-sdk = "2"
+solana-program = "3"
+solana-sdk = "3"
 # For stake tests: derive the Subaccord PDA's vault ATA address + unpack SPL
 # token accounts for balance assertions. Pinned to match litesvm-utils'
 # resolved versions so no extra copies land in the dep tree.
-spl-associated-token-account = "6"
-spl-token = "7"
+spl-associated-token-account = "8"
+spl-token = "9"

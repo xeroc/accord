@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `stake` tests (veridao-ja2w). LiteSVM exercises the SPL-transfer staking
 //! flow end-to-end against the bundled spl-token + spl-associated-token-account
 //! programs (auto-loaded by LiteSVM::new()).
@@ -24,7 +25,7 @@ use solana_sdk::signer::Signer;
 use spl_associated_token_account::get_associated_token_address;
 use std::path::PathBuf;
 
-const SYS: Pubkey = solana_program::system_program::ID;
+const SYS: Pubkey = anchor_lang::system_program::ID;
 const STAKE_AMOUNT_FUND: u64 = 1_000_000_000;
 
 fn load_program() -> Vec<u8> {
@@ -95,7 +96,6 @@ fn setup() -> Fixture {
 fn init_pause(svm: &mut anchor_litesvm::AnchorContext, authority: &solana_sdk::signature::Keypair) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::InitializePause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),
@@ -118,7 +118,6 @@ fn create_subaccord(
 ) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: *subaccord,
@@ -158,7 +157,6 @@ fn stake_ix(
     amount: u64,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::Stake {
             juror: *juror,
             subaccord: *subaccord,
@@ -179,7 +177,6 @@ fn stake_ix(
 fn pause(svm: &mut anchor_litesvm::AnchorContext, authority: &solana_sdk::signature::Keypair) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Pause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),

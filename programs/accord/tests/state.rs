@@ -64,6 +64,7 @@ fn juror_stake_round_trips() {
         amount: 5_000,
         active_draws: 2,
         bump: 253,
+        last_change_slot: 0,
     };
     let decoded = round_trip(&j);
     assert_eq!(decoded.amount, 5_000);
@@ -145,6 +146,7 @@ fn snapshot_round_trips() {
         challenge_deadline: 1_700_000_000 + 86_400, // fixed ts; host tests have no Clock
         status: SnapshotStatus::Posted,
         bump: 250,
+        anchor_slot: 0,
     };
     let decoded = round_trip(&s);
     assert_eq!(decoded.status, SnapshotStatus::Posted);

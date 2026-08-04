@@ -3,8 +3,8 @@
 # builds, and lint/test fan out via pnpm's recursive filter. Don't add root
 # scripts; they'd duplicate the Makefile.
 
-SOLANA_VERSION ?= 1.18.20
-ANCHOR_VERSION ?= 0.31.0
+SOLANA_VERSION ?= 3.1.10
+ANCHOR_VERSION ?= 1.0.2
 
 .PHONY: prep build test test_unit test_surfpool run_surfpool lint clean help
 
@@ -30,9 +30,10 @@ test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .s
 	# `--features no-entrypoint`: the program's `entrypoint!` symbol collides with
 	# a builtin when the program crate is linked into the test binary; the .so
 	# (built above WITH the entrypoint) is what LiteSVM loads. See AGENTS.md.
-	# `--tools-version v1.52`: default platform-tools (v1.48) bundles cargo 1.84,
-	# which can't parse `block-buffer 0.12.x`'s edition2024 manifest; v1.52 has
-	# cargo >=1.85. Drop the flag once the bundled tools catch up.
+	# `--tools-version v1.52`: needed while Solana CLI < 3.x is installed (it
+	# bundles platform-tools v1.48 / cargo 1.84, which can't parse edition2024
+	# manifests). `make prep` installs Solana 3.1.10, which drops this flag.
+	# `anchor build` is unaffected — it manages its own toolchain.
 
 test_surfpool: ## Run the full suite against a running Surfpool instance
 	pnpm --filter @veridao/tests test

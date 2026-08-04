@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `unstake` tests (veridao-b2sc). LiteSVM exercises the PDA-signed SPL
 //! withdrawal out of the Subaccord vault.
 //!
@@ -26,7 +27,7 @@ use solana_sdk::signer::Signer;
 use spl_associated_token_account::get_associated_token_address;
 use std::path::PathBuf;
 
-const SYS: Pubkey = solana_program::system_program::ID;
+const SYS: Pubkey = anchor_lang::system_program::ID;
 const FUND: u64 = 1_000_000_000;
 const STAKE_AMT: u64 = 5_000;
 
@@ -75,7 +76,6 @@ fn setup() -> Fixture {
     // pause init (unstake ignores it, but stake requires the account present)
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::InitializePause {
             authority: creator.pubkey(),
             pause_state: pause_pda(),
@@ -95,7 +95,6 @@ fn setup() -> Fixture {
     // create_subaccord
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord,
@@ -133,7 +132,6 @@ fn setup() -> Fixture {
     let vault = vault_ata(&subaccord, &mint);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord,
@@ -170,7 +168,6 @@ fn unstake_ix(
     amount: u64,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::Unstake {
             juror: fx.juror.pubkey(),
             subaccord: fx.subaccord,

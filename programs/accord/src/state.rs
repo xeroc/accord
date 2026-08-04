@@ -51,6 +51,12 @@ pub struct Subaccord {
 /// A Juror's staked capital in a Subaccord. `unstake` reverts while
 /// `active_draws > 0` (ADR-0003: stake frozen until every drawn dispute settles).
 ///
+/// `last_change_slot` is the Solana slot of the most recent `stake`/`unstake`.
+/// It is the anchor-slot witness (ADR-0008): if `last_change_slot <
+/// Snapshot.anchor_slot`, the current `amount` equals the anchor-time amount,
+/// making the live account its own historical stake witness — no ring buffer
+/// or epoch snapshot needed.
+///
 /// Seeds: `["stake", subaccord, juror]`.
 #[account]
 #[derive(InitSpace)]
@@ -60,6 +66,7 @@ pub struct JurorStake {
     pub amount: u64,
     pub active_draws: u32, // disputes this juror is currently drawn into
     pub bump: u8,
+    pub last_change_slot: u64, // ADR-0008: anchor-slot watermark
 }
 
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
@@ -125,7 +132,10 @@ pub struct Round {
 }
 
 /// A committed Merkle root over the Subaccord's Juror set + cumulative stakes,
-/// posted optimistically and protected by a 1-day fraud-proof window (ADR-0003).
+/// posted optimistically and protected by a 1-day fraud-proof window
+/// (ADR-0003). `anchor_slot` freezes the juror set at `post_snapshot` time
+/// (ADR-0008): all fraud predicates compare against state as of this slot, not
+/// current chain state.
 ///
 /// Seeds: `["snapshot", dispute, round_idx]`.
 #[account]
@@ -141,6 +151,11 @@ pub struct Snapshot {
     pub challenge_deadline: i64,
     pub status: SnapshotStatus,
     pub bump: u8,
+    /// Slot at which the snapshot was posted (ADR-0008 anchor-slot pattern).
+    /// `JurorStake.last_change_slot < anchor_slot` certifies the live amount
+    /// equals the anchor-time amount — the witness for omission and wrong-stake
+    /// fraud predicates.
+    pub anchor_slot: u64,
 }
 
 /// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per
@@ -269,22 +284,43 @@ pub struct LeafClaim {
     pub stake: u64,
 }
 
-/// Fraud proof for `challenge_snapshot`. Demonstrates the posted root is a false
-/// commitment by showing two tree leaves that both verify against the root yet
-/// attribute a stake to the **same Juror** (a duplicate / inconsistent entry).
-/// This is the one fraud class that is fully verifiable on-chain *without*
-/// comparing against live `JurorStake` state (which drifts as Jurors
-/// stake/unstake during the 1-day window and would make an honest root
-/// challengeable). Duplicating a Juror is also the direct way to skew the
-/// cumulative-stake distribution the draw reads, so it is the highest-value
-/// fraud to catch. Other fraud classes (wrong stake, missing/extra Juror) need
-/// the off-chain dataset and are left to a future richer proof (hardening bean).
+/// Fraud proof for `challenge_snapshot` (ADR-0003 + ADR-0008). Tagged union
+/// covering the two on-chain-verifiable fraud classes:
+///
+/// - `Duplicate`: two leaves with the same juror pubkey. Time-independent — no
+///   comparison to live state. (ADR-0003 predicate 1.)
+/// - `WrongStake`: a leaf whose `stake` differs from the juror's actual
+///   anchor-time stake. Requires `JurorStake.last_change_slot < anchor_slot` as
+///   the witness (the live amount equals the anchor-time amount). The
+///   `JurorStake` is passed as `remaining_accounts[0]`. (ADR-0008 predicate 3.)
+///
+/// Inflation (leaf overstates stake) is also caught at `draw` time via
+/// `JurorStake.amount >= leaf.stake` (predicate 4), which is race-immune
+/// because it reads current live state regardless of `last_change_slot`.
+///
+/// Omission (predicate 2: a staked juror missing from the root) requires
+/// non-inclusion range proofs over sorted leaves — deferred to v1.1 alongside
+/// the Merkle-Sum Tree migration.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub struct FraudProof {
-    pub leaf_a: LeafClaim,
-    pub proof_a: Vec<[u8; 32]>, // sibling hashes, rootward
-    pub index_a: u32,           // leaf position (bit i = side at level i)
-    pub leaf_b: LeafClaim,
-    pub proof_b: Vec<[u8; 32]>,
-    pub index_b: u32,
+pub enum FraudProof {
+    /// Two leaves at different indices with the same juror pubkey, both
+    /// verifying against the snapshot root. The direct way to skew the
+    /// cumulative-stake distribution.
+    Duplicate {
+        leaf_a: LeafClaim,
+        proof_a: Vec<[u8; 32]>,
+        index_a: u32,
+        leaf_b: LeafClaim,
+        proof_b: Vec<[u8; 32]>,
+        index_b: u32,
+    },
+    /// A leaf whose `stake` field doesn't match the juror's actual stake at
+    /// the anchor slot. The challenger passes the juror's `JurorStake` as
+    /// `remaining_accounts[0]`; the chain verifies `last_change_slot <
+    /// anchor_slot` (witness condition) and `amount != leaf.stake` (fraud).
+    WrongStake {
+        leaf: LeafClaim,
+        proof: Vec<[u8; 32]>,
+        index: u32,
+    },
 }

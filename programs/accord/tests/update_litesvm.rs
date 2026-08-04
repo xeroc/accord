@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `propose_subaccord_update` / `execute_subaccord_update` tests (veridao-y63e).
 //! LiteSVM exercises the ADR-0005 authority + 48h on-chain timelock, including
 //! slot time travel.
@@ -22,7 +23,7 @@ use solana_program::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use std::path::PathBuf;
 
-const SYS: Pubkey = solana_program::system_program::ID;
+const SYS: Pubkey = anchor_lang::system_program::ID;
 
 fn load_program() -> Vec<u8> {
     let so = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/accord.so");
@@ -64,7 +65,6 @@ fn setup_immutable() -> (anchor_litesvm::AnchorContext, Kp, Pubkey) {
 
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord,
@@ -104,7 +104,6 @@ fn setup_mutable() -> (anchor_litesvm::AnchorContext, Kp, Kp, Pubkey, [u8; 32]) 
 
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord,
@@ -143,7 +142,6 @@ fn propose_ix(
     payload: UpdatePayload,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::ProposeSubaccordUpdate {
             authority: *authority,
             subaccord: *subaccord,
@@ -162,7 +160,6 @@ fn execute_ix(
     pending: &Pubkey,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::ExecuteSubaccordUpdate {
             caller: *caller,
             subaccord: *subaccord,

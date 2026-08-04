@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `create_subaccord` tests (veridao-ek65). LiteSVM exercises the
 //! permissionless Subaccord init end-to-end.
 //!
@@ -65,11 +66,10 @@ fn build_ix(
     risk_type: [u8; 32],
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: *creator,
             subaccord: *subaccord,
-            system_program: solana_program::system_program::ID,
+            system_program: anchor_lang::system_program::ID,
         })
         .args(instruction::CreateSubaccord {
             risk_type,
@@ -100,11 +100,10 @@ fn happy_creates_subaccord_with_all_fields() {
 
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: pda,
-            system_program: solana_program::system_program::ID,
+            system_program: anchor_lang::system_program::ID,
         })
         .args(instruction::CreateSubaccord {
             risk_type,

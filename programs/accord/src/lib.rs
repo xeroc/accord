@@ -43,7 +43,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("5DjgEFpkzXk37uENkfGptfARTEmr4aUoZXcSAXMYKzLZ");
+declare_id!("RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe");
 
 #[program]
 pub mod accord {
@@ -208,7 +208,7 @@ pub mod accord {
 
         token::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.juror_token_account.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
@@ -229,6 +229,7 @@ pub mod accord {
         js.subaccord = ctx.accounts.subaccord.key();
         js.juror = ctx.accounts.juror.key();
         js.bump = ctx.bumps.juror_stake;
+        js.last_change_slot = Clock::get()?.slot;
         // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
         let prev_amount = js.amount;
         js.amount = js
@@ -283,7 +284,7 @@ pub mod accord {
         ];
         token::transfer(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.vault.to_account_info(),
                     to: ctx.accounts.juror_token_account.to_account_info(),
@@ -300,6 +301,7 @@ pub mod accord {
             .amount
             .checked_sub(amount)
             .ok_or(AccordError::ArithmeticOverflow)?;
+        js.last_change_slot = Clock::get()?.slot;
 
         // Full unstake (positive -> 0) drops a distinct Juror from the counter.
         if js.amount == 0 && prev_amount > 0 {
@@ -427,7 +429,7 @@ pub mod accord {
         let before = ctx.accounts.vault.amount;
         token::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.filer_token_account.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
@@ -494,7 +496,7 @@ pub mod accord {
         let before = ctx.accounts.vault.amount;
         token::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.poster_token_account.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
@@ -523,6 +525,7 @@ pub mod accord {
         snap.bond = bond;
         snap.challenge_deadline = deadline;
         snap.status = SnapshotStatus::Posted;
+        snap.anchor_slot = Clock::get()?.slot;
         snap.bump = ctx.bumps.snapshot;
 
         dispute.state = DisputeState::SnapshotPosted;
@@ -562,7 +565,7 @@ pub mod accord {
         // Challenger posts an equal bond into custody first.
         token::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.challenger_token_account.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
@@ -573,10 +576,53 @@ pub mod accord {
         )?;
 
         let root = snap.merkle_root;
-        let fraud = proof.index_a != proof.index_b
-            && verify_merkle_inclusion(&proof.leaf_a, proof.index_a, &proof.proof_a, root)
-            && verify_merkle_inclusion(&proof.leaf_b, proof.index_b, &proof.proof_b, root)
-            && proof.leaf_a.juror == proof.leaf_b.juror;
+        let anchor_slot = snap.anchor_slot;
+        let sub_key = sub.key();
+
+        // ADR-0008: fraud predicate dispatch. Duplicate is time-independent;
+        // WrongStake reads the juror's live JurorStake (remaining_accounts[0])
+        // and uses the anchor-slot watermark as the witness.
+        let fraud = match &proof {
+            FraudProof::Duplicate {
+                leaf_a,
+                proof_a,
+                index_a,
+                leaf_b,
+                proof_b,
+                index_b,
+            } => {
+                *index_a != *index_b
+                    && verify_merkle_inclusion(leaf_a, *index_a, proof_a, root)
+                    && verify_merkle_inclusion(leaf_b, *index_b, proof_b, root)
+                    && leaf_a.juror == leaf_b.juror
+            }
+            FraudProof::WrongStake { leaf, proof, index } => {
+                if !verify_merkle_inclusion(leaf, *index, proof, root) {
+                    false
+                } else {
+                    // Witness: the juror's JurorStake PDA.
+                    require!(
+                        !ctx.remaining_accounts.is_empty(),
+                        AccordError::InvalidMembershipProof
+                    );
+                    let js_info = &ctx.remaining_accounts[0];
+                    let expected_pda = Pubkey::find_program_address(
+                        &[SEED_JUROR_STAKE, sub_key.as_ref(), leaf.juror.as_ref()],
+                        &crate::ID,
+                    )
+                    .0;
+                    require!(
+                        js_info.key == &expected_pda,
+                        AccordError::InvalidMembershipProof
+                    );
+                    let js_data = js_info.try_borrow_data()?;
+                    let js = JurorStake::try_deserialize(&mut &js_data[..])?;
+                    // Witness: stake unchanged since anchor => live = anchor-time.
+                    // Fraud: leaf stake ≠ actual anchor-time stake.
+                    js.last_change_slot < anchor_slot && js.amount != leaf.stake
+                }
+            }
+        };
 
         let bump = [sub.bump];
         let signer_seeds = &[
@@ -594,7 +640,7 @@ pub mod accord {
                 .ok_or(AccordError::ArithmeticOverflow)?;
             token::transfer(
                 CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
+                    ctx.accounts.token_program.key(),
                     Transfer {
                         from: ctx.accounts.vault.to_account_info(),
                         to: ctx.accounts.challenger_token_account.to_account_info(),
@@ -616,7 +662,7 @@ pub mod accord {
             // finalize). The Snapshot remains Posted — the window is still open.
             token::transfer(
                 CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
+                    ctx.accounts.token_program.key(),
                     Transfer {
                         from: ctx.accounts.vault.to_account_info(),
                         to: ctx.accounts.poster_token_account.to_account_info(),
@@ -658,7 +704,7 @@ pub mod accord {
         ];
         token::transfer(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.vault.to_account_info(),
                     to: ctx.accounts.poster_token_account.to_account_info(),
@@ -753,7 +799,7 @@ pub mod accord {
         // dispute + round. Emitted for off-chain audit; the sortition algorithm
         // is verifiable by anyone with the snapshot leaves.
         let vrf_seed = {
-            use anchor_lang::solana_program::hash::hashv;
+            use solana_program::hash::hashv;
             hashv(&[
                 &vrf_result,
                 dispute.key().as_ref(),
@@ -788,6 +834,13 @@ pub mod accord {
                 require!(
                     js.juror == expected_juror,
                     AccordError::InvalidMembershipProof
+                );
+                // ADR-0008 predicate 4: inflation guard. The leaf may understate
+                // or match, never overstate. Catches attacker-inflated leaves
+                // regardless of the TOCTOU race (reads live state, not anchor).
+                require!(
+                    js.amount >= memberships[i].leaf.stake,
+                    AccordError::InflatedStake
                 );
                 js.active_draws
             };
@@ -918,7 +971,7 @@ pub mod accord {
         require!(committed != [0u8; 32], AccordError::CommitMissing);
         require!(round.reveals[idx] == u8::MAX, AccordError::AlreadyRevealed);
 
-        use anchor_lang::solana_program::hash::hashv;
+        use solana_program::hash::hashv;
         let computed = hashv(&[&[vote], &salt, juror_key.as_ref()]).to_bytes();
         require!(computed == committed, AccordError::RevealMismatch);
 
@@ -1236,7 +1289,7 @@ pub mod accord {
         let before = ctx.accounts.vault.amount;
         token::transfer(
             CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.appellant_token_account.to_account_info(),
                     to: ctx.accounts.vault.to_account_info(),
@@ -1317,7 +1370,7 @@ pub mod accord {
 
         token::transfer(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.vault.to_account_info(),
                     to: ctx.accounts.claimant_token_account.to_account_info(),
@@ -1399,7 +1452,7 @@ fn verify_merkle_inclusion(
     proof: &[[u8; 32]],
     root: [u8; 32],
 ) -> bool {
-    use anchor_lang::solana_program::hash::hashv;
+    use solana_program::hash::hashv;
     let mut acc = hashv(&[leaf.juror.as_ref(), &leaf.stake.to_le_bytes()]).to_bytes();
     for (depth, sibling) in proof.iter().enumerate() {
         if depth >= 31 {
@@ -1760,7 +1813,7 @@ pub struct ChallengeSnapshot<'info> {
         associated_token::mint = staking_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -1775,7 +1828,7 @@ pub struct FinalizeSnapshot<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
@@ -1800,7 +1853,7 @@ pub struct FinalizeSnapshot<'info> {
         associated_token::mint = staking_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -1996,7 +2049,7 @@ pub struct Appeal<'info> {
         associated_token::mint = staking_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }

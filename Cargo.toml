@@ -10,8 +10,13 @@ edition = "2021"
 # `init-if-needed`: required for `stake`'s top-up pattern (init_or_update the
 # JurorStake PDA + lazily create the Subaccord vault ATA on first stake).
 # Safe here — both accounts are zero-fill on init with no privileged init logic.
-anchor-lang = { version = "0.31.0", features = ["init-if-needed"] }
-anchor-spl = { version = "0.31.0", features = ["token", "associated_token"] }
+anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
+anchor-spl = { version = "1.0.2", features = ["token", "associated_token"] }
+# `solana-program` was split into smaller crates in anchor 0.32 / Solana 2.x;
+# `anchor_lang::solana_program` no longer re-exports `hash`. Anchor 1.0 relaxed
+# the separate-dep check (#4166), so we pull it directly for `hashv`
+# (commit/reveal hashing + merkle verification).
+solana-program = "3"
 
 [profile.release]
 overflow-checks = true

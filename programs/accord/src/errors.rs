@@ -68,6 +68,10 @@ pub enum AccordError {
     InvalidMembershipProof,
     #[msg("Number of juror memberships does not match the required panel size.")]
     InvalidPanelSize,
+    #[msg(
+        "Drawn juror's live stake is below the snapshot leaf's claim (inflation guard, ADR-0008)."
+    )]
+    InflatedStake,
 
     // --- voting ---
     #[msg("Juror has already committed.")]

@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `create_dispute` tests (veridao-rrxs). LiteSVM exercises the Arbitrable CPI
 //! entry: fee custody, the coarse `staker_count` intake gate, fee/options
 //! validation, and the ADR-0007 pause.
@@ -25,7 +26,7 @@ use solana_sdk::signer::Signer;
 use spl_associated_token_account::get_associated_token_address;
 use std::path::PathBuf;
 
-const SYS: Pubkey = solana_program::system_program::ID;
+const SYS: Pubkey = anchor_lang::system_program::ID;
 const JURORS_PER_DISPUTE: u32 = 3;
 const FEE_PER_JUROR: u64 = 1_000_000;
 const REQUIRED_FEE: u64 = (JURORS_PER_DISPUTE as u64) * FEE_PER_JUROR;
@@ -125,7 +126,6 @@ fn setup(n_stakers: usize) -> Fixture {
 fn init_pause(svm: &mut anchor_litesvm::AnchorContext, authority: &Kp) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::InitializePause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),
@@ -148,7 +148,6 @@ fn create_subaccord(
 ) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: *subaccord,
@@ -188,7 +187,6 @@ fn stake(
     let vault = vault_ata(subaccord, mint);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: *subaccord,
@@ -224,7 +222,6 @@ fn create_dispute_ix(
     fee: u64,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::CreateDispute {
             filer: *filer,
             subaccord: *subaccord,
@@ -249,7 +246,6 @@ fn create_dispute_ix(
 fn pause(svm: &mut anchor_litesvm::AnchorContext, authority: &Kp) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Pause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),

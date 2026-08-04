@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `commit` / `reveal` / `finalize_round` / `finalize_dispute` / `get_ruling`
 //! tests (veridao-pq1s). LiteSVM exercises the commit-reveal voting cycle and
 //! the finalization economics (slash + redistribute + active_draws decrement).
@@ -35,7 +36,7 @@ use solana_sdk::signer::Signer;
 use spl_associated_token_account::get_associated_token_address;
 use std::path::PathBuf;
 
-const SYS: Pubkey = solana_program::system_program::ID;
+const SYS: Pubkey = anchor_lang::system_program::ID;
 const JURORS_PER_DISPUTE: u32 = 3;
 const FEE_PER_JUROR: u64 = 1_000_000;
 const REQUIRED_FEE: u64 = (JURORS_PER_DISPUTE as u64) * FEE_PER_JUROR;
@@ -290,7 +291,6 @@ fn setup() -> Fixture {
 fn init_pause(svm: &mut anchor_litesvm::AnchorContext, authority: &Kp) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::InitializePause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),
@@ -313,7 +313,6 @@ fn create_subaccord(
 ) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: *subaccord,
@@ -353,7 +352,6 @@ fn stake(
     let vault = vault_ata(subaccord, mint);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: *subaccord,
@@ -386,7 +384,6 @@ fn create_dispute(
     let vault = vault_ata(subaccord, mint);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: *subaccord,
@@ -424,7 +421,6 @@ fn post_snapshot(
 ) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::PostSnapshot {
             poster: poster.pubkey(),
             subaccord: *subaccord,
@@ -456,7 +452,6 @@ fn finalize_snapshot(
 ) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::FinalizeSnapshot {
             caller: caller.pubkey(),
             subaccord: *subaccord,
@@ -515,7 +510,6 @@ fn draw(
     }
     let data = svm
         .program()
-        .request()
         .accounts(accounts::Draw {
             caller: caller.pubkey(),
             subaccord: *subaccord,
@@ -551,7 +545,6 @@ fn do_commit(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Commit {
             juror: juror.pubkey(),
             subaccord: *subaccord,
@@ -580,7 +573,6 @@ fn do_reveal(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Reveal {
             juror: juror.pubkey(),
             subaccord: *subaccord,
@@ -607,7 +599,6 @@ fn do_finalize_round(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::FinalizeRound {
             caller: caller.pubkey(),
             subaccord: *subaccord,
@@ -644,7 +635,6 @@ fn do_finalize_dispute(
     }
     let data = svm
         .program()
-        .request()
         .accounts(accounts::FinalizeDispute {
             caller: caller.pubkey(),
             subaccord: *subaccord,
@@ -675,7 +665,6 @@ fn do_get_ruling(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::GetRuling {
             caller: caller.pubkey(),
             dispute: *dispute,

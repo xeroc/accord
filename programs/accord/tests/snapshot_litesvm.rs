@@ -1,3 +1,4 @@
+#![cfg(feature = "no-entrypoint")]
 //! `post_snapshot` / `challenge_snapshot` / `finalize_snapshot` tests
 //! (veridao-rrxs). LiteSVM exercises the ADR-0003 snapshot trust lifecycle:
 //! bond custody, the 1-day challenge-window time-gate (via Clock warp), and the
@@ -28,7 +29,7 @@ use solana_sdk::signer::Signer;
 use spl_associated_token_account::get_associated_token_address;
 use std::path::PathBuf;
 
-const SYS: Pubkey = solana_program::system_program::ID;
+const SYS: Pubkey = anchor_lang::system_program::ID;
 const JURORS_PER_DISPUTE: u32 = 3;
 const FEE_PER_JUROR: u64 = 1_000_000;
 const REQUIRED_FEE: u64 = (JURORS_PER_DISPUTE as u64) * FEE_PER_JUROR;
@@ -204,7 +205,6 @@ fn setup() -> Fixture {
 fn init_pause(svm: &mut anchor_litesvm::AnchorContext, authority: &Kp) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::InitializePause {
             authority: authority.pubkey(),
             pause_state: pause_pda(),
@@ -227,7 +227,6 @@ fn create_subaccord(
 ) {
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: *subaccord,
@@ -267,7 +266,6 @@ fn stake(
     let vault = vault_ata(subaccord, mint);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: *subaccord,
@@ -300,7 +298,6 @@ fn create_dispute(
     let vault = vault_ata(subaccord, mint);
     let ix = svm
         .program()
-        .request()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: *subaccord,
@@ -338,7 +335,6 @@ fn post_snapshot_ix(
     merkle_root: [u8; 32],
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::PostSnapshot {
             poster: *poster,
             subaccord: *subaccord,
@@ -369,7 +365,6 @@ fn challenge_ix(
     proof: FraudProof,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::ChallengeSnapshot {
             challenger: *challenger,
             subaccord: *subaccord,
@@ -398,7 +393,6 @@ fn finalize_ix(
     vault: &Pubkey,
 ) -> solana_sdk::instruction::Instruction {
     svm.program()
-        .request()
         .accounts(accounts::FinalizeSnapshot {
             caller: *caller,
             subaccord: *subaccord,
@@ -520,7 +514,7 @@ fn challenge_fraud_voids_and_pays_challenger() {
     let challenger_before = token_amount(&fx.svm, &fx.challenger_ata);
     let (la, pa, ia) = make_leaf(ja, 100, 0, &levels);
     let (lb, pb, ib) = make_leaf(ja, 300, 2, &levels);
-    let proof = FraudProof {
+    let proof = FraudProof::Duplicate {
         leaf_a: la,
         proof_a: pa,
         index_a: ia,
@@ -603,7 +597,7 @@ fn challenge_false_pays_poster() {
     // challenger presents two valid leaves with DISTINCT jurors -> not fraud
     let (la, pa, ia) = make_leaf(j1, 100, 0, &levels);
     let (lb, pb, ib) = make_leaf(j2, 200, 1, &levels);
-    let proof = FraudProof {
+    let proof = FraudProof::Duplicate {
         leaf_a: la,
         proof_a: pa,
         index_a: ia,
@@ -678,7 +672,7 @@ fn challenge_after_window_reverts() {
     warp_timestamp(&mut fx.svm, deadline + 1); // window expired
 
     // any plausible-looking proof; the time-gate fires before verification
-    let proof = FraudProof {
+    let proof = FraudProof::Duplicate {
         leaf_a: LeafClaim {
             juror: Pubkey::new_unique(),
             stake: 1,
