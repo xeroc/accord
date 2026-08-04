@@ -129,6 +129,60 @@ pub mod accord {
         emit!(Unpaused { authority });
         Ok(())
     }
+
+    // --- Subaccord management (ADR-0005; veridao-ek65) ---
+
+    /// Permissionless creation of a specialized Juror pool. Seeds
+    /// `["subaccord", creator, risk_type]`, so each creator owns a private
+    /// namespace per `risk_type`. `risk_type` + `evidence_spec` are immutable
+    /// identity hashes; every other param routes through propose/execute
+    /// (ADR-0005). `authority == Pubkey::default()` => immutable.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_subaccord(
+        ctx: Context<CreateSubaccord>,
+        risk_type: [u8; 32],
+        evidence_spec: [u8; 32],
+        staking_token: Pubkey,
+        min_stake: u64,
+        jurors_per_dispute: u32,
+        alpha_bps: u16,
+        review_window: u64,
+        commit_window: u64,
+        reveal_window: u64,
+        max_appeals: u8,
+        fee_per_juror: u64,
+        authority: Pubkey,
+        evidence_operator: Pubkey,
+    ) -> Result<()> {
+        // Namespace guard: reject the degenerate zero-hash risk_type so the
+        // default identity can't be silently squatting a namespace.
+        require!(risk_type != [0u8; 32], AccordError::InvalidOptions);
+
+        let acc = &mut ctx.accounts.subaccord;
+        acc.creator = ctx.accounts.creator.key();
+        acc.staking_token = staking_token;
+        acc.min_stake = min_stake;
+        acc.jurors_per_dispute = jurors_per_dispute;
+        acc.alpha_bps = alpha_bps;
+        acc.review_window = review_window;
+        acc.commit_window = commit_window;
+        acc.reveal_window = reveal_window;
+        acc.max_appeals = max_appeals;
+        acc.fee_per_juror = fee_per_juror;
+        acc.authority = authority;
+        acc.evidence_operator = evidence_operator;
+        acc.risk_type = risk_type;
+        acc.evidence_spec = evidence_spec;
+        acc.bump = ctx.bumps.subaccord;
+
+        emit!(SubaccordCreated {
+            creator: ctx.accounts.creator.key(),
+            subaccord: acc.key(),
+            staking_token,
+            risk_type,
+        });
+        Ok(())
+    }
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -176,6 +230,27 @@ pub struct ExecuteUnpause<'info> {
     pub caller: Signer<'info>,
     #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
     pub pause_state: Account<'info, PauseState>,
+}
+
+/// Account context for `create_subaccord` (veridao-ek65).
+///
+/// `init` (not `init_if_needed`) enforces the account is fresh, giving the
+/// re-init guard and namespace-capture prevention for free. The canonical bump
+/// from `find_program_address` is reused and stored on the account.
+#[derive(Accounts)]
+#[instruction(risk_type: [u8; 32])]
+pub struct CreateSubaccord<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+    #[account(
+        init,
+        payer = creator,
+        space = 8 + Subaccord::INIT_SPACE,
+        seeds = [SEED_SUBACCORD, creator.key().as_ref(), risk_type.as_ref()],
+        bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    pub system_program: Program<'info, System>,
 }
 
 /// Emitted by `health`. Carries the program version byte.
