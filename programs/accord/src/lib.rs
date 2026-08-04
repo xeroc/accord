@@ -288,6 +288,82 @@ pub mod accord {
         });
         Ok(())
     }
+
+    // --- Subaccord authority / timelock (ADR-0005; veridao-y63e) ---
+
+    /// Authority-gated proposal of a Subaccord parameter update. The update is
+    /// written to a `PendingUpdate` PDA keyed by `(subaccord, nonce)` and becomes
+    /// executable only after `UPDATE_TIMELOCK_SLOTS` (48h) elapses — giving
+    /// stakers a window to unstake before a change lands. No-op for immutable
+    /// Subaccords (`authority == default`). The nonce is caller-chosen; PDA
+    /// `init` enforces uniqueness (a reused nonce simply fails to init).
+    pub fn propose_subaccord_update(
+        ctx: Context<ProposeSubaccordUpdate>,
+        nonce: u64,
+        payload: UpdatePayload,
+    ) -> Result<()> {
+        let sub = &ctx.accounts.subaccord;
+        require!(
+            sub.authority != Pubkey::default(),
+            AccordError::ImmutableSubaccord
+        );
+        require!(
+            ctx.accounts.authority.key() == sub.authority,
+            AccordError::Unauthorized
+        );
+
+        let slot = Clock::get()?.slot;
+        let execute_after = slot
+            .checked_add(UPDATE_TIMELOCK_SLOTS)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        let pu = &mut ctx.accounts.pending_update;
+        pu.subaccord = ctx.accounts.subaccord.key();
+        pu.nonce = nonce;
+        pu.proposed = payload.clone();
+        pu.proposed_by = ctx.accounts.authority.key();
+        pu.execute_after_slot = execute_after;
+        pu.bump = ctx.bumps.pending_update;
+
+        emit!(UpdateProposed {
+            subaccord: ctx.accounts.subaccord.key(),
+            nonce,
+            payload,
+            execute_after_slot: execute_after,
+        });
+        Ok(())
+    }
+
+    /// Permissionless crank: applies a timelocked `PendingUpdate` to its Subaccord
+    /// once the 48h notice slot has passed. Anyone may execute — the timelock is
+    /// the protection, not the executor. The `PendingUpdate` is closed (rent to
+    /// the caller) once applied.
+    pub fn execute_subaccord_update(ctx: Context<ExecuteSubaccordUpdate>) -> Result<()> {
+        let nonce = ctx.accounts.pending_update.nonce;
+        let execute_after = ctx.accounts.pending_update.execute_after_slot;
+        let slot = Clock::get()?.slot;
+        require!(slot >= execute_after, AccordError::TimelockNotElapsed);
+
+        let sub = &mut ctx.accounts.subaccord;
+        match &ctx.accounts.pending_update.proposed {
+            UpdatePayload::MinStake(v) => sub.min_stake = *v,
+            UpdatePayload::JurorsPerDispute(v) => sub.jurors_per_dispute = *v,
+            UpdatePayload::AlphaBps(v) => sub.alpha_bps = *v,
+            UpdatePayload::ReviewWindow(v) => sub.review_window = *v,
+            UpdatePayload::CommitWindow(v) => sub.commit_window = *v,
+            UpdatePayload::RevealWindow(v) => sub.reveal_window = *v,
+            UpdatePayload::MaxAppeals(v) => sub.max_appeals = *v,
+            UpdatePayload::FeePerJuror(v) => sub.fee_per_juror = *v,
+            UpdatePayload::Authority(v) => sub.authority = *v,
+            UpdatePayload::EvidenceOperator(v) => sub.evidence_operator = *v,
+        }
+
+        emit!(UpdateExecuted {
+            subaccord: ctx.accounts.subaccord.key(),
+            nonce,
+        });
+        Ok(())
+    }
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -450,6 +526,53 @@ pub struct Unstake<'info> {
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+}
+
+/// Account context for `propose_subaccord_update` (veridao-y63e).
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct ProposeSubaccordUpdate<'info> {
+    /// Must equal `subaccord.authority`; signs + pays for the PendingUpdate.
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + PendingUpdate::INIT_SPACE,
+        seeds = [SEED_PENDING_UPDATE, subaccord.key().as_ref(), &nonce.to_le_bytes()],
+        bump,
+    )]
+    pub pending_update: Account<'info, PendingUpdate>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Account context for `execute_subaccord_update` (veridao-y63e).
+///
+/// Permissionless: any caller may land the update once the timelock elapses.
+/// The `PendingUpdate` is re-derived from the Subaccord + its stored nonce +
+/// canonical bump, and closed on success (rent refunded to the caller).
+#[derive(Accounts)]
+pub struct ExecuteSubaccordUpdate<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    #[account(
+        mut,
+        seeds = [SEED_PENDING_UPDATE, subaccord.key().as_ref(), &pending_update.nonce.to_le_bytes()],
+        bump = pending_update.bump,
+        close = caller,
+    )]
+    pub pending_update: Account<'info, PendingUpdate>,
 }
 
 /// Emitted by `health`. Carries the program version byte.
