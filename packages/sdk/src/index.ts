@@ -24,3 +24,7 @@ export * from "./methods/voting.js";
 // Snapshot trust (post/challenge/finalize) + Merkle-Sum Tree membership builder
 // for ADR-0009 sortition (ADR-0010, bean veridao-dsc2).
 export * from "./methods/snapshot.js";
+
+// Subaccord lifecycle + circuit breaker (ADR-0005/0007) + timelock helpers
+// (ADR-0010, bean veridao-erv7).
+export * from "./methods/lifecycle.js";
