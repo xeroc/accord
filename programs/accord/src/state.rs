@@ -143,6 +143,33 @@ pub struct Snapshot {
     pub bump: u8,
 }
 
+/// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per
+/// appeal, created by `appeal`, settled by `finalize_dispute` (forfeit on
+/// no-flip) / `claim_appeal_refund` (return on flip). Storing the appeal state
+/// here — rather than on `Dispute` — keeps the `Dispute` account small (a
+/// larger `Dispute` trips an anchor-litesvm CPI edge case in `finalize_snapshot`).
+///
+/// Seeds: `["bond", dispute, round_idx]` where `round_idx` is the round the
+/// appeal opens (the larger panel).
+///
+/// `prior_result` is the winning option of the round the appellant sought to
+/// flip (the just-resolved `current_round` at appeal time). Flip detection at
+/// final settlement is `final_ruling != prior_result`. A no-flip bond is zeroed
+/// (`amount = 0`) by `finalize_dispute` as it folds the tokens into the coherent
+/// pool; a flipped bond keeps its `amount` until `claim_appeal_refund` returns
+/// it and zeroes the record (idempotent).
+#[account]
+#[derive(InitSpace)]
+pub struct AppealBond {
+    pub dispute: Pubkey,
+    pub round_idx: u32,
+    pub appellant: Pubkey,
+    pub amount: u64,
+    /// Winning option of the round being appealed (set at `appeal` time).
+    pub prior_result: u8,
+    pub bump: u8,
+}
+
 /// A proposed Subaccord parameter update, executable only after the 48h on-chain
 /// timelock elapses (ADR-0005). No-op while `Subaccord.authority == default`.
 ///

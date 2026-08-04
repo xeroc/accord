@@ -123,11 +123,15 @@ pub struct RulingFinalized {
     pub ruling: u8,
 }
 
-/// Emitted on appeal (ADR-0004: permissionless).
+/// Emitted on appeal (ADR-0004: permissionless). `bond` is the appeal bond
+/// custodied alongside the new round's juror fee (forfeited on no-flip,
+/// returned on flip at `finalize_dispute`).
 #[event]
 pub struct Appealed {
     pub dispute: Pubkey,
     pub new_round_idx: u32,
+    pub appellant: Pubkey,
+    pub bond: u64,
 }
 
 // --- circuit breaker (ADR-0007) ---

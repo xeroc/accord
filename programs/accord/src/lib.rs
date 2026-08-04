@@ -159,6 +159,12 @@ pub mod accord {
         // Namespace guard: reject the degenerate zero-hash risk_type so the
         // default identity can't be silently squatting a namespace.
         require!(risk_type != [0u8; 32], AccordError::InvalidOptions);
+        // Appeal-bond arrays on `Dispute` are sized to `MAX_APPEALS`; a
+        // Subaccord may not promise more appeals than the program can custody.
+        require!(
+            max_appeals as usize <= MAX_APPEALS,
+            AccordError::MaxAppealsLimitExceeded
+        );
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
@@ -1010,8 +1016,12 @@ pub mod accord {
 
         let sub = &ctx.accounts.subaccord;
         let panel = round.juror_count as usize;
+        // remaining_accounts = [juror_stake PDAs (panel)] + [AppealBond PDAs
+        // (one per appeal == `current_round`)]. With no appeals this collapses
+        // to just the juror stakes (backward-compatible single-round path).
+        let appeal_n = dispute.current_round as usize;
         require!(
-            ctx.remaining_accounts.len() == panel,
+            ctx.remaining_accounts.len() == panel + appeal_n,
             AccordError::InvalidPanelSize
         );
 
@@ -1045,11 +1055,62 @@ pub mod accord {
             }
         }
 
+        // --- Appeal bond forfeiture (ADR-0004) ---
+        // Each AppealBond PDA is keyed by the round it appealed (0..current_round).
+        // No flip (`prior_result == final_ruling`) => fold the bond into the
+        // final-round coherent pool and consume it (zero the on-chain amount).
+        // Flip (`prior_result != final_ruling`) => leave the bond for
+        // `claim_appeal_refund` to return to the appellant.
+        let dispute_key = dispute.key();
+        let mut forfeited_total: u64 = 0;
+        // AppealBond layout: disc(8) + dispute(32) + round_idx(4) + appellant(32)
+        // => amount @ 76 (u64), prior_result @ 84 (u8).
+        const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32;
+        const BOND_PRIOR_OFFSET: usize = BOND_AMOUNT_OFFSET + 8;
+        for i in 0..appeal_n {
+            let expected_pda = Pubkey::find_program_address(
+                &[
+                    SEED_APPEAL_BOND,
+                    dispute_key.as_ref(),
+                    &(i as u32).to_le_bytes(),
+                ],
+                &crate::ID,
+            )
+            .0;
+            let bond_info = &ctx.remaining_accounts[panel + i];
+            require!(
+                bond_info.key == &expected_pda,
+                AccordError::InvalidMembershipProof
+            );
+            let (amount, prior_result) = {
+                let d = bond_info.try_borrow_data()?;
+                require!(
+                    d.len() >= BOND_PRIOR_OFFSET + 1,
+                    AccordError::InvalidMembershipProof
+                );
+                let amt = u64::from_le_bytes(
+                    d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
+                        .try_into()
+                        .unwrap(),
+                );
+                (amt, d[BOND_PRIOR_OFFSET])
+            };
+            if prior_result == final_ruling {
+                // No flip: forfeit into the coherent pool and consume the bond.
+                forfeited_total = forfeited_total
+                    .checked_add(amount)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                let mut d = bond_info.try_borrow_mut_data()?;
+                d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8].copy_from_slice(&0u64.to_le_bytes());
+            }
+        }
+
         let round_fee = (panel as u64)
             .checked_mul(sub.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let pool = slash_total
             .checked_add(round_fee)
+            .and_then(|v| v.checked_add(forfeited_total))
             .ok_or(AccordError::ArithmeticOverflow)?;
         let share = if coherent_count > 0 {
             pool / coherent_count as u64
@@ -1095,6 +1156,11 @@ pub mod accord {
                 .copy_from_slice(&new_draws.to_le_bytes());
         }
 
+        // Flipped appeal bonds stay in the vault post-finalization and are
+        // returned to their appellants by the permissionless `claim_appeal_refund`
+        // crank (ADR-0004). Forfeited (no-flip) bonds were already folded into
+        // the coherent pool above.
+
         dispute.final_ruling = Some(final_ruling);
         dispute.state = DisputeState::Final;
 
@@ -1102,6 +1168,169 @@ pub mod accord {
             dispute: dispute.key(),
             ruling: final_ruling,
         });
+        Ok(())
+    }
+
+    /// **Permissionless** appeal (ADR-0004): anyone may escalate a resolved
+    /// round to a larger panel. The appellant deposits the new round's juror
+    /// fee (`N_new · fee_per_juror`) plus an appeal bond (== the new round fee;
+    /// forfeited to the final round's coherent jurors if the appeal fails to
+    /// flip the prior ruling, returned if it flips). Opens a fresh round at
+    /// `2N+1` by incrementing `current_round` and resetting the dispute to
+    /// `Created` so the snapshot → draw → vote cycle reruns for the new panel.
+    /// Custodies the bond in a per-appeal `AppealBond` PDA.
+    ///
+    /// Gates: `RoundResolved` state, within the appeal window, under the
+    /// `max_appeals` cap, and with enough active distinct stakers to fill the
+    /// larger panel. Reverts while the program is paused.
+    pub fn appeal(ctx: Context<Appeal>) -> Result<()> {
+        require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
+
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::RoundResolved,
+            AccordError::InvalidState
+        );
+
+        let sub = &ctx.accounts.subaccord;
+        // Cap: `current_round` is the round just resolved. Appealing opens round
+        // `current_round + 1`, i.e. appeal number `current_round + 1`. The
+        // number of appeals must not exceed `max_appeals`.
+        require!(
+            dispute.current_round < u32::from(sub.max_appeals),
+            AccordError::MaxAppealsReached
+        );
+
+        let round = ctx.accounts.round.load()?;
+        let prior_result = round.result;
+        require!(prior_result != u8::MAX, AccordError::InvalidState);
+
+        let now = Clock::get()?.unix_timestamp;
+        let appeal_deadline = round
+            .reveal_end
+            .checked_add(APPEAL_WINDOW_SECS)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(now < appeal_deadline, AccordError::AppealWindowClosed);
+
+        // New panel = 2N+1 (closed form `(J+1)·2^k − 1`, capped at MAX_JURORS).
+        let new_round = dispute
+            .current_round
+            .checked_add(1)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let panel_new = panel_size_for_round(sub.jurors_per_dispute, new_round)?;
+        require!(
+            sub.staker_count >= panel_new,
+            AccordError::InsufficientJurors
+        );
+
+        // Exponential cost: new-round fee + appeal bond (bond == new-round fee).
+        let fee_new = (panel_new as u64)
+            .checked_mul(sub.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let bond = fee_new;
+        let total = fee_new
+            .checked_add(bond)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Custody fee + bond: appellant ATA -> Subaccord PDA vault.
+        let before = ctx.accounts.vault.amount;
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.appellant_token_account.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.appellant.to_account_info(),
+                },
+            ),
+            total,
+        )?;
+        ctx.accounts.vault.reload()?;
+        let after = ctx.accounts.vault.amount;
+        let _delta = after
+            .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Record the appeal bond in its own PDA for settlement. `prior_result`
+        // captures the ruling the appellant seeks to flip (the just-resolved
+        // round's winner); flip detection at `finalize_dispute` compares it
+        // against the final ruling.
+        let bond_acc = &mut ctx.accounts.appeal_bond;
+        bond_acc.dispute = dispute.key();
+        bond_acc.round_idx = new_round;
+        bond_acc.appellant = ctx.accounts.appellant.key();
+        bond_acc.amount = bond;
+        bond_acc.prior_result = prior_result;
+        bond_acc.bump = ctx.bumps.appeal_bond;
+
+        dispute.fee_paid = dispute
+            .fee_paid
+            .checked_add(fee_new)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Open the new round: bump `current_round` and reset to `Created` so the
+        // snapshot → draw → vote cycle reruns for the larger panel.
+        dispute.current_round = new_round;
+        dispute.state = DisputeState::Created;
+
+        emit!(Appealed {
+            dispute: dispute.key(),
+            new_round_idx: new_round,
+            appellant: ctx.accounts.appellant.key(),
+            bond,
+        });
+        Ok(())
+    }
+
+    /// Permissionless crank that returns a flipped appeal bond to its appellant
+    /// after the dispute is finalized (ADR-0004: bond returned if the appeal
+    /// flipped the prior ruling). `round_idx` selects which appeal's bond to
+    /// claim (the round that was current when the appeal was filed). The handler
+    /// verifies the `AppealBond` belongs to the destination ATA's owner, that the
+    /// bond is still outstanding (`amount > 0` — `finalize_dispute` zeroes
+    /// no-flip bonds), and PDA-signs the vault → ATA refund before zeroing the
+    /// bond (idempotent).
+    pub fn claim_appeal_refund(ctx: Context<ClaimAppealRefund>, round_idx: u32) -> Result<()> {
+        let _ = round_idx; // consumed by the `#[instruction]` PDA seeds
+        let dispute = &ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::Final,
+            AccordError::InvalidState
+        );
+
+        let bond_acc = &ctx.accounts.appeal_bond;
+        require!(
+            bond_acc.appellant == ctx.accounts.claimant_token_account.owner,
+            AccordError::InvalidMembershipProof
+        );
+        let amount = bond_acc.amount;
+        require!(amount > 0, AccordError::InvalidAmount);
+
+        let sub = &ctx.accounts.subaccord;
+        let bump = [sub.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            sub.creator.as_ref(),
+            sub.risk_type.as_ref(),
+            &bump,
+        ];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.claimant_token_account.to_account_info(),
+                    authority: ctx.accounts.subaccord.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            amount,
+        )?;
+
+        // Mark claimed (idempotent): no double-refund on re-invocation.
+        ctx.accounts.appeal_bond.amount = 0;
+
         Ok(())
     }
 
@@ -1690,7 +1919,10 @@ pub struct FinalizeRound<'info> {
 
 /// Account context for `finalize_dispute` — permissionless crank. Drawn
 /// `JurorStake` accounts are passed as `remaining_accounts` (mut), verified
-/// against the round's juror list + PDA derivation inside the handler.
+/// against the round's juror list + PDA derivation inside the handler. Appeal
+/// bonds are settled ledger-style here: forfeited (no-flip) bonds fold into the
+/// coherent pool; flipped bonds are returned by the separate
+/// `claim_appeal_refund` crank.
 #[derive(Accounts)]
 pub struct FinalizeDispute<'info> {
     #[account(mut)]
@@ -1711,6 +1943,105 @@ pub struct FinalizeDispute<'info> {
         bump,
     )]
     pub round: AccountLoader<'info, Round>,
+}
+
+/// Account context for `appeal` (ADR-0004). Permissionless: `appellant` is any
+/// signer. The resolved round (`current_round`) is read for the appeal-window
+/// deadline and the prior ruling; the fee + bond move from the appellant's ATA
+/// into the vault. The bond is custodied in a per-appeal `AppealBond` PDA keyed
+/// by the round being appealed (`current_round`, before it is incremented).
+#[derive(Accounts)]
+pub struct Appeal<'info> {
+    #[account(mut)]
+    pub appellant: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
+    pub pause_state: Account<'info, PauseState>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    /// The round just resolved (`dispute.current_round`) — read-only; supplies
+    /// `reveal_end` for the appeal-window check and `result` (the prior ruling).
+    #[account(
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+    /// Per-appeal bond custody (ADR-0004). Keyed by the round being appealed.
+    #[account(
+        init,
+        payer = appellant,
+        space = 8 + AppealBond::INIT_SPACE,
+        seeds = [SEED_APPEAL_BOND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub appeal_bond: Box<Account<'info, AppealBond>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = appellant,
+    )]
+    pub appellant_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Account context for `claim_appeal_refund` — permissionless crank returning a
+/// flipped appeal bond. `round_idx` (instruction arg) selects the bond PDA
+/// `["bond", dispute, round_idx]`. The refund sweep is PDA-signed out of the
+/// vault into the claimant's ATA; the handler verifies the ATA belongs to the
+/// bond's recorded appellant. Named accounts only (no `remaining_accounts`)
+/// keeps the CPI lifetime-uniform.
+#[derive(Accounts)]
+#[instruction(round_idx: u32)]
+pub struct ClaimAppealRefund<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    /// The specific appeal bond being claimed.
+    #[account(
+        mut,
+        seeds = [SEED_APPEAL_BOND, dispute.key().as_ref(), &round_idx.to_le_bytes()],
+        bump = appeal_bond.bump,
+    )]
+    pub appeal_bond: Box<Account<'info, AppealBond>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    /// The appellant's ATA — sweep destination. Any caller may pass it; the
+    /// handler rejects it unless its owner matches the bond's recorded appellant.
+    #[account(mut, token::mint = staking_token)]
+    pub claimant_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 /// Account context for `get_ruling` — read-only CPI entry for Arbitrables.

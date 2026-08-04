@@ -94,6 +94,10 @@ pub enum AccordError {
     // --- appeals (ADR-0004) ---
     #[msg("Maximum appeals reached for this dispute.")]
     MaxAppealsReached,
+    #[msg("Subaccord max_appeals exceeds the program ceiling.")]
+    MaxAppealsLimitExceeded,
+    #[msg("Appeal window has closed; the dispute can only be finalized.")]
+    AppealWindowClosed,
 
     // --- finalization ---
     #[msg("Round cannot be finalized yet (window not elapsed).")]

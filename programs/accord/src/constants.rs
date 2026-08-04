@@ -5,6 +5,12 @@
 /// (3rd appeal, `max_appeals = 3`); odd counts make ties impossible.
 pub const MAX_JURORS: usize = 31;
 
+/// Program-level ceiling on appeals per dispute. v1 appeal ladder (3 -> 7 -> 15
+/// -> 31) caps at the 3rd appeal; a Subaccord may configure fewer via
+/// `max_appeals`, but never more. Bounds the appeal-bond model + the
+/// `create_subaccord` validation.
+pub const MAX_APPEALS: usize = 3;
+
 /// Maximum vote options on a single Dispute. Bounds `Dispute.options` and the
 /// per-round tally. Disputes need at least 2; 32 covers realistic multiple-choice.
 pub const MAX_OPTIONS: usize = 32;
@@ -32,6 +38,8 @@ pub const SEED_DISPUTE: &[u8] = b"dispute";
 pub const SEED_ROUND: &[u8] = b"round";
 pub const SEED_SNAPSHOT: &[u8] = b"snapshot";
 pub const SEED_PENDING_UPDATE: &[u8] = b"update";
+/// Per-appeal bond custody (ADR-0004). Seeds: `["bond", dispute, round_idx]`.
+pub const SEED_APPEAL_BOND: &[u8] = b"bond";
 /// Singleton program-level pause flag (ADR-0007 circuit breaker).
 pub const SEED_PAUSE: &[u8] = b"pause";
 
