@@ -36,6 +36,8 @@ pub enum AccordError {
     StakeLocked,
     #[msg("Amount must be greater than zero.")]
     InvalidAmount,
+    #[msg("Withdrawal exceeds the Juror's staked balance.")]
+    InsufficientBalance,
 
     // --- dispute intake ---
     #[msg("Subaccord has fewer active distinct stakers than the required panel size.")]

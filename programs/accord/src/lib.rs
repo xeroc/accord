@@ -236,6 +236,58 @@ pub mod accord {
         });
         Ok(())
     }
+
+    /// Withdraw staked capital from a Subaccord. PDA-signed SPL transfer from
+    /// the Subaccord PDA's vault ATA to the Juror's ATA. Reverts while the
+    /// Juror is drawn into any live dispute (`active_draws > 0`, ADR-0003) and
+    /// caps the withdrawal at the Juror's exact staked balance.
+    ///
+    /// Allowed while the program is paused (ADR-0007 lists only
+    /// create_dispute / stake / appeal as halted — capital is never trapped).
+    pub fn unstake(ctx: Context<Unstake>, amount: u64) -> Result<()> {
+        require!(amount > 0, AccordError::InvalidAmount);
+        require!(
+            ctx.accounts.juror_stake.active_draws == 0,
+            AccordError::StakeLocked
+        );
+        require!(
+            amount <= ctx.accounts.juror_stake.amount,
+            AccordError::InsufficientBalance
+        );
+
+        let bump = [ctx.accounts.subaccord.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            ctx.accounts.subaccord.creator.as_ref(),
+            ctx.accounts.subaccord.risk_type.as_ref(),
+            &bump,
+        ];
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.juror_token_account.to_account_info(),
+                    authority: ctx.accounts.subaccord.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            amount,
+        )?;
+
+        let js = &mut ctx.accounts.juror_stake;
+        js.amount = js
+            .amount
+            .checked_sub(amount)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        emit!(Unstaked {
+            subaccord: ctx.accounts.subaccord.key(),
+            juror: ctx.accounts.juror.key(),
+            amount,
+        });
+        Ok(())
+    }
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -356,6 +408,47 @@ pub struct Stake<'info> {
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Account context for `unstake` (veridao-b2sc).
+///
+/// Mirror of `Stake` minus the pause account (unstake is never halted —
+/// ADR-0007 traps no capital) and minus `init_if_needed`/`associated_token_program`
+/// (both accounts already exist: the vault was created on first stake, the
+/// `JurorStake` on first stake). The vault is the **Subaccord PDA's** ATA so the
+/// program PDA-signs the transfer out.
+#[derive(Accounts)]
+pub struct Unstake<'info> {
+    #[account(mut)]
+    pub juror: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = juror,
+    )]
+    pub juror_token_account: Account<'info, TokenAccount>,
+    /// Subaccord PDA's vault ATA; program PDA-signs transfers out of it.
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
