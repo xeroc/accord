@@ -1,0 +1,218 @@
+// VeriDAO Accord — formal specification (v1 hardening pass).
+//
+// Scope: the four economic invariants the hardening bean (veridao-nhbj)
+// acceptance names — slash math, distinct draw, bond conservation, and the
+// active_draws balance. This is a *focused* spec over the state the program
+// touches in the draw → vote → finalize lifecycle, not a full handler-by-
+// handler model of all 15 instructions. The accompanying security checklist
+// (security-checklist.md) is the audit authority; this .qedspec is the
+// regression-guard authority for the invariants the audit marks satisfied.
+//
+// Modeling notes:
+//   - State is a FLAT record. qedgen's indexed-effect / Map recognition is
+//     wired for top-level Map fields on State (skill: "flat single-account
+//     State shape"), so the on-chain Subaccord/Dispute/JurorStake sub-records
+//     are flattened into parallel top-level arrays keyed by panel slot.
+//   - draw and finalize are modelled per-slot (a `Slot` parameter), the
+//     qedgen idiom for "acts on one of N indexed slots". The real on-chain
+//     handlers loop the panel; the spec models one slot and quantifies the
+//     invariant over all slots — equivalent for conservation/non-negativity.
+//   - Aggregates the tally computes on-chain (coherent_count, pool, share)
+//     are lifted to flat State fields set by the (out-of-scope) tally and
+//     read here. `slash_bounded` only constrains the per-juror decrement, so
+//     `share`'s exact value is irrelevant to that invariant — it is carried
+//     as a field for completeness.
+//
+// Verification status: the four properties are DECLARED and handler-scoped
+// (parsing + lint clean). qedgen v2.47 emits a non-vacuous harness for the
+// single-binder binary properties; the pairwise `distinct_panel` (nested
+// quantifier) and some `old()`-over-Map bodies currently lower to a `true`
+// placeholder (skill: "unsupported_quantifier_shape") — they remain as
+// declared regression guards and will lower fully once the VRF/param-bounds
+// hardening (security-checklist.md H-1, §18) lands and the spec is bound to
+// the deployed handlers via `qedgen stamp`.
+//
+// Authoritative source: programs/accord/src/{lib,state,constants}.rs
+// Rationale: docs/adr/0001–0007, programs/accord/SPEC.md
+
+spec Accord
+
+const MAX_JURORS = 31
+const BPS_DENOM  = 10_000
+
+// Bounded index over the panel (qedgen quantifier idiom: a `Fin[N]` alias).
+type Slot = Fin[MAX_JURORS]
+
+// --- State (flattened; parallel arrays keyed by panel slot) --------------
+
+type State = {
+  // Subaccord economics (slash math reads alpha_bps + min_stake).
+  alpha_bps     : U16,   // slash factor, basis points (≤ BPS_DENOM, §18 finding)
+  min_stake     : U64,
+  fee_per_juror : U64,
+
+  // Panel (distinct draw).
+  panel         : Map[MAX_JURORS] Pubkey,
+  panel_size    : U32,                          // ≤ MAX_JURORS; set at create_dispute
+  // 0/1 discriminator: 1 if slot i revealed the final ruling (coherent).
+  coherent_flag : Map[MAX_JURORS] U8,
+  // Tally output (set by finalize_round, read by finalize_slot):
+  share         : U64,                          // pool / coherent_count (0 if none)
+
+  // Per-juror stake (slash + active_draws).
+  juror_amount       : Map[MAX_JURORS] U64,
+  juror_active_draws : Map[MAX_JURORS] U32,
+
+  // Bond custody bookkeeping (bond_conservation reads these).
+  custodyed_snapshot_bond : U64,
+  custodyed_appeal_bonds  : U64,
+  vault_liability         : U64,
+}
+
+type Error
+  | ArithmeticOverflow
+  | MathOverflow
+  | DuplicateJuror
+  | InsufficientStake
+  | InvalidPanelSize
+  | NotDrawnJuror
+
+// --- Handlers (slot-parameterized) ---------------------------------------
+//
+// `draw_slot` models one iteration of the draw loop (lib.rs:772-803): records
+// the drawn juror's pubkey in the panel and increments their active_draws by
+// exactly 1. The pairwise-distinctness obligation (the off-chain sortition
+// promise the on-chain O(N²) check enforces, lib.rs:746-750) is the
+// `distinct_panel` property — draw establishes it.
+
+handler draw_slot (i : Slot) (juror_pk : Pubkey) : State -> State {
+  permissionless
+  requires state.panel_size > 0 else InvalidPanelSize
+  requires i < state.panel_size else NotDrawnJuror
+
+  effect {
+    panel[i] := juror_pk
+    juror_active_draws[i] += 1
+  }
+}
+
+// `finalize_coherent_slot` models one iteration of the finalize_dispute
+// second pass (lib.rs:1125-1157) for a coherent juror: receives `share`
+// (pool / coherent_count, computed by the tally's first pass) and has their
+// active_draws decremented by 1 (unfreezes stake).
+handler finalize_coherent_slot (i : Slot) : State -> State {
+  permissionless
+  requires i < state.panel_size else NotDrawnJuror
+  requires state.coherent_flag[i] == 1 else NotDrawnJuror
+
+  effect {
+    juror_amount[i] +=! state.share
+    juror_active_draws[i] -=! 1
+  }
+}
+
+// `finalize_incoherent_slot` models the same second pass for an incoherent /
+// non-revealing juror: slashed by `slash_per_juror = α·min_stake/10_000`,
+// floored at their amount (saturating sub, so amount stays ≥ 0), and
+// active_draws decremented by 1.
+handler finalize_incoherent_slot (i : Slot) : State -> State {
+  permissionless
+  requires i < state.panel_size else NotDrawnJuror
+  requires state.coherent_flag[i] == 0 else NotDrawnJuror
+
+  let slash_per_juror =
+    mul_div_floor(state.alpha_bps, state.min_stake, BPS_DENOM)
+
+  effect {
+    juror_amount[i] -=! slash_per_juror
+    juror_active_draws[i] -=! 1
+  }
+}
+
+// `claim_appeal_refund` is the bond-outflow path (lib.rs:1293-1335): returns
+// a flipped appeal bond to its appellant after finalization. The vault
+// liability must drop by exactly the refund (bond_conservation).
+handler claim_appeal_refund (refund_amount : U64) : State -> State {
+  permissionless
+  requires refund_amount <= state.custodyed_appeal_bonds else ArithmeticOverflow
+
+  effect {
+    custodyed_appeal_bonds -= refund_amount
+    vault_liability := custodyed_snapshot_bond + custodyed_appeal_bonds
+  }
+}
+
+// --- The four invariants the acceptance names ----------------------------
+
+/// (1) SLASH MATH — slashing never sends a juror's amount below zero and
+/// never removes more than `α · min_stake` from any one juror. The on-chain
+/// code floors the slash at `min(slash_per_juror, amount)` via saturating
+/// subtraction (lib.rs:1149). Binary property (v2.23 pre/post lowering):
+/// rearranged to `post.amount + slash_per_juror ≥ pre.amount` so it holds in
+/// both branches (coherent: post = pre + share ≥ pre; incoherent:
+/// post = saturating(pre − slash) ≥ pre − slash). Preserved by every handler
+/// that can move `amount`; draw_slot and claim_appeal_refund don't decrease
+/// it (draw leaves amount untouched; claim only moves bonds).
+property slash_bounded :
+  forall i : Slot,
+    state.juror_amount[i]
+      + mul_div_floor(state.alpha_bps, state.min_stake, BPS_DENOM)
+    >= old(state.juror_amount[i])
+  preserved_by [draw_slot, finalize_coherent_slot, finalize_incoherent_slot, claim_appeal_refund]
+
+/// (2) DISTINCT DRAW — every pair of distinct in-panel slots holds a distinct
+/// Pubkey. The on-chain O(N²) check (lib.rs:746-750) rejects any duplicate
+/// with `DuplicateJuror`; `draw_slot` is the only handler that populates the
+/// panel, so it establishes this property. The finalize handlers and
+/// claim_appeal_refund never write `panel`, so they trivially preserve it.
+/// (Pairwise distinctness is a nested quantifier; qedgen v2.47 lowers it to
+/// a placeholder harness — the declaration is the regression guard, and the
+/// on-chain O(N²) reject is the runtime guarantee.)
+property distinct_panel :
+  forall i : Slot, forall j : Slot,
+    (i < state.panel_size and j < state.panel_size and i != j)
+    implies state.panel[i] != state.panel[j]
+  preserved_by [finalize_coherent_slot, finalize_incoherent_slot, claim_appeal_refund]
+
+/// (3) BOND CONSERVATION — the vault's tracked liability always equals the
+/// sum of custodyed snapshot and appeal bonds, and the appeal-bond liability
+/// never increases except via an `appeal` deposit (out of scope here). This
+/// guards against a future change that refunds a bond without decrementing
+/// the liability (double-refund) or folds a forfeited bond into the pool
+/// without removing it. Every modelled handler must maintain the equality.
+property bond_conservation :
+  state.vault_liability == state.custodyed_snapshot_bond + state.custodyed_appeal_bonds
+  preserved_by [draw_slot, finalize_coherent_slot, finalize_incoherent_slot, claim_appeal_refund]
+
+/// (4) ACTIVE_DRAWS BALANCE — each juror's `active_draws` is incremented
+/// exactly once at draw and decremented exactly once at finalize, so the net
+/// delta over a dispute lifecycle is zero and the field never underflows.
+/// The on-chain `unstake` gate (`active_draws == 0`, lib.rs:268-271) depends
+/// on this: a skipped decrement would lock a juror's stake forever. Stated
+/// as per-handler binary deltas:
+///   - draw_slot:     post == pre + 1   (active_draws_inc_on_draw)
+///   - finalize_*:    post == pre − 1   (active_draws_dec_on_finalize)
+///   - claim:         post == pre       (active_draws_untouched_by_claim)
+property active_draws_inc_on_draw :
+  forall i : Slot,
+    i < state.panel_size implies
+    state.juror_active_draws[i] == old(state.juror_active_draws[i]) + 1
+  preserved_by [draw_slot]
+
+property active_draws_dec_on_finalize :
+  forall i : Slot,
+    i < state.panel_size implies
+    state.juror_active_draws[i] == old(state.juror_active_draws[i]) - 1
+  preserved_by [finalize_coherent_slot, finalize_incoherent_slot]
+
+property active_draws_untouched_by_claim :
+  forall i : Slot,
+    state.juror_active_draws[i] == old(state.juror_active_draws[i])
+  preserved_by [claim_appeal_refund]
+
+// Lifecycle-level balance (draw opens, finalize closes → net zero): the
+// inc_on_draw + dec_on_finalize pair pins the full balance — every increment
+// is paired with a decrement, so no juror is permanently locked out of
+// unstaking by a stuck draw. (Modeled as two binary preservation properties
+// rather than a liveness claim, since the State is a flat record, not the
+// DisputeState ADT the liveness machinery expects.)

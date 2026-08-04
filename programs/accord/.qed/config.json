@@ -1,0 +1,6 @@
+{
+  "name": "accord",
+  "spec": "programs/accord/accord.qedspec",
+  "interfaces_dir": ".qed/interfaces",
+  "created_at": "1785825097s-since-epoch"
+}
