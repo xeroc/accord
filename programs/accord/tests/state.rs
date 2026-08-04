@@ -41,6 +41,7 @@ fn sample_subaccord() -> Subaccord {
         evidence_operator: Pubkey::new_unique(),
         risk_type: [1u8; 32],
         evidence_spec: [2u8; 32],
+        staker_count: 0,
         bump: 254,
     }
 }

@@ -35,6 +35,16 @@ pub struct Subaccord {
     pub risk_type: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
+    /// Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+    /// Maintained O(1) by `stake`/`unstake` (0→positive increments,
+    /// positive→0 decrements). This is a *coarse* intake gate for
+    /// `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
+    /// distinct stakers than the required panel). It deliberately does NOT track
+    /// `min_stake` eligibility — that changes via the 48h timelock and cannot be
+    /// recomputed without the O(n) ledger ADR-0003 rejected. Precise eligibility
+    /// (amount ≥ min_stake, distinctness) is verified at `draw` against the
+    /// finalized Merkle Snapshot.
+    pub staker_count: u32,
     pub bump: u8,
 }
 
@@ -186,4 +196,35 @@ pub enum UpdatePayload {
     FeePerJuror(u64),
     Authority(Pubkey),
     EvidenceOperator(Pubkey),
+}
+
+// --- Snapshot fraud proof (ADR-0003; veridao-rrxs) ---------------------------
+
+/// A single leaf claim from the posted Merkle tree: the Juror pubkey and the
+/// stake the leaf attributes to them. On-chain this is hashed
+/// `H(juror || stake_le)` to form the leaf node.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub struct LeafClaim {
+    pub juror: Pubkey,
+    pub stake: u64,
+}
+
+/// Fraud proof for `challenge_snapshot`. Demonstrates the posted root is a false
+/// commitment by showing two tree leaves that both verify against the root yet
+/// attribute a stake to the **same Juror** (a duplicate / inconsistent entry).
+/// This is the one fraud class that is fully verifiable on-chain *without*
+/// comparing against live `JurorStake` state (which drifts as Jurors
+/// stake/unstake during the 1-day window and would make an honest root
+/// challengeable). Duplicating a Juror is also the direct way to skew the
+/// cumulative-stake distribution the draw reads, so it is the highest-value
+/// fraud to catch. Other fraud classes (wrong stake, missing/extra Juror) need
+/// the off-chain dataset and are left to a future richer proof (hardening bean).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct FraudProof {
+    pub leaf_a: LeafClaim,
+    pub proof_a: Vec<[u8; 32]>, // sibling hashes, rootward
+    pub index_a: u32,           // leaf position (bit i = side at level i)
+    pub leaf_b: LeafClaim,
+    pub proof_b: Vec<[u8; 32]>,
+    pub index_b: u32,
 }

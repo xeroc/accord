@@ -224,10 +224,23 @@ pub mod accord {
         js.juror = ctx.accounts.juror.key();
         js.bump = ctx.bumps.juror_stake;
         // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
+        let prev_amount = js.amount;
         js.amount = js
             .amount
             .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Maintain the coarse distinct-staker counter (SPEC intake gate for
+        // create_dispute/appeal). First-ever stake (0 -> positive) counts a new
+        // distinct Juror; top-ups do not. See Subaccord.staker_count doc.
+        if prev_amount == 0 {
+            ctx.accounts.subaccord.staker_count = ctx
+                .accounts
+                .subaccord
+                .staker_count
+                .checked_add(1)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
 
         emit!(Staked {
             subaccord: ctx.accounts.subaccord.key(),
@@ -276,10 +289,17 @@ pub mod accord {
         )?;
 
         let js = &mut ctx.accounts.juror_stake;
+        let prev_amount = js.amount;
         js.amount = js
             .amount
             .checked_sub(amount)
             .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Full unstake (positive -> 0) drops a distinct Juror from the counter.
+        if js.amount == 0 && prev_amount > 0 {
+            ctx.accounts.subaccord.staker_count =
+                ctx.accounts.subaccord.staker_count.saturating_sub(1);
+        }
 
         emit!(Unstaked {
             subaccord: ctx.accounts.subaccord.key(),
@@ -364,6 +384,345 @@ pub mod accord {
         });
         Ok(())
     }
+
+    // --- Dispute intake & Snapshot trust (ADR-0003/0004; veridao-rrxs) ---
+
+    /// The **Arbitrable CPI entry**: any program files a Dispute. The filer pays
+    /// the full round-1 fee (`jurors_per_dispute · fee_per_juror`) into the
+    /// Subaccord vault, so the on-chain fee is authoritative — the caller's
+    /// `fee` must match exactly (defense-in-depth: the filer signs the exact
+    /// charge). Reverts while paused (ADR-0007) and if the Subaccord has fewer
+    /// distinct stakers than the required panel (`staker_count` coarse gate;
+    /// ADR-0003 snapshot does the precise eligibility check at draw).
+    pub fn create_dispute(
+        ctx: Context<CreateDispute>,
+        options: Vec<[u8; 32]>,
+        evidence_hash: [u8; 32],
+        nonce: u64,
+        fee: u64,
+    ) -> Result<()> {
+        require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
+
+        let n = options.len();
+        require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
+
+        let sub = &ctx.accounts.subaccord;
+        let required_fee = (sub.jurors_per_dispute as u64)
+            .checked_mul(sub.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(fee == required_fee, AccordError::FeeMismatch);
+
+        require!(
+            sub.staker_count >= sub.jurors_per_dispute,
+            AccordError::InsufficientJurors
+        );
+
+        // Custody the fee: filer ATA -> Subaccord PDA vault.
+        let before = ctx.accounts.vault.amount;
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.filer_token_account.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.filer.to_account_info(),
+                },
+            ),
+            fee,
+        )?;
+        ctx.accounts.vault.reload()?;
+        let after = ctx.accounts.vault.amount;
+        let _delta = after
+            .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        let num_options = n as u8;
+        let mut opt_arr = [[0u8; 32]; MAX_OPTIONS];
+        for (i, o) in options.iter().enumerate() {
+            opt_arr[i] = *o;
+        }
+
+        let d = &mut ctx.accounts.dispute;
+        d.subaccord = sub.key();
+        d.filer = ctx.accounts.filer.key();
+        d.nonce = nonce;
+        d.num_options = num_options;
+        d.options = opt_arr;
+        d.evidence_hash = evidence_hash;
+        d.state = DisputeState::Created;
+        d.current_round = 0;
+        d.final_ruling = None;
+        d.fee_paid = fee;
+        d.bump = ctx.bumps.dispute;
+
+        emit!(DisputeCreated {
+            dispute: d.key(),
+            subaccord: sub.key(),
+            filer: ctx.accounts.filer.key(),
+            num_options,
+        });
+        Ok(())
+    }
+
+    /// Off-chain indexer posts the Merkle root over the Subaccord's Juror set +
+    /// cumulative stakes (ADR-0003). Permissionless + bonded: the poster
+    /// transfers `1 × max-appeal-fee` (the largest possible appeal-round panel ·
+    /// `fee_per_juror`) into the vault, forfeited if a fraud proof lands within
+    /// the 1-day window. Sets the dispute to `SnapshotPosted` and arms the
+    /// challenge deadline. One snapshot per round (`init`); re-posting after a
+    /// void is a deferred concern (the dispute stalls, poster loses bond).
+    pub fn post_snapshot(ctx: Context<PostSnapshot>, merkle_root: [u8; 32]) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::Created,
+            AccordError::InvalidState
+        );
+
+        let sub = &ctx.accounts.subaccord;
+        let max_panel = max_appeal_panel_size(sub.jurors_per_dispute, sub.max_appeals)?;
+        let bond = (max_panel as u64)
+            .checked_mul(sub.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Custody the bond: poster ATA -> Subaccord PDA vault.
+        let before = ctx.accounts.vault.amount;
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.poster_token_account.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.poster.to_account_info(),
+                },
+            ),
+            bond,
+        )?;
+        ctx.accounts.vault.reload()?;
+        let after = ctx.accounts.vault.amount;
+        let _delta = after
+            .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        let now = Clock::get()?.unix_timestamp;
+        let deadline = now
+            .checked_add(SNAPSHOT_CHALLENGE_WINDOW_SECS)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        let round_idx = dispute.current_round;
+        let snap = &mut ctx.accounts.snapshot;
+        snap.dispute = dispute.key();
+        snap.round_idx = round_idx;
+        snap.merkle_root = merkle_root;
+        snap.poster = ctx.accounts.poster.key();
+        snap.bond = bond;
+        snap.challenge_deadline = deadline;
+        snap.status = SnapshotStatus::Posted;
+        snap.bump = ctx.bumps.snapshot;
+
+        dispute.state = DisputeState::SnapshotPosted;
+
+        emit!(SnapshotPosted {
+            dispute: dispute.key(),
+            round_idx,
+            merkle_root,
+            poster: ctx.accounts.poster.key(),
+        });
+        Ok(())
+    }
+
+    /// Contest a posted Snapshot root within the 1-day fraud-proof window
+    /// (ADR-0003). The challenger bonds an equal amount, then the on-chain
+    /// Verifier decides: a valid [`FraudProof`] (duplicate Juror across two
+    /// verifiable leaves) voids the root and sends the poster's bond to the
+    /// challenger; anything else is a false challenge and the challenger's bond
+    /// goes to the poster. Both bond sweeps are PDA-signed out of the vault —
+    /// the program is the sweep authority.
+    pub fn challenge_snapshot(ctx: Context<ChallengeSnapshot>, proof: FraudProof) -> Result<()> {
+        let snap = &mut ctx.accounts.snapshot;
+        require!(
+            snap.status == SnapshotStatus::Posted,
+            AccordError::InvalidState
+        );
+
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            now <= snap.challenge_deadline,
+            AccordError::SnapshotChallengeWindowExpired
+        );
+
+        let bond = snap.bond;
+        let sub = &ctx.accounts.subaccord;
+
+        // Challenger posts an equal bond into custody first.
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.challenger_token_account.to_account_info(),
+                    to: ctx.accounts.vault.to_account_info(),
+                    authority: ctx.accounts.challenger.to_account_info(),
+                },
+            ),
+            bond,
+        )?;
+
+        let root = snap.merkle_root;
+        let fraud = proof.index_a != proof.index_b
+            && verify_merkle_inclusion(&proof.leaf_a, proof.index_a, &proof.proof_a, root)
+            && verify_merkle_inclusion(&proof.leaf_b, proof.index_b, &proof.proof_b, root)
+            && proof.leaf_a.juror == proof.leaf_b.juror;
+
+        let bump = [sub.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            sub.creator.as_ref(),
+            sub.risk_type.as_ref(),
+            &bump,
+        ];
+
+        if fraud {
+            // Poster forfeits: poster's original bond + the challenger's bond both
+            // sweep to the challenger (net +bond to challenger, -bond to poster).
+            let payout = bond
+                .checked_add(bond)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.vault.to_account_info(),
+                        to: ctx.accounts.challenger_token_account.to_account_info(),
+                        authority: ctx.accounts.subaccord.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                payout,
+            )?;
+            snap.status = SnapshotStatus::Voided;
+            emit!(SnapshotChallenged {
+                dispute: snap.dispute,
+                round_idx: snap.round_idx,
+                challenger: ctx.accounts.challenger.key(),
+            });
+        } else {
+            // False challenge: the challenger's bond sweeps to the poster. The
+            // poster's original bond stays held in custody (returned on
+            // finalize). The Snapshot remains Posted — the window is still open.
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.vault.to_account_info(),
+                        to: ctx.accounts.poster_token_account.to_account_info(),
+                        authority: ctx.accounts.subaccord.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                bond,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Permissionless crank: once the 1-day challenge window passes unchallenged,
+    /// the root is trustworthy. Returns the poster's bond and marks the Snapshot
+    /// `Finalized` so `draw` may consume it. A voided root can never finalize.
+    pub fn finalize_snapshot(ctx: Context<FinalizeSnapshot>) -> Result<()> {
+        let snap = &mut ctx.accounts.snapshot;
+        require!(
+            snap.status == SnapshotStatus::Posted,
+            AccordError::InvalidState
+        );
+
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            now >= snap.challenge_deadline,
+            AccordError::SnapshotChallengeWindowOpen
+        );
+
+        let bond = snap.bond;
+        let sub = &ctx.accounts.subaccord;
+        let bump = [sub.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            sub.creator.as_ref(),
+            sub.risk_type.as_ref(),
+            &bump,
+        ];
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.poster_token_account.to_account_info(),
+                    authority: ctx.accounts.subaccord.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            bond,
+        )?;
+
+        snap.status = SnapshotStatus::Finalized;
+        emit!(SnapshotFinalized {
+            dispute: snap.dispute,
+            round_idx: snap.round_idx,
+        });
+        Ok(())
+    }
+}
+
+// --- Snapshot helpers (ADR-0003; veridao-rrxs) -------------------------------
+
+/// Largest possible appeal-round panel for a Subaccord. The appeal ladder is
+/// `N_{k+1} = 2·N_k + 1` (closed form `(J+1)·2^k − 1`), so the panel after
+/// `max_appeals` appeals is `(jurors_per_dispute + 1) · 2^max_appeals − 1`,
+/// capped at `MAX_JURORS` (the 3rd-appeal ceiling of 31). This drives the
+/// snapshot bond (`1 × max-appeal-fee`).
+fn max_appeal_panel_size(jurors_per_dispute: u32, max_appeals: u8) -> Result<u32> {
+    // 2^max_appeals; v1 caps max_appeals at 3 (→ 31). Reject pathologically large
+    // values rather than silently capping a misconfigured Subaccord.
+    let shifts = u32::from(max_appeals);
+    if shifts >= 31 {
+        return Err(AccordError::ArithmeticOverflow.into());
+    }
+    let factor = 1u32
+        .checked_shl(shifts)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let panel = (jurors_per_dispute
+        .checked_add(1)
+        .ok_or(AccordError::ArithmeticOverflow)?)
+    .checked_mul(factor)
+    .ok_or(AccordError::ArithmeticOverflow)?
+    .checked_sub(1)
+    .ok_or(AccordError::ArithmeticOverflow)?;
+    Ok(panel.min(MAX_JURORS as u32))
+}
+
+/// Verify a `LeafClaim` is included in the posted Merkle root at `index`.
+/// Leaf node = `H(juror || stake_le)`; internal nodes = `H(left || right)`
+/// (SHA-256 via `hashv`). `proof` is the sibling hashes rootward; bit `i` of
+/// `index` gives the side at level `i` (0 ⇒ computed node is the left child).
+fn verify_merkle_inclusion(
+    leaf: &LeafClaim,
+    index: u32,
+    proof: &[[u8; 32]],
+    root: [u8; 32],
+) -> bool {
+    use anchor_lang::solana_program::hash::hashv;
+    let mut acc = hashv(&[leaf.juror.as_ref(), &leaf.stake.to_le_bytes()]).to_bytes();
+    for (depth, sibling) in proof.iter().enumerate() {
+        if depth >= 31 {
+            return false;
+        }
+        let left = (index >> depth) & 1 == 0;
+        acc = if left {
+            hashv(&[&acc, sibling]).to_bytes()
+        } else {
+            hashv(&[sibling, &acc]).to_bytes()
+        };
+    }
+    acc == root
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -450,6 +809,7 @@ pub struct Stake<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -499,6 +859,7 @@ pub struct Unstake<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -573,6 +934,184 @@ pub struct ExecuteSubaccordUpdate<'info> {
         close = caller,
     )]
     pub pending_update: Account<'info, PendingUpdate>,
+}
+
+// --- Dispute intake & Snapshot account contexts (veridao-rrxs) ---------------
+
+/// Account context for `create_dispute` — the Arbitrable CPI entry.
+///
+/// `filer` is the Arbitrable (a program signer via CPI, or any wallet). The
+/// dispute PDA is `["dispute", filer, nonce]` (caller-chosen nonce gives the
+/// filer a private dispute namespace). The fee moves from the filer's ATA into
+/// the Subaccord PDA's vault; the vault must already exist (guaranteed: the
+/// `staker_count >= N` gate implies at least one prior stake created it).
+#[derive(Accounts)]
+#[instruction(options: Vec<[u8; 32]>, evidence_hash: [u8; 32], nonce: u64, fee: u64)]
+pub struct CreateDispute<'info> {
+    #[account(mut)]
+    pub filer: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
+    pub pause_state: Account<'info, PauseState>,
+    #[account(
+        init,
+        payer = filer,
+        space = 8 + Dispute::INIT_SPACE,
+        seeds = [SEED_DISPUTE, filer.key().as_ref(), &nonce.to_le_bytes()],
+        bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = filer,
+    )]
+    pub filer_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Account context for `post_snapshot` (ADR-0003). The snapshot PDA is
+/// `["snapshot", dispute, round_idx]` where `round_idx = dispute.current_round`.
+#[derive(Accounts)]
+pub struct PostSnapshot<'info> {
+    #[account(mut)]
+    pub poster: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        init,
+        payer = poster,
+        space = 8 + Snapshot::INIT_SPACE,
+        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub snapshot: Box<Account<'info, Snapshot>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = poster,
+    )]
+    pub poster_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Account context for `challenge_snapshot`. Both bond sweeps are PDA-signed
+/// out of the Subaccord vault, so the program is the sweep authority. The
+/// poster need not sign — `poster_token_account` is constrained to the
+/// snapshot's recorded poster.
+#[derive(Accounts)]
+pub struct ChallengeSnapshot<'info> {
+    #[account(mut)]
+    pub challenger: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        mut,
+        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
+        bump = snapshot.bump,
+    )]
+    pub snapshot: Box<Account<'info, Snapshot>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = challenger,
+    )]
+    pub challenger_token_account: Account<'info, TokenAccount>,
+    /// The snapshot poster's ATA — sweep destination on a false challenge.
+    #[account(
+        mut,
+        token::mint = staking_token,
+        token::authority = snapshot.poster,
+    )]
+    pub poster_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+/// Account context for `finalize_snapshot` — permissionless crank returning the
+/// poster's bond once the challenge window passes unchallenged.
+#[derive(Accounts)]
+pub struct FinalizeSnapshot<'info> {
+    /// Any cranker; no authority check (the elapsed window is the gate).
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    #[account(
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        mut,
+        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
+        bump = snapshot.bump,
+    )]
+    pub snapshot: Box<Account<'info, Snapshot>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        token::mint = staking_token,
+        token::authority = snapshot.poster,
+    )]
+    pub poster_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 /// Emitted by `health`. Carries the program version byte.

@@ -46,6 +46,8 @@ pub enum AccordError {
     InvalidOptions,
     #[msg("Dispute is not in the required state for this instruction.")]
     InvalidState,
+    #[msg("Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror).")]
+    FeeMismatch,
 
     // --- snapshot (ADR-0003) ---
     #[msg("Snapshot is not finalized (challenge window still open or voided).")]
