@@ -1,11 +1,11 @@
 ---
 # veridao-7iiv
 title: jest integration suite vs Surfpool (Kit SDK)
-status: in-progress
+status: todo
 type: task
 priority: normal
 created_at: 2026-08-04T21:52:11Z
-updated_at: 2026-08-05T01:14:04Z
+updated_at: 2026-08-05T01:25:02Z
 parent: veridao-5y8e
 ---
 
