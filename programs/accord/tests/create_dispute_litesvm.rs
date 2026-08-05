@@ -308,7 +308,7 @@ fn happy_creates_dispute_and_moves_fee() {
     assert_eq!(d.evidence_hash, evidence);
     assert_eq!(d.state, DisputeState::Created);
     assert_eq!(d.current_round, 0);
-    assert_eq!(d.final_ruling, None);
+    assert_eq!(d.final_ruling, u8::MAX);
     assert_eq!(d.fee_paid, REQUIRED_FEE);
     assert!(d.bump > 0);
 }
