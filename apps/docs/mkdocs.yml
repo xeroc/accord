@@ -1,8 +1,8 @@
 site_name: Accord — Mechanize the verdict.
 site_description: General-purpose decentralized dispute resolution. Any Solana program can file a dispute; stake-weighted jurors vote honestly because coherence is the profitable strategy.
-site_url: https://docs.veridao.org
-repo_url: https://github.com/veridao/accord
-repo_name: veridao/accord
+site_url: https://example.com/TBD
+repo_url: https://github.com/xeroc/accord
+repo_name: xeroc/accord
 copyright: Accord
 
 theme:
@@ -93,6 +93,6 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/veridao/accord
+      link: https://github.com/xeroc/accord
     - icon: fontawesome/brands/twitter
-      link: https://twitter.com/veridao
+      link: https://x.com/xer0c
