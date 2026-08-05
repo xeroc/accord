@@ -673,7 +673,10 @@ fn do_reveal(
     round: &Pubkey,
     vote: u8,
     salt: [u8; 32],
+    mint: &Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let juror_ata = get_associated_token_address(&juror.pubkey(), mint);
+    let vault = vault_ata(subaccord, mint);
     let ix = svm
         .program()
         .accounts(accounts::Reveal {
@@ -681,6 +684,10 @@ fn do_reveal(
             subaccord: *subaccord,
             dispute: *dispute,
             round: *round,
+            staking_token: *mint,
+            juror_token_account: juror_ata,
+            vault,
+            token_program: spl_token::id(),
         })
         .args(instruction::Reveal { vote, salt })
         .instruction()
@@ -731,7 +738,7 @@ fn do_finalize_dispute(
         solana_sdk::instruction::AccountMeta::new(caller.pubkey(), true),
         solana_sdk::instruction::AccountMeta::new_readonly(*subaccord, false),
         solana_sdk::instruction::AccountMeta::new(*dispute, false),
-        solana_sdk::instruction::AccountMeta::new_readonly(*round, false),
+        solana_sdk::instruction::AccountMeta::new(*round, false),
     ];
     for pda in juror_stake_pdas {
         accounts_meta.push(solana_sdk::instruction::AccountMeta::new(*pda, false));
@@ -826,6 +833,7 @@ fn happy_commit_reveal_finalize() {
             &fx.round,
             0,
             salts[i],
+            &fx.mint,
         )
         .unwrap();
     }
@@ -928,6 +936,7 @@ fn reveal_before_commit_window_reverts() {
         &fx.round,
         0,
         salt,
+        &fx.mint,
     )
     .unwrap_err();
     assert!(
@@ -976,6 +985,7 @@ fn commit_copying_prevented() {
         &fx.round,
         0,
         salt,
+        &fx.mint,
     )
     .unwrap_err();
     assert!(
@@ -1049,6 +1059,7 @@ fn reveal_wrong_salt_reverts() {
         &fx.round,
         0,
         [22u8; 32],
+        &fx.mint,
     )
     .unwrap_err();
     assert!(
@@ -1090,6 +1101,7 @@ fn economics_two_coherent_one_incoherent() {
             &fx.round,
             *vote,
             salts[i],
+            &fx.mint,
         )
         .unwrap();
     }
@@ -1123,10 +1135,12 @@ fn economics_two_coherent_one_incoherent() {
     let slash_per_juror = (DEFAULT_ALPHA_BPS as u64) * MIN_STAKE / 10_000;
     assert_eq!(slash_per_juror, 100);
 
-    let round_fee = 3 * FEE_PER_JUROR;
-    let pool = slash_per_juror + round_fee;
+    // Ugly 5: participation fee paid on reveal (outcome-independent), so the
+    // pool is just slash_total + non-revealer fees. All 3 revealed →
+    // non-revealer fee = 0.
+    let pool = slash_per_juror; // 1 incoherent × 100
     let share = pool / 2;
-    assert_eq!(share, 1_500_050);
+    assert_eq!(share, 50);
 
     // Coherent jurors 0, 1
     for i in 0..2 {
@@ -1134,7 +1148,7 @@ fn economics_two_coherent_one_incoherent() {
         assert_eq!(
             js.amount,
             STAKE_AMOUNT + share,
-            "coherent juror {i} gets share"
+            "coherent juror {i} gets coherence share (fee was separate, paid on reveal)"
         );
         assert_eq!(js.active_draws, 0);
     }
@@ -1183,6 +1197,7 @@ fn non_revealer_treated_as_incoherent() {
             &fx.round,
             0,
             salts[i],
+            &fx.mint,
         )
         .unwrap();
     }
@@ -1213,9 +1228,11 @@ fn non_revealer_treated_as_incoherent() {
     .unwrap();
 
     let slash_per_juror = (DEFAULT_ALPHA_BPS as u64) * MIN_STAKE / 10_000;
-    let round_fee = 3 * FEE_PER_JUROR;
-    let pool = slash_per_juror + round_fee;
+    // Ugly 5: 1 non-revealer → slash + their forfeited fee folds into the pool.
+    let non_revealer_fee = 1 * FEE_PER_JUROR;
+    let pool = slash_per_juror + non_revealer_fee;
     let share = pool / 2;
+    assert_eq!(share, 500_050);
 
     for i in 0..2 {
         let js = read_juror_stake(&fx.svm, &fx.drawn[i].1);
@@ -1282,6 +1299,7 @@ fn finalize_dispute_before_appeal_window_reverts() {
             &fx.round,
             0,
             salts[i],
+            &fx.mint,
         )
         .unwrap();
     }
@@ -1354,6 +1372,7 @@ fn get_ruling_returns_some_after_final() {
             &fx.round,
             0,
             salts[i],
+            &fx.mint,
         )
         .unwrap();
     }
@@ -1437,6 +1456,7 @@ fn invalid_vote_index_reverts() {
         &fx.round,
         5, // invalid — only options 0,1 exist
         salt,
+        &fx.mint,
     );
     assert!(err.is_err(), "invalid vote index must revert");
 }

@@ -124,4 +124,10 @@ pub enum AccordError {
     // --- arithmetic ---
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
+
+    // --- multi-round settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti) ---
+    #[msg("Round has already been settled.")]
+    RoundAlreadySettled,
+    #[msg("Round index out of range for settlement (must be < current_round).")]
+    RoundNotSettlable,
 }

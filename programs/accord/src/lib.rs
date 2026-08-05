@@ -1097,9 +1097,14 @@ pub mod accord {
     }
 
     /// Reveal a committed vote. Verifies `hash(vote_le ‖ salt ‖ juror_pubkey)`
-    /// matches the stored commit, then records the vote. Allowed during the
-    /// reveal window (`commit_end ≤ now < reveal_end`). Jurors who committed
-    /// but do not reveal are penalized ≥ incoherent at finalization.
+    /// matches the stored commit, records the vote, then **pays the
+    /// participation fee** (`fee_per_juror`) immediately via PDA-signed SPL
+    /// transfer from the vault to the juror's ATA (CONCEPT-REVIEW Ugly 5 /
+    /// bean accord-r6ti). The fee is outcome-independent: every revealer gets
+    /// paid on the spot, so jurors are never cash-starved during a long appeal
+    /// ladder. Non-revealers forfeit their fee (it stays in the vault and folds
+    /// into the coherent pool at settlement). Allowed during the reveal window
+    /// (`commit_end ≤ now < reveal_end`).
     pub fn reveal(ctx: Context<Reveal>, vote: u8, salt: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
@@ -1136,6 +1141,31 @@ pub mod accord {
 
         if dispute.state == DisputeState::Commit {
             dispute.state = DisputeState::Reveal;
+        }
+
+        // Participation fee: paid on reveal, outcome-independent (Ugly 5).
+        // PDA-signed transfer from the vault → juror ATA.
+        let fee = dispute.terms.fee_per_juror;
+        if fee > 0 {
+            let bump = [ctx.accounts.subaccord.bump];
+            let signer_seeds = &[
+                SEED_SUBACCORD,
+                ctx.accounts.subaccord.creator.as_ref(),
+                ctx.accounts.subaccord.risk_type.as_ref(),
+                &bump,
+            ];
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.key(),
+                    Transfer {
+                        from: ctx.accounts.vault.to_account_info(),
+                        to: ctx.accounts.juror_token_account.to_account_info(),
+                        authority: ctx.accounts.subaccord.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                fee,
+            )?;
         }
 
         emit!(Revealed {
@@ -1188,20 +1218,24 @@ pub mod accord {
     }
 
     /// Permissionless crank: once the appeal window elapses without an appeal,
-    /// settles the final round's economics and writes the ruling. Pure ledger
-    /// accounting — the tokens are already in the vault, so no SPL transfers
-    /// are needed:
+    /// writes `final_ruling` and settles the **final round's** economics
+    /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). Prior rounds are settled
+    /// separately by `settle_round` cranks (≤31 juror accounts each).
+    ///
+    /// Settlement is pure ledger accounting — tokens are already in the vault:
     ///
     /// 1. Determine coherence (revealed vote == final ruling).
     /// 2. Slash each incoherent/non-revealing juror: `α · min_stake`.
-    /// 3. Pool = slash_total + round_fee (`panel · fee_per_juror`).
+    /// 3. Pool = slash_total + non-revealer fees + forfeited (no-flip) bonds.
+    ///    (Participation fees for revealers were already paid on `reveal`.)
     /// 4. Equal split of pool among coherent jurors (integer div; remainder
     ///    stays in vault as protocol surplus).
-    /// 5. Decrement `active_draws` for ALL drawn jurors (unfreezes stake).
-    /// 6. Write `final_ruling` and transition to `Final`.
+    /// 5. Decrement `active_draws` for the final round's drawn jurors.
+    /// 6. Write `final_ruling`, mark the round settled, transition to `Final`.
     ///
-    /// Drawn `JurorStake` accounts are passed as `remaining_accounts`, verified
-    /// against the round's juror list + PDA derivation (same pattern as `draw`).
+    /// `remaining_accounts` = [juror_stake PDAs (panel)] + [AppealBond PDAs
+    /// (one per prior appeal)]. With no appeals this collapses to just juror
+    /// stakes (backward-compatible single-round path).
     pub fn finalize_dispute(ctx: Context<FinalizeDispute>) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
@@ -1209,7 +1243,9 @@ pub mod accord {
             AccordError::InvalidState
         );
 
-        let round = ctx.accounts.round.load()?;
+        let mut round = ctx.accounts.round.load_mut()?;
+        require!(round.settled == 0, AccordError::RoundAlreadySettled);
+
         let now = Clock::get()?.unix_timestamp;
         let appeal_deadline = round
             .reveal_end
@@ -1220,56 +1256,18 @@ pub mod accord {
         let final_ruling = round.result;
         require!(final_ruling != u8::MAX, AccordError::InvalidState);
 
-        let sub = &ctx.accounts.subaccord;
+        let sub_key = ctx.accounts.subaccord.key();
+        let dispute_key = dispute.key();
         let panel = round.juror_count as usize;
-        // remaining_accounts = [juror_stake PDAs (panel)] + [AppealBond PDAs
-        // (one per appeal == `current_round`)]. With no appeals this collapses
-        // to just the juror stakes (backward-compatible single-round path).
         let appeal_n = dispute.current_round as usize;
         require!(
             ctx.remaining_accounts.len() == panel + appeal_n,
             AccordError::InvalidPanelSize
         );
 
-        // Ugly 6: slashing + fees use filing-time economics (frozen on the
-        // dispute), not live Subaccord params.
-        let slash_per_juror = (dispute.terms.alpha_bps as u64)
-            .checked_mul(dispute.terms.min_stake)
-            .and_then(|v| v.checked_div(10_000))
-            .ok_or(AccordError::ArithmeticOverflow)?;
-
-        // --- First pass: verify PDAs + compute coherence stats ---
-        let mut coherent_count: u32 = 0;
-        let mut slash_total: u64 = 0;
-        let sub_key = sub.key();
-        for i in 0..panel {
-            let expected_pda = Pubkey::find_program_address(
-                &[SEED_JUROR_STAKE, sub_key.as_ref(), round.jurors[i].as_ref()],
-                &crate::ID,
-            )
-            .0;
-            require!(
-                ctx.remaining_accounts[i].key == &expected_pda,
-                AccordError::InvalidMembershipProof
-            );
-
-            let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
-            if is_coherent {
-                coherent_count += 1;
-            } else {
-                slash_total = slash_total
-                    .checked_add(slash_per_juror)
-                    .ok_or(AccordError::ArithmeticOverflow)?;
-            }
-        }
-
         // --- Appeal bond forfeiture (ADR-0004) ---
-        // Each AppealBond PDA is keyed by the round it appealed (0..current_round).
-        // No flip (`prior_result == final_ruling`) => fold the bond into the
-        // final-round coherent pool and consume it (zero the on-chain amount).
-        // Flip (`prior_result != final_ruling`) => leave the bond for
-        // `claim_appeal_refund` to return to the appellant.
-        let dispute_key = dispute.key();
+        // No flip (`prior_result == final_ruling`) => fold into the final-round
+        // coherent pool and consume (zero). Flip => leave for claim_appeal_refund.
         let mut forfeited_total: u64 = 0;
         // AppealBond layout: disc(8) + dispute(32) + round_idx(4) + appellant(32)
         // => amount @ 76 (u64), prior_result @ 84 (u8).
@@ -1304,7 +1302,6 @@ pub mod accord {
                 (amt, d[BOND_PRIOR_OFFSET])
             };
             if prior_result == final_ruling {
-                // No flip: forfeit into the coherent pool and consume the bond.
                 forfeited_total = forfeited_total
                     .checked_add(amount)
                     .ok_or(AccordError::ArithmeticOverflow)?;
@@ -1313,68 +1310,78 @@ pub mod accord {
             }
         }
 
-        let round_fee = (panel as u64)
-            .checked_mul(dispute.terms.fee_per_juror)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-        let pool = slash_total
-            .checked_add(round_fee)
-            .and_then(|v| v.checked_add(forfeited_total))
-            .ok_or(AccordError::ArithmeticOverflow)?;
-        let share = if coherent_count > 0 {
-            pool / coherent_count as u64
-        } else {
-            0 // no coherent jurors: pool stays in vault (SPEC §4.6 fn.10, flagged)
-        };
+        // --- Settle the final round's jurors (coherence vs final_ruling) ---
+        settle_round_accounts(
+            &round,
+            &dispute.terms,
+            &sub_key,
+            &ctx.remaining_accounts[..panel],
+            final_ruling,
+            forfeited_total,
+        )?;
 
-        // --- Second pass: apply slashes + redistributions + decrement draws ---
-        const AMOUNT_OFFSET: usize = 8 + 32 + 32; // disc + subaccord + juror
-        const ACTIVE_DRAWS_OFFSET: usize = AMOUNT_OFFSET + 8;
-
-        for i in 0..panel {
-            let acct_info = &ctx.remaining_accounts[i];
-            let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
-
-            let (amount, active_draws) = {
-                let data = acct_info.try_borrow_data()?;
-                if data.len() < ACTIVE_DRAWS_OFFSET + 4 {
-                    return Err(AccordError::InvalidMembershipProof.into());
-                }
-                let amt =
-                    u64::from_le_bytes(data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].try_into().unwrap());
-                let draws = u32::from_le_bytes(
-                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                        .try_into()
-                        .unwrap(),
-                );
-                (amt, draws)
-            };
-
-            let new_amount = if is_coherent {
-                amount
-                    .checked_add(share)
-                    .ok_or(AccordError::ArithmeticOverflow)?
-            } else {
-                amount.checked_sub(slash_per_juror.min(amount)).unwrap_or(0)
-            };
-            let new_draws = active_draws.saturating_sub(1);
-
-            let mut data = acct_info.try_borrow_mut_data()?;
-            data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].copy_from_slice(&new_amount.to_le_bytes());
-            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                .copy_from_slice(&new_draws.to_le_bytes());
-        }
-
-        // Flipped appeal bonds stay in the vault post-finalization and are
-        // returned to their appellants by the permissionless `claim_appeal_refund`
-        // crank (ADR-0004). Forfeited (no-flip) bonds were already folded into
-        // the coherent pool above.
+        round.settled = 1;
 
         dispute.final_ruling = final_ruling;
         dispute.state = DisputeState::Final;
 
         emit!(RulingFinalized {
-            dispute: dispute.key(),
+            dispute: dispute_key,
             ruling: final_ruling,
+        });
+        Ok(())
+    }
+
+    /// Permissionless crank: settles a **prior round's** coherence economics
+    /// against the finalized ruling (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti).
+    ///
+    /// Prior-round jurors were left with `active_draws > 0` after the dispute
+    /// finalized — this crank releases them. Each call handles one round (≤ 31
+    /// juror-stake accounts, fitting the transaction account limit).
+    ///
+    /// Coherence is judged against `dispute.final_ruling`, not the round's own
+    /// result: a round-0 juror who voted the option the final panel overturned
+    /// is slashed; one who voted the final ruling gets a coherence share.
+    /// Participation fees were already paid on `reveal`; non-revealer fees fold
+    /// into the coherent pool.
+    pub fn settle_round(ctx: Context<SettleRound>, round_idx: u32) -> Result<()> {
+        let dispute = &ctx.accounts.dispute;
+        require!(
+            dispute.state == DisputeState::Final,
+            AccordError::DisputeNotFinal
+        );
+        require!(
+            round_idx < dispute.current_round,
+            AccordError::RoundNotSettlable
+        );
+        let final_ruling = dispute.final_ruling;
+        require!(final_ruling != u8::MAX, AccordError::InvalidState);
+
+        let mut round = ctx.accounts.round.load_mut()?;
+        require!(round.round_idx == round_idx, AccordError::InvalidState);
+        require!(round.settled == 0, AccordError::RoundAlreadySettled);
+
+        let sub_key = ctx.accounts.subaccord.key();
+        let panel = round.juror_count as usize;
+        require!(
+            ctx.remaining_accounts.len() == panel,
+            AccordError::InvalidPanelSize
+        );
+
+        settle_round_accounts(
+            &round,
+            &dispute.terms,
+            &sub_key,
+            &ctx.remaining_accounts,
+            final_ruling,
+            0, // no appeal bonds in prior-round settlement
+        )?;
+
+        round.settled = 1;
+
+        emit!(RoundSettled {
+            dispute: dispute.key(),
+            round_idx,
         });
         Ok(())
     }
@@ -1597,6 +1604,114 @@ fn panel_size_for_round(jurors_per_dispute: u32, round_idx: u32) -> Result<u32> 
         .checked_sub(1)
         .ok_or(AccordError::ArithmeticOverflow)?;
     Ok(panel.min(MAX_JURORS as u32))
+}
+
+/// Shared per-round coherence settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti).
+///
+/// Judges every drawn juror against `final_ruling` (NOT the round's own result),
+/// slashes incoherent/non-revealing jurors by `α·min_stake`, and redistributes
+/// the pool (slash_total + non-revealer fees + `pool_extra`) equally among
+/// coherent jurors. Participation fees for revealers were already paid on
+/// `reveal`; the non-revealer fees `(panel - reveal_count)·fee_per_juror` remain
+/// in the vault and fold into the coherent pool here. Decrements `active_draws`
+/// for every drawn juror (releases the unstake lock).
+///
+/// `pool_extra` is the forfeited (no-flip) appeal-bond total (final round only;
+/// 0 for prior rounds). All adjustments are ledger-only — no SPL transfers.
+fn settle_round_accounts(
+    round: &Round,
+    terms: &CaseTerms,
+    sub_key: &Pubkey,
+    accounts: &[AccountInfo],
+    final_ruling: u8,
+    pool_extra: u64,
+) -> Result<()> {
+    let panel = round.juror_count as usize;
+    require!(accounts.len() == panel, AccordError::InvalidPanelSize);
+
+    let slash_per_juror = (terms.alpha_bps as u64)
+        .checked_mul(terms.min_stake)
+        .and_then(|v| v.checked_div(10_000))
+        .ok_or(AccordError::ArithmeticOverflow)?;
+
+    // --- First pass: verify PDAs + compute coherence stats ---
+    let mut coherent_count: u32 = 0;
+    let mut slash_total: u64 = 0;
+    for i in 0..panel {
+        let expected_pda = Pubkey::find_program_address(
+            &[SEED_JUROR_STAKE, sub_key.as_ref(), round.jurors[i].as_ref()],
+            &crate::ID,
+        )
+        .0;
+        require!(
+            accounts[i].key == &expected_pda,
+            AccordError::InvalidMembershipProof
+        );
+
+        if round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling {
+            coherent_count += 1;
+        } else {
+            slash_total = slash_total
+                .checked_add(slash_per_juror)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
+    }
+
+    // Non-revealer fees: revealers were paid on reveal; non-revealers forfeit
+    // into the coherent pool. `(panel - reveal_count) · fee_per_juror`.
+    let non_revealer_fee = ((panel as u64).saturating_sub(round.reveal_count as u64))
+        .checked_mul(terms.fee_per_juror)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+
+    let pool = slash_total
+        .checked_add(non_revealer_fee)
+        .and_then(|v| v.checked_add(pool_extra))
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let share = if coherent_count > 0 {
+        pool / coherent_count as u64
+    } else {
+        0 // no coherent jurors: pool stays in vault (accepted edge case)
+    };
+
+    // --- Second pass: apply slashes + redistributions + decrement draws ---
+    const AMOUNT_OFFSET: usize = 8 + 32 + 32; // disc + subaccord + juror
+    const ACTIVE_DRAWS_OFFSET: usize = AMOUNT_OFFSET + 8;
+
+    for i in 0..panel {
+        let acct_info = &accounts[i];
+        let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
+
+        let (amount, active_draws) = {
+            let data = acct_info.try_borrow_data()?;
+            if data.len() < ACTIVE_DRAWS_OFFSET + 4 {
+                return Err(AccordError::InvalidMembershipProof.into());
+            }
+            let amt =
+                u64::from_le_bytes(data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].try_into().unwrap());
+            let draws = u32::from_le_bytes(
+                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+            (amt, draws)
+        };
+
+        let new_amount = if is_coherent {
+            amount
+                .checked_add(share)
+                .ok_or(AccordError::ArithmeticOverflow)?
+        } else {
+            amount.checked_sub(slash_per_juror.min(amount)).unwrap_or(0)
+        };
+        let new_draws = active_draws.saturating_sub(1);
+
+        let mut data = acct_info.try_borrow_mut_data()?;
+        data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].copy_from_slice(&new_amount.to_le_bytes());
+        data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+            .copy_from_slice(&new_draws.to_le_bytes());
+    }
+
+    Ok(())
 }
 
 /// Verify a `LeafClaim` is included in the posted Merkle-Sum Tree root at
@@ -2149,7 +2264,10 @@ pub struct Commit<'info> {
     pub round: AccountLoader<'info, Round>,
 }
 
-/// Account context for `reveal`. Same shape as `Commit`.
+/// Account context for `reveal`. Same shape as `Commit` plus the token
+/// accounts needed to pay the participation fee on reveal (CONCEPT-REVIEW
+/// Ugly 5 / bean accord-r6ti): the vault (Subaccord PDA's ATA) sources the
+/// fee, the juror's ATA receives it.
 #[derive(Accounts)]
 pub struct Reveal<'info> {
     #[account(mut)]
@@ -2171,6 +2289,21 @@ pub struct Reveal<'info> {
         bump,
     )]
     pub round: AccountLoader<'info, Round>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = juror,
+    )]
+    pub juror_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
 }
 
 /// Account context for `finalize_round` — permissionless crank.
@@ -2219,7 +2352,35 @@ pub struct FinalizeDispute<'info> {
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(
+        mut,
         seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
+        bump,
+    )]
+    pub round: AccountLoader<'info, Round>,
+}
+
+/// Account context for `settle_round` — permissionless crank that settles a
+/// prior round's coherence economics against the finalized ruling (Ugly 5).
+/// The round PDA is keyed by the instruction arg `round_idx` (not
+/// `current_round`). Drawn `JurorStake` accounts are `remaining_accounts`.
+#[derive(Accounts)]
+#[instruction(round_idx: u32)]
+pub struct SettleRound<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(
+        mut,
+        seeds = [SEED_ROUND, dispute.key().as_ref(), &round_idx.to_le_bytes()],
         bump,
     )]
     pub round: AccountLoader<'info, Round>,

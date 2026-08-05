@@ -161,7 +161,13 @@ pub struct Round {
     pub commits: [[u8; 32]; MAX_JURORS],
     /// Revealed vote option index per drawn Juror; `u8::MAX` until revealed.
     pub reveals: [u8; MAX_JURORS],
-    pub _pad1: [u8; 5], // total = multiple of 8 (max alignment = i64)
+    /// Whether this round's coherence settlement has been applied
+    /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+    /// `finalize_dispute` (final round) or `settle_round` (prior rounds)
+    /// processes it; 1 after. Idempotency guard against double-settlement.
+    /// (`u8` not `bool` — `bool` is not `Pod`.)
+    pub settled: u8,
+    pub _pad1: [u8; 4], // total = multiple of 8 (max alignment = i64)
 }
 
 /// A committed Merkle root over the Subaccord's Juror set + cumulative stakes,
