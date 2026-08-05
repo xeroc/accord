@@ -1,11 +1,11 @@
 ---
 # veridao-pxfz
 title: '`@veridao/sdk` — Codama + Solana Kit client'
-status: todo
+status: completed
 type: milestone
 priority: normal
 created_at: 2026-08-04T21:50:09Z
-updated_at: 2026-08-04T21:50:48Z
+updated_at: 2026-08-05T03:31:30Z
 ---
 
 ## HANDOFF
