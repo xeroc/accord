@@ -1,0 +1,1 @@
+/** EvidenceStore trait (pluggable). */
