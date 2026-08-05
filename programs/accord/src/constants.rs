@@ -19,8 +19,9 @@ pub const MAX_OPTIONS: usize = 32;
 /// (ADR-0005). Expressed in slots (~400ms mainnet); 48h ~= 432_000 slots.
 pub const UPDATE_TIMELOCK_SLOTS: u64 = 432_000;
 
-/// Snapshot fraud-proof challenge window (ADR-0003): 1 day, in seconds.
-pub const SNAPSHOT_CHALLENGE_WINDOW_SECS: i64 = 24 * 60 * 60;
+/// Default Merkle accumulator tree depth (ADR-0012). 2^20 ≈ 1M seats; the
+/// depth is fixed per-Subaccord at creation and bounds the pool size.
+pub const DEFAULT_TREE_DEPTH: u8 = 20;
 
 /// Appeal window after a round is resolved, before the dispute becomes final
 /// (SPEC state machine: RoundResolved →(appeal window)→ Final). 3 days.
@@ -28,7 +29,7 @@ pub const APPEAL_WINDOW_SECS: i64 = 3 * 24 * 60 * 60;
 
 /// `cancel_dispute` liveness-escape timeouts (CONCEPT-REVIEW Ugly 4).
 ///
-/// Pre-draw: max seconds a dispute may sit in `Created`/`SnapshotPosted` (no
+/// Pre-draw: max seconds a dispute may sit in `Created` (no VRF commit under
 /// usable snapshot, no VRF commit) before any cranker may cancel + refund. 3
 /// days — the snapshot + VRF steps should land in minutes; this is a generous
 /// backstop against a dead indexer/oracle.
@@ -51,7 +52,6 @@ pub const SEED_SUBACCORD: &[u8] = b"subaccord";
 pub const SEED_JUROR_STAKE: &[u8] = b"stake";
 pub const SEED_DISPUTE: &[u8] = b"dispute";
 pub const SEED_ROUND: &[u8] = b"round";
-pub const SEED_SNAPSHOT: &[u8] = b"snapshot";
 pub const SEED_PENDING_UPDATE: &[u8] = b"update";
 /// Per-appeal bond custody (ADR-0004). Seeds: `["bond", dispute, round_idx]`.
 pub const SEED_APPEAL_BOND: &[u8] = b"bond";

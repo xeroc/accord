@@ -49,17 +49,11 @@ pub enum AccordError {
     #[msg("Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror).")]
     FeeMismatch,
 
-    // --- snapshot (ADR-0003) ---
-    #[msg("Snapshot is not finalized (challenge window still open or voided).")]
-    SnapshotNotFinalized,
-    #[msg("Snapshot was voided by a successful fraud proof.")]
-    SnapshotVoided,
-    #[msg("Snapshot challenge window has not yet elapsed.")]
-    SnapshotChallengeWindowOpen,
-    #[msg("Snapshot challenge window has expired.")]
-    SnapshotChallengeWindowExpired,
-    #[msg("Fraud proof does not invalidate the posted Merkle root.")]
-    FraudProofInvalid,
+    // --- accumulator (ADR-0012) ---
+    #[msg("Accumulator Merkle path does not authenticate against the stored root.")]
+    InvalidMerklePath,
+    #[msg("Accumulator tree is full (no free leaf within the configured depth).")]
+    TreeFull,
 
     // --- draw ---
     #[msg("Draw selected a duplicate Juror.")]
@@ -69,20 +63,14 @@ pub enum AccordError {
     #[msg("Number of juror memberships does not match the required panel size.")]
     InvalidPanelSize,
     #[msg(
-        "Drawn juror's live stake is below the snapshot leaf's claim (inflation guard, ADR-0008)."
+        "Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012)."
     )]
     InflatedStake,
     #[msg("Submitted membership does not match the VRF-derived sortition selection (ADR-0009).")]
     SortitionMismatch,
-    #[msg("Snapshot tree is not sorted by juror pubkey (ADR-0009 predicate 5).")]
-    TreeNotSorted,
-    #[msg(
-        "Omission proof is invalid (non-adjacent leaves, wrong order, or witness stake changed since anchor)."
-    )]
-    OmissionProofInvalid,
     #[msg("VRF result already committed for this dispute.")]
     VrfAlreadyCommitted,
-    #[msg("No VRF result committed for this dispute; call commit_vrf first.")]
+    #[msg("No VRF result committed for this dispute; the root is not yet frozen.")]
     VrfNotCommitted,
 
     // --- voting ---

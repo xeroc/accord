@@ -160,6 +160,7 @@ pub mod accord {
         fee_per_juror: u64,
         authority: Pubkey,
         evidence_operator: Pubkey,
+        depth: u8,
     ) -> Result<()> {
         // Namespace guard: reject the degenerate zero-hash risk_type so the
         // default identity can't be silently squatting a namespace.
@@ -170,6 +171,9 @@ pub mod accord {
             max_appeals as usize <= MAX_APPEALS,
             AccordError::MaxAppealsLimitExceeded
         );
+        // Accumulator depth bounds the pool at 2^depth. Cap at 31 (u32 index
+        // headroom + sane rent/depth tradeoff); the common default is 20.
+        require!(depth <= 31, AccordError::TreeFull);
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
@@ -187,6 +191,11 @@ pub mod accord {
         acc.risk_type = risk_type;
         acc.evidence_spec = evidence_spec;
         acc.bump = ctx.bumps.subaccord;
+        // ADR-0012 accumulator: start as an all-zero tree at the fixed depth.
+        acc.depth = depth;
+        acc.next_index = 0;
+        acc.total_stake = 0;
+        acc.root_hash = empty_tree_root(depth);
 
         emit!(SubaccordCreated {
             creator: ctx.accounts.creator.key(),
@@ -202,10 +211,12 @@ pub mod accord {
     /// PDA's vault ATA (lazily created on first stake). The `JurorStake` PDA is
     /// init'd on first stake and topped up on subsequent stakes.
     ///
-    /// Credits the **actual delta** the vault received (fee-on-transfer safe:
-    /// Token-2022 transfer fees would make delta < amount). Reverts while the
-    /// circuit breaker is paused (ADR-0007).
-    pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+    /// ADR-0012: the caller supplies the juror's accumulator Merkle `path`. The
+    /// chain verifies it against the stored root, credits the **actual delta**
+    /// the vault received (fee-on-transfer safe), and recomputes the path to a
+    /// new canonical root — O(log N). A wrong (stale/fabricated) path reverts,
+    /// leaving the root untouched. Reverts while the circuit breaker is paused.
+    pub fn stake(ctx: Context<Stake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
         require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
         require!(amount > 0, AccordError::InvalidAmount);
 
@@ -230,33 +241,84 @@ pub mod accord {
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
+        let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;
-        js.subaccord = ctx.accounts.subaccord.key();
-        js.juror = ctx.accounts.juror.key();
-        js.bump = ctx.bumps.juror_stake;
-        js.last_change_slot = Clock::get()?.slot;
-        // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
-        let prev_amount = js.amount;
-        js.amount = js
-            .amount
+        let sub = &mut ctx.accounts.subaccord;
+
+        // A fresh JurorStake account is zero-filled by `init_if_needed`, so its
+        // `subaccord` field is `default()` until we write it — the reliable
+        // first-stake signal. An existing juror (top-up / re-stake after full
+        // unstake) already has its `tree_index`.
+        let is_new_leaf = js.subaccord == Pubkey::default();
+        let old_stake = js.amount;
+        let index = if is_new_leaf {
+            require!(
+                (sub.next_index as u64) < (1u64 << sub.depth.min(31)),
+                AccordError::TreeFull
+            );
+            sub.next_index
+        } else {
+            require!(js.juror == juror_key, AccordError::InvalidMembershipProof);
+            js.tree_index
+        };
+
+        // The accumulator leaf currently at `index`: a fresh slot is the
+        // all-zero leaf `(default, 0)`; an existing juror's slot carries its
+        // live `(juror, amount)`.
+        let (old_juror, old_leaf_stake) = if is_new_leaf {
+            (Pubkey::default(), 0u64)
+        } else {
+            (juror_key, old_stake)
+        };
+
+        let new_stake = old_stake
             .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
-        // Maintain the coarse distinct-staker counter (SPEC intake gate for
-        // create_dispute/appeal). First-ever stake (0 -> positive) counts a new
-        // distinct Juror; top-ups do not. See Subaccord.staker_count doc.
+        // Verify the supplied path against the stored root, then recompute the
+        // root for the new leaf stake. The juror identity may change
+        // (default→real) on first stake; afterwards it is stable.
+        let (new_root, new_total) = verify_and_recompute(
+            &old_juror,
+            old_leaf_stake,
+            &juror_key,
+            new_stake,
+            index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        if is_new_leaf {
+            js.subaccord = sub.key();
+            js.juror = juror_key;
+            js.bump = ctx.bumps.juror_stake;
+            js.tree_index = index;
+            sub.next_index = sub
+                .next_index
+                .checked_add(1)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
+        // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
+
+        // Coarse distinct-staker counter (SPEC intake gate). First-ever stake
+        // (0 -> positive) and re-stake after a full unstake both increment; a
+        // full unstake decrements (see `unstake`).
+        let prev_amount = js.amount;
+        js.amount = new_stake;
         if prev_amount == 0 {
-            ctx.accounts.subaccord.staker_count = ctx
-                .accounts
-                .subaccord
+            sub.staker_count = sub
                 .staker_count
                 .checked_add(1)
                 .ok_or(AccordError::ArithmeticOverflow)?;
         }
 
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
         emit!(Staked {
-            subaccord: ctx.accounts.subaccord.key(),
-            juror: ctx.accounts.juror.key(),
+            subaccord: sub.key(),
+            juror: juror_key,
             amount: delta,
         });
         Ok(())
@@ -267,9 +329,14 @@ pub mod accord {
     /// Juror is drawn into any live dispute (`active_draws > 0`, ADR-0003) and
     /// caps the withdrawal at the Juror's exact staked balance.
     ///
+    /// ADR-0012: the caller supplies the juror's accumulator Merkle `path`; the
+    /// chain verifies it against the stored root and recomputes a new root for
+    /// the reduced leaf stake. A full unstake zeros the leaf's selection weight
+    /// but retains its `tree_index` (re-stake is a local update).
+    ///
     /// Allowed while the program is paused (ADR-0007 lists only
     /// create_dispute / stake / appeal as halted — capital is never trapped).
-    pub fn unstake(ctx: Context<Unstake>, amount: u64) -> Result<()> {
+    pub fn unstake(ctx: Context<Unstake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
         require!(amount > 0, AccordError::InvalidAmount);
         require!(
             ctx.accounts.juror_stake.active_draws == 0,
@@ -300,23 +367,40 @@ pub mod accord {
             amount,
         )?;
 
+        let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;
-        let prev_amount = js.amount;
-        js.amount = js
-            .amount
+        let sub = &mut ctx.accounts.subaccord;
+        let old_stake = js.amount;
+        let new_stake = old_stake
             .checked_sub(amount)
             .ok_or(AccordError::ArithmeticOverflow)?;
-        js.last_change_slot = Clock::get()?.slot;
+        let index = js.tree_index;
+
+        let (new_root, new_total) = verify_and_recompute(
+            &juror_key,
+            old_stake,
+            &juror_key,
+            new_stake,
+            index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        let prev_amount = js.amount;
+        js.amount = new_stake;
 
         // Full unstake (positive -> 0) drops a distinct Juror from the counter.
         if js.amount == 0 && prev_amount > 0 {
-            ctx.accounts.subaccord.staker_count =
-                ctx.accounts.subaccord.staker_count.saturating_sub(1);
+            sub.staker_count = sub.staker_count.saturating_sub(1);
         }
 
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
         emit!(Unstaked {
-            subaccord: ctx.accounts.subaccord.key(),
-            juror: ctx.accounts.juror.key(),
+            subaccord: sub.key(),
+            juror: juror_key,
             amount,
         });
         Ok(())
@@ -493,322 +577,14 @@ pub mod accord {
         Ok(())
     }
 
-    /// Off-chain indexer posts the Merkle root over the Subaccord's Juror set +
-    /// cumulative stakes (ADR-0003). Permissionless + bonded: the poster
-    /// transfers `1 × max-appeal-fee` (the largest possible appeal-round panel ·
-    /// `fee_per_juror`) into the vault, forfeited if a fraud proof lands within
-    /// the 1-day window. Sets the dispute to `SnapshotPosted` and arms the
-    /// challenge deadline. One snapshot per round (`init`); re-posting after a
-    /// void is a deferred concern (the dispute stalls, poster loses bond).
-    pub fn post_snapshot(
-        ctx: Context<PostSnapshot>,
-        merkle_root: [u8; 32],
-        total_stake: u64,
-    ) -> Result<()> {
-        let dispute = &mut ctx.accounts.dispute;
-        require!(
-            dispute.state == DisputeState::Created,
-            AccordError::InvalidState
-        );
-
-        // Ugly 6: bond sizing uses filing-time economics (frozen on the
-        // dispute), not live Subaccord params.
-        let max_panel =
-            max_appeal_panel_size(dispute.terms.jurors_per_dispute, dispute.terms.max_appeals)?;
-        let bond = (max_panel as u64)
-            .checked_mul(dispute.terms.fee_per_juror)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-
-        // Custody the bond: poster ATA -> Subaccord PDA vault.
-        let before = ctx.accounts.vault.amount;
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.key(),
-                Transfer {
-                    from: ctx.accounts.poster_token_account.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
-                    authority: ctx.accounts.poster.to_account_info(),
-                },
-            ),
-            bond,
-        )?;
-        ctx.accounts.vault.reload()?;
-        let after = ctx.accounts.vault.amount;
-        let _delta = after
-            .checked_sub(before)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-
-        let now = Clock::get()?.unix_timestamp;
-        let deadline = now
-            .checked_add(SNAPSHOT_CHALLENGE_WINDOW_SECS)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-
-        let round_idx = dispute.current_round;
-        let snap = &mut ctx.accounts.snapshot;
-        snap.dispute = dispute.key();
-        snap.round_idx = round_idx;
-        snap.merkle_root = merkle_root;
-        snap.poster = ctx.accounts.poster.key();
-        snap.bond = bond;
-        snap.challenge_deadline = deadline;
-        snap.status = SnapshotStatus::Posted;
-        snap.anchor_slot = Clock::get()?.slot;
-        snap.total_stake = total_stake;
-        snap.bump = ctx.bumps.snapshot;
-
-        dispute.state = DisputeState::SnapshotPosted;
-
-        emit!(SnapshotPosted {
-            dispute: dispute.key(),
-            round_idx,
-            merkle_root,
-            poster: ctx.accounts.poster.key(),
-        });
-        Ok(())
-    }
-
-    /// Contest a posted Snapshot root within the 1-day fraud-proof window
-    /// (ADR-0003). The challenger bonds an equal amount, then the on-chain
-    /// Verifier decides: a valid [`FraudProof`] (duplicate Juror across two
-    /// verifiable leaves) voids the root and sends the poster's bond to the
-    /// challenger; anything else is a false challenge and the challenger's bond
-    /// goes to the poster. Both bond sweeps are PDA-signed out of the vault —
-    /// the program is the sweep authority.
-    pub fn challenge_snapshot(ctx: Context<ChallengeSnapshot>, proof: FraudProof) -> Result<()> {
-        let snap = &mut ctx.accounts.snapshot;
-        require!(
-            snap.status == SnapshotStatus::Posted,
-            AccordError::InvalidState
-        );
-
-        let now = Clock::get()?.unix_timestamp;
-        require!(
-            now <= snap.challenge_deadline,
-            AccordError::SnapshotChallengeWindowExpired
-        );
-
-        let bond = snap.bond;
-        let sub = &ctx.accounts.subaccord;
-
-        // Challenger posts an equal bond into custody first.
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.key(),
-                Transfer {
-                    from: ctx.accounts.challenger_token_account.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
-                    authority: ctx.accounts.challenger.to_account_info(),
-                },
-            ),
-            bond,
-        )?;
-
-        let root_hash = snap.merkle_root;
-        let total_stake = snap.total_stake;
-        let anchor_slot = snap.anchor_slot;
-        let sub_key = sub.key();
-        let challenger_key = ctx.accounts.challenger.key();
-
-        // ADR-0008/0009: fraud predicate dispatch.
-        let fraud = match &proof {
-            FraudProof::Duplicate {
-                leaf_a,
-                proof_a,
-                index_a,
-                leaf_b,
-                proof_b,
-                index_b,
-            } => {
-                *index_a != *index_b
-                    && verify_mst_inclusion(leaf_a, *index_a, proof_a, root_hash, total_stake)
-                    && verify_mst_inclusion(leaf_b, *index_b, proof_b, root_hash, total_stake)
-                    && leaf_a.juror == leaf_b.juror
-            }
-            FraudProof::WrongStake { leaf, proof, index } => {
-                if !verify_mst_inclusion(leaf, *index, proof, root_hash, total_stake) {
-                    false
-                } else {
-                    require!(
-                        !ctx.remaining_accounts.is_empty(),
-                        AccordError::InvalidMembershipProof
-                    );
-                    let js_info = &ctx.remaining_accounts[0];
-                    let expected_pda = Pubkey::find_program_address(
-                        &[SEED_JUROR_STAKE, sub_key.as_ref(), leaf.juror.as_ref()],
-                        &crate::ID,
-                    )
-                    .0;
-                    require!(
-                        js_info.key == &expected_pda,
-                        AccordError::InvalidMembershipProof
-                    );
-                    let js_data = js_info.try_borrow_data()?;
-                    let js = JurorStake::try_deserialize(&mut &js_data[..])?;
-                    js.last_change_slot < anchor_slot && js.amount != leaf.stake
-                }
-            }
-            FraudProof::NotSorted {
-                leaf_lo,
-                proof_lo,
-                index_lo,
-                leaf_hi,
-                proof_hi,
-                index_hi,
-            } => {
-                // Both leaves verify against the root.
-                verify_mst_inclusion(leaf_lo, *index_lo, proof_lo, root_hash, total_stake)
-                    && verify_mst_inclusion(leaf_hi, *index_hi, proof_hi, root_hash, total_stake)
-                    // lo comes before hi in the tree but has a HIGHER pubkey.
-                    && *index_lo < *index_hi
-                    && leaf_lo.juror > leaf_hi.juror
-            }
-            FraudProof::Omission {
-                leaf_lo,
-                proof_lo,
-                index_lo,
-                leaf_hi,
-                proof_hi,
-                index_hi,
-            } => {
-                // Both leaves verify against the root.
-                if !verify_mst_inclusion(leaf_lo, *index_lo, proof_lo, root_hash, total_stake)
-                    || !verify_mst_inclusion(leaf_hi, *index_hi, proof_hi, root_hash, total_stake)
-                {
-                    false
-                } else if *index_hi != *index_lo + 1 {
-                    // Must be consecutive (no leaf between them).
-                    false
-                } else if !(leaf_lo.juror < challenger_key && challenger_key < leaf_hi.juror) {
-                    // Challenger must fall in the gap.
-                    false
-                } else {
-                    // Witness: challenger's JurorStake was staked at anchor time.
-                    require!(
-                        !ctx.remaining_accounts.is_empty(),
-                        AccordError::InvalidMembershipProof
-                    );
-                    let js_info = &ctx.remaining_accounts[0];
-                    let expected_pda = Pubkey::find_program_address(
-                        &[SEED_JUROR_STAKE, sub_key.as_ref(), challenger_key.as_ref()],
-                        &crate::ID,
-                    )
-                    .0;
-                    require!(
-                        js_info.key == &expected_pda,
-                        AccordError::InvalidMembershipProof
-                    );
-                    let js_data = js_info.try_borrow_data()?;
-                    let js = JurorStake::try_deserialize(&mut &js_data[..])?;
-                    js.last_change_slot < anchor_slot && js.amount > 0
-                }
-            }
-        };
-
-        let bump = [sub.bump];
-        let signer_seeds = &[
-            SEED_SUBACCORD,
-            sub.creator.as_ref(),
-            sub.risk_type.as_ref(),
-            &bump,
-        ];
-
-        if fraud {
-            // Poster forfeits: poster's original bond + the challenger's bond both
-            // sweep to the challenger (net +bond to challenger, -bond to poster).
-            let payout = bond
-                .checked_add(bond)
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.key(),
-                    Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
-                        to: ctx.accounts.challenger_token_account.to_account_info(),
-                        authority: ctx.accounts.subaccord.to_account_info(),
-                    },
-                    &[signer_seeds],
-                ),
-                payout,
-            )?;
-            snap.status = SnapshotStatus::Voided;
-            emit!(SnapshotChallenged {
-                dispute: snap.dispute,
-                round_idx: snap.round_idx,
-                challenger: ctx.accounts.challenger.key(),
-            });
-        } else {
-            // False challenge: the challenger's bond sweeps to the poster. The
-            // poster's original bond stays held in custody (returned on
-            // finalize). The Snapshot remains Posted — the window is still open.
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.key(),
-                    Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
-                        to: ctx.accounts.poster_token_account.to_account_info(),
-                        authority: ctx.accounts.subaccord.to_account_info(),
-                    },
-                    &[signer_seeds],
-                ),
-                bond,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    /// Permissionless crank: once the 1-day challenge window passes unchallenged,
-    /// the root is trustworthy. Returns the poster's bond and marks the Snapshot
-    /// `Finalized` so `draw` may consume it. A voided root can never finalize.
-    pub fn finalize_snapshot(ctx: Context<FinalizeSnapshot>) -> Result<()> {
-        let snap = &mut ctx.accounts.snapshot;
-        require!(
-            snap.status == SnapshotStatus::Posted,
-            AccordError::InvalidState
-        );
-
-        let now = Clock::get()?.unix_timestamp;
-        require!(
-            now >= snap.challenge_deadline,
-            AccordError::SnapshotChallengeWindowOpen
-        );
-
-        let bond = snap.bond;
-        let sub = &ctx.accounts.subaccord;
-        let bump = [sub.bump];
-        let signer_seeds = &[
-            SEED_SUBACCORD,
-            sub.creator.as_ref(),
-            sub.risk_type.as_ref(),
-            &bump,
-        ];
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.key(),
-                Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
-                    to: ctx.accounts.poster_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
-                },
-                &[signer_seeds],
-            ),
-            bond,
-        )?;
-
-        snap.status = SnapshotStatus::Finalized;
-        emit!(SnapshotFinalized {
-            dispute: snap.dispute,
-            round_idx: snap.round_idx,
-        });
-        Ok(())
-    }
-
-    // --- Draw (ADR-0003/0009; veridao-fr1x/veridao-4nyi) ------------------------
+    // --- Draw (ADR-0012 accumulator; veridao-fr1x/veridao-4nyi) -----------------
 
     /// Request VRF randomness from the magicblock oracle (ADR-0009/veridao-crbf).
     /// CPIs into the VRF program, which calls back `commit_vrf_callback` with
-    /// the verified random value. Permissionless — any cranker may request.
-    /// One-shot per dispute (errors if `committed_vrf` already set).
+    /// the verified random value AND atomically freezes the accumulator root.
+    /// Permissionless — any cranker may request. One-shot per dispute (errors
+    /// if `committed_vrf` already set). No snapshot step (ADR-0012): the
+    /// dispute goes straight from `Created` to a frozen root at callback time.
     #[allow(unused_variables)]
     pub fn request_vrf(ctx: Context<RequestVrf>) -> Result<()> {
         let dispute = &ctx.accounts.dispute;
@@ -817,26 +593,36 @@ pub mod accord {
             AccordError::DisputeFailed
         );
         require!(
+            dispute.state == DisputeState::Created,
+            AccordError::InvalidState
+        );
+        require!(
             dispute.committed_vrf.is_none(),
             AccordError::VrfAlreadyCommitted
         );
-        require!(
-            ctx.accounts.snapshot.status == SnapshotStatus::Finalized,
-            AccordError::SnapshotNotFinalized
-        );
 
         let dispute_key = dispute.key();
+        let subaccord_key = ctx.accounts.subaccord.key();
+        // Forward both the dispute (writable — callback writes VRF + frozen
+        // root) and the subaccord (read-only — callback copies its live root).
         let ix = create_request_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.caller.key(),
             oracle_queue: ctx.accounts.oracle_queue.key(),
             callback_program_id: crate::ID,
             callback_discriminator: instruction::CommitVrfCallback::DISCRIMINATOR.to_vec(),
             caller_seed: dispute_key.to_bytes(),
-            accounts_metas: Some(vec![SerializableAccountMeta {
-                pubkey: dispute_key,
-                is_signer: false,
-                is_writable: true,
-            }]),
+            accounts_metas: Some(vec![
+                SerializableAccountMeta {
+                    pubkey: dispute_key,
+                    is_signer: false,
+                    is_writable: true,
+                },
+                SerializableAccountMeta {
+                    pubkey: subaccord_key,
+                    is_signer: false,
+                    is_writable: false,
+                },
+            ]),
             ..Default::default()
         });
 
@@ -849,10 +635,12 @@ pub mod accord {
         Ok(())
     }
 
-    /// VRF callback: stores the oracle-verified random value (ADR-0009).
-    /// ONLY the VRF program can call this — `vrf_program_identity` is
-    /// constrained to `VRF_PROGRAM_IDENTITY` via Anchor's address check.
-    /// Replaces the old caller-supplied `commit_vrf`.
+    /// VRF callback: stores the oracle-verified random value (ADR-0009) AND
+    /// atomically freezes the accumulator root (ADR-0012). ONLY the VRF program
+    /// can call this — `vrf_program_identity` is constrained to
+    /// `VRF_PROGRAM_IDENTITY`. Freezing here (not at `create_dispute`) closes
+    /// the manipulation window: pre-callback the VRF is blind, post-callback
+    /// the root is inert. One VRF + one frozen root serve the whole dispute.
     pub fn commit_vrf_callback(
         ctx: Context<CommitVrfCallback>,
         randomness: [u8; 32],
@@ -867,195 +655,179 @@ pub mod accord {
             AccordError::VrfAlreadyCommitted
         );
         dispute.committed_vrf = Some(randomness);
+        // ADR-0012: freeze the live accumulator root atomically with the VRF.
+        dispute.frozen_root = ctx.accounts.subaccord.root_hash;
+        dispute.frozen_total_stake = ctx.accounts.subaccord.total_stake;
         emit!(VrfCommitted {
             dispute: dispute.key(),
             vrf_result: randomness,
+            frozen_root: dispute.frozen_root,
         });
         Ok(())
     }
 
-    /// Select N distinct Jurors from the finalized Snapshot, weighted by stake,
-    /// via the committed VRF (ADR-0003/0009). Permissionless: any cranker
-    /// submits `draw_attempt` + the membership proofs for the VRF-selected
-    /// jurors.
+    /// Draw a single seat against the frozen accumulator root (ADR-0012). The
+    /// 1232-byte tx packet cannot hold N Merkle proofs, so the panel is filled
+    /// one seat per transaction; the round is `init_if_needed` and persists
+    /// across the N `draw_seat` calls.
     ///
-    /// The on-chain program verifies: snapshot is finalized, VRF is committed,
-    /// each MST membership proof (hash + sum + cum_after consistency), the
-    /// sortition criterion (`cum_before ≤ r_i < cum_after` where `r_i` is
-    /// deterministically derived from the VRF seed + slot index), stake ≥
-    /// `min_stake`, `JurorStake.amount ≥ leaf.stake` (inflation guard), and all
-    /// jurors distinct. On collision (same juror drawn twice), the instruction
-    /// reverts; the cranker retries with `draw_attempt + 1` (same committed VRF).
-    pub fn draw(
-        ctx: Context<Draw>,
-        draw_attempt: u32,
-        memberships: Vec<JurorMembership>,
-    ) -> Result<()> {
-        let snap = &ctx.accounts.snapshot;
-        require!(
-            snap.status == SnapshotStatus::Finalized,
-            AccordError::SnapshotNotFinalized
-        );
-
+    /// The chain is a dumb verifier: it checks the membership proof against
+    /// `dispute.frozen_root`, reconstructs the cumulative-from-left prefix from
+    /// the authenticated sibling sums, enforces the sortition criterion
+    /// (`prefix ≤ r_i < prefix + stake`, where `r_i` is deterministically
+    /// derived from the frozen VRF + seat index), the inflation guard
+    /// (`JurorStake.amount ≥ leaf.stake`), and distinctness vs already-drawn
+    /// seats. Deterministic collision re-rülle is computed client-side to match
+    /// (no `draw_attempt` grind — CONCEPT-REVIEW Ugly 1+7 / bean accord-tzo0).
+    /// When the last seat lands, the round windows open and the dispute
+    /// transitions to `Drawn`.
+    pub fn draw_seat(ctx: Context<DrawSeat>, seat: u32, membership: JurorMembership) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
-            dispute.state == DisputeState::SnapshotPosted,
+            dispute.state == DisputeState::Created,
             AccordError::InvalidState
         );
+        let committed_vrf = dispute.committed_vrf.ok_or(AccordError::VrfNotCommitted)?;
+        require!(dispute.frozen_total_stake > 0, AccordError::VrfNotCommitted);
 
-        let sub = &ctx.accounts.subaccord;
         let round_idx = dispute.current_round;
         let panel = panel_size_for_round(dispute.terms.jurors_per_dispute, round_idx)?;
+        require!(seat < panel, AccordError::InvalidPanelSize);
 
+        let leaf = &membership.leaf;
         require!(
-            memberships.len() <= MAX_JURORS,
-            AccordError::InvalidPanelSize
+            leaf.juror != Pubkey::default(),
+            AccordError::InvalidMembershipProof
         );
         require!(
-            memberships.len() == panel as usize,
-            AccordError::InvalidPanelSize
+            leaf.stake >= dispute.terms.min_stake,
+            AccordError::InsufficientStake
         );
 
-        // Read committed VRF (ADR-0009: commit_vrf stores it; draw reads it).
-        let committed_vrf = dispute.committed_vrf.ok_or(AccordError::VrfNotCommitted)?;
+        // Verify membership + reconstruct the cumulative-from-left prefix.
+        let prefix = verify_membership_and_prefix(
+            leaf,
+            membership.index,
+            &membership.proof,
+            &dispute.frozen_root,
+            dispute.frozen_total_stake,
+        )?;
 
-        // VRF seed: deterministic, binds committed VRF + dispute + round + attempt.
+        // Sortition: r_i is deterministic from the frozen VRF + seat index.
         let vrf_seed = {
             use solana_program::hash::hashv;
             hashv(&[
                 &committed_vrf,
                 dispute.key().as_ref(),
                 &round_idx.to_le_bytes(),
-                &draw_attempt.to_le_bytes(),
             ])
             .to_bytes()
         };
+        let r_hash = {
+            use solana_program::hash::hashv;
+            hashv(&[&vrf_seed, &seat.to_le_bytes()]).to_bytes()
+        };
+        let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8]))
+            % dispute.frozen_total_stake;
+        require!(r_i >= prefix, AccordError::SortitionMismatch);
+        require!(r_i - prefix < leaf.stake, AccordError::SortitionMismatch);
 
-        // Verify each MST membership proof + stake eligibility + sortition.
-        let root_hash = snap.merkle_root;
-        let total_stake = snap.total_stake;
-        let mut drawn: Vec<Pubkey> = Vec::with_capacity(panel as usize);
-        for (i, m) in memberships.iter().enumerate() {
-            require!(
-                m.leaf.juror != Pubkey::default(),
-                AccordError::InvalidMembershipProof
-            );
-            require!(
-                m.leaf.stake >= dispute.terms.min_stake,
-                AccordError::InsufficientStake
-            );
-            require!(
-                verify_mst_inclusion(&m.leaf, m.index, &m.proof, root_hash, total_stake),
-                AccordError::InvalidMembershipProof
-            );
-            // ADR-0009 sortition enforcement: r_i is deterministically derived
-            // from the VRF seed + slot index. The submitted leaf's cumulative
-            // range must contain r_i — the caller cannot cherry-pick.
-            let r_hash = {
-                use solana_program::hash::hashv;
-                hashv(&[&vrf_seed, &(i as u32).to_le_bytes()]).to_bytes()
-            };
-            let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8])) % total_stake;
-            let cum_before = m.leaf.cum_after.saturating_sub(m.leaf.stake);
-            require!(
-                cum_before <= r_i && r_i < m.leaf.cum_after,
-                AccordError::SortitionMismatch
-            );
-            drawn.push(m.leaf.juror);
+        // Load the round (init_if_needed — persists across the N seat txs).
+        let dispute_key = dispute.key();
+        let mut round = ctx.accounts.round.load_init()?;
+        if round.dispute == Pubkey::default() {
+            round.dispute = dispute_key;
+            round.round_idx = round_idx;
+            round.bump = ctx.bumps.round;
+            round.juror_count = 0;
+            round.commit_count = 0;
+            round.reveal_count = 0;
+            round.result = u8::MAX;
+            round.commits = [[0u8; 32]; MAX_JURORS];
+            round.reveals = [u8::MAX; MAX_JURORS];
         }
-
-        // Distinctness: O(N²), N ≤ 31 — no hash map on-chain.
-        for i in 0..drawn.len() {
-            for j in (i + 1)..drawn.len() {
-                require!(drawn[i] != drawn[j], AccordError::DuplicateJuror);
-            }
-        }
-
-        // Verify + mutate each drawn Juror's JurorStake (remaining_accounts).
         require!(
-            ctx.remaining_accounts.len() == panel as usize,
+            round.dispute == dispute_key && round.round_idx == round_idx,
+            AccordError::InvalidState
+        );
+
+        // Seat must be unfilled; juror must be distinct from already-drawn seats.
+        require!(
+            round.jurors[seat as usize] == Pubkey::default(),
+            AccordError::DuplicateJuror
+        );
+        for j in 0..(panel as usize) {
+            require!(round.jurors[j] != leaf.juror, AccordError::DuplicateJuror);
+        }
+
+        // Inflation guard via remaining_accounts[0] (the drawn juror's stake).
+        require!(
+            ctx.remaining_accounts.len() == 1,
             AccordError::InvalidPanelSize
         );
-        let dispute_key = dispute.key();
-        let sub_key = sub.key();
-        for (i, acct_info) in ctx.remaining_accounts.iter().enumerate() {
-            let expected_juror = drawn[i];
-            let expected_pda = Pubkey::find_program_address(
-                &[SEED_JUROR_STAKE, sub_key.as_ref(), expected_juror.as_ref()],
-                &crate::ID,
-            )
-            .0;
-            require!(
-                acct_info.key == &expected_pda,
-                AccordError::InvalidMembershipProof
-            );
-
-            // Deserialize to verify discriminator + juror field matches.
-            let current = {
-                let data = acct_info.try_borrow_data()?;
-                let js = JurorStake::try_deserialize(&mut &data[..])?;
-                require!(
-                    js.juror == expected_juror,
-                    AccordError::InvalidMembershipProof
-                );
-                // ADR-0008 predicate 4: inflation guard. The leaf may understate
-                // or match, never overstate. Catches attacker-inflated leaves
-                // regardless of the TOCTOU race (reads live state, not anchor).
-                require!(
-                    js.amount >= memberships[i].leaf.stake,
-                    AccordError::InflatedStake
-                );
-                js.active_draws
-            };
-
-            // Patch active_draws directly (avoids full re-serialize; BPF-safe).
-            // Layout: 8 (disc) + 32 (subaccord) + 32 (juror) + 8 (amount).
-            let new_val = current
-                .checked_add(1)
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            let mut data = acct_info.try_borrow_mut_data()?;
+        let js_info = &ctx.remaining_accounts[0];
+        let expected_pda = Pubkey::find_program_address(
+            &[
+                SEED_JUROR_STAKE,
+                dispute.subaccord.as_ref(),
+                leaf.juror.as_ref(),
+            ],
+            &crate::ID,
+        )
+        .0;
+        require!(
+            js_info.key == &expected_pda,
+            AccordError::InvalidMembershipProof
+        );
+        let current_draws = {
+            let data = js_info.try_borrow_data()?;
+            let js = JurorStake::try_deserialize(&mut &data[..])?;
+            require!(js.juror == leaf.juror, AccordError::InvalidMembershipProof);
+            // ADR-0012 inflation guard: live amount must cover the frozen leaf.
+            require!(js.amount >= leaf.stake, AccordError::InflatedStake);
+            js.active_draws
+        };
+        let new_draws = current_draws
+            .checked_add(1)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        {
+            let mut data = js_info.try_borrow_mut_data()?;
+            // Layout: disc(8)+subaccord(32)+juror(32)+amount(8) => active_draws.
             const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8;
             data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                .copy_from_slice(&new_val.to_le_bytes());
+                .copy_from_slice(&new_draws.to_le_bytes());
         }
 
-        // Record jurors in the Round (zero-copy: load_init writes discriminator).
+        round.jurors[seat as usize] = leaf.juror;
+        round.juror_count = round
+            .juror_count
+            .checked_add(1)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // When the panel fills, open the round windows and transition to Drawn.
         // Ugly 6: windows are filing-time (frozen on the dispute).
-        let now_ts = Clock::get()?.unix_timestamp;
-        let review_end = now_ts
-            .checked_add(dispute.terms.review_window as i64)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-        let commit_end = review_end
-            .checked_add(dispute.terms.commit_window as i64)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-        let reveal_end = commit_end
-            .checked_add(dispute.terms.reveal_window as i64)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-
-        let mut round = ctx.accounts.round.load_init()?;
-        round.dispute = dispute_key;
-        round.round_idx = round_idx;
-        round.review_end = review_end;
-        round.commit_end = commit_end;
-        round.reveal_end = reveal_end;
-        for (i, juror) in drawn.iter().enumerate() {
-            round.jurors[i] = *juror;
+        if round.juror_count >= panel {
+            let now_ts = Clock::get()?.unix_timestamp;
+            let review_end = now_ts
+                .checked_add(dispute.terms.review_window as i64)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            let commit_end = review_end
+                .checked_add(dispute.terms.commit_window as i64)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            let reveal_end = commit_end
+                .checked_add(dispute.terms.reveal_window as i64)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            round.review_end = review_end;
+            round.commit_end = commit_end;
+            round.reveal_end = reveal_end;
+            dispute.state = DisputeState::Drawn;
         }
-        round.juror_count = panel;
-        round.commit_count = 0;
-        round.reveal_count = 0;
-        round.result = u8::MAX; // sentinel: not set
-        round.reveals = [u8::MAX; MAX_JURORS]; // sentinel: not revealed
-        round.bump = ctx.bumps.round;
 
-        // Transition dispute → Drawn.
-        dispute.state = DisputeState::Drawn;
-
-        emit!(JurorsDrawn {
+        emit!(SeatDrawn {
             dispute: dispute_key,
             round_idx,
-            jurors: drawn,
-            vrf_seed,
+            seat,
+            juror: leaf.juror,
         });
         Ok(())
     }
@@ -1570,9 +1342,8 @@ pub mod accord {
     ///
     /// Two timeout windows (immutable program constants, so they are frozen
     /// for the dispute's life trivially — stronger than a `CaseTerms` field):
-    /// - **Pre-draw** (`Created`/`SnapshotPosted`): cancelable once
-    ///   `now > filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` — covers a dead
-    ///   indexer (no/voided snapshot) or a VRF oracle that never commits.
+    /// - **Pre-draw** (`Created`): cancelable once
+    ///   `now > filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` — covers a VRF oracle
     /// - **Post-draw** (`Drawn`/`Commit`/`Reveal`/`RoundResolved`): cancelable
     ///   once `now > round.reveal_end + APPEAL_WINDOW_SECS +
     ///   POST_DRAW_CANCEL_GRACE_SECS` — covers a round no cranker ever
@@ -1662,12 +1433,10 @@ pub mod accord {
                     .copy_from_slice(&new_draws.to_le_bytes());
             }
         } else {
-            // Pre-draw stall (Created/SnapshotPosted). Terminal states
+            // Pre-draw stall (Created — no snapshot step under ADR-0012; the
+            // VRF may simply never commit). Terminal states
             // (Final/Closed/Failed/Review) are rejected here.
-            require!(
-                state == DisputeState::Created || state == DisputeState::SnapshotPosted,
-                AccordError::InvalidState
-            );
+            require!(state == DisputeState::Created, AccordError::InvalidState);
             let deadline = dispute
                 .filed_at
                 .checked_add(PRE_DRAW_CANCEL_TIMEOUT_SECS)
@@ -1722,31 +1491,136 @@ pub mod accord {
     }
 }
 
-// --- Snapshot helpers (ADR-0003; veridao-rrxs) -------------------------------
+// --- Accumulator MST helpers (ADR-0012) ---------------------------------------
 
-/// Largest possible appeal-round panel for a Subaccord. The appeal ladder is
-/// `N_{k+1} = 2·N_k + 1` (closed form `(J+1)·2^k − 1`), so the panel after
-/// `max_appeals` appeals is `(jurors_per_dispute + 1) · 2^max_appeals − 1`,
-/// capped at `MAX_JURORS` (the 3rd-appeal ceiling of 31). This drives the
-/// snapshot bond (`1 × max-appeal-fee`).
-fn max_appeal_panel_size(jurors_per_dispute: u32, max_appeals: u8) -> Result<u32> {
-    // 2^max_appeals; v1 caps max_appeals at 3 (→ 31). Reject pathologically large
-    // values rather than silently capping a misconfigured Subaccord.
-    let shifts = u32::from(max_appeals);
-    if shifts >= 31 {
-        return Err(AccordError::ArithmeticOverflow.into());
+/// Leaf hash: `H(juror || stake_le)`.
+fn mst_leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
+    use solana_program::hash::hashv;
+    hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
+}
+
+/// Internal node hash: `H(left_hash || left_sum || right_hash || right_sum)`.
+/// Sums are bound into the hash (CONCEPT-REVIEW Bad 5 fixed by construction).
+fn mst_node_hash(
+    left_hash: &[u8; 32],
+    left_sum: u64,
+    right_hash: &[u8; 32],
+    right_sum: u64,
+) -> [u8; 32] {
+    use solana_program::hash::hashv;
+    hashv(&[
+        left_hash,
+        &left_sum.to_le_bytes(),
+        right_hash,
+        &right_sum.to_le_bytes(),
+    ])
+    .to_bytes()
+}
+
+/// Root hash of an all-zero tree at `depth` (every leaf = `(default, 0)`, every
+/// sum = 0). The initial accumulator state before any stake lands.
+fn empty_tree_root(depth: u8) -> [u8; 32] {
+    let mut h = mst_leaf_hash(&Pubkey::default(), 0);
+    for _ in 0..depth {
+        h = mst_node_hash(&h, 0, &h, 0);
     }
-    let factor = 1u32
-        .checked_shl(shifts)
-        .ok_or(AccordError::ArithmeticOverflow)?;
-    let panel = (jurors_per_dispute
-        .checked_add(1)
-        .ok_or(AccordError::ArithmeticOverflow)?)
-    .checked_mul(factor)
-    .ok_or(AccordError::ArithmeticOverflow)?
-    .checked_sub(1)
-    .ok_or(AccordError::ArithmeticOverflow)?;
-    Ok(panel.min(MAX_JURORS as u32))
+    h
+}
+
+/// Verify the leaf `(old_juror, old_stake)` at `index` authenticates against the
+/// stored `(stored_root, stored_sum)`, then recompute the root for a new leaf
+/// `(new_juror, new_stake)`. Used by `stake`/`unstake` to advance the canonical
+/// accumulator root on every verified update. Returns
+/// `Err(InvalidMerklePath)` if the supplied path does not authenticate.
+///
+/// `old_juror != new_juror` only on a juror's first stake (the assigned slot
+/// transitions from the all-zero leaf to the real juror); otherwise both are
+/// the juror's identity and only the stake changes.
+#[allow(clippy::too_many_arguments)]
+fn verify_and_recompute(
+    old_juror: &Pubkey,
+    old_stake: u64,
+    new_juror: &Pubkey,
+    new_stake: u64,
+    index: u32,
+    path: &[MSTNode],
+    stored_root: &[u8; 32],
+    stored_sum: u64,
+) -> Result<([u8; 32], u64)> {
+    // ponytail: 8 args are intrinsic to verify-then-recompute (old/new juror+stake,
+    // position, path, stored root+sum). A params struct is ceremony for one caller.
+    // --- Verify: walk the supplied path from the old leaf to the root. ---
+    let mut acc_hash = mst_leaf_hash(old_juror, old_stake);
+    let mut acc_sum = old_stake;
+    for (level, sib) in path.iter().enumerate() {
+        if level >= 31 {
+            return Err(AccordError::InvalidMerklePath.into());
+        }
+        let leaf_is_left = (index >> level) & 1 == 0;
+        let (lh, ls, rh, rs) = if leaf_is_left {
+            (acc_hash, acc_sum, sib.sibling_hash, sib.sibling_sum)
+        } else {
+            (sib.sibling_hash, sib.sibling_sum, acc_hash, acc_sum)
+        };
+        acc_hash = mst_node_hash(&lh, ls, &rh, rs);
+        acc_sum = ls.checked_add(rs).ok_or(AccordError::ArithmeticOverflow)?;
+    }
+    if &acc_hash != stored_root || acc_sum != stored_sum {
+        return Err(AccordError::InvalidMerklePath.into());
+    }
+
+    // --- Recompute: walk the same path from the new leaf to a new root. ---
+    let mut new_hash = mst_leaf_hash(new_juror, new_stake);
+    let mut new_sum = new_stake;
+    for (level, sib) in path.iter().enumerate() {
+        let leaf_is_left = (index >> level) & 1 == 0;
+        let (lh, ls, rh, rs) = if leaf_is_left {
+            (new_hash, new_sum, sib.sibling_hash, sib.sibling_sum)
+        } else {
+            (sib.sibling_hash, sib.sibling_sum, new_hash, new_sum)
+        };
+        new_hash = mst_node_hash(&lh, ls, &rh, rs);
+        new_sum = ls.checked_add(rs).ok_or(AccordError::ArithmeticOverflow)?;
+    }
+    Ok((new_hash, new_sum))
+}
+
+/// Verify `leaf` at `index` authenticates against `(root_hash, root_sum)` and
+/// return the cumulative-from-left prefix (total stake of all leaves to the
+/// left of `index`), reconstructed from the authenticated sibling sums. The
+/// leaf's sortition range is `[prefix, prefix + stake)`. Used by `draw_seat`.
+fn verify_membership_and_prefix(
+    leaf: &LeafClaim,
+    index: u32,
+    path: &[MSTNode],
+    root_hash: &[u8; 32],
+    root_sum: u64,
+) -> Result<u64> {
+    let mut acc_hash = mst_leaf_hash(&leaf.juror, leaf.stake);
+    let mut acc_sum = leaf.stake;
+    let mut prefix: u64 = 0;
+    for (level, sib) in path.iter().enumerate() {
+        if level >= 31 {
+            return Err(AccordError::InvalidMembershipProof.into());
+        }
+        let leaf_is_left = (index >> level) & 1 == 0;
+        let (lh, ls, rh, rs) = if leaf_is_left {
+            (acc_hash, acc_sum, sib.sibling_hash, sib.sibling_sum)
+        } else {
+            // Leaf is the right child → the left sibling's subtree is entirely
+            // to the left of the leaf, so its authenticated sum feeds the prefix.
+            prefix = prefix
+                .checked_add(sib.sibling_sum)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            (sib.sibling_hash, sib.sibling_sum, acc_hash, acc_sum)
+        };
+        acc_hash = mst_node_hash(&lh, ls, &rh, rs);
+        acc_sum = ls.checked_add(rs).ok_or(AccordError::ArithmeticOverflow)?;
+    }
+    if &acc_hash != root_hash || acc_sum != root_sum {
+        return Err(AccordError::InvalidMembershipProof.into());
+    }
+    Ok(prefix)
 }
 
 /// Required panel size for a given round index. The appeal ladder is
@@ -1875,62 +1749,6 @@ fn settle_round_accounts(
     }
 
     Ok(())
-}
-
-/// Verify a `LeafClaim` is included in the posted Merkle-Sum Tree root at
-/// `index`. Leaf node = `H(juror ‖ stake_le ‖ cum_after_le)`; internal nodes =
-/// `H(left_hash ‖ right_hash)` with `sum = left_sum + right_sum`. The proof
-/// carries `(sibling_hash, sibling_sum)` at each level.
-///
-/// Verifies THREE things:
-/// 1. Root hash matches (structural integrity).
-/// 2. Root sum matches `total_stake` (stake consistency).
-/// 3. `leaf.cum_after == cum_from_left + leaf.stake` (cumulative-range
-///    consistency — ensures non-overlapping ranges for sortition).
-///
-/// `cum_from_left` is the sum of all left-subtree siblings encountered on the
-/// proof path (sibling is left when the leaf is the right child at that level).
-/// This equals the total stake of all leaves to the left of the target leaf.
-fn verify_mst_inclusion(
-    leaf: &LeafClaim,
-    index: u32,
-    proof: &[MSTNode],
-    root_hash: [u8; 32],
-    root_sum: u64,
-) -> bool {
-    use solana_program::hash::hashv;
-    let mut acc_hash = hashv(&[
-        leaf.juror.as_ref(),
-        &leaf.stake.to_le_bytes(),
-        &leaf.cum_after.to_le_bytes(),
-    ])
-    .to_bytes();
-    let mut acc_sum = leaf.stake;
-    let mut cum_from_left: u64 = 0;
-    for (depth, sibling) in proof.iter().enumerate() {
-        if depth >= 31 {
-            return false;
-        }
-        let is_left = (index >> depth) & 1 == 0;
-        if is_left {
-            acc_hash = hashv(&[&acc_hash, &sibling.sibling_hash]).to_bytes();
-        } else {
-            acc_hash = hashv(&[&sibling.sibling_hash, &acc_hash]).to_bytes();
-            // Leaf is right child → sibling is left → contributes to cum_from_left
-            cum_from_left = match cum_from_left.checked_add(sibling.sibling_sum) {
-                Some(v) => v,
-                None => return false,
-            };
-        }
-        acc_sum = match acc_sum.checked_add(sibling.sibling_sum) {
-            Some(v) => v,
-            None => return false,
-        };
-    }
-    // Verify root hash + root sum + cum_after consistency
-    acc_hash == root_hash
-        && acc_sum == root_sum
-        && leaf.cum_after == cum_from_left.saturating_add(leaf.stake)
 }
 
 /// Account context for `health` — the caller signs (liveness probe), no state.
@@ -2191,139 +2009,9 @@ pub struct CreateDispute<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Account context for `post_snapshot` (ADR-0003). The snapshot PDA is
-/// `["snapshot", dispute, round_idx]` where `round_idx = dispute.current_round`.
-#[derive(Accounts)]
-pub struct PostSnapshot<'info> {
-    #[account(mut)]
-    pub poster: Signer<'info>,
-    #[account(
-        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
-        bump = subaccord.bump,
-    )]
-    pub subaccord: Box<Account<'info, Subaccord>>,
-    #[account(
-        mut,
-        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
-        bump = dispute.bump,
-    )]
-    pub dispute: Box<Account<'info, Dispute>>,
-    #[account(
-        init,
-        payer = poster,
-        space = 8 + Snapshot::INIT_SPACE,
-        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
-        bump,
-    )]
-    pub snapshot: Box<Account<'info, Snapshot>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = poster,
-    )]
-    pub poster_token_account: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = subaccord,
-    )]
-    pub vault: Account<'info, TokenAccount>,
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
-}
-
-/// Account context for `challenge_snapshot`. Both bond sweeps are PDA-signed
-/// out of the Subaccord vault, so the program is the sweep authority. The
-/// poster need not sign — `poster_token_account` is constrained to the
-/// snapshot's recorded poster.
-#[derive(Accounts)]
-pub struct ChallengeSnapshot<'info> {
-    #[account(mut)]
-    pub challenger: Signer<'info>,
-    #[account(
-        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
-        bump = subaccord.bump,
-    )]
-    pub subaccord: Box<Account<'info, Subaccord>>,
-    #[account(
-        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
-        bump = dispute.bump,
-    )]
-    pub dispute: Box<Account<'info, Dispute>>,
-    #[account(
-        mut,
-        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
-        bump = snapshot.bump,
-    )]
-    pub snapshot: Box<Account<'info, Snapshot>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = challenger,
-    )]
-    pub challenger_token_account: Account<'info, TokenAccount>,
-    /// The snapshot poster's ATA — sweep destination on a false challenge.
-    #[account(
-        mut,
-        token::mint = staking_token,
-        token::authority = snapshot.poster,
-    )]
-    pub poster_token_account: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = subaccord,
-    )]
-    pub vault: Box<Account<'info, TokenAccount>>,
-    pub token_program: Program<'info, Token>,
-}
-
-/// Account context for `finalize_snapshot` — permissionless crank returning the
-/// poster's bond once the challenge window passes unchallenged.
-#[derive(Accounts)]
-pub struct FinalizeSnapshot<'info> {
-    /// Any cranker; no authority check (the elapsed window is the gate).
-    #[account(mut)]
-    pub caller: Signer<'info>,
-    #[account(
-        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
-        bump = subaccord.bump,
-    )]
-    pub subaccord: Box<Account<'info, Subaccord>>,
-    #[account(
-        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
-        bump = dispute.bump,
-    )]
-    pub dispute: Box<Account<'info, Dispute>>,
-    #[account(
-        mut,
-        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
-        bump = snapshot.bump,
-    )]
-    pub snapshot: Box<Account<'info, Snapshot>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
-    #[account(
-        mut,
-        token::mint = staking_token,
-        token::authority = snapshot.poster,
-    )]
-    pub poster_token_account: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = subaccord,
-    )]
-    pub vault: Box<Account<'info, TokenAccount>>,
-    pub token_program: Program<'info, Token>,
-}
-
-/// Account context for `request_vrf` (ADR-0009/veridao-crbf). Uses `#[vrf]`
-/// to gain `invoke_signed_vrf` for the CPI into the VRF program.
+/// Account context for `request_vrf` (ADR-0009/0012). Uses `#[vrf]` to gain
+/// `invoke_signed_vrf` for the CPI into the VRF program. The subaccord is
+/// forwarded to the callback so it can copy the live accumulator root.
 #[vrf]
 #[derive(Accounts)]
 pub struct RequestVrf<'info> {
@@ -2340,39 +2028,20 @@ pub struct RequestVrf<'info> {
         bump = dispute.bump,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
-    #[account(
-        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
-        bump = snapshot.bump,
-    )]
-    pub snapshot: Box<Account<'info, Snapshot>>,
     /// CHECK: VRF oracle queue (mainnet default).
     #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
     pub oracle_queue: AccountInfo<'info>,
 }
 
-/// Account context for `commit_vrf_callback` (ADR-0009/veridao-crbf).
-/// The `vrf_program_identity` signer is constrained to the VRF program's
-/// identity — ONLY the VRF program can call this instruction.
+/// Account context for `commit_vrf_callback` (ADR-0009/0012). The
+/// `vrf_program_identity` signer is constrained to the VRF program's identity
+/// — ONLY the VRF program can call this. The subaccord is read-only here: the
+/// callback copies its live `root_hash`/`total_stake` onto the dispute as the
+/// frozen root.
 #[derive(Accounts)]
 pub struct CommitVrfCallback<'info> {
     #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
     pub vrf_program_identity: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
-        bump = dispute.bump,
-    )]
-    pub dispute: Box<Account<'info, Dispute>>,
-}
-
-/// Account context for `draw` (ADR-0003/0009). Permissionless: any caller
-/// submits `draw_attempt` + membership proofs. Reads the committed VRF from
-/// the dispute. The `Round` PDA is `init`'d fresh via `AccountLoader`
-/// (zero-copy). Drawn `JurorStake` accounts are passed as `remaining_accounts`.
-#[derive(Accounts)]
-pub struct Draw<'info> {
-    #[account(mut)]
-    pub caller: Signer<'info>,
     #[account(
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
@@ -2384,13 +2053,25 @@ pub struct Draw<'info> {
         bump = dispute.bump,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
+}
+
+/// Account context for `draw_seat` (ADR-0012). Permissionless: any caller
+/// submits one seat's membership proof. The round is `init_if_needed`
+/// (zero-copy) so it persists across the N seat transactions; the drawn
+/// juror's `JurorStake` is `remaining_accounts[0]` (the only per-seat account
+/// beyond dispute + round, keeping the tx well under the 1232-byte limit).
+#[derive(Accounts)]
+pub struct DrawSeat<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
     #[account(
-        seeds = [SEED_SNAPSHOT, dispute.key().as_ref(), &snapshot.round_idx.to_le_bytes()],
-        bump = snapshot.bump,
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
     )]
-    pub snapshot: Box<Account<'info, Snapshot>>,
+    pub dispute: Box<Account<'info, Dispute>>,
     #[account(
-        init,
+        init_if_needed,
         payer = caller,
         space = 8 + std::mem::size_of::<Round>(),
         seeds = [SEED_ROUND, dispute.key().as_ref(), &dispute.current_round.to_le_bytes()],
@@ -2707,4 +2388,231 @@ pub struct CancelDispute<'info> {
 #[event]
 pub struct HealthChecked {
     pub version: u8,
+}
+
+// --- Tests (ADR-0012 accumulator MST math) -----------------------------------
+//
+// Pure unit tests for the subtree-sum accumulator helpers. These are the
+// byte-exact reference the SDK MST builder must match: leaf = H(juror||stake),
+// node = H(left_hash||left_sum||right_hash||right_sum). The full LiteSVM +
+// Surfpool instruction suite is bean accord-btel; this is the self-check for
+// the non-trivial on-chain math (verify_and_recompute + verify_membership_and_prefix
+// + empty_tree_root).
+#[cfg(test)]
+mod accumulator_tests {
+    use super::*;
+
+    /// Deterministic test pubkey from a small integer.
+    fn pk(n: u8) -> Pubkey {
+        Pubkey::new_from_array([n; 32])
+    }
+
+    /// Build a depth-`depth` subtree-sum tree from `leaves` (index = position),
+    /// padding the remaining 2^depth slots with zero leaves. Returns
+    /// `(root_hash, root_sum, path_for(target))`.
+    fn build_root_and_path(
+        leaves: &[(Pubkey, u64)],
+        depth: u8,
+        target: u32,
+    ) -> ([u8; 32], u64, Vec<MSTNode>) {
+        let size = 1usize << depth;
+        let mut hashes: Vec<[u8; 32]> = Vec::with_capacity(size);
+        let mut sums: Vec<u64> = Vec::with_capacity(size);
+        for i in 0..size {
+            let (j, s) = if i < leaves.len() {
+                leaves[i]
+            } else {
+                (Pubkey::default(), 0u64)
+            };
+            hashes.push(mst_leaf_hash(&j, s));
+            sums.push(s);
+        }
+        let mut path = Vec::new();
+        let mut idx = target as usize;
+        for _ in 0..depth {
+            let sib = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+            path.push(MSTNode {
+                sibling_hash: hashes[sib],
+                sibling_sum: sums[sib],
+            });
+            let mut nh = Vec::new();
+            let mut ns = Vec::new();
+            for k in (0..hashes.len()).step_by(2) {
+                nh.push(mst_node_hash(
+                    &hashes[k],
+                    sums[k],
+                    &hashes[k + 1],
+                    sums[k + 1],
+                ));
+                ns.push(sums[k] + sums[k + 1]);
+            }
+            hashes = nh;
+            sums = ns;
+            idx /= 2;
+        }
+        assert_eq!(hashes.len(), 1, "depth fold yields a single root");
+        (hashes[0], sums[0], path)
+    }
+
+    #[test]
+    fn empty_root_matches_all_zero_tree() {
+        for depth in [0u8, 1, 3, 8, 20] {
+            let (root, sum, _) = build_root_and_path(&[], depth, 0);
+            assert_eq!(root, empty_tree_root(depth), "depth {depth}");
+            assert_eq!(sum, 0, "empty tree has zero total stake");
+        }
+    }
+
+    #[test]
+    fn membership_authenticates_and_prefix_is_correct() {
+        // Three jurors with unequal stakes at depth 4 (16 slots).
+        let leaves = vec![(pk(1), 1_000), (pk(2), 3_000), (pk(3), 500)];
+        let depth = 4u8;
+        let (root, total, _) = build_root_and_path(&leaves, depth, 0);
+        assert_eq!(total, 4_500);
+
+        // Each leaf verifies and its prefix is the running sum of earlier leaves.
+        let mut running = 0u64;
+        for (i, (_, stake)) in leaves.iter().enumerate() {
+            let (_, _, path) = build_root_and_path(&leaves, depth, i as u32);
+            let leaf = LeafClaim {
+                juror: pk((i + 1) as u8),
+                stake: *stake,
+            };
+            let prefix =
+                verify_membership_and_prefix(&leaf, i as u32, &path, &root, total).unwrap();
+            assert_eq!(prefix, running, "prefix for leaf {i}");
+            running += stake;
+        }
+
+        // A wrong root is rejected.
+        let bad = [0u8; 32];
+        let leaf0 = LeafClaim {
+            juror: pk(1),
+            stake: 1_000,
+        };
+        let (_, _, path0) = build_root_and_path(&leaves, depth, 0);
+        assert!(verify_membership_and_prefix(&leaf0, 0, &path0, &bad, total).is_err());
+
+        // A tampered stake (overstates) does not authenticate — the root binds sums.
+        let inflated = LeafClaim {
+            juror: pk(2),
+            stake: 9_999,
+        };
+        let (_, _, path1) = build_root_and_path(&leaves, depth, 1);
+        assert!(verify_membership_and_prefix(&inflated, 1, &path1, &root, total).is_err());
+    }
+
+    #[test]
+    fn verify_and_recompute_matches_rebuild() {
+        let leaves = vec![(pk(1), 1_000), (pk(2), 3_000), (pk(3), 500), (pk(4), 2_000)];
+        let depth = 5u8;
+        let (root, total, _) = build_root_and_path(&leaves, depth, 0);
+
+        // Top up juror at index 2: stake 500 -> 1_500.
+        let target = 2u32;
+        let old_stake = 500u64;
+        let new_stake = 1_500u64;
+        let juror = pk(3);
+        let (_, _, path) = build_root_and_path(&leaves, depth, target);
+        let (new_root, new_total) = verify_and_recompute(
+            &juror, old_stake, &juror, new_stake, target, &path, &root, total,
+        )
+        .expect("valid path authenticates + recomputes");
+        assert_eq!(new_total, total - old_stake + new_stake);
+
+        // Rebuild from scratch with the new stake: roots must match exactly.
+        let mut rebuilt = leaves.clone();
+        rebuilt[target as usize] = (juror, new_stake);
+        let (rebuilt_root, rebuilt_total, _) = build_root_and_path(&rebuilt, depth, target);
+        assert_eq!(new_root, rebuilt_root, "recomputed root matches rebuild");
+        assert_eq!(new_total, rebuilt_total);
+
+        // A stale/wrong path is rejected and does not yield a root.
+        let wrong_path = build_root_and_path(&leaves, depth, 0).2; // path for index 0, not 2
+        assert!(verify_and_recompute(
+            &juror,
+            old_stake,
+            &juror,
+            new_stake,
+            target,
+            &wrong_path,
+            &root,
+            total
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn first_stake_transitions_zero_leaf_to_juror() {
+        // Simulate a juror's first stake: the assigned slot holds the all-zero
+        // leaf (default juror, 0 stake); after staking it becomes (juror, stake).
+        let depth = 4u8;
+        let (root0, total0, _) = build_root_and_path(&[], depth, 0); // empty tree
+        assert_eq!(root0, empty_tree_root(depth));
+
+        let juror = pk(7);
+        let stake = 2_500u64;
+        let target = 0u32;
+        let (_, _, path) = build_root_and_path(&[], depth, target);
+        let (new_root, new_total) = verify_and_recompute(
+            &Pubkey::default(),
+            0,
+            &juror,
+            stake,
+            target,
+            &path,
+            &root0,
+            total0,
+        )
+        .expect("zero-slot path authenticates + recomputes to the juror leaf");
+
+        // Rebuild with the juror at index 0 must match.
+        let (rebuilt_root, rebuilt_total, _) =
+            build_root_and_path(&[(juror, stake)], depth, target);
+        assert_eq!(new_root, rebuilt_root);
+        assert_eq!(new_total, rebuilt_total);
+        assert_eq!(new_total, stake);
+    }
+
+    #[test]
+    fn sortition_prefix_brackets_vrf_seat() {
+        // For every seat value, the deterministic r_i must fall into exactly one
+        // leaf's [prefix, prefix+stake) range — proving sortition is total and
+        // non-overlapping for the reconstructed prefixes.
+        let leaves = vec![(pk(1), 1_000), (pk(2), 3_000), (pk(3), 500), (pk(4), 2_000)];
+        let depth = 4u8;
+        let (root, total, _) = build_root_and_path(&leaves, depth, 0);
+        let vrf = [99u8; 32];
+        let dispute_key = pk(42);
+        let round_idx = 0u32;
+        let vrf_seed =
+            solana_program::hash::hashv(&[&vrf, dispute_key.as_ref(), &round_idx.to_le_bytes()])
+                .to_bytes();
+
+        for seat in 0..4u32 {
+            let r = solana_program::hash::hashv(&[&vrf_seed, &seat.to_le_bytes()]).to_bytes();
+            let r_i = u64::from_le_bytes(r[0..8].try_into().unwrap()) % total;
+            let mut found = false;
+            let mut running = 0u64;
+            for (i, (_, stake)) in leaves.iter().enumerate() {
+                let prefix = running;
+                if r_i >= prefix && r_i - prefix < *stake {
+                    // This leaf wins seat `seat`; verify the on-chain prefix fn agrees.
+                    let (_, _, path) = build_root_and_path(&leaves, depth, i as u32);
+                    let leaf = LeafClaim {
+                        juror: pk((i + 1) as u8),
+                        stake: *stake,
+                    };
+                    let got =
+                        verify_membership_and_prefix(&leaf, i as u32, &path, &root, total).unwrap();
+                    assert_eq!(got, prefix);
+                    assert!(found == false, "r_i matched more than one leaf");
+                    found = true;
+                }
+                running += stake;
+            }
+            assert!(found, "seat {seat}: r_i={r_i} matched no leaf range");
+        }
+    }
 }
