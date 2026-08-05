@@ -1,11 +1,11 @@
 ---
 # accord-bsgp
 title: Server hardening follow-ups (XFF trust + body-cap bypass)
-status: draft
+status: todo
 type: task
 priority: normal
 created_at: 2026-08-05T15:19:24Z
-updated_at: 2026-08-05T15:19:33Z
+updated_at: 2026-08-05T18:18:56Z
 parent: accord-s3ow
 ---
 

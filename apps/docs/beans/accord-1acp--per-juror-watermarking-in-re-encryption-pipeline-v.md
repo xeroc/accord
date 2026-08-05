@@ -1,11 +1,11 @@
 ---
 # accord-1acp
 title: Per-juror watermarking in re-encryption pipeline (v1.1)
-status: todo
+status: draft
 type: task
 priority: normal
 created_at: 2026-08-05T14:21:20Z
-updated_at: 2026-08-05T14:21:20Z
+updated_at: 2026-08-05T18:17:55Z
 parent: accord-yjno
 blocked_by:
     - accord-yjno
