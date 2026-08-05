@@ -21,6 +21,7 @@ that references the old one.
 | [0009](0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md)         | Stake-weighted verifiable sortition — MST, committed VRF                    | Accepted |
 | [0010](0010-sdk-codama-solana-kit-facade.md)                              | `@accord/sdk` — Codama codegen + Solana Kit + custom facade                 | Accepted |
 | [0011](0011-evidence-operator-daemon-offchain-service.md)                   | Evidence Operator Daemon — off-chain decrypt-re-encryption service          | Accepted |
+| [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)   | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed |
 
 ## How to read them
 
@@ -32,7 +33,10 @@ that references the old one.
 - **Integrating**: 0001 + 0004 (party-agnostic) + 0005 (Subaccord authority) are
   the most relevant to your integration surface.
 - **Auditing**: 0008 + 0009 are the security-critical ADRs (snapshot fraud
-  proofs, sortition enforcement, VRF integration).
+  proofs, sortition enforcement, VRF integration). **0012 supersedes the snapshot
+  layer of 0003/0008/0009** (retains the anchor-slot leaf witness): an on-chain
+  accumulator makes the root canonical, dissolving the data-availability and
+  sum-authentication gaps.
 
 ## Authoring a new ADR
 
