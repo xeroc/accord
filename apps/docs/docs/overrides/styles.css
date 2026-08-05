@@ -1,0 +1,119 @@
+/* Accord brand theme — "The Mechanist".
+ * Locked palette (BRAND.md): ink + cyan. Distinct from Solana purple/green.
+ * Identity: cold, precise, mechanized. No-BS. Voice: imperatives.
+ */
+:root {
+  --md-primary-fg-color: #0b1120;
+  --md-primary-fg-color--light: #161f33;
+  --md-primary-fg-color--dark: #05080f;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #f5f7fa;
+  --md-accent-fg-color: #06b6d4;
+  --md-accent-fg-color--transparent: rgba(6, 182, 212, 0.1);
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #ffffff;
+  --md-default-fg-color: #0b1120;
+  --md-primary-fg-color: #0b1120;
+  --md-accent-fg-color: #0891b2;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0b1120;
+  --md-default-fg-color: #e2e8f0;
+  --md-default-fg-color--light: #94a3b8;
+  --md-default-fg-color--lighter: #64748b;
+  --md-default-fg-color--lightest: #475569;
+  --md-primary-fg-color: #05080f;
+  --md-primary-fg-color--light: #0b1120;
+  --md-primary-bg-color: #e2e8f0;
+  --md-accent-fg-color: #22d3ee;
+  --md-code-bg-color: #0f172a;
+  --md-code-fg-color: #e2e8f0;
+  --md-code-hl-color: rgba(34, 211, 238, 0.18);
+  --md-typeset-a-color: var(--md-accent-fg-color);
+}
+
+/* Header wordmark — tabular figures, tracking收紧, mechanist feel. */
+.md-header__title {
+  font-family: var(--md-text-font), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.md-header__title--active .md-header__topic:first-child {
+  font-variant-ligatures: none;
+}
+
+/* Tagline lives in the site description; keep header to the wordmark. */
+.md-footer-meta {
+  background-color: var(--md-primary-fg-color);
+}
+.md-footer-meta__inner {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.md-footer-copyright {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.7rem;
+}
+
+/* Accent everywhere a verdict lives: links, active nav, focus. */
+.md-nav__link:focus,
+.md-nav__link:hover,
+.md-nav__item--active > .md-nav__link {
+  color: var(--md-accent-fg-color);
+}
+.md-typeset a {
+  color: var(--md-accent-fg-color);
+  text-decoration: none;
+}
+.md-typeset a:hover {
+  text-decoration: underline;
+}
+
+/* Code: terminal ink. Inline gets a slab; fences get the full ink bg. */
+.md-typeset code {
+  background: var(--md-code-bg-color);
+  color: var(--md-code-fg-color);
+  padding: 0.15em 0.4em;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+.md-typeset pre > code {
+  font-weight: 400;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+/* Tables — reference docs are table-heavy. Tighten to a grid feel. */
+.md-typeset table:not([class]) {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 0.72rem;
+}
+.md-typeset table:not([class]) th {
+  background: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+}
+.md-typeset table:not([class]) td {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  vertical-align: top;
+}
+
+/* Admonitions — brand the verdict/critical callouts. */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 0;
+  border-left: 3px solid var(--md-accent-fg-color);
+  box-shadow: none;
+}
+
+/* Hero on index: let the H1 carry the wordmark weight. */
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
