@@ -22,6 +22,7 @@ that references the old one.
 | [0010](0010-sdk-codama-solana-kit-facade.md)                              | `@accord/sdk` — Codama codegen + Solana Kit + custom facade                 | Accepted |
 | [0011](0011-evidence-operator-daemon-offchain-service.md)                   | Evidence Operator Daemon — off-chain decrypt-re-encryption service          | Accepted |
 | [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)   | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed |
+| [0013](0013-evidence-data-format-manifest-yaml.md) | Evidence data format — manifest.yaml Merkle root, salted option labels | Accepted |
 
 ## How to read them
 

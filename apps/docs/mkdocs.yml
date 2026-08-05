@@ -77,6 +77,9 @@ nav:
       - "0008 Snapshot trust hardening": adr/0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md
       - "0009 Stake-weighted verifiable sortition": adr/0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md
       - "0010 SDK — Codama + Kit + facade": adr/0010-sdk-codama-solana-kit-facade.md
+      - "0011 Evidence Operator Daemon": adr/0011-evidence-operator-daemon-offchain-service.md
+      - "0012 On-chain stake accumulator": adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md
+      - "0013 Evidence data format": adr/0013-evidence-data-format-manifest-yaml.md
   - SDK: sdk.md
 
 plugins:
