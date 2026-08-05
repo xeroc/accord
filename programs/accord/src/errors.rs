@@ -124,4 +124,10 @@ pub enum AccordError {
     // --- arithmetic ---
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
+
+    // --- cancel / Failed state (Ugly 4) ---
+    #[msg("Dispute is in terminal Failed state.")]
+    DisputeFailed,
+    #[msg("Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.")]
+    CancelTooEarly,
 }

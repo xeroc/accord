@@ -122,6 +122,10 @@ pub struct Dispute {
     /// committed; `Some(vrf_result)` after. The draw reads this; the caller
     /// cannot swap it between retries.
     pub committed_vrf: Option<[u8; 32]>,
+    /// Unix timestamp at `create_dispute` (Ugly 4). Drives the pre-draw
+    /// `cancel_dispute` timeout: if the dispute has not been drawn within
+    /// `PRE_DRAW_CANCEL_TIMEOUT_SECS`, any cranker may cancel + refund the filer.
+    pub filed_at: i64,
     pub bump: u8,
 }
 
@@ -257,6 +261,11 @@ pub struct PauseState {
 
 /// Dispute lifecycle (SPEC state machine). A permissionless crank advances
 /// states when their windows elapse.
+///
+/// `Failed` is the liveness-escape terminal state (CONCEPT-REVIEW Ugly 4 /
+/// bean accord-18fb): `cancel_dispute` transitions a stalled dispute here,
+/// refunds the filer's round-1 fee, and releases the current round's
+/// `active_draws`. It is terminal — no lifecycle instruction accepts it.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum DisputeState {
     Created,
@@ -268,6 +277,7 @@ pub enum DisputeState {
     RoundResolved, // round tallied; appeal window or finalization
     Final,         // final ruling set
     Closed,        // fully settled
+    Failed,        // liveness-escape terminal (cancel_dispute)
 }
 
 /// Snapshot fraud-proof status (ADR-0003).

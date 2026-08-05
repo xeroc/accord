@@ -466,6 +466,9 @@ pub mod accord {
         d.current_round = 0;
         d.final_ruling = u8::MAX;
         d.fee_paid = fee;
+        // Ugly 4: record the filing timestamp so cancel_dispute has a pre-draw
+        // anchor (snapshot/VRF liveness backstop).
+        d.filed_at = Clock::get()?.unix_timestamp;
         // Ugly 6: freeze the economics-relevant params at filing time so the
         // 48h timelock (ADR-0005) cannot shift slashing/fees/panel/windows
         // mid-dispute. All later instructions read `d.terms`, never live `sub`.
@@ -810,6 +813,10 @@ pub mod accord {
     pub fn request_vrf(ctx: Context<RequestVrf>) -> Result<()> {
         let dispute = &ctx.accounts.dispute;
         require!(
+            dispute.state != DisputeState::Failed,
+            AccordError::DisputeFailed
+        );
+        require!(
             dispute.committed_vrf.is_none(),
             AccordError::VrfAlreadyCommitted
         );
@@ -851,6 +858,10 @@ pub mod accord {
         randomness: [u8; 32],
     ) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
+        require!(
+            dispute.state != DisputeState::Failed,
+            AccordError::DisputeFailed
+        );
         require!(
             dispute.committed_vrf.is_none(),
             AccordError::VrfAlreadyCommitted
@@ -1540,6 +1551,158 @@ pub mod accord {
         // Mark claimed (idempotent): no double-refund on re-invocation.
         ctx.accounts.appeal_bond.amount = 0;
 
+        Ok(())
+    }
+
+    /// Permissionless liveness-escape crank (CONCEPT-REVIEW Ugly 4). If a
+    /// dispute has stalled past its per-stage timeout, any cranker may cancel
+    /// it: the filer's round-1 fee is refunded from the vault, the current
+    /// round's drawn jurors have their `active_draws` released (post-draw
+    /// stalls only), and the dispute transitions to the terminal `Failed`
+    /// state.
+    ///
+    /// Two timeout windows (immutable program constants, so they are frozen
+    /// for the dispute's life trivially — stronger than a `CaseTerms` field):
+    /// - **Pre-draw** (`Created`/`SnapshotPosted`): cancelable once
+    ///   `now > filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` — covers a dead
+    ///   indexer (no/voided snapshot) or a VRF oracle that never commits.
+    /// - **Post-draw** (`Drawn`/`Commit`/`Reveal`/`RoundResolved`): cancelable
+    ///   once `now > round.reveal_end + APPEAL_WINDOW_SECS +
+    ///   POST_DRAW_CANCEL_GRACE_SECS` — covers a round no cranker ever
+    ///   finalizes. The current `Round` is `remaining_accounts[0]`; the
+    ///   drawn `JurorStake` PDAs follow (`[1..=panel]`).
+    ///
+    /// `Final`/`Closed`/`Failed` are terminal and revert. The filer refund is
+    /// exactly the round-1 fee (`terms.jurors_per_dispute · fee_per_juror`);
+    /// appeal-round fees/bonds are multi-round settlement concerns
+    /// (bean accord-r6ti) and are intentionally not swept here.
+    pub fn cancel_dispute(ctx: Context<CancelDispute>) -> Result<()> {
+        let dispute = &mut ctx.accounts.dispute;
+        let now = Clock::get()?.unix_timestamp;
+        let dispute_key = dispute.key();
+        let filer = dispute.filer;
+        let state = dispute.state;
+
+        let post_draw = matches!(
+            state,
+            DisputeState::Drawn
+                | DisputeState::Commit
+                | DisputeState::Reveal
+                | DisputeState::RoundResolved
+        );
+
+        if post_draw {
+            // remaining_accounts = [current Round, ...JurorStake PDAs].
+            require!(
+                !ctx.remaining_accounts.is_empty(),
+                AccordError::InvalidState
+            );
+            let round_info = &ctx.remaining_accounts[0];
+            let expected_round = Pubkey::find_program_address(
+                &[
+                    SEED_ROUND,
+                    dispute_key.as_ref(),
+                    &dispute.current_round.to_le_bytes(),
+                ],
+                &crate::ID,
+            )
+            .0;
+            require!(
+                round_info.key == &expected_round,
+                AccordError::InvalidMembershipProof
+            );
+
+            // Load the zero-copy Round to read its deadline + juror list.
+            let (juror_count, jurors) = {
+                let loader = AccountLoader::<Round>::try_from(round_info)?;
+                let round = loader.load()?;
+                let deadline = round
+                    .reveal_end
+                    .checked_add(APPEAL_WINDOW_SECS)
+                    .and_then(|v| v.checked_add(POST_DRAW_CANCEL_GRACE_SECS))
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                require!(now > deadline, AccordError::CancelTooEarly);
+                let count = round.juror_count as usize;
+                require!(
+                    ctx.remaining_accounts.len() == 1 + count,
+                    AccordError::InvalidPanelSize
+                );
+                (count, round.jurors[..count].to_vec())
+            };
+
+            // Release active_draws for every drawn juror (same offset pattern
+            // as `draw`/`finalize_dispute`).
+            let sub_key = ctx.accounts.subaccord.key();
+            const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
+            for (i, acct_info) in ctx.remaining_accounts[1..=juror_count].iter().enumerate() {
+                let expected_pda = Pubkey::find_program_address(
+                    &[SEED_JUROR_STAKE, sub_key.as_ref(), jurors[i].as_ref()],
+                    &crate::ID,
+                )
+                .0;
+                require!(
+                    acct_info.key == &expected_pda,
+                    AccordError::InvalidMembershipProof
+                );
+                let mut data = acct_info.try_borrow_mut_data()?;
+                let draws = u32::from_le_bytes(
+                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                        .try_into()
+                        .unwrap(),
+                );
+                let new_draws = draws.saturating_sub(1);
+                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                    .copy_from_slice(&new_draws.to_le_bytes());
+            }
+        } else {
+            // Pre-draw stall (Created/SnapshotPosted). Terminal states
+            // (Final/Closed/Failed/Review) are rejected here.
+            require!(
+                state == DisputeState::Created || state == DisputeState::SnapshotPosted,
+                AccordError::InvalidState
+            );
+            let deadline = dispute
+                .filed_at
+                .checked_add(PRE_DRAW_CANCEL_TIMEOUT_SECS)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            require!(now > deadline, AccordError::CancelTooEarly);
+        }
+
+        // --- Refund the filer's round-1 fee from the vault (PDA-signed). ---
+        let filer_fee = (dispute.terms.jurors_per_dispute as u64)
+            .checked_mul(dispute.terms.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
+        let sub = &ctx.accounts.subaccord;
+        let bump = [sub.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            sub.creator.as_ref(),
+            sub.risk_type.as_ref(),
+            &bump,
+        ];
+        if filer_fee > 0 {
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.key(),
+                    Transfer {
+                        from: ctx.accounts.vault.to_account_info(),
+                        to: ctx.accounts.filer_token_account.to_account_info(),
+                        authority: ctx.accounts.subaccord.to_account_info(),
+                    },
+                    &[signer_seeds],
+                ),
+                filer_fee,
+            )?;
+        }
+
+        dispute.state = DisputeState::Failed;
+
+        emit!(DisputeCancelled {
+            dispute: dispute_key,
+            filer,
+            refund: filer_fee,
+        });
         Ok(())
     }
 
@@ -2338,6 +2501,45 @@ pub struct GetRuling<'info> {
         bump = dispute.bump,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
+}
+
+/// Account context for `cancel_dispute` (CONCEPT-REVIEW Ugly 4) — the
+/// permissionless liveness-escape crank. `filer_token_account` is constrained
+/// to the dispute's filer (the refund destination); the vault is the Subaccord
+/// PDA's ATA so the program PDA-signs the refund out. Post-draw cancels pass
+/// the current `Round` + its drawn `JurorStake` PDAs as `remaining_accounts`.
+#[derive(Accounts)]
+pub struct CancelDispute<'info> {
+    /// Any cranker; no authority check (the elapsed timeout is the gate).
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
+        bump = dispute.bump,
+    )]
+    pub dispute: Box<Account<'info, Dispute>>,
+    #[account(address = subaccord.staking_token)]
+    pub staking_token: Account<'info, Mint>,
+    /// Refund destination — must be the filer's ATA.
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = dispute.filer,
+    )]
+    pub filer_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = staking_token,
+        associated_token::authority = subaccord,
+    )]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
 }
 
 /// Emitted by `health`. Carries the program version byte.
