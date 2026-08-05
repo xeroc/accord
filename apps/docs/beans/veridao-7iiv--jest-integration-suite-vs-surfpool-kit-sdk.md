@@ -5,92 +5,126 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-08-04T21:52:11Z
-updated_at: 2026-08-04T22:25:02Z
+updated_at: 2026-08-05T00:33:00Z
 parent: veridao-5y8e
+# gqzm + vxe9 LANDED (SDK files all present). Real current code blocker is the
+# missing facade adapter (veridao-mcvw); the VRF/Surfpool gap is a design/env
+# decision documented in the body, not yet a bean.
 blocked_by:
-    - veridao-gqzm
-    - veridao-vxe9
+  - veridao-mcvw
 ---
 
 First real jest files in tests/. Drive the Accord facade end-to-end against Surfpool via @solana/rpc (standard JSON-RPC, Surfpool-compatible). Cover the full dispute lifecycle per milestone test matrix: create_subaccord -> stake -> create_dispute -> snapshot -> VRF/draw -> commit/reveal -> finalize -> get_ruling; plus appeal, unstake guard, timelock update. Acceptance: `pnpm --filter @veridao/tests test` green against `make run_surfpool`. See ADR-0010.
 
-## Blocker — cannot proceed, acceptance unsatisfiable today (2026-08-05)
+## RE-EVALUATION (2026-08-05) — supersedes the prior blocker below
 
-**Status: BLOCKED. Not completed. Bean left in-progress; `hordr done` intentionally
-NOT called (no completion to signal). Requires human re-dispatch once dependencies
-land.**
+**Status: still NOT completable. `hordr done` intentionally NOT called. Prior
+"SDK does not exist" blocker is RESOLVED (epics `veridao-gqzm` + `veridao-vxe9`
+landed; git log shows the merges). Two NEW, different blockers now apply. The
+prior claim "once the SDK lands this work is mechanical" is proven FALSE.**
 
-The acceptance criterion — drive the `Accord` SDK facade end-to-end, full dispute
-lifecycle, `pnpm --filter @veridao/tests test` green — cannot be met because the
-SDK the suite is supposed to drive **does not exist yet**. Verified in worktree
-`veridao-5y8e`:
+### What now EXISTS (the prior blocker's premises are stale)
 
-- `packages/sdk/src/index.ts` is a 661-byte stub exporting only `SDK_NAME` and
-  `SDK_VERSION`. No `Accord` class, no `methods/`, no `wallet.ts`/`pda.ts`/
-  `constants.ts`/`errors.ts`/`types.ts`/`fetch.ts`.
-- `packages/sdk/src/generated/` — does not exist (Codama codegen never ran).
-- `target/idl/accord.json` — does not exist (program not built in this worktree).
-- No `node_modules` at repo root, `packages/sdk`, or `tests` (deps never installed).
+Verified in worktree `veridao-5y8e`:
 
-The bean graph confirms this is a premature dispatch. This task's parent epic
-`veridao-5y8e` (Tests & release) is `blocked_by: [veridao-gqzm]` (Facade methods
-& domain logic), which is itself `blocked_by: [veridao-vxe9]` (SDK foundation &
-codegen). Both are `status: todo`. The entire SDK surface is unbuilt:
+- `packages/sdk/src/index.ts` — 108 lines, re-exports the full facade surface.
+- `packages/sdk/src/accord.ts` — the `Accord` class exists.
+- `packages/sdk/src/{wallet,pda,constants,errors,types,fetch}.ts` — all present.
+- `packages/sdk/src/generated/{accounts,errors,instructions,pdas,programs,types}/` — Codama tree committed; `generated/programs/accord.ts` exposes all 21 instruction builders (`getCreateDisputeInstruction`, `getDrawInstruction`, …).
+- `packages/sdk/src/methods/{dispute,lifecycle,staking,snapshot,vrf,voting,appeal}.ts` — all 8 modules present, each with a sibling `*.test.ts` (pure unit tests: hardcoded vectors / mock seams, run via `node:test`, NOT chain tests).
 
-- `veridao-qlnn` (Codama codegen pipeline + generated Kit client) — todo
-- `veridao-iw8e` (Accord facade shell + wallet adapter + constants/errors/types) — todo
-- `veridao-690e` (Canonical PDA helpers) — todo
-- `veridao-zxuv` (Typed account fetchers) — todo
-- `veridao-erv7` (Subaccord lifecycle methods) — todo
-- `veridao-o8ki` (Staking methods) — todo
-- `veridao-rrxs` / `veridao-dsc2` (dispute intake / snapshot + MST helpers) — todo
-- `veridao-j7tx` / `veridao-fr1x` (VRF choreography / draw) — todo
-- `veridao-a0mc` / `veridao-pq1s` (voting / ruling) — todo
-- `veridao-50qy` (Arbitrable CPI API: create_dispute + get_ruling) — todo
-- `veridao-yny6` (Appeal & refund methods) — todo
+So the SDK _files_ are built. The blockers are elsewhere.
 
-The Accord program itself (Rust, `programs/accord/`) is fully implemented — 21
-instructions across all 8 groups, with passing LiteSVM unit tests in
-`programs/accord/tests/*_litesvm.rs`. The gap is purely the TypeScript client.
+### Blocker A — the `Accord` facade is a shell; no seam adapter exists (code gap)
 
-### Why I did not fabricate the suite anyway
+`packages/sdk/src/accord.ts:36-53` defines `Accord` with exactly four members:
+`PROGRAM_ID`, `rpc`, `signer`, `client`. **Zero chain-driving methods.** It never
+calls any `methods/*.ts` function.
 
-Writing the lifecycle tests against a non-existent facade would be speculative
-slop: the code could not compile (no `@veridao/sdk` exports to import), could not
-run green (the acceptance's defining property), and would encode an invented API
-shape that the facade-method beans would then have to match or rewrite. That
-violates YAGNI, "no speculative abstractions", and the bean's own acceptance
-(verify green). It would also race the facade-method tasks: if they choose
-different method signatures, the fabricated tests are discarded — wasted work.
+Every methods module declares a typed seam and off-hand says _"Foundation wires
+the concrete adapter"_ — but no such adapter was ever written:
 
-### Why I did not build the SDK facade within this bean either
+- `methods/dispute.ts:87` `AccordDisputeClient.buildCreateDispute` / `fetchDispute`
+- `methods/lifecycle.ts:218` `AccordLifecycleClient.buildCreateSubaccord` / …
+- `methods/vrf.ts:197` `AccordVrfClient.buildRequestVrf` / `buildDraw` / `fetchCommittedVrf`
+- `methods/snapshot.ts`, `staking.ts`, `voting.ts`, `appeal.ts` — same pattern.
 
-That would consume ~11 other beans' explicitly-decomposed scope (the entire
-`veridao-vxe9` + `veridao-gqzm` epics), violating "Do ONLY that task's work" and
-the fleet's parallel-safe per-module decomposition (ADR-0010: "each `methods/*.ts`
-module is standalone ... a facade-method task therefore adds a file and fills its
-body without touching a shared class"). The SDK is intentionally split across
-dispatchable beans; re-collapsing it into the tests bean defeats the fleet model.
+Grep confirms **zero implementors** anywhere in `packages/sdk/src`. The generated
+Codama client exposes differently-named builders (`getCreateDisputeInstruction`,
+not `buildCreateDispute`) and full-account fetchers (not the minimal shaped views
+the seams declare, e.g. `DisputeRulingView={finalRuling}`). So `AccordClient`
+does not satisfy any seam. **The facade cannot build, sign, send, or fetch a
+single instruction end-to-end.** Driving it "against Surfpool" is therefore
+impossible until an adapter lands.
 
-### What is genuinely unblocked and reusable (for whoever picks this up next)
+→ Surfaced as **draft bean `veridao-mcvw`** ("SDK facade adapter — wire Accord
+shell to generated Codama client"). This bean is now `blocked_by: [veridao-mcvw]`.
 
-Once the SDK lands, this bean's work is mechanical against the milestone test
-matrix (ADR-0010 § Test Matrix, reproduced in the milestone HANDOFF). The Rust
-LiteSVM tests in `programs/accord/tests/` are the per-instruction oracle for
-account shapes, arg layouts, and expected state transitions — they already encode
-the full lifecycle (see `stake_litesvm.rs`, `create_dispute_litesvm.rs`,
-`snapshot_litesvm.rs`, `draw_litesvm.rs`, `voting_litesvm.rs`, `appeal_litesvm.rs`,
-`unstake_litesvm.rs`, `update_litesvm.rs`) and are the correct reference for the
-TypeScript integration tests. The `health` instruction (`lib.rs:61`) is the
-natural first smoke test for the harness↔Surfpool↔program pipeline.
+### Blocker B — the VRF tail is environmentally un-runnable on Surfpool (design gap)
 
-### Recommended unblock path for the operator
+The dispute lifecycle from `draw` onward requires committed VRF randomness:
 
-1. Dispatch `veridao-vxe9` (SDK foundation) — unblocks `veridao-qlnn`, `iw8e`, `690e`, `zxuv`.
-2. Dispatch `veridao-gqzm` (facade methods) — unblocks the 8 method-group tasks.
-3. Re-dispatch `veridao-7iiv` (this bean) once `veridao-gqzm` lands. The `blocked_by`
-   added below keeps it out of the ready queue until then.
+- `lib.rs:793` `request_vrf` — CPIs into `ephemeral_vrf_sdk` (magicblock oracle) via `invoke_signed_vrf`.
+- `lib.rs:832-844` `commit_vrf_callback` — **only the VRF program can call this**; the account context pins `vrf_program_identity` to `VRF_PROGRAM_IDENTITY` (Anchor address check). It is the sole setter of `dispute.committed_vrf`.
+- `lib.rs:892` `draw` — reads `committed_vrf`; without it → `VrfNotCommitted`.
 
-The `blocked_by: [veridao-gqzm, veridao-vxe9]` lines in the frontmatter above make
-the task-level dependency explicit (the parent epic already carried it, but the
-task did not).
+The Rust LiteSVM tests bypass this by mutating `dispute.committed_vrf` directly
+in-process (`mock_commit_vrf`, `tests/draw_litesvm.rs:540-551`). **That is
+impossible over JSON-RPC** — you cannot forge the VRF program's signature.
+
+Whether Surfpool can satisfy the magicblock VRF oracle CPI is **unverified**.
+`surfpool` is installed (`~/.local/bin/surfpool`, "Start a local Surfnet") but
+its ability to simulate the VRF program / oracle queue is unknown. If it cannot,
+then `draw → commit → reveal → finalize_round → finalize_dispute → appeal` is
+un-runnable on Surfpool as the program is written today, and the "full dispute
+lifecycle green against Surfpool" acceptance is unreachable regardless of SDK
+work. Resolution option is an **operator decision**, e.g.:
+
+1. Confirm/enable Surfpool VRF oracle simulation (preferred — keeps the env), OR
+2. Add a `#[cfg(feature = "local-vrf")]` test bypass to the program
+   (direct-commit path), OR
+3. Split the suite: run the VRF tail against devnet (where the oracle lives)
+   instead of Surfpool.
+
+This is a design/env question above this bean's scope; it is **not** a missing
+TS task, so no draft bean was created for it — flagged here for the operator.
+
+### Why I did not fabricate the suite / build the adapter here
+
+- Writing lifecycle tests against a facade that has no driving surface and an
+  unverified VRF env would not compile (nothing to import that drives the chain),
+  could not run green (acceptance's defining property), and would encode an
+  invented adapter API that `veridao-mcvw` would then have to match or rewrite.
+  Speculative slop; violates YAGNI + "no speculative abstractions".
+- Building the adapter inside this bean would consume `veridao-mcvw`'s explicitly
+  decomposed scope — violating "Do ONLY that task's work" and ADR-0010's
+  parallel-safe per-module decomposition.
+
+### Genuinely unblocked + recommended path for the operator
+
+1. Dispatch `veridao-mcvw` (facade adapter) — removes Blocker A.
+2. Decide the VRF/test-env question (Blocker B): verify Surfpool VRF support, or
+   pick option 2/3 above. The `health` instruction (`lib.rs:61`) is the natural
+   first smoke test for the jest↔Kit↔Surfpool↔program pipeline once the adapter
+   lands; the non-VRF slice (create_subaccord, stake, create_dispute,
+   post/challenge/finalize_snapshot, unstake guard, timelock update) can go green
+   immediately on `mcvw` landing; the VRF tail depends on (2).
+3. Re-dispatch `veridao-7iiv` once both resolve. The `tests/` package also needs
+   dep wiring per ADR-0010 (currently has `@anchor-lang/core` + `@solana/web3.js`,
+   which ADR-0010 retires; needs `@veridao/sdk` + `@solana/kit`) — that wiring is
+   in-scope for this bean when it lands, sibling `veridao-sl3x` owns build/publish.
+
+The Rust LiteSVM tests in `programs/accord/tests/*_litesvm.rs` remain the
+per-instruction oracle (account shapes, arg layouts, state transitions) for the
+TypeScript integration tests.
+
+---
+
+## PRIOR BLOCKER (2026-08-04, superseded above — kept for audit)
+
+The original blocker asserted the entire SDK was unbuilt (`index.ts` a 661-byte
+stub, no `generated/`, no `methods/`, deps uninstalled) and listed
+`veridao-{qlnn,iw8e,690e,zxuv,erv7,o8ki,rrxs,dsc2,j7tx,fr1x,a0mc,pq1s,50qy,yny6}`
+as todo. That premise is **resolved** — all those modules/beans landed. The
+`blocked_by: [veridao-gqzm, veridao-vxe9]` it added is removed from the
+frontmatter (both epics are done) and replaced with `blocked_by: [veridao-mcvw]`.
