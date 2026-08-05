@@ -11,7 +11,7 @@ ACCORD_PROGRAM_ID ?= RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe
 # (ops concern). Local builds/tests load the .so at the declared address
 # via `run_validator` / `--bpf-program` — no keypair needed. See ADR-0010.
 
-.PHONY: prep build codegen sdk test test_unit test_surfpool run_surfpool run_validator lint clean help
+.PHONY: prep build codegen sdk docs test test_unit test_surfpool run_surfpool run_validator lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -21,10 +21,12 @@ prep: ## Install Solana + Anchor toolchains, then workspace deps
 	cargo install avm --locked || true
 	avm install $(ANCHOR_VERSION) && avm use $(ANCHOR_VERSION)
 	pnpm install
+	cd apps/docs && poetry install --no-root
 
 build: ## Build programs + packages + docs
 	anchor build --ignore-keys
 	pnpm -r run build
+	$(MAKE) -C apps/docs build
 
 codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anchor build`)
 	anchor build --ignore-keys
@@ -32,6 +34,12 @@ codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anc
 
 sdk: ## Build the SDK package only
 	cd packages/sdk && pnpm run build
+
+docs: ## Build the MkDocs site into apps/docs/site/
+	$(MAKE) -C apps/docs build
+
+docs-serve: ## Live-reload MkDocs dev server
+	$(MAKE) -C apps/docs serve
 
 test: ## Build + run jest suite (offline smoke). For on-chain tests: `make run_validator` first, then `make test`
 	anchor build --ignore-keys
