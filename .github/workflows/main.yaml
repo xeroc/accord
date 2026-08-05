@@ -1,0 +1,21 @@
+name: main pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  landingpage:
+    name: Update Landing Page
+    if: always()
+    secrets: inherit
+    uses: ./.github/workflows/landing-page.yaml
