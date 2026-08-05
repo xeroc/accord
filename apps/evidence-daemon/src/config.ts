@@ -122,6 +122,12 @@ export interface ServerConfig {
   readonly maxEvidenceBytes: number;
   /** Accounting-only X-Account-Key (never denies). */
   readonly accountKeyEnabled: boolean;
+  /**
+   * Honor X-Forwarded-For for per-IP rate limiting. Must be true only behind a
+   * trusted LB/Ingress that overwrites XFF; false (default) ignores it so a
+   * direct client cannot spoof the header to evade the limiter.
+   */
+  readonly trustProxy: boolean;
   /** Per-backend (storage/rpc) health-check timeout in ms. */
   readonly healthTimeoutMs: number;
 }
@@ -149,6 +155,7 @@ export function loadServerConfig(
     rateLimitPerMin: num(env, "EVIDENCE_RATE_LIMIT_PER_MIN", 0),
     maxEvidenceBytes: num(env, "EVIDENCE_MAX_EVIDENCE_BYTES", 0),
     accountKeyEnabled: (env.EVIDENCE_ACCOUNT_KEY_ENABLED ?? "").toLowerCase() === "true",
+    trustProxy: (env.EVIDENCE_TRUST_PROXY ?? "").toLowerCase() === "true",
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
   };
 }

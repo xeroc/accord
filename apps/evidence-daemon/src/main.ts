@@ -11,11 +11,7 @@
  */
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
-import type {
-  DeliverResult,
-  IngestResult,
-  ServerDeps,
-} from "./server/handlers.js";
+import type { DeliverResult, IngestResult, ServerDeps } from "./server/handlers.js";
 import { loadServerConfig } from "./config.js";
 
 const NOT_WIRED = "evidence pipeline not wired (see bean accord-zv7j)";
@@ -54,11 +50,11 @@ function main(): void {
     rateLimitPerMin: cfg.rateLimitPerMin,
     maxBytes: cfg.maxEvidenceBytes,
     accountKeyEnabled: cfg.accountKeyEnabled,
+    trustProxy: cfg.trustProxy,
     log: (msg, fields) => console.log(JSON.stringify({ msg, ...fields })),
   });
 
-  const hasTls =
-    cfg.tls.certPath !== undefined && cfg.tls.keyPath !== undefined;
+  const hasTls = cfg.tls.certPath !== undefined && cfg.tls.keyPath !== undefined;
   const tls = hasTls
     ? {
         cert: Bun.file(cfg.tls.certPath as string),
@@ -68,9 +64,7 @@ function main(): void {
 
   if (!hasTls) {
     // ponytail: TLS is mandatory in prod (ADR-0011); plain HTTP only for local dev.
-    console.warn(
-      "EVIDENCE_TLS_CERT/KEY not set — serving plain HTTP (dev only)",
-    );
+    console.warn("EVIDENCE_TLS_CERT/KEY not set — serving plain HTTP (dev only)");
   }
 
   const server = Bun.serve({

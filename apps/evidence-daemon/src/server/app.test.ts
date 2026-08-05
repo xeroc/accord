@@ -156,9 +156,7 @@ describe("GET /healthz", () => {
   });
 
   it("probe degraded → 503 (LB drains)", async () => {
-    const app = createApp(
-      makeDeps({ health: async () => ({ ok: false, detail: "s3 down" }) }),
-    );
+    const app = createApp(makeDeps({ health: async () => ({ ok: false, detail: "s3 down" }) }));
     const res = await app.request("/healthz");
     expect(res.status).toBe(503);
     const body = (await res.json()) as { detail: string };
@@ -188,7 +186,7 @@ describe("rate limit (per peer IP)", () => {
   });
 
   it("limits are isolated per peer IP", async () => {
-    const app = createApp(makeDeps(), { rateLimitPerMin: 1 });
+    const app = createApp(makeDeps(), { rateLimitPerMin: 1, trustProxy: true });
     const a = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
       headers: { "x-forwarded-for": "10.0.0.1" },
     });
@@ -266,6 +264,67 @@ describe("content-length cap", () => {
       }),
     );
     expect(res.status).toBe(413);
+  });
+});
+
+/* --------------------------------------- server hardening (accord-bsgp) -- */
+
+describe("XFF trust gate (accord-bsgp)", () => {
+  it("XFF ignored by default — direct client can't spoof to evade the limiter", async () => {
+    const app = createApp(makeDeps(), { rateLimitPerMin: 1 }); // trustProxy unset
+    const a = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-forwarded-for": "10.0.0.1" },
+    });
+    // Same bucket ("unknown") regardless of spoofed XFF → throttled.
+    const b = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-forwarded-for": "10.0.0.2" },
+    });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(429);
+  });
+
+  it("XFF honored when trustProxy is set (trusted-LB mode)", async () => {
+    const app = createApp(makeDeps(), { rateLimitPerMin: 1, trustProxy: true });
+    const a = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-forwarded-for": "10.0.0.1" },
+    });
+    const b = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-forwarded-for": "10.0.0.2" },
+    });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200); // distinct IPs now → not throttled
+  });
+});
+
+describe("body-cap chunked/streamed bypass (accord-bsgp)", () => {
+  it("POST with no Content-Length under a cap → 411 (closes chunked bypass)", async () => {
+    const app = createApp(makeDeps(), { maxBytes: 16 });
+    const req = new Request(`http://x/evidence/${ADDR}/${ADDR}`, {
+      method: "POST",
+      body: "x".repeat(100),
+      headers: { "content-type": "application/json" },
+    });
+    req.headers.delete("content-length"); // simulate chunked/streamed
+    const res = await app.request(req);
+    expect(res.status).toBe(411);
+  });
+
+  it("GET (no body) is unaffected by the cap — no Content-Length rejection", async () => {
+    const app = createApp(makeDeps(), { maxBytes: 16 });
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("cap dormant when maxBytes = 0 — POST without Content-Length passes through", async () => {
+    const app = createApp(makeDeps(), { maxBytes: 0 });
+    const req = new Request(`http://x/evidence/${ADDR}/${ADDR}`, {
+      method: "POST",
+      body: JSON.stringify({ ct: "x" }),
+      headers: { "content-type": "application/json" },
+    });
+    req.headers.delete("content-length");
+    const res = await app.request(req);
+    expect(res.status).toBe(201);
   });
 });
 

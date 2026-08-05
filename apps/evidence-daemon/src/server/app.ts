@@ -17,6 +17,13 @@ export interface AppOptions {
    * only — confidentiality rests on Juror-bound re-encryption, ADR-0006).
    */
   readonly accountKeyEnabled?: boolean;
+  /**
+   * If true, peer IP is taken from X-Forwarded-For (only safe behind a trusted
+   * LB/Ingress that overwrites XFF). Default false → XFF is ignored and the
+   * peer is unknown at this layer, so a direct client can't spoof the header
+   * to evade the per-IP rate limit.
+   */
+  readonly trustProxy?: boolean;
   readonly log?: (msg: string, fields?: Record<string, unknown>) => void;
 }
 
@@ -26,11 +33,20 @@ interface RateBucket {
 }
 
 const MIN_MS = 60_000;
+/** Methods that may carry a request body (subject to the size cap). */
+const BODY_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
-/** Resolve the peer IP. Trusts X-Forwarded-For (LB must set it). */
-function peerIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]?.trim() ?? "unknown";
+/**
+ * Resolve the peer IP. Honors X-Forwarded-For only when {@link trustProxy} is
+ * set — secure by default. ponytail: leftmost XFF entry (correct for a trusted
+ * LB that overwrites the header); a hop-count selector is the upgrade path if a
+ * multi-hop trust chain ever needs it.
+ */
+function peerIp(req: Request, trustProxy: boolean): string {
+  if (trustProxy) {
+    const xff = req.headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0]?.trim() ?? "unknown";
+  }
   return "unknown";
 }
 
@@ -40,6 +56,7 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
   const perMin = opts.rateLimitPerMin ?? 0;
   const maxBytes = opts.maxBytes ?? 0;
   const accountKeyEnabled = opts.accountKeyEnabled ?? false;
+  const trustProxy = opts.trustProxy ?? false;
 
   // ponytail: in-process fixed-window counter — per-replica, not shared.
   // Adequate for basic DoS; a shared limiter (Redis) is a v1+ ops upgrade and
@@ -50,18 +67,25 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
     // Accounting-only key: observe, never enforce (ADR-0006/0011).
     if (accountKeyEnabled) {
       const key = c.req.header("x-account-key");
-      if (key) log("account-key", { key, ip: peerIp(c.req.raw) });
+      if (key) log("account-key", { key, ip: peerIp(c.req.raw, trustProxy) });
     }
 
-    if (maxBytes > 0) {
-      const len = Number(c.req.raw.headers.get("content-length") ?? 0);
-      if (len > maxBytes) {
+    if (maxBytes > 0 && BODY_METHODS.has(c.req.method.toUpperCase())) {
+      const cl = c.req.raw.headers.get("content-length");
+      // ponytail: require a bounded Content-Length so a chunked/streamed body
+      // can't bypass the pre-handler cap. Residual: a client can still lie on
+      // CL — upgrade to a stream-counting read (abort at maxBytes) if that
+      // threat matters; default maxEvidenceBytes=0 keeps this dormant.
+      if (cl === null) {
+        return Response.json({ error: "content-length required" }, { status: 411 });
+      }
+      if (Number(cl) > maxBytes) {
         return Response.json({ error: "request too large" }, { status: 413 });
       }
     }
 
     if (perMin > 0) {
-      const ip = peerIp(c.req.raw);
+      const ip = peerIp(c.req.raw, trustProxy);
       const now = Date.now();
       const b = buckets.get(ip);
       if (b === undefined || now - b.windowStart >= MIN_MS) {
@@ -83,14 +107,11 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
 
   // /healthz — bean accord-u1pu implements the real S3+RPC probe; the server
   // boots with this stub so main() serves immediately.
-  app.get("/healthz", async (c) => {
+  app.get("/healthz", async () => {
     const res = await deps.health();
     return res.ok
       ? Response.json({ status: "ok" }, { status: 200 })
-      : Response.json(
-          { status: "degraded", detail: res.detail },
-          { status: 503 },
-        );
+      : Response.json({ status: "degraded", detail: res.detail }, { status: 503 });
   });
 
   return app;
