@@ -1,11 +1,11 @@
 ---
 # accord-zv7j
 title: Pipeline (ingest + deliver)
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-05T14:32:36Z
-updated_at: 2026-08-05T14:32:36Z
+updated_at: 2026-08-05T15:05:02Z
 parent: accord-yjno
 blocked_by:
     - accord-xrdc
