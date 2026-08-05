@@ -389,6 +389,14 @@ cum_after` where `r_i` is VRF-derived.
 
 ## Addendum: commit_vrf / draw retry rationale (ADR-0009 design)
 
+> **Superseded by ADR-0013 in its `commit_vrf(vrf_result)` framing.** The
+> commit/draw split _rationale_ below is retained (the oracle callback is the
+> separate, always-succeeds commit tx); the caller-supplied `commit_vrf`
+> instruction it describes was replaced by the authenticated
+> `commit_vrf_callback` (bean `veridao-crbf`). Read this section as the history
+> of _why_ the commit is separate from the draw, not as the current delivery
+> mechanism.
+
 The sortition enforcement in ADR-0009 requires the VRF result to be **committed
 once and immutable across retries**. A single `draw(vrf_result, ...)` instruction
 that both stores the VRF and checks the selection has a revert problem: if the
