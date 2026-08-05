@@ -1,11 +1,24 @@
 # Snapshot trust hardening — anchor-slot pattern, four-predicate fraud surface, and verifiable stake-weighted sortition
 
+> **Partially superseded by [ADR-0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).**
+> The anchor-slot pattern (`last_change_slot` / `anchor_slot` historical witness)
+> and **all four fraud predicates** (Duplicate / Omission / WrongStake /
+> Inflation-challenge) are **deleted** — a live on-chain accumulator makes the
+> root canonical, dissolving the data-availability and sum-authentication gaps
+> these predicates could not close (CONCEPT-REVIEW Bad 4 + Bad 5). **Retained
+> and restated in ADR-0012:** the draw-time **inflation guard**
+> (`JurorStake.amount ≥ leaf.stake`, a live read — no historical witness needed).
+
 ## Status
 
-**Proposed.** Augments ADR-0003 (which established the Merkle-rooted snapshot + 1-day
-fraud-proof window + off-chain sortition as the draw's trust anchor). Does not supersede
-ADR-0003's draw architecture; hardens the trust model it depends on. Tracks critical
-finding bean `veridao-utcu` (VRF bypass) and hardening bean `veridao-i4jm`.
+**Partially superseded by [ADR-0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).**
+Originally augmented ADR-0003 (Merkle-rooted snapshot + 1-day fraud-proof window +
+off-chain sortition as the draw's trust anchor) without superseding its draw
+architecture. ADR-0012 now supersedes this ADR's snapshot trust model: the
+anchor-slot leaf witness and the four fraud predicates are deleted (the root is
+canonical by construction); the draw-time inflation guard is retained as a live
+read. Tracks critical finding bean `veridao-utcu` (VRF bypass) and hardening bean
+`veridao-i4jm`.
 
 ## Context
 

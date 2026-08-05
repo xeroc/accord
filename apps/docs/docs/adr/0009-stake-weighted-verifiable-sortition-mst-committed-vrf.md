@@ -1,11 +1,25 @@
 # Stake-weighted verifiable sortition — Merkle-Sum Tree, committed VRF, on-chain selection enforcement
 
+> **Partially superseded by [ADR-0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).**
+> The **cumulative-from-left MST** (`cum_after` per leaf, O(N) to update) is
+> replaced by a **subtree-sum MST** (`node.sum` bound into the node hash, O(log N)
+> to update — fixes CONCEPT-REVIEW Bad 5). The split **`commit_vrf` → `draw`** flow
+> is replaced by a root **frozen inside the VRF callback** (`dispute.frozen_root =
+subaccord.root`), and the Omission / NotSorted fraud predicates are deleted (no
+> posted snapshot to challenge — fixes Bad 4). **Retained:** the stake-weighted
+> **sortition criterion** (`prefix ≤ r_i < prefix + stake`) and VRF-driven,
+> caller-uncontrollable selection, now over authenticated subtree-sum prefixes.
+
 ## Status
 
-**Proposed.** Implements the sortition enforcement and omission halves of
-ADR-0008's v1.1 scope. Depends on ADR-0008 (anchor-slot pattern, predicates 1,
-3, 4 — shipped). Supersedes the deferred items in bean `veridao-utcu` and fully
-addresses bean `veridao-i4jm` item #2 (richer fraud proof).
+**Partially superseded by [ADR-0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).**
+Originally implemented the sortition-enforcement and omission halves of this ADR's
+v1.1 scope (depending on ADR-0008's anchor-slot pattern + predicates 1/3/4).
+ADR-0012 now supersedes the MST shape (cumulative-from-left → subtree-sum), the
+caller-supplied `commit_vrf` step (→ root frozen in the VRF callback), and the
+Omission / NotSorted predicates (no snapshot to challenge). The sortition
+_criterion_ is retained, restated in subtree-sum form. Supersedes the deferred
+items in bean `veridao-utcu` and addresses bean `veridao-i4jm` item #2.
 
 ## Context
 
