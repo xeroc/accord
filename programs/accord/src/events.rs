@@ -177,3 +177,13 @@ pub struct UnpauseProposed {
 pub struct Unpaused {
     pub authority: Pubkey,
 }
+
+/// Emitted when a stalled dispute is cancelled via the liveness-escape crank
+/// (CONCEPT-REVIEW Ugly 4). `refund` is the filer's round-1 fee returned from
+/// the vault; the dispute transitions to the terminal `Failed` state.
+#[event]
+pub struct DisputeCancelled {
+    pub dispute: Pubkey,
+    pub filer: Pubkey,
+    pub refund: u64,
+}

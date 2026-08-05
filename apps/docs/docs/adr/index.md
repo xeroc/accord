@@ -22,9 +22,7 @@ that references the old one.
 | [0010](0010-sdk-codama-solana-kit-facade.md)                                  | `@accord/sdk` — Codama codegen + Solana Kit + custom facade                          | Accepted |
 | [0011](0011-evidence-operator-daemon-offchain-service.md)                     | Evidence Operator Daemon — off-chain decrypt-re-encryption service                   | Accepted |
 | [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)       | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed |
-| [0013](0013-pause-scope-split-contains-new-exposure-never-adjudication.md)    | Pause scope split — contains new exposure, never adjudication                        | Accepted |
-| [0013](0013-vrf-authentication-via-oracle-callback.md)                        | VRF authentication via oracle callback                                               | Accepted |
-| [0014](0014-multi-round-settlement-against-final-ruling.md)                   | Multi-round settlement against the final ruling                                      | Accepted |
+| [0014](0014-failed-state-cancel-dispute-escape-hatch.md)                      | Failed state + cancel_dispute liveness-escape crank (Ugly 4)                         | Accepted |
 
 ## How to read them
 

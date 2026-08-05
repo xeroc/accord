@@ -95,6 +95,7 @@ fn dispute_state_round_trips_and_progresses() {
         final_ruling: u8::MAX,
         fee_paid: 3_000_000,
         committed_vrf: None,
+        filed_at: 1_700_000_000,
         bump: 252,
     };
     let decoded = round_trip(&d);
@@ -112,6 +113,7 @@ fn dispute_state_round_trips_and_progresses() {
         DisputeState::RoundResolved,
         DisputeState::Final,
         DisputeState::Closed,
+        DisputeState::Failed,
     ] {
         let mut b = Vec::new();
         s.serialize(&mut b).unwrap();
