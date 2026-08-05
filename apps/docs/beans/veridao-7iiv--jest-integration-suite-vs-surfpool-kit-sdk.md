@@ -1,12 +1,61 @@
 ---
 # veridao-7iiv
 title: jest integration suite vs Surfpool (Kit SDK)
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-08-04T21:52:11Z
-updated_at: 2026-08-05T01:25:02Z
+updated_at: 2026-08-05T01:34:44Z
 parent: veridao-5y8e
+blocked_by: [veridao-1lvm]
+---
+
+## RE-EVALUATION (2026-08-05, session 3) — empirical re-verification; blockers unchanged; formally blocked on veridao-1lvm
+
+**Status: still NOT completable. `hordr done` intentionally NOT called.** This
+session re-ran the prior analysis from scratch and confirmed it empirically
+(rather than trusting the session-2 claims). No new unblocked work exists.
+Added `blocked_by: [veridao-1lvm]` to the frontmatter so the daemon stops
+re-dispatching this bean in a loop until the keypair/provisioning question
+resolves.
+
+### Empirical confirmation (run this session, not assumed)
+
+- **`anchor build` hard-fails** — ran it; output (not a warning, a hard error):
+  `Error: Program ID mismatch detected for program 'accord'` — the gitignored
+  local keypair (`5oV81KLt…`) ≠ the canonical `declare_id!`/Anchor.toml address
+  (`RokLJyru…`). No `.so`, no IDL produced. `--ignore-keys` would compile but the
+  binary declares the canonical ID while the keypair deploys elsewhere →
+  PDAs/account checks mismatch at runtime, so it is not a usable bypass.
+- **Canonical keypair is a secret that is absent** — `target/deploy/accord-keypair.json`
+  is gitignored; the file present is a random local artifact, not the canonical
+  keypair. Cannot be regenerated without the secret.
+- **No unblocked DoD gap** — the milestone DoD item "Client-side crypto (commit
+  hash, MST memberships) unit-tested" is **already satisfied**: `pnpm --filter
+@veridao/sdk test` → **43/43 green** via `node --test`
+  (`buildMst`, `proveMembership`/`verifyMstInclusion`, `buildMemberships`,
+  `commitHash` known-vector + validation, `drawSlots`/`vrfSeed`/`resolvePanel`,
+  `canUnstake` active-draws guard, all PDA seeds). Duplicating these into jest
+  would be slop.
+- **Pipeline smoke still green** — `pnpm --filter @veridao/tests test` → 6/6.
+
+### Blockers (unchanged, both out-of-scope for TS test authoring)
+
+- **Blocker C** → draft bean `veridao-1lvm` (provision canonical keypair OR add a
+  local program-id override + regen path). Now a formal `blocked_by`.
+- **Blocker B** → VRF tail (`draw→commit→reveal→finalize→appeal`) is
+  environmentally un-runnable on Surfpool until an operator confirms whether
+  Surfpool simulates the magicblock VRF oracle CPI (`commit_vrf_callback` is
+  gated to `VRF_PROGRAM_IDENTITY`). Operator decision, no bean filed.
+
+### Why nothing was written this session
+
+Writing the lifecycle suite now produces tests that cannot compile-against-a-
+deployable-program, cannot run green (acceptance's defining property), and
+encode an invented program-id/env. Speculative slop; violates "lazy code
+without its check" + YAGNI. The non-VRF slice ships the moment C resolves; the
+VRF tail ships when B resolves. Re-dispatch then.
+
 ---
 
 ## RE-EVALUATION (2026-08-05, session 2) — Blocker A resolved; pipeline landed; NEW Blocker C (canonical deploy keypair)
