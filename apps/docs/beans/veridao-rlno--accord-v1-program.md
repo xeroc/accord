@@ -8,7 +8,7 @@ created_at: 2026-08-03T23:08:52Z
 updated_at: 2026-08-04T06:44:46Z
 ---
 
-Implement the VeriDAO Accord — a general-purpose, Schelling-point arbitration primitive on Solana (Anchor). Party-agnostic: any program (the Arbitrable) files a Dispute via CPI; the Accord draws stake-weighted Jurors, collects commit-reveal votes, and writes a Ruling the filer reads lazily.
+Implement the Accord — a general-purpose, Schelling-point arbitration primitive on Solana (Anchor). Party-agnostic: any program (the Arbitrable) files a Dispute via CPI; the Accord draws stake-weighted Jurors, collects commit-reveal votes, and writes a Ruling the filer reads lazily.
 
 ## Authority (read first)
 
@@ -19,11 +19,11 @@ Implement the VeriDAO Accord — a general-purpose, Schelling-point arbitration 
 
 ## Risk Level: Critical
 
-Vaults holding staked USDC, multi-CPI (Switchboard VRF, Arbitrable), admin keys (Subaccord authority, upgrade authority), large TVL potential. Apply the safe-solana-builder security checklist; flag every admin key, upgrade authority, and irreversible state transition in a High-Risk Decisions section.
+Vaults holding staked USDC, multi-CPI (VRF, Arbitrable), admin keys (Subaccord authority, upgrade authority), large TVL potential. Apply the safe-solana-builder security checklist; flag every admin key, upgrade authority, and irreversible state transition in a High-Risk Decisions section.
 
 ## Design decisions (locked — see ADRs)
 
-- Draw: Merkle-snapshot + off-chain sortition, distinct Jurors, Switchboard VRF, 1-day fraud-proof (ADR-0003)
+- Draw: Merkle-snapshot + off-chain sortition, distinct Jurors, VRF, 1-day fraud-proof (ADR-0003)
 - Party-agnostic Arbitrable + permissionless appeal (ADR-0004)
 - Subaccord authority via `Pubkey::default` + on-chain 48h timelock (ADR-0005)
 - Evidence: on-chain hash only + trusted re-encryption operator (ADR-0006)

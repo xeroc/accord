@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-The design decisions behind the VeriDAO Accord. Each ADR captures the context,
+The design decisions behind the Accord. Each ADR captures the context,
 options considered, and consequences of a locked architectural choice.
 
 ADRs are **immutable once deployed**. A superseded decision gets a new ADR

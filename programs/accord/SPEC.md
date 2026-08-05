@@ -41,7 +41,7 @@ constants bounding account size.
 | 4   | `create_dispute(subaccord, options, evidence_hash, fee)` | **[Arbitrable CPI]** filer pays full fee. Reverts if active distinct stakers < required N.                                                                                               |
 | 5   | `post_snapshot(dispute, merkle_root)`                    | off-chain indexer posts root; bonds **1× max-appeal-fee**.                                                                                                                               |
 | 6   | `challenge_snapshot(dispute, fraud_proof)`               | within 1-day window; challenger bonds equal. Wrong root ⇒ poster's bond to challenger, root voided. False challenge ⇒ challenger's bond to poster.                                       |
-| 7   | `draw(dispute, vrf_result, juror_memberships[])`         | consumes **Switchboard VRF**; selects **N distinct** Jurors via cumulative-stake lookup over the finalized root; verifies Merkle membership+weight; `active_draws += 1` per drawn Juror. |
+| 7   | `draw(dispute, vrf_result, juror_memberships[])`         | consumes **VRF**; selects **N distinct** Jurors via cumulative-stake lookup over the finalized root; verifies Merkle membership+weight; `active_draws += 1` per drawn Juror. |
 | 8   | `commit(dispute, h)`                                     | `h = hash(vote, salt, juror_pubkey)`. One per drawn Juror.                                                                                                                               |
 | 9   | `reveal(dispute, vote, salt)`                            | verifies `h`; records vote.                                                                                                                                                              |
 | 10  | `appeal(dispute)`                                        | **permissionless**; pays `N_new · fee_per_juror` + bond; opens a new round at `2N+1`. Max 3 appeals.                                                                                     |
@@ -93,7 +93,7 @@ Juror decrypts, verifies cleartext vs on-chain evidence_hash
 - **Insufficient Jurors:** `create_dispute` / `appeal` **reverts** if the Subaccord's active distinct stakers < the required N. (Alt — under-fill — rejected: breaks the Schelling jury.)
 - **Ties:** impossible (odd Juror counts).
 - **No Coherent Jurors in a round:** the round's pool defaults to the winning option's favour (Kleros §4.6 fn.10). _Flag for revisit._
-- **VRF availability:** `draw` retries with backoff if the Switchboard result isn't yet available.
+- **VRF availability:** `draw` retries with backoff if the VRF result isn't yet available.
 
 ## Out of scope (v2+)
 

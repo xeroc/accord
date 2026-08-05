@@ -1,6 +1,6 @@
-# Accord juror draw — Merkle Snapshot, off-chain sortition, distinct Jurors, Switchboard VRF
+# Accord juror draw — Merkle Snapshot, off-chain sortition, distinct Jurors, VRF
 
-Jurors are drawn for a Dispute from a Merkle-rooted Snapshot of the Subaccord's Juror set and cumulative stakes, committed optimistically at Dispute creation and protected by a 1-day fraud-proof window (poster bonds 1× the Dispute's max appeal fee). The draw consumes Switchboard VRF to select N **distinct** Jurors via a cumulative-stake lookup, proving each membership on-chain. This is the only option that scales to an unbounded Juror pool within Solana's account/compute limits without an O(n) write on every stake.
+Jurors are drawn for a Dispute from a Merkle-rooted Snapshot of the Subaccord's Juror set and cumulative stakes, committed optimistically at Dispute creation and protected by a 1-day fraud-proof window (poster bonds 1× the Dispute's max appeal fee). The draw consumes VRF to select N **distinct** Jurors via a cumulative-stake lookup, proving each membership on-chain. This is the only option that scales to an unbounded Juror pool within Solana's account/compute limits without an O(n) write on every stake.
 
 ## Considered Options
 

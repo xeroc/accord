@@ -1,6 +1,6 @@
 # Subaccord parameter authority — single Pubkey with on-chain timelock
 
-A Subaccord's mutable parameters (fees, windows, α, min_stake) are governed by a single `authority: Pubkey` set at creation, where `Pubkey::default()` means immutable. Non-default authorities mutate params via a propose/execute pair behind a 48h on-chain timelock. Kleros governs subcourts via its PNK token; VeriDAO has no token in v1 (ADR-0002), so governance falls to a designated key (typically the Subaccord creator's multisig) rather than token holders.
+A Subaccord's mutable parameters (fees, windows, α, min_stake) are governed by a single `authority: Pubkey` set at creation, where `Pubkey::default()` means immutable. Non-default authorities mutate params via a propose/execute pair behind a 48h on-chain timelock. Kleros governs subcourts via its PNK token; Accord has no token in v1 (ADR-0002), so governance falls to a designated key (typically the Subaccord creator's multisig) rather than token holders.
 
 ## Considered Options
 

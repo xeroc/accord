@@ -1,8 +1,8 @@
-# VeriDAO Accord — Docs Site
+# Accord — Docs Site
 
 ## Purpose
 
-Developer documentation for **integrating** the VeriDAO Accord — the
+Developer documentation for **integrating** the Accord — the
 Schelling-point arbitration primitive on Solana. The audience is Solana
 program developers who want to add dispute resolution to their protocol via
 the Arbitrable CPI (`create_dispute` → `get_ruling`).

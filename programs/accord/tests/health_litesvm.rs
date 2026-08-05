@@ -4,8 +4,8 @@
 //! Testing decision — BOTH harnesses, complementary:
 //!   - **LiteSVM** (this file, `cargo test`) — fast in-process Rust unit/TDD
 //!     per instruction. No validator; deterministic; full sysvar/clock control.
-//!   - **jest + Surfpool** (`../../tests/`) — full e2e: CPI chains, Switchboard
-//!     VRF, real validator behaviour, wallet flows.
+//!   - **jest + Surfpool** (`../../tests/`) — full e2e: CPI chains, VRF,
+//!     real validator behaviour, wallet flows.
 //!
 //! Wiring uses `anchor-litesvm` 0.1.x — the only line pinned to anchor-lang
 //! 0.31 (0.2+ jumped to anchor 1.x; raw litesvm 0.11/0.15 pull a solana-crate

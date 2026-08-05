@@ -4,7 +4,7 @@ The Accord stores only an `evidence_hash` on-chain. Claimants encrypt evidence f
 
 ## Considered Options
 
-- **Arcium MPC sealing (was the v2 plan in BEAN-6):** rejected for the three reasons above. Arcium's genuine fit for VeriDAO is encrypted vote-tallying (Juror vote privacy) — a separate v2/v3 mechanism, not the evidence layer.
+- **Arcium MPC sealing (was the v2 plan in BEAN-6):** rejected for the three reasons above. Arcium's genuine fit for Accord is encrypted vote-tallying (Juror vote privacy) — a separate v2/v3 mechanism, not the evidence layer.
 
 ## Consequences
 

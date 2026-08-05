@@ -31,7 +31,7 @@ Deliverables (audit + formal-spec scaffold for the Accord v1 program):
   level Critical. Headline High-Risk Decisions:
 
   - **H-1 (Critical):** `draw` accepts a caller-supplied `vrf_result` and does NOT
-    verify Switchboard on-chain (`lib.rs:696-744`, no VRF account in the `Draw`
+    verify the VRF on-chain (`lib.rs:696-744`, no VRF account in the `Draw`
     context) — a cranker can choose the sortition seed. Must wire real VRF before
     mainnet TVL.
   - **H-2 (Critical):** `PauseState.authority` is immutable after `initialize_pause`
@@ -71,7 +71,7 @@ Verification: `cargo check --manifest-path programs/accord/Cargo.toml` green
 (program source untouched by this bean; 15.6s, pre-existing warnings only).
 `qedgen check --spec programs/accord/accord.qedspec` green (0 errors).
 
-Follow-ups (non-urgent, draft-worthy): H-1 Switchboard VRF wiring; H-2 pause
+Follow-ups (non-urgent, draft-worthy): H-1 VRF wiring; H-2 pause
 authority rotation; H-5 voided-snapshot recovery / fee return; §17/§23 mint
 validation + Token-2022 rejection at `create_subaccord`; §18/§29 permissionless
 param bounds; full Lean translation of accord.qedspec into Spec.lean.

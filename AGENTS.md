@@ -8,22 +8,22 @@
 
 ## Project Overview
 
-**VeriDAO Accord** is a general-purpose, Schelling-point arbitration primitive on
+**Accord** is a general-purpose, Schelling-point arbitration primitive on
 Solana (Anchor). Any program (the _Arbitrable_) files a Dispute via CPI; the Accord
-draws stake-weighted Jurors (Switchboard VRF), collects commit-reveal votes, and
+draws stake-weighted Jurors (VRF), collects commit-reveal votes, and
 emits a Ruling the filer reads lazily. It is a standalone, reusable product.
 
-The name fuses _veritas_ + _DAO_. The Schelling Point here is **honesty** — Jurors
-vote truthfully because coherent-with-majority is the profitable strategy.
+The name means _agreement, harmony_ — what the Schelling Point produces. The
+Schelling Point here is **honesty** — Jurors vote truthfully because coherent-with-majority is the profitable strategy.
 
 ## Repository Layout
 
 ```
 programs/
-  accord/            VeriDAO Accord — Schelling-point arbitration
+  accord/            Accord — Schelling-point arbitration
 packages/
-  sdk/              @veridao/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers)
-tests/              @veridao/tests — jest integration suite (runs vs test-validator / Surfpool)
+  sdk/              @accord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers)
+tests/              @accord/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
 apps/docs/          MkDocs documentation site (developer-facing)
 apps/docs/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
@@ -90,7 +90,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
     **checklist/pattern authority** for every instruction bean (happy/auth/
     reinit/time-lock/arithmetic/closure, sysvar, CU) — wiring differs, concepts
     don't.
-  - **jest + Surfpool** (`tests/`) — full e2e: CPI chains, Switchboard VRF, real
+  - **jest + Surfpool** (`tests/`) — full e2e: CPI chains, VRF, real
     validator behaviour.
 - **TDD only.** RED → GREEN → REFACTOR for every feature/instruction. Write the
   failing test first, then implement to pass. No exceptions.
@@ -124,7 +124,7 @@ stake(amount) / unstake(amount)                           — Juror capital; uns
 create_dispute(subaccord, options, evidence_hash, fee)    — [Arbitrable CPI]; filer pays full fee
 post_snapshot(dispute, merkle_root)                       — off-chain indexer; 1× bond; 1-day challenge window
 challenge_snapshot(dispute, fraud_proof)                  — contest a wrong root within the window
-draw(dispute, vrf, memberships[])                         — Switchboard VRF; N distinct Jurors over the Snapshot
+draw(dispute, vrf, memberships[])                         — VRF; N distinct Jurors over the Snapshot
 commit / reveal                                           — hash(vote, salt, juror_pubkey) then {vote, salt}
 appeal(dispute)                                           — permissionless; 2N+1; bond forfeited if no flip
 finalize_round / finalize_dispute                         — permissionless crank; redistribution + active_draws--
@@ -136,7 +136,7 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/docs/adr/0001` (S
 
 ## Build Order
 
-1. **VeriDAO Accord** — standalone arbitration. The focus of this repo.
+1. **Accord** — standalone arbitration. The focus of this repo.
 2. **v2** — Arcium encrypted vote-tally (Juror vote privacy), accord token, tranched staking.
 3. **v3** — futarchy governance, evidence markets, AI risk pricing, ZK proofs.
 
@@ -156,7 +156,7 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/docs/adr/0001` (S
 
 **IMPORTANT:** before doing anything else, run `beans prime` and `hordr prime`
 and heed the output. Include relevant bean IDs in commit messages. Config lives
-in `.beans.yml` (prefix `VeriDAO-`).
+in `.beans.yml` (prefix `Accord-`).
 
 ### Bean hygiene
 

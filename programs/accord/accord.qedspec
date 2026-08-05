@@ -1,4 +1,4 @@
-// VeriDAO Accord — formal specification (v1 hardening pass).
+// Accord — formal specification (v1 hardening pass).
 //
 // Scope: the four economic invariants the hardening bean (veridao-nhbj)
 // acceptance names — slash math, distinct draw, bond conservation, and the

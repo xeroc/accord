@@ -2,7 +2,7 @@
 name = "accord"
 version.workspace = true
 edition.workspace = true
-description = "VeriDAO Accord — general-purpose Schelling-point arbitration accord on Solana"
+description = "Accord — general-purpose Schelling-point arbitration accord on Solana"
 
 [lib]
 crate-type = ["cdylib", "lib"]

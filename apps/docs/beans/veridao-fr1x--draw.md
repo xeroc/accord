@@ -11,11 +11,11 @@ blocked_by:
   - veridao-rrxs
 ---
 
-Select N distinct Jurors from the finalized Snapshot, weighted by stake, via Switchboard VRF.
+Select N distinct Jurors from the finalized Snapshot, weighted by stake, via VRF.
 
 ## Tasks
 
-- [x] draw(dispute, vrf_result, juror_memberships[]) — consume Switchboard VRF; N distinct via cumulative-stake lookup; verify Merkle membership+weight; active_draws += 1 per juror; record drawn jurors
+- [x] draw(dispute, vrf_result, juror_memberships[]) — consume VRF; N distinct via cumulative-stake lookup; verify Merkle membership+weight; active_draws += 1 per juror; record drawn jurors
 
 ## Acceptance (TDD)
 

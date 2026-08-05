@@ -1,9 +1,9 @@
-site_name: VeriDAO Accord — Schelling-point arbitration on Solana
+site_name: Accord — Mechanize the verdict.
 site_description: General-purpose decentralized dispute resolution. Any Solana program can file a dispute; stake-weighted jurors vote honestly because coherence is the profitable strategy.
 site_url: https://docs.veridao.org
 repo_url: https://github.com/veridao/accord
 repo_name: veridao/accord
-copyright: VeriDAO
+copyright: Accord
 
 theme:
   name: material

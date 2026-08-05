@@ -1,4 +1,4 @@
-# VeriDAO Accord — Project Rationale
+# Accord — Project Rationale
 
 ## Why
 
@@ -12,13 +12,13 @@ Meanwhile, the demand for trustless adjudication is growing: DeFi insurance, fre
 
 ## What
 
-**VeriDAO Accord** is a general-purpose, Schelling-point-based decentralized arbitration accord on Solana. Any Solana program can file disputes; the Accord draws jurors, collects commit-reveal votes, and emits rulings — all governed by game-theoretic incentives, not trusted humans.
+**Accord** is a general-purpose, Schelling-point-based decentralized arbitration accord on Solana. Any Solana program can file disputes; the Accord draws jurors, collects commit-reveal votes, and emits rulings — all governed by game-theoretic incentives, not trusted humans.
 
 ### Core mechanism
 
 ```
 1. A program files a Dispute (via CPI): subaccord, options, evidence hash, fee
-2. The Accord randomly draws N Jurors from the Subaccord (Switchboard VRF, weighted by stake)
+2. The Accord randomly draws N Jurors from the Subaccord (VRF, weighted by stake)
 3. Drawn Jurors review encrypted evidence (accessible only to them)
 4. Each Juror Commits hash(vote, salt) — secret, prevents vote-copying
 5. After all Commits, Jurors Reveal {vote, salt}
@@ -55,4 +55,4 @@ The Accord ships first and proves the Schelling mechanism on Solana; client prog
 
 - Not an oracle (it doesn't provide data feeds — it adjudicates subjective questions)
 - Not a governance system (it resolves disputes, it doesn't set policy)
-- Not Kleros (it's a new Solana-native implementation with Switchboard VRF, per-Subaccord tokens, and the Arbitrable CPI interface)
+- Not Kleros (it's a new Solana-native implementation with VRF, per-Subaccord tokens, and the Arbitrable CPI interface)

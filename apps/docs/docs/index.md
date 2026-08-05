@@ -1,4 +1,4 @@
-# VeriDAO Accord
+# Accord
 
 General-purpose, Schelling-point-based decentralized arbitration on Solana.
 

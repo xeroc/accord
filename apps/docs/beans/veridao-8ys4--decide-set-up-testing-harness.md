@@ -19,7 +19,7 @@ Resolve safe-solana-builder Step 1b: LiteSVM (fast Rust unit/TDD) vs jest/Surfpo
   - **LiteSVM** (`programs/accord/tests/*.rs`, `make test_unit`) — fast in-process
     Rust unit/TDD per instruction. No validator; deterministic; full sysvar/clock
     control.
-  - **jest + Surfpool** (`tests/`) — full e2e: CPI chains, Switchboard VRF, real
+  - **jest + Surfpool** (`tests/`) — full e2e: CPI chains, VRF, real
     validator behaviour.
 - **Wiring: `anchor-litesvm` 0.1.x.** This is the ONLY line pinned to anchor-lang
   0.31 (0.2+ jumped to anchor 1.x; raw litesvm 0.11/0.15 pull a solana-crate split

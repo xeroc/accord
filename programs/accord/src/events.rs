@@ -94,7 +94,7 @@ pub struct VrfRequested {
 }
 
 /// Emitted after a draw selects the round's Jurors. `vrf_seed` is the
-/// deterministic hash binding the Switchboard VRF result to this specific
+/// deterministic hash binding the VRF result to this specific
 /// dispute + round, providing an on-chain audit trail for the off-chain
 /// sortition.
 #[event]

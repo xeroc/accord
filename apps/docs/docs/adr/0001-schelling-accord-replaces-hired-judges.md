@@ -1,6 +1,6 @@
 # Schelling-point Accord replaces hired-judge committee
 
-Disputes are adjudicated by the VeriDAO Accord (random stake-weighted Jurors, commit-reveal, coherence incentives) — NOT by a curated hired-judge committee. Every Dispute routes to the Accord.
+Disputes are adjudicated by the Accord (random stake-weighted Jurors, commit-reveal, coherence incentives) — NOT by a curated hired-judge committee. Every Dispute routes to the Accord.
 
 ## Considered Options
 

@@ -1,8 +1,8 @@
-# VeriDAO Accord — Security Checklist
+# Accord — Security Checklist
 
 > Applied per the **safe-solana-builder** `shared-base.md` rule set (sections 1–31).
-> Risk level: **🔴 Critical** — vaults holding staked USDC, multi-CPI (Switchboard
-> VRF, Arbitrable), admin keys (Subaccord authority, pause authority, upgrade
+> Risk level: **🔴 Critical** — vaults holding staked USDC, multi-CPI (VRF,
+> Arbitrable), admin keys (Subaccord authority, pause authority, upgrade
 > authority), large TVL potential.
 >
 > Source of truth audited: `src/lib.rs`, `src/state.rs`, `src/errors.rs`,
@@ -17,20 +17,20 @@
 > irreversible state transition. These are the items a production deploy must
 > accept, mitigate, or fix before mainnet.
 
-### 🟥 H-1. `draw` trusts a caller-supplied "VRF result" — Switchboard is NOT verified on-chain
+### 🟥 H-1. `draw` trusts a caller-supplied "VRF result" — the VRF result is NOT verified on-chain
 
 `lib.rs:696-744` — `vrf_result: [u8; 32]` is an **instruction argument**, not a
-verified Switchboard account. The `Draw` accounts struct (`lib.rs:1815-1842`)
-contains no Switchboard VRF account and no freshness/commit-then-result check.
+verified VRF account. The `Draw` accounts struct (`lib.rs:1815-1842`)
+contains no VRF account and no freshness/commit-then-result check.
 The only on-chain use is `hashv(&[&vrf_result, …])` for an audit seed
 (`lib.rs:755-763`). **Consequence:** a permissionless cranker can pass any 32
 bytes and thereby choose the sortition seed → effectively choose the drawn
 Jurors (combined with off-chain proof construction). This voids the
 stake-weighted-uniform randomness assumption that is the draw's whole security
 model (ADR-0003). The doc comment at `lib.rs:683-695` claims "consumes
-Switchboard VRF" but the implementation does not. **Must wire real Switchboard
-VRF commit-then-result (or Switchboard On-Demand randomness account) before any
-dispute with real value at stake.** This is the single highest-severity gap.
+VRF" but the implementation does not. **Must wire real VRF verification
+(or a VRF randomness account) before any dispute with real value at
+stake.** This is the single highest-severity gap.
 
 ### 🟥 H-2. `PauseState.authority` is immutable — no rotation path after `initialize_pause`
 
@@ -304,7 +304,7 @@ H-1, H-5, L-1. See High-Risk Decisions and Known Limitations.
 
 ## 11. Oracle validation — 🟥 (see H-1)
 
-The draw's "oracle" (Switchboard VRF) is the highest-risk oracle path and is
+The draw's "oracle" (VRF) is the highest-risk oracle path and is
 not validated on-chain at all. See H-1.
 
 ---
@@ -544,7 +544,7 @@ Both must be addressed before mainnet.
 | ⚠️ Hardening        | 4     | §16 (window bounds), §17/§23 (mint validation), §18/§29 (param bounds), §13 (snapshot close)     |
 | ✅ Satisfied        | —     | §1–§6, §8, §9, §12, §14, §20, §22, §25, §26, §30, §31                                            |
 
-**Top three before any mainnet TVL:** fix H-1 (real Switchboard VRF wiring),
+**Top three before any mainnet TVL:** fix H-1 (real VRF wiring),
 H-2 (pause-authority rotation), and H-5 (voided-snapshot recovery / fee
 return). The qedspec (`accord.qedspec`) codifies the economic invariants
 (slash math, distinct draw, bond conservation, active_draws balance) as

@@ -1,8 +1,8 @@
 {
-  "name": "veridao",
+  "name": "accord",
   "private": true,
   "version": "0.1.0",
-  "description": "VeriDAO Accord — Schelling-point arbitration primitive on Solana",
+  "description": "Accord — Schelling-point arbitration primitive on Solana",
   "packageManager": "pnpm@9.15.0",
   "license": "UNLICENSED"
 }

@@ -1,8 +1,8 @@
 {
-  "name": "@veridao/tests",
+  "name": "@accord/tests",
   "version": "0.1.0",
   "private": true,
-  "description": "VeriDAO integration suite — jest against a local validator / Surfpool",
+  "description": "Accord integration suite — jest against a local validator / Surfpool",
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch"

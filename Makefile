@@ -1,4 +1,4 @@
-# VeriDAO — build orchestration.
+# Accord — build orchestration.
 # The root package.json has NO scripts by design: this Makefile orchestrates
 # builds, and lint/test fan out via pnpm's recursive filter. Don't add root
 # scripts; they'd duplicate the Makefile.

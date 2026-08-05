@@ -1,4 +1,4 @@
-# VeriDAO Accord — Domain Language
+# Accord — Domain Language
 
 The ubiquitous language for the Accord context. Terms are opinionated: when multiple words exist for the same concept, one is canonical and the others are listed under _Avoid_.
 
@@ -23,7 +23,7 @@ A case filed with the Accord by any program (the Arbitrable). Contains the dispu
 _Avoid_: case, claim (in the Accord context), trial
 
 **Draw**:
-The random selection of distinct Jurors for a Dispute from a Snapshot, weighted by staked capital. Uses Switchboard VRF for manipulation resistance.
+The random selection of distinct Jurors for a Dispute from a Snapshot, weighted by staked capital. Uses VRF for manipulation resistance.
 _Avoid_: jury selection, sortition
 
 **Snapshot**:
@@ -71,5 +71,5 @@ Any permissionless actor who triggers time-based operations: Dispute round advan
 _Avoid_: bot, keeper, operator
 
 **Schelling Point**:
-The game-theoretic concept underpinning the Accord: independent agents converge on the most salient answer without communication. In VeriDAO, the Schelling Point is honesty — Jurors vote truthfully because they expect others to, because they expect others to expect it. Named after Thomas Schelling.
+The game-theoretic concept underpinning the Accord: independent agents converge on the most salient answer without communication. In Accord, the Schelling Point is honesty — Jurors vote truthfully because they expect others to, because they expect others to expect it. Named after Thomas Schelling.
 _Avoid_: focal point (use in prose, not as a defined term), Nash equilibrium
