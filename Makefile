@@ -5,8 +5,13 @@
 
 SOLANA_VERSION ?= 3.1.10
 ANCHOR_VERSION ?= 1.0.2
+ACCORD_PROGRAM_ID ?= RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe
 
-.PHONY: prep build codegen sdk test test_unit test_surfpool run_surfpool lint clean help
+# `--ignore-keys`: the canonical deploy keypair is provisioned separately
+# (ops concern). Local builds/tests load the .so at the declared address
+# via `run_validator` / `--bpf-program` — no keypair needed. See ADR-0010.
+
+.PHONY: prep build codegen sdk test test_unit test_surfpool run_surfpool run_validator lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -18,18 +23,19 @@ prep: ## Install Solana + Anchor toolchains, then workspace deps
 	pnpm install
 
 build: ## Build programs + packages + docs
-	anchor build
+	anchor build --ignore-keys
 	pnpm -r run build
 
 codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anchor build`)
-	anchor build
+	anchor build --ignore-keys
 	cd packages/sdk && pnpm exec codama run js
 
 sdk: ## Build the SDK package only
 	cd packages/sdk && pnpm run build
 
-test: ## Run Rust unit tests + jest integration suite against a local validator
-	anchor test
+test: ## Build + run jest suite (offline smoke). For on-chain tests: `make run_validator` first, then `make test`
+	anchor build --ignore-keys
+	anchor test --skip-build
 
 test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .so first.
 	cargo build-sbf --tools-version v1.52 --manifest-path programs/accord/Cargo.toml
@@ -47,6 +53,10 @@ test_surfpool: ## Run the full suite against a running Surfpool instance
 
 run_surfpool: ## Start a Surfpool local fork (run in a separate terminal)
 	surfpool
+
+run_validator: ## Start a local test-validator with the Accord .so at its declared address (no keypair needed)
+	solana-test-validator --reset \
+	  --bpf-program $(ACCORD_PROGRAM_ID) target/deploy/accord.so
 
 lint: ## Lint every workspace that declares a lint script
 	pnpm -r run lint
