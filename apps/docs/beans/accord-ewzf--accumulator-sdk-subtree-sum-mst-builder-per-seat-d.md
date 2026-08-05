@@ -1,14 +1,12 @@
 ---
 # accord-ewzf
-title: 'Accumulator — SDK: subtree-sum MST builder, per-seat draw_seat, drop snapshot methods (ADR-0012)'
+title: "Accumulator — SDK: subtree-sum MST builder, per-seat draw_seat, drop snapshot methods (ADR-0012)"
 status: todo
 type: task
 priority: high
 created_at: 2026-08-05T17:12:02Z
-updated_at: 2026-08-05T20:15:05Z
+updated_at: 2026-08-05T22:28:29Z
 parent: accord-g74z
-blocked_by:
-    - accord-g74z
 ---
 
 ## Why
@@ -48,30 +46,3 @@ right_sum)`; `LeafClaim` drops `cum_after` (prefix computed from the path);
 
 ADR-0012; `accord-g74z`; `accord-tzo0` (per-seat draw + sampling); ADR-0010
 (SDK facade).
-
-## Blocker — blocked on `accord-g74z` (on-chain accumulator not implemented)
-
-Dispatched 2026-08-05 with no `blocked-by` edge, but the bean's own acceptance
-("Types match the rebuilt IDL **after accord-g74z**") makes the dependency
-explicit. Verified at dispatch: the on-chain program is still the **old
-optimistic-snapshot design** — `JurorStake` has `last_change_slot` (no
-`tree_index`), `Subaccord` has no accumulator fields, `Dispute` has
-`committed_vrf` but no `frozen_root`, the `Snapshot` struct + `post_snapshot` /
-`challenge_snapshot` / `finalize_snapshot` instructions still exist, and `draw`
-is still one-shot (no `draw_seat`). `accord-g74z` (parent feature) is
-`status: todo` — not started. No rebuilt IDL exists (`target/idl` absent).
-
-Three of four acceptance criteria are unmeetable until the program lands:
-
-- `draw_seat` end-to-end — no on-chain `draw_seat` to call.
-- snapshot methods/types removed — the live program still defines them; removing
-  now orphans the 35-test Surfpool e2e suite and breaks SDK↔IDL lockstep.
-- types match the rebuilt IDL — there is no rebuilt IDL.
-
-The fourth (MST builder unit-test) must "match on-chain `verify_mst_inclusion`
-exactly"; that function does not exist in subtree-sum form, so a builder written
-now is an unverifiable guess at the on-chain shape and risks rework.
-
-Action: recorded `blocked_by: accord-g74z`, status `todo`. No speculative SDK
-code written. Re-dispatch once `accord-g74z` lands the accumulator + rebuilt IDL;
-then this bean matches the real IDL in a single verified pass.
