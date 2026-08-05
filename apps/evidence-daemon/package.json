@@ -1,0 +1,19 @@
+{
+  "name": "@accord/evidence-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accord Evidence Operator daemon — ciphertext ingest + drawn-juror re-encryption (ADR-0011/0006)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@accord/sdk": "workspace:*",
+    "@solana/kit": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
