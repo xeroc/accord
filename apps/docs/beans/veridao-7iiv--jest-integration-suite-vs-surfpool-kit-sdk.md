@@ -1,13 +1,14 @@
 ---
 # veridao-7iiv
 title: jest integration suite vs Surfpool (Kit SDK)
-status: in-progress
+status: todo
 type: task
 priority: normal
 created_at: 2026-08-04T21:52:11Z
-updated_at: 2026-08-05T01:34:44Z
+updated_at: 2026-08-05T01:40:02Z
 parent: veridao-5y8e
-blocked_by: [veridao-1lvm]
+blocked_by:
+    - veridao-1lvm
 ---
 
 ## RE-EVALUATION (2026-08-05, session 3) — empirical re-verification; blockers unchanged; formally blocked on veridao-1lvm
