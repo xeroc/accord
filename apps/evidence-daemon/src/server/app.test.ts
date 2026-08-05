@@ -1,18 +1,29 @@
 /**
- * Server wiring self-check (bean accord-dyf0). Exercises the HTTP mechanics —
- * routing, status/Location mapping, rate limiting, accounting-only key — with
- * injected stub handlers. The full test matrix (Test matrix §6) belongs to the
- * pipeline + the "Test server" bean (accord-z50v).
+ * Server contract suite (bean accord-z50v — "Test server").
+ *
+ * Covers the HTTP-layer contracts the server owns (ADR-0011 §HTTP API,
+ * milestone §6 Test Matrix): route mapping, status-code reflection, rate-limit
+ * triggers, accounting-key neutrality, content cap, and TLS config wiring.
+ *
+ * The server is exercised via injected stub handlers — the server's job is to
+ * map handler results to HTTP, not to perform crypto. The crypto/end-to-end
+ * §6 cases (decryptable-by-juror-only, tampered-bundle alert, ciphertext-only
+ * storage) are owned by the unit-crypto bean (accord-c07y) and the e2e bean
+ * (accord-xh6n); here we assert the server reflects each handler result code
+ * faithfully and enforces its own invariants (rate limit, accounting key,
+ * body cap, address shape).
  */
 import { describe, expect, it } from "bun:test";
 import { createApp } from "./app.js";
 import type { ServerDeps } from "./handlers.js";
+import { loadServerConfig } from "../config.js";
 
-const OK_ADDR = "11111111111111111111111111111111"; // 32x '1', valid base58 charset
+// 32x '1' — valid base58 charset + length, opaque to the server.
+const ADDR = "11111111111111111111111111111111";
 
-function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
+function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
-    ingest: async () => ({ ok: true, status: 201, location: "/evidence/x/y" }),
+    ingest: async () => ({ ok: true, status: 201, location: `/evidence/s/d` }),
     deliver: async () => ({
       ok: true,
       status: 200,
@@ -23,20 +34,28 @@ function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   };
 }
 
-describe("evidence routes", () => {
-  it("POST ingest → 201 + Location", async () => {
-    const app = createApp(deps());
-    const res = await app.request(`/evidence/${OK_ADDR}/${OK_ADDR}`, {
-      method: "POST",
-      body: JSON.stringify({ ct: "x" }),
-    });
+function post(body: unknown, sub = ADDR, disp = ADDR): Request {
+  return new Request(`http://x/evidence/${sub}/${disp}`, {
+    method: "POST",
+    body: typeof body === "string" ? body : JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/* ------------------------------------------------------------------ POST -- */
+
+describe("POST /evidence/:subaccord/:dispute", () => {
+  it("happy → 201 + Location", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(post({ ct: "x" }));
     expect(res.status).toBe(201);
-    expect(res.headers.get("location")).toBe("/evidence/x/y");
+    expect(res.headers.get("location")).toBe("/evidence/s/d");
+    expect(await res.text()).toBe(""); // no body on 201
   });
 
-  it("POST ingest conflict → 409", async () => {
+  it("handler conflict (different plaintext_hash) → 409", async () => {
     const app = createApp(
-      deps({
+      makeDeps({
         ingest: async () => ({
           ok: false,
           status: 409,
@@ -44,53 +63,123 @@ describe("evidence routes", () => {
         }),
       }),
     );
-    const res = await app.request(`/evidence/${OK_ADDR}/${OK_ADDR}`, {
-      method: "POST",
-      body: JSON.stringify({ ct: "x" }),
-    });
+    const res = await app.request(post({}));
     expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("hash mismatch");
   });
 
-  it("GET deliver → 200 + payload", async () => {
-    const app = createApp(deps());
-    const res = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { out: string };
-    expect(body.out).toBe("b3V0");
-  });
-
-  it("GET deliver not-drawn → 404", async () => {
+  it("handler bad-bundle → 400", async () => {
     const app = createApp(
-      deps({
-        deliver: async () => ({ ok: false, status: 404, error: "not drawn" }),
+      makeDeps({
+        ingest: async () => ({ ok: false, status: 400, error: "bad" }),
       }),
     );
-    const res = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`);
-    expect(res.status).toBe(404);
+    const res = await app.request(post({}));
+    expect(res.status).toBe(400);
   });
 
-  it("malformed address → 400", async () => {
-    const app = createApp(deps());
-    const res = await app.request(`/evidence/notbase58!/${OK_ADDR}`, {
-      method: "POST",
-      body: "{}",
-    });
+  it("non-json body → 400 (server rejects before handler)", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(
+      new Request(`http://x/evidence/${ADDR}/${ADDR}`, {
+        method: "POST",
+        body: "not-json{",
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("malformed subaccord → 400", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(post({}, "notbase58!", ADDR));
+    expect(res.status).toBe(400);
+  });
+
+  it("malformed dispute → 400", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(post({}, ADDR, "notbase58!"));
     expect(res.status).toBe(400);
   });
 });
 
-describe("rate limit", () => {
-  it("429 after per-minute cap", async () => {
-    const app = createApp(deps(), { rateLimitPerMin: 2 });
-    const headers = { "x-forwarded-for": "10.0.0.1" };
-    const r1 = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`, {
-      headers,
+/* ------------------------------------------------------------------- GET -- */
+
+describe("GET /evidence/:dispute/for/:juror", () => {
+  it("happy → 200 + delivery payload", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      out: string;
+      operator_ephem_pub: string;
+    };
+    expect(body.out).toBe("b3V0");
+    expect(body.operator_ephem_pub).toBe("cHVi");
+  });
+
+  it("not drawn / premature → 404 (handler signal)", async () => {
+    const app = createApp(
+      makeDeps({
+        deliver: async () => ({ ok: false, status: 404, error: "not drawn" }),
+      }),
+    );
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("integrity-gate failure → 409 (handler signal)", async () => {
+    const app = createApp(
+      makeDeps({
+        deliver: async () => ({ ok: false, status: 409, error: "gate fail" }),
+      }),
+    );
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
+    expect(res.status).toBe(409);
+  });
+
+  it("malformed juror → 400", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(`http://x/evidence/${ADDR}/for/bad!`);
+    expect(res.status).toBe(400);
+  });
+});
+
+/* --------------------------------------------------------------- /healthz -- */
+
+describe("GET /healthz", () => {
+  it("probe ok → 200", async () => {
+    const app = createApp(makeDeps({ health: async () => ({ ok: true }) }));
+    const res = await app.request("/healthz");
+    expect(res.status).toBe(200);
+  });
+
+  it("probe degraded → 503 (LB drains)", async () => {
+    const app = createApp(
+      makeDeps({ health: async () => ({ ok: false, detail: "s3 down" }) }),
+    );
+    const res = await app.request("/healthz");
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { detail: string };
+    expect(body.detail).toBe("s3 down");
+  });
+});
+
+/* ----------------------------------------------------------- rate limit --- */
+
+describe("rate limit (per peer IP)", () => {
+  it("429 + Retry-After once the per-minute cap is hit", async () => {
+    const app = createApp(makeDeps(), { rateLimitPerMin: 2 });
+    const h = { "x-forwarded-for": "10.0.0.1" };
+    const r1 = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: h,
     });
-    const r2 = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`, {
-      headers,
+    const r2 = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: h,
     });
-    const r3 = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`, {
-      headers,
+    const r3 = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: h,
     });
     expect(r1.status).toBe(200);
     expect(r2.status).toBe(200);
@@ -98,40 +187,112 @@ describe("rate limit", () => {
     expect(r3.headers.get("retry-after")).toBe("60");
   });
 
-  it("accounting-only key never denies", async () => {
-    let seen = false;
-    const app = createApp(deps(), {
-      accountKeyEnabled: true,
-      log: (msg) => {
-        if (msg === "account-key") seen = true;
-      },
+  it("limits are isolated per peer IP", async () => {
+    const app = createApp(makeDeps(), { rateLimitPerMin: 1 });
+    const a = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-forwarded-for": "10.0.0.1" },
     });
-    // No key header at all — request must still succeed.
-    const res = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`);
-    expect(res.status).toBe(200);
-    expect(seen).toBe(false);
+    const b = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-forwarded-for": "10.0.0.2" },
+    });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200); // different IP — not throttled
+  });
 
-    // With key — logged, still succeeds.
-    const res2 = await app.request(`/evidence/${OK_ADDR}/for/${OK_ADDR}`, {
-      headers: { "x-account-key": "k1" },
-    });
-    expect(res2.status).toBe(200);
-    expect(seen).toBe(true);
+  it("disabled when rateLimitPerMin = 0", async () => {
+    const app = createApp(makeDeps(), { rateLimitPerMin: 0 });
+    const h = { "x-forwarded-for": "10.0.0.9" };
+    for (let i = 0; i < 10; i++) {
+      const r = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+        headers: h,
+      });
+      expect(r.status).toBe(200);
+    }
   });
 });
 
-describe("healthz", () => {
-  it("ok → 200", async () => {
-    const app = createApp(deps());
-    const res = await app.request("/healthz");
+/* -------------------------------------------------- accounting-only key --- */
+
+describe("X-Account-Key (accounting only — never grants or denies)", () => {
+  it("succeeds with no key header at all", async () => {
+    const app = createApp(makeDeps(), { accountKeyEnabled: true });
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
     expect(res.status).toBe(200);
   });
 
-  it("degraded → 503", async () => {
-    const app = createApp(
-      deps({ health: async () => ({ ok: false, detail: "s3 down" }) }),
+  it("succeeds with any key value — key does not gate access", async () => {
+    const app = createApp(makeDeps(), { accountKeyEnabled: true });
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-account-key": "literally-anything" },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("is observed (logged) when present and enabled", async () => {
+    const seen: string[] = [];
+    const app = createApp(makeDeps(), {
+      accountKeyEnabled: true,
+      log: (msg) => seen.push(msg),
+    });
+    await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-account-key": "k1" },
+    });
+    expect(seen).toContain("account-key");
+  });
+
+  it("disabled by default — key is ignored entirely", async () => {
+    const seen: string[] = [];
+    const app = createApp(makeDeps(), { log: (msg) => seen.push(msg) });
+    await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`, {
+      headers: { "x-account-key": "k1" },
+    });
+    expect(seen).not.toContain("account-key");
+  });
+});
+
+/* --------------------------------------------------------- body-size cap -- */
+
+describe("content-length cap", () => {
+  it("over-cap → 413", async () => {
+    const app = createApp(makeDeps(), { maxBytes: 16 });
+    const res = await app.request(
+      new Request(`http://x/evidence/${ADDR}/${ADDR}`, {
+        method: "POST",
+        body: "x".repeat(100),
+        headers: {
+          "content-type": "application/json",
+          "content-length": "100",
+        },
+      }),
     );
-    const res = await app.request("/healthz");
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(413);
+  });
+});
+
+/* ------------------------------------------------------------- TLS wiring -- */
+
+describe("TLS config wiring", () => {
+  // The server boots plain-HTTP when EVIDENCE_TLS_CERT/KEY are unset and TLS
+  // when both are set (ADR-0011). A live TLS handshake is exercised by the
+  // e2e bean (accord-xh6n); here we assert the config-driven decision.
+  it("no TLS env → plain HTTP (empty tls config)", () => {
+    const cfg = loadServerConfig({ EVIDENCE_PORT: "8080" });
+    expect(cfg.tls.certPath).toBeUndefined();
+    expect(cfg.tls.keyPath).toBeUndefined();
+  });
+
+  it("both TLS paths set → tls config populated", () => {
+    const cfg = loadServerConfig({
+      EVIDENCE_TLS_CERT: "/tls/cert.pem",
+      EVIDENCE_TLS_KEY: "/tls/key.pem",
+    });
+    expect(cfg.tls.certPath).toBe("/tls/cert.pem");
+    expect(cfg.tls.keyPath).toBe("/tls/key.pem");
+  });
+
+  it("only one TLS path set → still plain (both required)", () => {
+    const cfg = loadServerConfig({ EVIDENCE_TLS_CERT: "/tls/cert.pem" });
+    expect(cfg.tls.certPath).toBeUndefined();
+    expect(cfg.tls.keyPath).toBeUndefined();
   });
 });
