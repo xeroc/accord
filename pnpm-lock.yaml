@@ -51,6 +51,12 @@ importers:
       '@accord/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
+      '@noble/curves':
+        specifier: ^1.9.7
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
       '@solana/kit':
         specifier: ^7.0.0
         version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)

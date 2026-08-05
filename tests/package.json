@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@accord/sdk": "workspace:*",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
     "@solana/kit": "^7.0.0",
     "@solana/spl-token": "^0.4.0",
     "bn.js": "^5.2.1"
