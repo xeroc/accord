@@ -34,13 +34,26 @@ const SEED_ROUND = new Uint8Array([114, 111, 117, 110, 100]); // "round"
 /** Commit-hash preimage length: 1 vote byte + 32 salt + 32 juror pubkey. */
 const COMMIT_PREIMAGE_LEN = 1 + 32 + 32;
 
-/** Shared accounts every voting instruction takes (juror or cranker signs). */
+/**
+ * Shared accounts every voting instruction takes (juror or cranker signs).
+ *
+ * `commit`/`finalizeRound`/`finalizeDispute` use only the first four; `reveal`
+ * also needs the token accounts (it pays the participation fee on reveal —
+ * CONCEPT-REVIEW Ugly 5). `stakingToken`/`jurorTokenAccount`/`vault` are
+ * optional for the non-reveal instructions; `tokenProgram` is a fixed constant.
+ */
 export interface VotingAccounts {
   /** Commit/reveal: the drawn juror. finalize_*: any cranker. Always a signer. */
   signer: Address;
   subaccord: Address;
   dispute: Address;
   round: Address;
+  /** reveal only — the staking mint (fee source denomination). */
+  stakingToken?: Address;
+  /** reveal only — juror's ATA (fee destination). */
+  jurorTokenAccount?: Address;
+  /** reveal only — Subaccord PDA's vault ATA (fee source). */
+  vault?: Address;
 }
 
 /** A juror's vote + salt (the reveal preimage). */
@@ -123,9 +136,8 @@ export async function findRoundPda(
   dispute: Address,
   roundIdx: number,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } = await import(
-    "@solana/kit"
-  );
+  const { getAddressEncoder, getProgramDerivedAddress } =
+    await import("@solana/kit");
   const disputeBytes = new Uint8Array(getAddressEncoder().encode(dispute));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -207,6 +219,16 @@ export function reveal(
     throw new Error(`InvalidVote: vote must fit a u8, got ${args.vote}`);
   }
   assertValidSalt(args.salt);
+  // reveal pays the participation fee (Ugly 5): needs the token accounts.
+  if (
+    !accounts.stakingToken ||
+    !accounts.jurorTokenAccount ||
+    !accounts.vault
+  ) {
+    throw new Error(
+      "InvalidRevealAccounts: reveal requires stakingToken, jurorTokenAccount, vault",
+    );
+  }
   return client.buildReveal({
     programId,
     accounts,

@@ -1,19 +1,18 @@
-// vrf.test.ts — runnable self-check for the VRF sortition slot derivation and
-// the collision-retry panel resolver (ADR-0009 §2). Excluded from the build.
+// vrf.test.ts — runnable self-check for the per-seat VRF sortition derivation
+// (ADR-0009 §2 + ADR-0012). Excluded from the build.
 //
-// vrf.ts imports snapshot.ts at runtime (`./snapshot.js`), which Node's direct
+// vrf.ts imports mst.ts at runtime (`./mst.js`), which Node's direct
 // type-stripper cannot resolve to `.ts` — so this test imports the COMPILED
-// dist output (built first by the `test` script). The other method tests are
-// self-contained and import source directly.
+// dist output (built first by the `test` script).
 //   pnpm --filter @accord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMst } from "../../dist/methods/snapshot.js";
+import { buildAccumulator, proofFor } from "../../dist/methods/mst.js";
 import {
-  drawSlots,
-  isDistinctPanel,
-  resolvePanel,
+  findLeafForSlot,
+  seatSlot,
   vrfSeed,
+  verifySeat,
 } from "../../dist/methods/vrf.js";
 
 const VRF = new Uint8Array(32).fill(0xa5);
@@ -24,93 +23,104 @@ const pk = (first: number) => {
   return b;
 };
 
-test("vrfSeed: deterministic + attempt-sensitive", async () => {
-  const s0a = await vrfSeed(VRF, DISPUTE, 0, 0);
-  const s0b = await vrfSeed(VRF, DISPUTE, 0, 0);
+test("vrfSeed: deterministic + round/dispute-bound (no draw_attempt)", async () => {
+  const s0a = await vrfSeed(VRF, DISPUTE, 0);
+  const s0b = await vrfSeed(VRF, DISPUTE, 0);
   assert.deepEqual(
     Array.from(s0a),
     Array.from(s0b),
     "same inputs => same seed",
   );
   assert.equal(s0a.length, 32);
-  const s1 = await vrfSeed(VRF, DISPUTE, 0, 1);
-  assert.notDeepEqual(
-    Array.from(s0a),
-    Array.from(s1),
-    "different attempt => different seed",
-  );
-  // round + dispute also bind the seed
-  const sR = await vrfSeed(VRF, DISPUTE, 1, 0);
-  assert.notDeepEqual(Array.from(s0a), Array.from(sR));
+  const sR = await vrfSeed(VRF, DISPUTE, 1);
+  assert.notDeepEqual(Array.from(s0a), Array.from(sR), "round binds the seed");
   await assert.rejects(
-    () => vrfSeed(new Uint8Array(31), DISPUTE, 0, 0),
+    () => vrfSeed(new Uint8Array(31), DISPUTE, 0),
     /InvalidVrf/,
   );
 });
 
-test("drawSlots: deterministic, in [0, total_stake), changes with attempt", async () => {
+test("seatSlot: deterministic, in [0, frozen_total_stake), per-seat", async () => {
   const total = 1_000_000n;
-  const slots0 = await drawSlots(VRF, DISPUTE, 0, 0, 3, total);
-  assert.equal(slots0.length, 3);
-  for (const r of slots0) {
-    assert.ok(r >= 0n && r < total, `slot ${r} in range`);
-  }
+  const r0 = await seatSlot(VRF, DISPUTE, 0, 0, total);
+  const r1 = await seatSlot(VRF, DISPUTE, 0, 1, total);
+  assert.ok(r0 >= 0n && r0 < total, `seat 0 slot in range: ${r0}`);
+  assert.ok(r1 >= 0n && r1 < total, `seat 1 slot in range: ${r1}`);
+  assert.notDeepEqual([r0], [r1], "different seats => different slots");
   // determinism
-  const slots0b = await drawSlots(VRF, DISPUTE, 0, 0, 3, total);
-  assert.deepEqual(slots0, slots0b);
-  // different attempt => (very likely) different slots
-  const slots1 = await drawSlots(VRF, DISPUTE, 0, 1, 3, total);
-  assert.notDeepEqual(slots0, slots1);
+  assert.deepEqual(r0, await seatSlot(VRF, DISPUTE, 0, 0, total));
   await assert.rejects(
-    () => drawSlots(VRF, DISPUTE, 0, 0, 3, 0n),
+    () => seatSlot(VRF, DISPUTE, 0, 0, 0n),
     /InvalidTotalStake/,
   );
 });
 
-test("isDistinctPanel: detects duplicate jurors", () => {
-  const m = (first: number) => ({
-    leaf: { juror: pk(first), stake: 1n, cumAfter: 1n },
-    proof: [],
-    index: 0,
-  });
-  assert.equal(isDistinctPanel([m(1), m(2), m(3)]), true);
-  assert.equal(isDistinctPanel([m(1), m(2), m(1)]), false);
+test("findLeafForSlot + verifySeat: membership round-trips the frozen root", async () => {
+  const leaves = Array.from({ length: 10 }, (_, i) => ({
+    juror: pk(i + 1),
+    stake: BigInt((i + 1) * 100),
+  }));
+  const tree = await buildAccumulator(leaves, 4);
+  assert.equal(tree.rootSum, 5_500n); // 100·(1+2+..+10) = 5500
+
+  // For each seat, the slot selects exactly one leaf; the proof authenticates.
+  for (let seat = 0; seat < 5; seat++) {
+    const slot = await seatSlot(VRF, DISPUTE, 0, seat, tree.rootSum);
+    const found = await findLeafForSlot(tree, slot);
+    assert.ok(found, `seat ${seat}: slot ${slot} must hit a leaf`);
+    const ok = await verifySeat(
+      found!.leaf,
+      found!.index,
+      found!.proof,
+      tree.rootHash,
+      tree.rootSum,
+    );
+    assert.ok(ok, `seat ${seat}: proof authenticates against frozen root`);
+    // prefix is consistent with the leaf's running position
+    const expectedPrefix = leaves
+      .slice(0, found!.index)
+      .reduce((a, l) => a + l.stake, 0n);
+    assert.ok(
+      slot >= expectedPrefix && slot - expectedPrefix < found!.leaf.stake,
+      `seat ${seat}: slot in [prefix, prefix+stake)`,
+    );
+  }
 });
 
-test("resolvePanel: returns a distinct panel, retrying on collision with the same VRF", async () => {
-  // 10-juror pool, panel 3: a distinct panel is found quickly.
-  const tree = await buildMst(
-    Array.from({ length: 10 }, (_, i) => ({
-      juror: pk(i + 1),
-      stake: BigInt((i + 1) * 100),
-    })),
+test("findLeafForSlot: a wrong root is rejected", async () => {
+  const tree = await buildAccumulator(
+    [
+      { juror: pk(1), stake: 1_000n },
+      { juror: pk(2), stake: 3_000n },
+    ],
+    2,
   );
-  const { drawAttempt, memberships } = await resolvePanel(
-    VRF,
-    DISPUTE,
-    0,
-    3,
+  const slot = await seatSlot(VRF, DISPUTE, 0, 0, tree.rootSum);
+  const found = await findLeafForSlot(tree, slot)!;
+  const ok = await verifySeat(
+    found!.leaf,
+    found!.index,
+    found!.proof,
+    new Uint8Array(32), // wrong root
+    tree.rootSum,
+  );
+  assert.equal(ok, false, "a fabricated root must not authenticate");
+});
+
+test("proofFor matches findLeafForSlot's proof (builder consistency)", async () => {
+  const tree = await buildAccumulator(
+    [
+      { juror: pk(1), stake: 1_000n },
+      { juror: pk(2), stake: 3_000n },
+      { juror: pk(3), stake: 500n },
+    ],
+    2,
+  );
+  const found = await findLeafForSlot(
     tree,
-  );
-  assert.ok(drawAttempt >= 0);
-  assert.equal(memberships.length, 3);
-  assert.ok(isDistinctPanel(memberships), "resolved panel must be distinct");
-  // the committed VRF is the SAME across retries (caller never re-requests).
-  // Re-resolving is reproducible:
-  const again = await resolvePanel(VRF, DISPUTE, 0, 3, tree);
-  assert.equal(again.drawAttempt, drawAttempt);
-  assert.deepEqual(again.memberships, memberships);
-});
-
-test("resolvePanel: throws when a distinct panel is impossible", async () => {
-  // 3 real jurors but panel 5: pigeonhole guarantees a collision every attempt.
-  const tree = await buildMst([
-    { juror: pk(1), stake: 100n },
-    { juror: pk(2), stake: 100n },
-    { juror: pk(3), stake: 100n },
-  ]);
-  await assert.rejects(
-    () => resolvePanel(VRF, DISPUTE, 0, 5, tree, 8),
-    /DrawCollision/,
-  );
+    await seatSlot(VRF, DISPUTE, 0, 0, tree.rootSum),
+  )!;
+  const direct = await proofFor(tree, found!.index);
+  assert.equal(direct.length, found!.proof.length);
+  assert.deepEqual(direct, found!.proof);
 });

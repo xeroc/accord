@@ -19,8 +19,12 @@ export const UNPAUSE_TIMELOCK_SLOTS = 216_000n; // 24h
 
 // --- Windows (constants.rs, in seconds) ---
 
-export const SNAPSHOT_CHALLENGE_WINDOW_SECS = 86_400n; // 1 day
 export const APPEAL_WINDOW_SECS = 259_200n; // 3 days
+
+// --- Accumulator (ADR-0012) ---
+
+/** Default Merkle accumulator tree depth. 2^20 ≈ 1M seats; per-Subaccord. */
+export const DEFAULT_TREE_DEPTH = 20;
 
 // --- v1 default economics (per-Subaccord; AGENTS.md "v1 Defaults") ---
 

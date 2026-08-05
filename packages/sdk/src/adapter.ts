@@ -8,13 +8,15 @@
  * or to a generated account fetcher, so a drift in the IDL surfaces here as a
  * compile error — exactly the ADR-0010 guarantee.
  *
- * Signing model: the facade's loaded wallet (`accord.signer`) is the
- * `TransactionSigner` for every instruction's signing account. The seam's
- * `accounts.signer: Address` documents who signs; the adapter supplies the
- * matching `TransactionSigner` object. Multi-party flows construct one Accord
- * instance per signer.
+ * ADR-0012: the snapshot trio (post/challenge/finalize) and the one-shot `draw`
+ * are gone; `stake`/`unstake` thread an accumulator `path`; `draw_seat` fills
+ * the panel one seat per tx against `dispute.frozen_root`; `commit_vrf_callback`
+ * (invoked by the oracle) freezes the root.
  *
- * @see ADR-0010
+ * Signing model: the facade's loaded wallet (`accord.signer`) is the
+ * `TransactionSigner` for every instruction's signing account.
+ *
+ * @see ADR-0010, ADR-0012
  */
 
 import {
@@ -41,11 +43,8 @@ import { getProposeUnpauseInstruction } from "./generated/instructions/proposeUn
 import { getExecuteUnpauseInstruction } from "./generated/instructions/executeUnpause.js";
 import { getStakeInstruction } from "./generated/instructions/stake.js";
 import { getUnstakeInstruction } from "./generated/instructions/unstake.js";
-import { getPostSnapshotInstruction } from "./generated/instructions/postSnapshot.js";
-import { getChallengeSnapshotInstruction } from "./generated/instructions/challengeSnapshot.js";
-import { getFinalizeSnapshotInstruction } from "./generated/instructions/finalizeSnapshot.js";
 import { getRequestVrfInstruction } from "./generated/instructions/requestVrf.js";
-import { getDrawInstruction } from "./generated/instructions/draw.js";
+import { getDrawSeatInstruction } from "./generated/instructions/drawSeat.js";
 import { getCommitInstruction } from "./generated/instructions/commit.js";
 import { getRevealInstruction } from "./generated/instructions/reveal.js";
 import { getFinalizeRoundInstruction } from "./generated/instructions/finalizeRound.js";
@@ -69,19 +68,17 @@ import type {
   CreateSubaccordArgs,
 } from "./methods/lifecycle.js";
 import type {
-  AccordSnapshotClient,
-  SnapshotAccounts,
-} from "./methods/snapshot.js";
-import type {
   AccordStakingClient,
   JurorStakeView,
   StakingAccounts,
 } from "./methods/staking.js";
+import type { MSTNode } from "./methods/mst.js";
 import type { AccordVotingClient, VotingAccounts } from "./methods/voting.js";
-import type { AccordVrfClient, VrfDrawAccounts } from "./methods/vrf.js";
-
-import type { JurorMembership as SdkJurorMembership } from "./methods/snapshot.js";
-import type { FraudProofArgs, JurorMembershipArgs } from "./generated/types";
+import type {
+  AccordVrfClient,
+  SeatMembership,
+  VrfDrawAccounts,
+} from "./methods/vrf.js";
 
 /** Union of every seam the adapter implements. */
 export interface AccordAdapter
@@ -89,14 +86,13 @@ export interface AccordAdapter
     AccordDisputeClient,
     AccordLifecycleClient,
     AccordStakingClient,
-    AccordSnapshotClient,
     AccordVrfClient,
     AccordVotingClient,
     AccordAppealClient {}
 
 /**
  * Build the concrete adapter bound to an {@link Accord} facade instance. The
- * returned object satisfies all seven `Accord*Client` seams, so the pure
+ * returned object satisfies all six `Accord*Client` seams, so the pure
  * orchestration functions in `src/methods/*.ts` can drive the chain end-to-end.
  */
 export function createAccordAdapter(accord: Accord): AccordAdapter {
@@ -199,7 +195,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       return m.data.executeAfterSlot;
     },
 
-    // ── staking ────────────────────────────────────────────────────────────
+    // ── staking (ADR-0012: path-verified accumulator update) ───────────────
     buildStake(input) {
       if (!input.accounts.pauseState) {
         throw new Error(
@@ -216,6 +212,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           jurorTokenAccount: input.accounts.jurorTokenAccount,
           vault: input.accounts.vault,
           amount: input.amount,
+          path: mapPath(input.path),
         },
         { programAddress: input.programId },
       );
@@ -230,6 +227,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           jurorTokenAccount: input.accounts.jurorTokenAccount,
           vault: input.accounts.vault,
           amount: input.amount,
+          path: mapPath(input.path),
         },
         { programAddress: input.programId },
       );
@@ -245,82 +243,34 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       };
     },
 
-    // ── snapshot trust ─────────────────────────────────────────────────────
-    buildPostSnapshot(input) {
-      return getPostSnapshotInstruction(
-        {
-          poster: accord.signer,
-          subaccord: input.accounts.subaccord,
-          dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
-          stakingToken: input.accounts.stakingToken,
-          posterTokenAccount: input.accounts.posterTokenAccount,
-          vault: input.accounts.vault,
-          merkleRoot: input.merkleRoot,
-          totalStake: input.totalStake,
-        },
-        { programAddress: input.programId },
-      );
-    },
-    buildChallengeSnapshot(input) {
-      return getChallengeSnapshotInstruction(
-        {
-          challenger: accord.signer,
-          subaccord: input.accounts.subaccord,
-          dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
-          stakingToken: input.accounts.stakingToken,
-          challengerTokenAccount: input.challengerTokenAccount,
-          posterTokenAccount: input.accounts.posterTokenAccount,
-          vault: input.accounts.vault,
-          proof: input.proof as FraudProofArgs,
-        },
-        { programAddress: input.programId },
-      );
-    },
-    buildFinalizeSnapshot(input) {
-      return getFinalizeSnapshotInstruction(
-        {
-          caller: accord.signer,
-          subaccord: input.accounts.subaccord,
-          dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
-          stakingToken: input.accounts.stakingToken,
-          posterTokenAccount: input.accounts.posterTokenAccount,
-          vault: input.accounts.vault,
-        },
-        { programAddress: input.programId },
-      );
-    },
-
-    // ── VRF + draw ─────────────────────────────────────────────────────────
+    // ── VRF + per-seat draw (ADR-0009/0012) ────────────────────────────────
     buildRequestVrf(input) {
       return getRequestVrfInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,
           dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
           oracleQueue: input.extras.oracleQueue,
           programIdentity: input.extras.programIdentity,
         },
         { programAddress: input.programId },
       );
     },
-    buildDraw(input) {
-      const ix = getDrawInstruction(
+    buildDrawSeat(input) {
+      const ix = getDrawSeatInstruction(
         {
           caller: accord.signer,
-          subaccord: input.accounts.subaccord,
           dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
           round: input.roundPda,
-          drawAttempt: input.drawAttempt,
-          memberships: input.memberships.map(mapMembership),
+          seat: input.seat,
+          leaf: mapLeaf(input.leaf),
+          proof: mapPath(input.proof),
+          index: input.index,
         },
         { programAddress: input.programId },
       );
-      return appendRemaining(ix, input.jurorStakeAccounts);
+      // remaining_accounts[0] = the drawn juror's JurorStake PDA (writable).
+      return appendRemaining(ix, [input.jurorStake]);
     },
     async fetchCommittedVrf(dispute): Promise<Uint8Array | null> {
       const m = await accord.client.accord.accounts.dispute.fetchMaybe(dispute);
@@ -343,12 +293,21 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       );
     },
     buildReveal(input) {
+      const a = input.accounts;
+      if (!a.stakingToken || !a.jurorTokenAccount || !a.vault) {
+        throw new Error(
+          "InvalidRevealAccounts: reveal requires stakingToken, jurorTokenAccount, vault",
+        );
+      }
       return getRevealInstruction(
         {
           juror: accord.signer,
-          subaccord: input.accounts.subaccord,
-          dispute: input.accounts.dispute,
-          round: input.accounts.round,
+          subaccord: a.subaccord,
+          dispute: a.dispute,
+          round: a.round,
+          stakingToken: a.stakingToken,
+          jurorTokenAccount: a.jurorTokenAccount,
+          vault: a.vault,
           vote: input.vote,
           salt: input.salt,
         },
@@ -412,7 +371,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-/** SDK `CreateSubaccordArgs` → generated instruction-data args (1:1). */
+/** SDK `CreateSubaccordArgs` → generated instruction-data args (1:1, +depth). */
 function mapCreateSubaccordArgs(
   args: CreateSubaccordArgs,
 ): Omit<CreateSubaccordArgs, never> {
@@ -430,6 +389,7 @@ function mapCreateSubaccordArgs(
     feePerJuror: args.feePerJuror,
     authority: args.authority,
     evidenceOperator: args.evidenceOperator,
+    depth: args.depth,
   };
 }
 
@@ -447,19 +407,28 @@ function mapAppealAccounts(a: AppealAccounts) {
   };
 }
 
-/** SDK MST `JurorMembership` (32-byte juror) → on-chain args (`Address` juror). */
-function mapMembership(m: SdkJurorMembership): JurorMembershipArgs {
+/**
+ * SDK MST `MSTNode` (byte-oriented) → generated args. `siblingHash` is a
+ * `[u8;32]`; `siblingSum` is a u64. Shapes line up 1:1 — this wrapper keeps the
+ * import boundary explicit.
+ */
+function mapPath(
+  path: MSTNode[],
+): { siblingHash: Uint8Array; siblingSum: number | bigint }[] {
+  return path.map((p) => ({
+    siblingHash: p.siblingHash,
+    siblingSum: p.siblingSum,
+  }));
+}
+
+/** SDK `LeafClaim` (byte-oriented juror) → generated args (`Address` juror). */
+function mapLeaf(leaf: { juror: Uint8Array; stake: bigint }): {
+  juror: Address;
+  stake: number | bigint;
+} {
   return {
-    leaf: {
-      juror: getAddressDecoder().decode(m.leaf.juror),
-      stake: m.leaf.stake,
-      cumAfter: m.leaf.cumAfter,
-    },
-    proof: m.proof.map((p) => ({
-      siblingHash: p.siblingHash,
-      siblingSum: p.siblingSum,
-    })),
-    index: m.index,
+    juror: getAddressDecoder().decode(leaf.juror),
+    stake: leaf.stake,
   };
 }
 
@@ -482,3 +451,7 @@ function appendRemaining(
     accounts: Object.freeze([...(ix.accounts ?? []), ...metas]),
   }) as Instruction;
 }
+
+// silence the unused-import lint for `VotingAccounts`/`VrfDrawAccounts`/etc.
+// which are referenced only in the seam composition above.
+export type { SeatMembership, VrfDrawAccounts, VotingAccounts };

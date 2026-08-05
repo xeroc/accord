@@ -21,6 +21,8 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getI64Decoder,
+  getI64Encoder,
   getOptionDecoder,
   getOptionEncoder,
   getStructDecoder,
@@ -47,8 +49,12 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
+  getCaseTermsDecoder,
+  getCaseTermsEncoder,
   getDisputeStateDecoder,
   getDisputeStateEncoder,
+  type CaseTerms,
+  type CaseTermsArgs,
   type DisputeState,
   type DisputeStateArgs,
 } from "../types";
@@ -72,6 +78,12 @@ export type Dispute = {
   state: DisputeState;
   currentRound: number;
   /**
+   * Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
+   * for the dispute's life; governance changes via ADR-0005 affect only
+   * disputes filed after the change lands.
+   */
+  terms: CaseTerms;
+  /**
    * Winning option index once `state == Final`; `u8::MAX` until then.
    * Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
    * `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
@@ -91,6 +103,25 @@ export type Dispute = {
    * cannot swap it between retries.
    */
   committedVrf: Option<ReadonlyUint8Array>;
+  /**
+   * Accumulator root frozen atomically when the VRF lands in
+   * `commit_vrf_callback` (ADR-0012). All `draw_seat` calls for every round
+   * of this dispute select against this one root (per-seat coherence +
+   * manipulation resistance). `[0;32]` until frozen; readable once
+   * `committed_vrf.is_some()`.
+   */
+  frozenRoot: ReadonlyUint8Array;
+  /**
+   * Total stake captured with `frozen_root` at freeze time. Drives
+   * sortition (`r_i % frozen_total_stake`).
+   */
+  frozenTotalStake: bigint;
+  /**
+   * Unix timestamp at `create_dispute` (Ugly 4). Drives the pre-draw
+   * `cancel_dispute` timeout: if the dispute has not been drawn within
+   * `PRE_DRAW_CANCEL_TIMEOUT_SECS`, any cranker may cancel + refund the filer.
+   */
+  filedAt: bigint;
   bump: number;
 };
 
@@ -103,6 +134,12 @@ export type DisputeArgs = {
   evidenceHash: ReadonlyUint8Array;
   state: DisputeStateArgs;
   currentRound: number;
+  /**
+   * Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
+   * for the dispute's life; governance changes via ADR-0005 affect only
+   * disputes filed after the change lands.
+   */
+  terms: CaseTermsArgs;
   /**
    * Winning option index once `state == Final`; `u8::MAX` until then.
    * Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
@@ -123,6 +160,25 @@ export type DisputeArgs = {
    * cannot swap it between retries.
    */
   committedVrf: OptionOrNullable<ReadonlyUint8Array>;
+  /**
+   * Accumulator root frozen atomically when the VRF lands in
+   * `commit_vrf_callback` (ADR-0012). All `draw_seat` calls for every round
+   * of this dispute select against this one root (per-seat coherence +
+   * manipulation resistance). `[0;32]` until frozen; readable once
+   * `committed_vrf.is_some()`.
+   */
+  frozenRoot: ReadonlyUint8Array;
+  /**
+   * Total stake captured with `frozen_root` at freeze time. Drives
+   * sortition (`r_i % frozen_total_stake`).
+   */
+  frozenTotalStake: number | bigint;
+  /**
+   * Unix timestamp at `create_dispute` (Ugly 4). Drives the pre-draw
+   * `cancel_dispute` timeout: if the dispute has not been drawn within
+   * `PRE_DRAW_CANCEL_TIMEOUT_SECS`, any cranker may cancel + refund the filer.
+   */
+  filedAt: number | bigint;
   bump: number;
 };
 
@@ -142,9 +198,13 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
       ["evidenceHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["state", getDisputeStateEncoder()],
       ["currentRound", getU32Encoder()],
+      ["terms", getCaseTermsEncoder()],
       ["finalRuling", getU8Encoder()],
       ["feePaid", getU64Encoder()],
       ["committedVrf", getOptionEncoder(fixEncoderSize(getBytesEncoder(), 32))],
+      ["frozenRoot", fixEncoderSize(getBytesEncoder(), 32)],
+      ["frozenTotalStake", getU64Encoder()],
+      ["filedAt", getI64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: DISPUTE_DISCRIMINATOR }),
@@ -166,9 +226,13 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["evidenceHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["state", getDisputeStateDecoder()],
     ["currentRound", getU32Decoder()],
+    ["terms", getCaseTermsDecoder()],
     ["finalRuling", getU8Decoder()],
     ["feePaid", getU64Decoder()],
     ["committedVrf", getOptionDecoder(fixDecoderSize(getBytesDecoder(), 32))],
+    ["frozenRoot", fixDecoderSize(getBytesDecoder(), 32)],
+    ["frozenTotalStake", getU64Decoder()],
+    ["filedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }

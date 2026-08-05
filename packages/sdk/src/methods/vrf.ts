@@ -1,39 +1,35 @@
 /**
- * vrf.ts — VRF request + draw choreography (ADR-0009 §2).
- *
- * The hardest multi-instruction orchestration in the SDK:
+ * vrf.ts — VRF request + per-seat draw choreography (ADR-0009 §2 + ADR-0012).
  *
  *   1. request_vrf          — CPI into the magicblock VRF oracle (one-shot).
- *   2. commit_vrf_callback  — oracle calls back; `dispute.committed_vrf = Some(r)`.
- *      The SDK awaits this (poll the Dispute account) and reads `committed_vrf`.
- *   3. draw(attempt, mem)    — submit the VRF-selected memberships.
+ *   2. commit_vrf_callback  — oracle calls back; sets `dispute.committed_vrf`
+ *                             AND atomically freezes `dispute.frozen_root`.
+ *   3. draw_seat(seat, mem) — submit one seat's membership against the frozen
+ *                             root. One tx per seat (1232B can't hold N proofs).
  *
- * The VRF result is committed ONCE and is immutable across retries
- * (ADR-0009 §2: the caller cannot brute-force VRF results between retries). On
- * `SortitionMismatch` (two slots select the same juror → `DuplicateJuror`
- * on-chain), increment `draw_attempt` and retry with the SAME committed VRF.
+ * The VRF result is committed ONCE and immutable. The frozen root is the live
+ * accumulator root captured atomically at callback time — all N draw_seat txs
+ * (and every appeal round) select against the SAME root.
  *
- * The client-side sortition is fully deterministic given
- * `(committed_vrf, dispute, round, draw_attempt)`, so the SDK pre-resolves the
- * first `draw_attempt` that yields a DISTINCT panel and submits a draw that
- * succeeds first try — no wasted revert. {@link resolvePanel} is pure and
- * unit-tested; it composes with the {@link ./snapshot} MST builder.
- *
- * Slot derivation (lib.rs:895-930):
- *   vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4 ‖ draw_attempt_le4)
- *   r_i      = u64_le(sha256(vrf_seed ‖ i_le4)[0..8]) % total_stake
+ * The chain is a dumb verifier: per seat `i`, it derives
+ *   vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4)
+ *   r_i      = u64_le(sha256(vrf_seed ‖ seat_le4)[0..8]) % frozen_total_stake
+ * and checks the submitted leaf's reconstructed prefix range contains `r_i`.
+ * Deterministic collision re-rülle (sampling without replacement) is computed
+ * client-side to match the chain — bean accord-tzo0.
  *
  * Sources of truth:
- *   - request_vrf / commit_vrf_callback / draw: lib.rs (793-944)
- *   - Draw account context:                   lib.rs (2073-2101)
- *   - sortition + retry design:               ADR-0009 §2
+ *   - request_vrf / commit_vrf_callback / draw_seat: lib.rs
+ *   - sortition criterion: ADR-0009 §2 (subtree-sum form, ADR-0012)
  */
 import type { Address, Instruction } from "@solana/kit";
 import {
-  buildMemberships,
-  type JurorMembership,
-  type MerkleSumTree,
-} from "./snapshot.js";
+  type LeafClaim,
+  type MSTNode,
+  type MerkleAccumulator,
+  proofFor,
+  verifyMembership,
+} from "./mst.js";
 
 // ---------------------------------------------------------------------------
 // Pure crypto helpers (sha256 via Web Crypto; le encoders)
@@ -57,7 +53,7 @@ function le4(v: number): Uint8Array {
   return b;
 }
 
-/** First 8 bytes of a hash, read little-endian as a u64 (lib.rs:930). */
+/** First 8 bytes of a hash, read little-endian as a u64. */
 function leU64At(b: Uint8Array, off = 0): bigint {
   return new DataView(b.buffer, b.byteOffset, b.byteLength).getBigUint64(
     off,
@@ -65,26 +61,19 @@ function leU64At(b: Uint8Array, off = 0): bigint {
   );
 }
 
-function eqBytes(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
-  return diff === 0;
-}
-
 // ---------------------------------------------------------------------------
-// Sortition slot derivation (lib.rs:895-930) — pure, deterministic, testable
+// Sortition slot derivation (lib.rs draw_seat) — pure, deterministic
 // ---------------------------------------------------------------------------
 
 /**
- * `vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4 ‖ draw_attempt_le4)`
- * (lib.rs:895-904). Binds the committed VRF to this dispute + round + attempt.
+ * `vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4)` (lib.rs). Binds
+ * the committed VRF to this dispute + round. No `draw_attempt` — selection is
+ * deterministic per seat (ADR-0012 drops the grind).
  */
 export async function vrfSeed(
   committedVrf: Uint8Array,
   disputeBytes: Uint8Array,
   roundIdx: number,
-  drawAttempt: number,
 ): Promise<Uint8Array> {
   if (committedVrf.length !== 32)
     throw new Error("InvalidVrf: expected 32 bytes");
@@ -92,96 +81,77 @@ export async function vrfSeed(
     throw new Error("InvalidDispute: expected 32 bytes");
   if (!Number.isInteger(roundIdx) || roundIdx < 0 || roundIdx > 0xffffffff)
     throw new Error(`InvalidRoundIdx: expected u32, got ${roundIdx}`);
-  if (
-    !Number.isInteger(drawAttempt) ||
-    drawAttempt < 0 ||
-    drawAttempt > 0xffffffff
-  )
-    throw new Error(`InvalidDrawAttempt: expected u32, got ${drawAttempt}`);
-  return sha256(committedVrf, disputeBytes, le4(roundIdx), le4(drawAttempt));
+  return sha256(committedVrf, disputeBytes, le4(roundIdx));
 }
 
 /**
- * Derive the `panelSize` sortition slots for a given attempt:
- * `r_i = u64_le(sha256(vrf_seed ‖ i_le4)[0..8]) % total_stake` (lib.rs:926-930).
- * Deterministic in `(committed_vrf, dispute, round, attempt)`; the caller has
- * zero influence beyond choosing `draw_attempt` (uniformly re-rolls all slots).
+ * Derive the sortition point for a single seat:
+ * `r_i = u64_le(sha256(vrf_seed ‖ seat_le4)[0..8]) % frozen_total_stake`.
  */
-export async function drawSlots(
+export async function seatSlot(
   committedVrf: Uint8Array,
   disputeBytes: Uint8Array,
   roundIdx: number,
-  drawAttempt: number,
-  panelSize: number,
-  totalStake: bigint,
-): Promise<bigint[]> {
-  if (totalStake <= 0n) throw new Error("InvalidTotalStake: must be > 0");
-  const seed = await vrfSeed(committedVrf, disputeBytes, roundIdx, drawAttempt);
-  const slots: bigint[] = [];
-  for (let i = 0; i < panelSize; i++) {
-    const rHash = await sha256(seed, le4(i));
-    slots.push(leU64At(rHash, 0) % totalStake);
-  }
-  return slots;
-}
-
-/** Are all jurors in a panel distinct? (on-chain `DuplicateJuror` gate, lib.rs:940) */
-export function isDistinctPanel(memberships: JurorMembership[]): boolean {
-  for (let i = 0; i < memberships.length; i++) {
-    for (let j = i + 1; j < memberships.length; j++) {
-      if (eqBytes(memberships[i]!.leaf.juror, memberships[j]!.leaf.juror))
-        return false;
-    }
-  }
-  return true;
+  seat: number,
+  frozenTotalStake: bigint,
+): Promise<bigint> {
+  if (frozenTotalStake <= 0n) throw new Error("InvalidTotalStake: must be > 0");
+  if (!Number.isInteger(seat) || seat < 0 || seat > 0xffffffff)
+    throw new Error(`InvalidSeat: expected u32, got ${seat}`);
+  const seed = await vrfSeed(committedVrf, disputeBytes, roundIdx);
+  const rHash = await sha256(seed, le4(seat));
+  return leU64At(rHash, 0) % frozenTotalStake;
 }
 
 /**
- * Resolve the first `draw_attempt` whose VRF-derived panel is distinct, using
- * the SAME committed VRF across retries (ADR-0009 §2). Builds the matching
- * `JurorMembership[]` via the snapshot MST builder. Throws if no distinct panel
- * is found within `maxAttempts` (e.g. panel larger than the real juror pool).
- *
- * This is the retry-on-collision logic: pre-resolve locally so the submitted
- * `draw` succeeds first try instead of reverting.
+ * Find the leaf in `tree` whose sortition range `[prefix, prefix+stake)`
+ * contains `slot`, and return it with its index + proof. Returns `null` if the
+ * slot lands in a zero-stake gap (no eligible leaf) — the caller then applies
+ * the deterministic collision re-rülle (bean accord-tzo0).
  */
-export async function resolvePanel(
-  committedVrf: Uint8Array,
-  disputeBytes: Uint8Array,
-  roundIdx: number,
-  panelSize: number,
-  tree: MerkleSumTree,
-  maxAttempts = 256,
-): Promise<{ drawAttempt: number; memberships: JurorMembership[] }> {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const slots = await drawSlots(
-      committedVrf,
-      disputeBytes,
-      roundIdx,
-      attempt,
-      panelSize,
-      tree.rootSum,
-    );
-    const memberships = buildMemberships(tree, slots);
-    if (isDistinctPanel(memberships)) {
-      return { drawAttempt: attempt, memberships };
+export async function findLeafForSlot(
+  tree: MerkleAccumulator,
+  slot: bigint,
+): Promise<{ leaf: LeafClaim; index: number; proof: MSTNode[] } | null> {
+  let running = 0n;
+  for (let i = 0; i < tree.leaves.length; i++) {
+    const leaf = tree.leaves[i]!;
+    if (leaf.stake > 0n && slot >= running && slot - running < leaf.stake) {
+      const proof = await proofFor(tree, i);
+      return { leaf, index: i, proof };
     }
+    running += leaf.stake;
   }
-  throw new Error(
-    `DrawCollision: no distinct panel of ${panelSize} in ${maxAttempts} attempts`,
+  return null;
+}
+
+/** Verify a seat's membership reconstructs to the frozen root (client-side precheck). */
+export async function verifySeat(
+  leaf: LeafClaim,
+  index: number,
+  proof: MSTNode[],
+  frozenRoot: Uint8Array,
+  frozenTotalStake: bigint,
+): Promise<boolean> {
+  const { ok } = await verifyMembership(
+    leaf,
+    index,
+    proof,
+    frozenRoot,
+    frozenTotalStake,
   );
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
 // Seam (ADR-0010) + instruction orchestration
 // ---------------------------------------------------------------------------
 
-/** Accounts for `request_vrf` / `draw` (the cranker signs). */
+/** Accounts for `request_vrf` / `draw_seat` (the cranker signs). */
 export interface VrfDrawAccounts {
   caller: Address;
   subaccord: Address;
   dispute: Address;
-  snapshot: Address;
 }
 
 /** Extra accounts `request_vrf` needs for the VRF oracle CPI. */
@@ -190,6 +160,17 @@ export interface RequestVrfExtras {
   oracleQueue: Address;
   /** Accord program-identity PDA (CPI authority for the VRF oracle). */
   programIdentity: Address;
+}
+
+/**
+ * One seat's resolved membership: the leaf `(juror, stake)` at `index` plus its
+ * accumulator proof, and the juror's `JurorStake` PDA (remaining_accounts[0]).
+ */
+export interface SeatMembership {
+  leaf: LeafClaim;
+  index: number;
+  proof: MSTNode[];
+  jurorStake: Address;
 }
 
 /**
@@ -202,21 +183,22 @@ export interface AccordVrfClient {
     accounts: VrfDrawAccounts;
     extras: RequestVrfExtras;
   }): Instruction;
-  buildDraw(input: {
+  buildDrawSeat(input: {
     programId: Address;
     accounts: VrfDrawAccounts;
-    /** Round PDA — `init`'d by draw (`["round", dispute, current_round]`). */
+    /** Round PDA — `init_if_needed` by draw_seat (`["round", dispute, current_round]`). */
     roundPda: Address;
-    drawAttempt: number;
-    memberships: JurorMembership[];
-    /** remaining_accounts: drawn JurorStake PDAs (one per panel member). */
-    jurorStakeAccounts: Address[];
+    seat: number;
+    leaf: LeafClaim;
+    proof: MSTNode[];
+    index: number;
+    jurorStake: Address;
   }): Instruction;
   /** Read `committed_vrf` from a Dispute; `null` until the oracle callback lands. */
   fetchCommittedVrf(dispute: Address): Promise<Uint8Array | null>;
 }
 
-/** Build `request_vrf` (lib.rs:793). One-shot; triggers the oracle callback. */
+/** Build `request_vrf`. One-shot; triggers the oracle callback (freezes the root). */
 export function requestVrf(
   client: AccordVrfClient,
   programId: Address,
@@ -229,7 +211,7 @@ export function requestVrf(
 /**
  * Poll a Dispute's `committed_vrf` until the oracle callback lands (or
  * `timeoutMs` elapses). Returns the 32-byte randomness. Use between
- * {@link requestVrf} and {@link draw}.
+ * {@link requestVrf} and {@link drawSeat}.
  */
 export async function awaitCommittedVrf(
   client: AccordVrfClient,
@@ -251,31 +233,26 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Build `draw` (lib.rs:861) for a pre-resolved panel. Pass `drawAttempt` +
- * `memberships` from {@link resolvePanel} (and the matching JurorStake PDAs).
- * Because the panel is pre-resolved to be distinct, this draw succeeds first
- * try — no on-chain revert/retry round-trip.
+ * Build `draw_seat` for one seat (lib.rs). Pass the pre-resolved `seat` +
+ * membership (from {@link findLeafForSlot}) and the juror's `JurorStake` PDA.
+ * The round is `init_if_needed` on-chain and persists across the N seat txs.
  */
-export function draw(
+export function drawSeat(
   client: AccordVrfClient,
   programId: Address,
   accounts: VrfDrawAccounts,
   roundPda: Address,
-  drawAttempt: number,
-  memberships: JurorMembership[],
-  jurorStakeAccounts: Address[],
+  seat: number,
+  membership: SeatMembership,
 ): Instruction {
-  if (memberships.length !== jurorStakeAccounts.length) {
-    throw new Error(
-      `InvalidPanelSize: ${memberships.length} memberships vs ${jurorStakeAccounts.length} stake accounts`,
-    );
-  }
-  return client.buildDraw({
+  return client.buildDrawSeat({
     programId,
     accounts,
     roundPda,
-    drawAttempt,
-    memberships,
-    jurorStakeAccounts,
+    seat,
+    leaf: membership.leaf,
+    proof: membership.proof,
+    index: membership.index,
+    jurorStake: membership.jurorStake,
   });
 }

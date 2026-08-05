@@ -100,6 +100,7 @@ export type CreateSubaccordInstructionData = {
   feePerJuror: bigint;
   authority: Address;
   evidenceOperator: Address;
+  depth: number;
 };
 
 export type CreateSubaccordInstructionDataArgs = {
@@ -116,6 +117,7 @@ export type CreateSubaccordInstructionDataArgs = {
   feePerJuror: number | bigint;
   authority: Address;
   evidenceOperator: Address;
+  depth: number;
 };
 
 export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<CreateSubaccordInstructionDataArgs> {
@@ -135,6 +137,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["feePerJuror", getU64Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
+      ["depth", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CREATE_SUBACCORD_DISCRIMINATOR }),
   );
@@ -156,6 +159,7 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["feePerJuror", getU64Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
+    ["depth", getU8Decoder()],
   ]);
 }
 
@@ -190,6 +194,7 @@ export type CreateSubaccordAsyncInput<
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
+  depth: CreateSubaccordInstructionDataArgs["depth"];
 };
 
 export async function getCreateSubaccordInstructionAsync<
@@ -284,6 +289,7 @@ export type CreateSubaccordInput<
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
+  depth: CreateSubaccordInstructionDataArgs["depth"];
 };
 
 export function getCreateSubaccordInstruction<

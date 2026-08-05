@@ -56,7 +56,8 @@ export type JurorStake = {
   amount: bigint;
   activeDraws: number;
   bump: number;
-  lastChangeSlot: bigint;
+  /** Leaf position in the Subaccord accumulator (assigned at first stake). */
+  treeIndex: number;
 };
 
 export type JurorStakeArgs = {
@@ -65,7 +66,8 @@ export type JurorStakeArgs = {
   amount: number | bigint;
   activeDraws: number;
   bump: number;
-  lastChangeSlot: number | bigint;
+  /** Leaf position in the Subaccord accumulator (assigned at first stake). */
+  treeIndex: number;
 };
 
 /** Gets the encoder for {@link JurorStakeArgs} account data. */
@@ -78,7 +80,7 @@ export function getJurorStakeEncoder(): FixedSizeEncoder<JurorStakeArgs> {
       ["amount", getU64Encoder()],
       ["activeDraws", getU32Encoder()],
       ["bump", getU8Encoder()],
-      ["lastChangeSlot", getU64Encoder()],
+      ["treeIndex", getU32Encoder()],
     ]),
     (value) => ({ ...value, discriminator: JUROR_STAKE_DISCRIMINATOR }),
   );
@@ -93,7 +95,7 @@ export function getJurorStakeDecoder(): FixedSizeDecoder<JurorStake> {
     ["amount", getU64Decoder()],
     ["activeDraws", getU32Decoder()],
     ["bump", getU8Decoder()],
-    ["lastChangeSlot", getU64Decoder()],
+    ["treeIndex", getU32Decoder()],
   ]);
 }
 
@@ -159,5 +161,5 @@ export async function fetchAllMaybeJurorStake(
 }
 
 export function getJurorStakeSize(): number {
-  return 93;
+  return 89;
 }

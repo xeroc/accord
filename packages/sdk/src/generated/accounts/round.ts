@@ -72,6 +72,14 @@ export type Round = {
   commits: Array<ReadonlyUint8Array>;
   /** Revealed vote option index per drawn Juror; `u8::MAX` until revealed. */
   reveals: ReadonlyUint8Array;
+  /**
+   * Whether this round's coherence settlement has been applied
+   * (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+   * `finalize_dispute` (final round) or `settle_round` (prior rounds)
+   * processes it; 1 after. Idempotency guard against double-settlement.
+   * (`u8` not `bool` — `bool` is not `Pod`.)
+   */
+  settled: number;
   pad1: ReadonlyUint8Array;
 };
 
@@ -95,6 +103,14 @@ export type RoundArgs = {
   commits: Array<ReadonlyUint8Array>;
   /** Revealed vote option index per drawn Juror; `u8::MAX` until revealed. */
   reveals: ReadonlyUint8Array;
+  /**
+   * Whether this round's coherence settlement has been applied
+   * (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+   * `finalize_dispute` (final round) or `settle_round` (prior rounds)
+   * processes it; 1 after. Idempotency guard against double-settlement.
+   * (`u8` not `bool` — `bool` is not `Pod`.)
+   */
+  settled: number;
   pad1: ReadonlyUint8Array;
 };
 
@@ -120,7 +136,8 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
         getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 31 }),
       ],
       ["reveals", fixEncoderSize(getBytesEncoder(), 31)],
-      ["pad1", fixEncoderSize(getBytesEncoder(), 5)],
+      ["settled", getU8Encoder()],
+      ["pad1", fixEncoderSize(getBytesEncoder(), 4)],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -147,7 +164,8 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
       getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 31 }),
     ],
     ["reveals", fixDecoderSize(getBytesDecoder(), 31)],
-    ["pad1", fixDecoderSize(getBytesDecoder(), 5)],
+    ["settled", getU8Decoder()],
+    ["pad1", fixDecoderSize(getBytesDecoder(), 4)],
   ]);
 }
 

@@ -11,6 +11,8 @@ import {
   fixDecoderSize,
   fixEncoderSize,
   getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getProgramDerivedAddress,
@@ -24,9 +26,9 @@ import {
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -43,6 +45,12 @@ import {
 } from "@solana/kit/program-client-core";
 import { findJurorStakePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
+import {
+  getMSTNodeDecoder,
+  getMSTNodeEncoder,
+  type MSTNode,
+  type MSTNodeArgs,
+} from "../types";
 
 export const UNSTAKE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   90, 95, 107, 42, 205, 124, 50, 225,
@@ -101,28 +109,34 @@ export type UnstakeInstruction<
 export type UnstakeInstructionData = {
   discriminator: ReadonlyUint8Array;
   amount: bigint;
+  path: Array<MSTNode>;
 };
 
-export type UnstakeInstructionDataArgs = { amount: number | bigint };
+export type UnstakeInstructionDataArgs = {
+  amount: number | bigint;
+  path: Array<MSTNodeArgs>;
+};
 
-export function getUnstakeInstructionDataEncoder(): FixedSizeEncoder<UnstakeInstructionDataArgs> {
+export function getUnstakeInstructionDataEncoder(): Encoder<UnstakeInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["amount", getU64Encoder()],
+      ["path", getArrayEncoder(getMSTNodeEncoder())],
     ]),
     (value) => ({ ...value, discriminator: UNSTAKE_DISCRIMINATOR }),
   );
 }
 
-export function getUnstakeInstructionDataDecoder(): FixedSizeDecoder<UnstakeInstructionData> {
+export function getUnstakeInstructionDataDecoder(): Decoder<UnstakeInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["amount", getU64Decoder()],
+    ["path", getArrayDecoder(getMSTNodeDecoder())],
   ]);
 }
 
-export function getUnstakeInstructionDataCodec(): FixedSizeCodec<
+export function getUnstakeInstructionDataCodec(): Codec<
   UnstakeInstructionDataArgs,
   UnstakeInstructionData
 > {
@@ -152,6 +166,7 @@ export type UnstakeAsyncInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   amount: UnstakeInstructionDataArgs["amount"];
+  path: UnstakeInstructionDataArgs["path"];
 };
 
 export async function getUnstakeInstructionAsync<
@@ -339,6 +354,7 @@ export type UnstakeInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   amount: UnstakeInstructionDataArgs["amount"];
+  path: UnstakeInstructionDataArgs["path"];
 };
 
 export function getUnstakeInstruction<

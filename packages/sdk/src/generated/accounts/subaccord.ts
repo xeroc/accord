@@ -86,6 +86,22 @@ export type Subaccord = {
    * finalized Merkle Snapshot.
    */
   stakerCount: number;
+  /**
+   * On-chain stake accumulator root (ADR-0012). Maintained incrementally on
+   * every `stake`/`unstake` via client-supplied Merkle paths; canonical by
+   * construction — there is no posted root to withhold or fabricate.
+   */
+  rootHash: ReadonlyUint8Array;
+  /** Total stake committed to by the accumulator tree (= root node sum). */
+  totalStake: bigint;
+  /**
+   * Next free leaf index in the append-only tree. Incremented once per
+   * first-time staker; never reused (full unstake zeros the leaf weight but
+   * keeps its `tree_index`).
+   */
+  nextIndex: number;
+  /** Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`. */
+  depth: number;
   bump: number;
 };
 
@@ -123,6 +139,22 @@ export type SubaccordArgs = {
    * finalized Merkle Snapshot.
    */
   stakerCount: number;
+  /**
+   * On-chain stake accumulator root (ADR-0012). Maintained incrementally on
+   * every `stake`/`unstake` via client-supplied Merkle paths; canonical by
+   * construction — there is no posted root to withhold or fabricate.
+   */
+  rootHash: ReadonlyUint8Array;
+  /** Total stake committed to by the accumulator tree (= root node sum). */
+  totalStake: number | bigint;
+  /**
+   * Next free leaf index in the append-only tree. Incremented once per
+   * first-time staker; never reused (full unstake zeros the leaf weight but
+   * keeps its `tree_index`).
+   */
+  nextIndex: number;
+  /** Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`. */
+  depth: number;
   bump: number;
 };
 
@@ -146,6 +178,10 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["stakerCount", getU32Encoder()],
+      ["rootHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["totalStake", getU64Encoder()],
+      ["nextIndex", getU32Encoder()],
+      ["depth", getU8Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBACCORD_DISCRIMINATOR }),
@@ -171,6 +207,10 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["stakerCount", getU32Decoder()],
+    ["rootHash", fixDecoderSize(getBytesDecoder(), 32)],
+    ["totalStake", getU64Decoder()],
+    ["nextIndex", getU32Decoder()],
+    ["depth", getU8Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -234,5 +274,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 252;
+  return 297;
 }

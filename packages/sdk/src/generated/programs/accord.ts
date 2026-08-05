@@ -40,7 +40,6 @@ import {
   getPauseStateCodec,
   getPendingUpdateCodec,
   getRoundCodec,
-  getSnapshotCodec,
   getSubaccordCodec,
   type AppealBond,
   type AppealBondArgs,
@@ -54,106 +53,100 @@ import {
   type PendingUpdateArgs,
   type Round,
   type RoundArgs,
-  type Snapshot,
-  type SnapshotArgs,
   type Subaccord,
   type SubaccordArgs,
 } from "../accounts";
 import {
   getAppealInstructionAsync,
-  getChallengeSnapshotInstructionAsync,
+  getCancelDisputeInstructionAsync,
   getClaimAppealRefundInstructionAsync,
   getCommitInstruction,
   getCommitVrfCallbackInstruction,
   getCreateDisputeInstructionAsync,
   getCreateSubaccordInstructionAsync,
-  getDrawInstruction,
+  getDrawSeatInstruction,
   getExecuteSubaccordUpdateInstruction,
   getExecuteUnpauseInstructionAsync,
   getFinalizeDisputeInstruction,
   getFinalizeRoundInstruction,
-  getFinalizeSnapshotInstructionAsync,
   getGetRulingInstruction,
   getHealthInstruction,
   getInitializePauseInstructionAsync,
   getPauseInstructionAsync,
-  getPostSnapshotInstructionAsync,
   getProposeSubaccordUpdateInstructionAsync,
   getProposeUnpauseInstructionAsync,
   getRequestVrfInstructionAsync,
-  getRevealInstruction,
+  getRevealInstructionAsync,
+  getSettleRoundInstructionAsync,
   getStakeInstructionAsync,
   getUnstakeInstructionAsync,
   parseAppealInstruction,
-  parseChallengeSnapshotInstruction,
+  parseCancelDisputeInstruction,
   parseClaimAppealRefundInstruction,
   parseCommitInstruction,
   parseCommitVrfCallbackInstruction,
   parseCreateDisputeInstruction,
   parseCreateSubaccordInstruction,
-  parseDrawInstruction,
+  parseDrawSeatInstruction,
   parseExecuteSubaccordUpdateInstruction,
   parseExecuteUnpauseInstruction,
   parseFinalizeDisputeInstruction,
   parseFinalizeRoundInstruction,
-  parseFinalizeSnapshotInstruction,
   parseGetRulingInstruction,
   parseHealthInstruction,
   parseInitializePauseInstruction,
   parsePauseInstruction,
-  parsePostSnapshotInstruction,
   parseProposeSubaccordUpdateInstruction,
   parseProposeUnpauseInstruction,
   parseRequestVrfInstruction,
   parseRevealInstruction,
+  parseSettleRoundInstruction,
   parseStakeInstruction,
   parseUnstakeInstruction,
   type AppealAsyncInput,
-  type ChallengeSnapshotAsyncInput,
+  type CancelDisputeAsyncInput,
   type ClaimAppealRefundAsyncInput,
   type CommitInput,
   type CommitVrfCallbackInput,
   type CreateDisputeAsyncInput,
   type CreateSubaccordAsyncInput,
-  type DrawInput,
+  type DrawSeatInput,
   type ExecuteSubaccordUpdateInput,
   type ExecuteUnpauseAsyncInput,
   type FinalizeDisputeInput,
   type FinalizeRoundInput,
-  type FinalizeSnapshotAsyncInput,
   type GetRulingInput,
   type HealthInput,
   type InitializePauseAsyncInput,
   type ParsedAppealInstruction,
-  type ParsedChallengeSnapshotInstruction,
+  type ParsedCancelDisputeInstruction,
   type ParsedClaimAppealRefundInstruction,
   type ParsedCommitInstruction,
   type ParsedCommitVrfCallbackInstruction,
   type ParsedCreateDisputeInstruction,
   type ParsedCreateSubaccordInstruction,
-  type ParsedDrawInstruction,
+  type ParsedDrawSeatInstruction,
   type ParsedExecuteSubaccordUpdateInstruction,
   type ParsedExecuteUnpauseInstruction,
   type ParsedFinalizeDisputeInstruction,
   type ParsedFinalizeRoundInstruction,
-  type ParsedFinalizeSnapshotInstruction,
   type ParsedGetRulingInstruction,
   type ParsedHealthInstruction,
   type ParsedInitializePauseInstruction,
   type ParsedPauseInstruction,
-  type ParsedPostSnapshotInstruction,
   type ParsedProposeSubaccordUpdateInstruction,
   type ParsedProposeUnpauseInstruction,
   type ParsedRequestVrfInstruction,
   type ParsedRevealInstruction,
+  type ParsedSettleRoundInstruction,
   type ParsedStakeInstruction,
   type ParsedUnstakeInstruction,
   type PauseAsyncInput,
-  type PostSnapshotAsyncInput,
   type ProposeSubaccordUpdateAsyncInput,
   type ProposeUnpauseAsyncInput,
   type RequestVrfAsyncInput,
-  type RevealInput,
+  type RevealAsyncInput,
+  type SettleRoundAsyncInput,
   type StakeAsyncInput,
   type UnstakeAsyncInput,
 } from "../instructions";
@@ -164,6 +157,7 @@ import {
   findPauseStatePda,
   findPendingUpdatePda,
   findProgramIdentityPda,
+  findRoundPda,
   findSubaccordPda,
 } from "../pdas";
 
@@ -177,7 +171,6 @@ export enum AccordAccount {
   PauseState,
   PendingUpdate,
   Round,
-  Snapshot,
   Subaccord,
 }
 
@@ -255,17 +248,6 @@ export function identifyAccordAccount(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([137, 213, 28, 133, 224, 161, 48, 108]),
-      ),
-      0,
-    )
-  ) {
-    return AccordAccount.Snapshot;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([210, 63, 193, 190, 9, 166, 89, 170]),
       ),
       0,
@@ -281,27 +263,26 @@ export function identifyAccordAccount(
 
 export enum AccordInstruction {
   Appeal,
-  ChallengeSnapshot,
+  CancelDispute,
   ClaimAppealRefund,
   Commit,
   CommitVrfCallback,
   CreateDispute,
   CreateSubaccord,
-  Draw,
+  DrawSeat,
   ExecuteSubaccordUpdate,
   ExecuteUnpause,
   FinalizeDispute,
   FinalizeRound,
-  FinalizeSnapshot,
   GetRuling,
   Health,
   InitializePause,
   Pause,
-  PostSnapshot,
   ProposeSubaccordUpdate,
   ProposeUnpause,
   RequestVrf,
   Reveal,
+  SettleRound,
   Stake,
   Unstake,
 }
@@ -325,12 +306,12 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([29, 58, 52, 140, 22, 212, 132, 112]),
+        new Uint8Array([23, 155, 220, 94, 76, 141, 231, 124]),
       ),
       0,
     )
   ) {
-    return AccordInstruction.ChallengeSnapshot;
+    return AccordInstruction.CancelDispute;
   }
   if (
     containsBytes(
@@ -391,12 +372,12 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([61, 40, 62, 184, 31, 176, 24, 130]),
+        new Uint8Array([52, 26, 56, 16, 128, 4, 149, 236]),
       ),
       0,
     )
   ) {
-    return AccordInstruction.Draw;
+    return AccordInstruction.DrawSeat;
   }
   if (
     containsBytes(
@@ -446,17 +427,6 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([164, 5, 101, 146, 139, 235, 67, 48]),
-      ),
-      0,
-    )
-  ) {
-    return AccordInstruction.FinalizeSnapshot;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([196, 52, 54, 1, 180, 75, 86, 16]),
       ),
       0,
@@ -496,17 +466,6 @@ export function identifyAccordInstruction(
     )
   ) {
     return AccordInstruction.Pause;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([44, 200, 134, 75, 104, 188, 11, 73]),
-      ),
-      0,
-    )
-  ) {
-    return AccordInstruction.PostSnapshot;
   }
   if (
     containsBytes(
@@ -556,6 +515,17 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([40, 101, 18, 1, 31, 129, 52, 77]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.SettleRound;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([206, 176, 202, 18, 200, 209, 179, 108]),
       ),
       0,
@@ -587,8 +557,8 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.Appeal;
     } & ParsedAppealInstruction<TProgram>)
   | ({
-      instructionType: AccordInstruction.ChallengeSnapshot;
-    } & ParsedChallengeSnapshotInstruction<TProgram>)
+      instructionType: AccordInstruction.CancelDispute;
+    } & ParsedCancelDisputeInstruction<TProgram>)
   | ({
       instructionType: AccordInstruction.ClaimAppealRefund;
     } & ParsedClaimAppealRefundInstruction<TProgram>)
@@ -605,8 +575,8 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.CreateSubaccord;
     } & ParsedCreateSubaccordInstruction<TProgram>)
   | ({
-      instructionType: AccordInstruction.Draw;
-    } & ParsedDrawInstruction<TProgram>)
+      instructionType: AccordInstruction.DrawSeat;
+    } & ParsedDrawSeatInstruction<TProgram>)
   | ({
       instructionType: AccordInstruction.ExecuteSubaccordUpdate;
     } & ParsedExecuteSubaccordUpdateInstruction<TProgram>)
@@ -620,9 +590,6 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.FinalizeRound;
     } & ParsedFinalizeRoundInstruction<TProgram>)
   | ({
-      instructionType: AccordInstruction.FinalizeSnapshot;
-    } & ParsedFinalizeSnapshotInstruction<TProgram>)
-  | ({
       instructionType: AccordInstruction.GetRuling;
     } & ParsedGetRulingInstruction<TProgram>)
   | ({
@@ -635,9 +602,6 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.Pause;
     } & ParsedPauseInstruction<TProgram>)
   | ({
-      instructionType: AccordInstruction.PostSnapshot;
-    } & ParsedPostSnapshotInstruction<TProgram>)
-  | ({
       instructionType: AccordInstruction.ProposeSubaccordUpdate;
     } & ParsedProposeSubaccordUpdateInstruction<TProgram>)
   | ({
@@ -649,6 +613,9 @@ export type ParsedAccordInstruction<
   | ({
       instructionType: AccordInstruction.Reveal;
     } & ParsedRevealInstruction<TProgram>)
+  | ({
+      instructionType: AccordInstruction.SettleRound;
+    } & ParsedSettleRoundInstruction<TProgram>)
   | ({
       instructionType: AccordInstruction.Stake;
     } & ParsedStakeInstruction<TProgram>)
@@ -668,11 +635,11 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseAppealInstruction(instruction),
       };
     }
-    case AccordInstruction.ChallengeSnapshot: {
+    case AccordInstruction.CancelDispute: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: AccordInstruction.ChallengeSnapshot,
-        ...parseChallengeSnapshotInstruction(instruction),
+        instructionType: AccordInstruction.CancelDispute,
+        ...parseCancelDisputeInstruction(instruction),
       };
     }
     case AccordInstruction.ClaimAppealRefund: {
@@ -710,11 +677,11 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseCreateSubaccordInstruction(instruction),
       };
     }
-    case AccordInstruction.Draw: {
+    case AccordInstruction.DrawSeat: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: AccordInstruction.Draw,
-        ...parseDrawInstruction(instruction),
+        instructionType: AccordInstruction.DrawSeat,
+        ...parseDrawSeatInstruction(instruction),
       };
     }
     case AccordInstruction.ExecuteSubaccordUpdate: {
@@ -745,13 +712,6 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseFinalizeRoundInstruction(instruction),
       };
     }
-    case AccordInstruction.FinalizeSnapshot: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AccordInstruction.FinalizeSnapshot,
-        ...parseFinalizeSnapshotInstruction(instruction),
-      };
-    }
     case AccordInstruction.GetRuling: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -780,13 +740,6 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parsePauseInstruction(instruction),
       };
     }
-    case AccordInstruction.PostSnapshot: {
-      assertIsInstructionWithAccounts(instruction);
-      return {
-        instructionType: AccordInstruction.PostSnapshot,
-        ...parsePostSnapshotInstruction(instruction),
-      };
-    }
     case AccordInstruction.ProposeSubaccordUpdate: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -813,6 +766,13 @@ export function parseAccordInstruction<TProgram extends string>(
       return {
         instructionType: AccordInstruction.Reveal,
         ...parseRevealInstruction(instruction),
+      };
+    }
+    case AccordInstruction.SettleRound: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.SettleRound,
+        ...parseSettleRoundInstruction(instruction),
       };
     }
     case AccordInstruction.Stake: {
@@ -859,8 +819,6 @@ export type AccordPluginAccounts = {
     SelfFetchFunctions<PendingUpdateArgs, PendingUpdate>;
   round: ReturnType<typeof getRoundCodec> &
     SelfFetchFunctions<RoundArgs, Round>;
-  snapshot: ReturnType<typeof getSnapshotCodec> &
-    SelfFetchFunctions<SnapshotArgs, Snapshot>;
   subaccord: ReturnType<typeof getSubaccordCodec> &
     SelfFetchFunctions<SubaccordArgs, Subaccord>;
 };
@@ -869,9 +827,9 @@ export type AccordPluginInstructions = {
   appeal: (
     input: AppealAsyncInput,
   ) => ReturnType<typeof getAppealInstructionAsync> & SelfPlanAndSendFunctions;
-  challengeSnapshot: (
-    input: ChallengeSnapshotAsyncInput,
-  ) => ReturnType<typeof getChallengeSnapshotInstructionAsync> &
+  cancelDispute: (
+    input: CancelDisputeAsyncInput,
+  ) => ReturnType<typeof getCancelDisputeInstructionAsync> &
     SelfPlanAndSendFunctions;
   claimAppealRefund: (
     input: ClaimAppealRefundAsyncInput,
@@ -892,9 +850,9 @@ export type AccordPluginInstructions = {
     input: CreateSubaccordAsyncInput,
   ) => ReturnType<typeof getCreateSubaccordInstructionAsync> &
     SelfPlanAndSendFunctions;
-  draw: (
-    input: DrawInput,
-  ) => ReturnType<typeof getDrawInstruction> & SelfPlanAndSendFunctions;
+  drawSeat: (
+    input: DrawSeatInput,
+  ) => ReturnType<typeof getDrawSeatInstruction> & SelfPlanAndSendFunctions;
   executeSubaccordUpdate: (
     input: ExecuteSubaccordUpdateInput,
   ) => ReturnType<typeof getExecuteSubaccordUpdateInstruction> &
@@ -911,10 +869,6 @@ export type AccordPluginInstructions = {
     input: FinalizeRoundInput,
   ) => ReturnType<typeof getFinalizeRoundInstruction> &
     SelfPlanAndSendFunctions;
-  finalizeSnapshot: (
-    input: FinalizeSnapshotAsyncInput,
-  ) => ReturnType<typeof getFinalizeSnapshotInstructionAsync> &
-    SelfPlanAndSendFunctions;
   getRuling: (
     input: GetRulingInput,
   ) => ReturnType<typeof getGetRulingInstruction> & SelfPlanAndSendFunctions;
@@ -928,10 +882,6 @@ export type AccordPluginInstructions = {
   pause: (
     input: PauseAsyncInput,
   ) => ReturnType<typeof getPauseInstructionAsync> & SelfPlanAndSendFunctions;
-  postSnapshot: (
-    input: PostSnapshotAsyncInput,
-  ) => ReturnType<typeof getPostSnapshotInstructionAsync> &
-    SelfPlanAndSendFunctions;
   proposeSubaccordUpdate: (
     input: ProposeSubaccordUpdateAsyncInput,
   ) => ReturnType<typeof getProposeSubaccordUpdateInstructionAsync> &
@@ -945,8 +895,12 @@ export type AccordPluginInstructions = {
   ) => ReturnType<typeof getRequestVrfInstructionAsync> &
     SelfPlanAndSendFunctions;
   reveal: (
-    input: RevealInput,
-  ) => ReturnType<typeof getRevealInstruction> & SelfPlanAndSendFunctions;
+    input: RevealAsyncInput,
+  ) => ReturnType<typeof getRevealInstructionAsync> & SelfPlanAndSendFunctions;
+  settleRound: (
+    input: SettleRoundAsyncInput,
+  ) => ReturnType<typeof getSettleRoundInstructionAsync> &
+    SelfPlanAndSendFunctions;
   stake: (
     input: StakeAsyncInput,
   ) => ReturnType<typeof getStakeInstructionAsync> & SelfPlanAndSendFunctions;
@@ -962,6 +916,7 @@ export type AccordPluginPdas = {
   subaccord: typeof findSubaccordPda;
   pendingUpdate: typeof findPendingUpdatePda;
   programIdentity: typeof findProgramIdentityPda;
+  round: typeof findRoundPda;
   jurorStake: typeof findJurorStakePda;
 };
 
@@ -984,7 +939,6 @@ export function accordProgram() {
           pauseState: addSelfFetchFunctions(client, getPauseStateCodec()),
           pendingUpdate: addSelfFetchFunctions(client, getPendingUpdateCodec()),
           round: addSelfFetchFunctions(client, getRoundCodec()),
-          snapshot: addSelfFetchFunctions(client, getSnapshotCodec()),
           subaccord: addSelfFetchFunctions(client, getSubaccordCodec()),
         },
         instructions: {
@@ -993,10 +947,10 @@ export function accordProgram() {
               client,
               getAppealInstructionAsync(input),
             ),
-          challengeSnapshot: (input) =>
+          cancelDispute: (input) =>
             addSelfPlanAndSendFunctions(
               client,
-              getChallengeSnapshotInstructionAsync(input),
+              getCancelDisputeInstructionAsync(input),
             ),
           claimAppealRefund: (input) =>
             addSelfPlanAndSendFunctions(
@@ -1020,8 +974,8 @@ export function accordProgram() {
               client,
               getCreateSubaccordInstructionAsync(input),
             ),
-          draw: (input) =>
-            addSelfPlanAndSendFunctions(client, getDrawInstruction(input)),
+          drawSeat: (input) =>
+            addSelfPlanAndSendFunctions(client, getDrawSeatInstruction(input)),
           executeSubaccordUpdate: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1042,11 +996,6 @@ export function accordProgram() {
               client,
               getFinalizeRoundInstruction(input),
             ),
-          finalizeSnapshot: (input) =>
-            addSelfPlanAndSendFunctions(
-              client,
-              getFinalizeSnapshotInstructionAsync(input),
-            ),
           getRuling: (input) =>
             addSelfPlanAndSendFunctions(client, getGetRulingInstruction(input)),
           health: (input) =>
@@ -1060,11 +1009,6 @@ export function accordProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getPauseInstructionAsync(input),
-            ),
-          postSnapshot: (input) =>
-            addSelfPlanAndSendFunctions(
-              client,
-              getPostSnapshotInstructionAsync(input),
             ),
           proposeSubaccordUpdate: (input) =>
             addSelfPlanAndSendFunctions(
@@ -1082,7 +1026,15 @@ export function accordProgram() {
               getRequestVrfInstructionAsync(input),
             ),
           reveal: (input) =>
-            addSelfPlanAndSendFunctions(client, getRevealInstruction(input)),
+            addSelfPlanAndSendFunctions(
+              client,
+              getRevealInstructionAsync(input),
+            ),
+          settleRound: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSettleRoundInstructionAsync(input),
+            ),
           stake: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1101,6 +1053,7 @@ export function accordProgram() {
           subaccord: findSubaccordPda,
           pendingUpdate: findPendingUpdatePda,
           programIdentity: findProgramIdentityPda,
+          round: findRoundPda,
           jurorStake: findJurorStakePda,
         },
         identifyAccount: identifyAccordAccount,

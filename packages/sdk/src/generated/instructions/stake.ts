@@ -11,6 +11,8 @@ import {
   fixDecoderSize,
   fixEncoderSize,
   getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getProgramDerivedAddress,
@@ -24,9 +26,9 @@ import {
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -43,6 +45,12 @@ import {
 } from "@solana/kit/program-client-core";
 import { findJurorStakePda, findPauseStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
+import {
+  getMSTNodeDecoder,
+  getMSTNodeEncoder,
+  type MSTNode,
+  type MSTNodeArgs,
+} from "../types";
 
 export const STAKE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   206, 176, 202, 18, 200, 209, 179, 108,
@@ -110,28 +118,34 @@ export type StakeInstruction<
 export type StakeInstructionData = {
   discriminator: ReadonlyUint8Array;
   amount: bigint;
+  path: Array<MSTNode>;
 };
 
-export type StakeInstructionDataArgs = { amount: number | bigint };
+export type StakeInstructionDataArgs = {
+  amount: number | bigint;
+  path: Array<MSTNodeArgs>;
+};
 
-export function getStakeInstructionDataEncoder(): FixedSizeEncoder<StakeInstructionDataArgs> {
+export function getStakeInstructionDataEncoder(): Encoder<StakeInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["amount", getU64Encoder()],
+      ["path", getArrayEncoder(getMSTNodeEncoder())],
     ]),
     (value) => ({ ...value, discriminator: STAKE_DISCRIMINATOR }),
   );
 }
 
-export function getStakeInstructionDataDecoder(): FixedSizeDecoder<StakeInstructionData> {
+export function getStakeInstructionDataDecoder(): Decoder<StakeInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["amount", getU64Decoder()],
+    ["path", getArrayDecoder(getMSTNodeDecoder())],
   ]);
 }
 
-export function getStakeInstructionDataCodec(): FixedSizeCodec<
+export function getStakeInstructionDataCodec(): Codec<
   StakeInstructionDataArgs,
   StakeInstructionData
 > {
@@ -167,6 +181,7 @@ export type StakeAsyncInput<
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   amount: StakeInstructionDataArgs["amount"];
+  path: StakeInstructionDataArgs["path"];
 };
 
 export async function getStakeInstructionAsync<
@@ -382,6 +397,7 @@ export type StakeInput<
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   amount: StakeInstructionDataArgs["amount"];
+  path: StakeInstructionDataArgs["path"];
 };
 
 export function getStakeInstruction<

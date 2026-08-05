@@ -10,19 +10,23 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getArrayDecoder,
+  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
+  getU32Decoder,
+  getU32Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -37,22 +41,32 @@ import {
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
+import {
+  getLeafClaimDecoder,
+  getLeafClaimEncoder,
+  getMSTNodeDecoder,
+  getMSTNodeEncoder,
+  type LeafClaim,
+  type LeafClaimArgs,
+  type MSTNode,
+  type MSTNodeArgs,
+} from "../types";
 
-export const FINALIZE_DISPUTE_DISCRIMINATOR: ReadonlyUint8Array =
-  new Uint8Array([190, 211, 17, 122, 247, 157, 27, 223]);
+export const DRAW_SEAT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  52, 26, 56, 16, 128, 4, 149, 236,
+]);
 
-export function getFinalizeDisputeDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(
-    FINALIZE_DISPUTE_DISCRIMINATOR,
-  );
+export function getDrawSeatDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(DRAW_SEAT_DISCRIMINATOR);
 }
 
-export type FinalizeDisputeInstruction<
+export type DrawSeatInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
-  TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
+  TAccountSystemProgram extends string | AccountMeta<string> =
+    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -62,80 +76,103 @@ export type FinalizeDisputeInstruction<
         ? WritableSignerAccount<TAccountCaller> &
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
-      TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
-        : TAccountSubaccord,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
+      TAccountSystemProgram extends string
+        ? ReadonlyAccount<TAccountSystemProgram>
+        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type FinalizeDisputeInstructionData = {
+export type DrawSeatInstructionData = {
   discriminator: ReadonlyUint8Array;
+  seat: number;
+  leaf: LeafClaim;
+  proof: Array<MSTNode>;
+  index: number;
 };
 
-export type FinalizeDisputeInstructionDataArgs = {};
+export type DrawSeatInstructionDataArgs = {
+  seat: number;
+  leaf: LeafClaimArgs;
+  proof: Array<MSTNodeArgs>;
+  index: number;
+};
 
-export function getFinalizeDisputeInstructionDataEncoder(): FixedSizeEncoder<FinalizeDisputeInstructionDataArgs> {
+export function getDrawSeatInstructionDataEncoder(): Encoder<DrawSeatInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
-    (value) => ({ ...value, discriminator: FINALIZE_DISPUTE_DISCRIMINATOR }),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["seat", getU32Encoder()],
+      ["leaf", getLeafClaimEncoder()],
+      ["proof", getArrayEncoder(getMSTNodeEncoder())],
+      ["index", getU32Encoder()],
+    ]),
+    (value) => ({ ...value, discriminator: DRAW_SEAT_DISCRIMINATOR }),
   );
 }
 
-export function getFinalizeDisputeInstructionDataDecoder(): FixedSizeDecoder<FinalizeDisputeInstructionData> {
+export function getDrawSeatInstructionDataDecoder(): Decoder<DrawSeatInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["seat", getU32Decoder()],
+    ["leaf", getLeafClaimDecoder()],
+    ["proof", getArrayDecoder(getMSTNodeDecoder())],
+    ["index", getU32Decoder()],
   ]);
 }
 
-export function getFinalizeDisputeInstructionDataCodec(): FixedSizeCodec<
-  FinalizeDisputeInstructionDataArgs,
-  FinalizeDisputeInstructionData
+export function getDrawSeatInstructionDataCodec(): Codec<
+  DrawSeatInstructionDataArgs,
+  DrawSeatInstructionData
 > {
   return combineCodec(
-    getFinalizeDisputeInstructionDataEncoder(),
-    getFinalizeDisputeInstructionDataDecoder(),
+    getDrawSeatInstructionDataEncoder(),
+    getDrawSeatInstructionDataDecoder(),
   );
 }
 
-export type FinalizeDisputeInput<
+export type DrawSeatInput<
   TAccountCaller extends string = string,
-  TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
   TAccountRound extends string = string,
+  TAccountSystemProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
-  subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
   round: Address<TAccountRound>;
+  systemProgram?: Address<TAccountSystemProgram>;
+  seat: DrawSeatInstructionDataArgs["seat"];
+  leaf: DrawSeatInstructionDataArgs["leaf"];
+  proof: DrawSeatInstructionDataArgs["proof"];
+  index: DrawSeatInstructionDataArgs["index"];
 };
 
-export function getFinalizeDisputeInstruction<
+export function getDrawSeatInstruction<
   TAccountCaller extends string,
-  TAccountSubaccord extends string,
   TAccountDispute extends string,
   TAccountRound extends string,
+  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: FinalizeDisputeInput<
+  input: DrawSeatInput<
     TAccountCaller,
-    TAccountSubaccord,
     TAccountDispute,
-    TAccountRound
+    TAccountRound,
+    TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): FinalizeDisputeInstruction<
+): DrawSeatInstruction<
   TProgramAddress,
   TAccountCaller,
-  TAccountSubaccord,
   TAccountDispute,
-  TAccountRound
+  TAccountRound,
+  TAccountSystemProgram
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -143,56 +180,67 @@ export function getFinalizeDisputeInstruction<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value =
+      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  }
+
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta("caller", accounts.caller),
-      getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("round", accounts.round),
+      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getFinalizeDisputeInstructionDataEncoder().encode({}),
+    data: getDrawSeatInstructionDataEncoder().encode(
+      args as DrawSeatInstructionDataArgs,
+    ),
     programAddress,
-  } as FinalizeDisputeInstruction<
+  } as DrawSeatInstruction<
     TProgramAddress,
     TAccountCaller,
-    TAccountSubaccord,
     TAccountDispute,
-    TAccountRound
+    TAccountRound,
+    TAccountSystemProgram
   >);
 }
 
-export type ParsedFinalizeDisputeInstruction<
+export type ParsedDrawSeatInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     caller: TAccountMetas[0];
-    subaccord: TAccountMetas[1];
-    dispute: TAccountMetas[2];
-    round: TAccountMetas[3];
+    dispute: TAccountMetas[1];
+    round: TAccountMetas[2];
+    systemProgram: TAccountMetas[3];
   };
-  data: FinalizeDisputeInstructionData;
+  data: DrawSeatInstructionData;
 };
 
-export function parseFinalizeDisputeInstruction<
+export function parseDrawSeatInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedFinalizeDisputeInstruction<TProgram, TAccountMetas> {
+): ParsedDrawSeatInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 4) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -212,10 +260,10 @@ export function parseFinalizeDisputeInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       caller: getNextAccount(),
-      subaccord: getNextAccount(),
       dispute: getNextAccount(),
       round: getNextAccount(),
+      systemProgram: getNextAccount(),
     },
-    data: getFinalizeDisputeInstructionDataDecoder().decode(instruction.data),
+    data: getDrawSeatInstructionDataDecoder().decode(instruction.data),
   };
 }

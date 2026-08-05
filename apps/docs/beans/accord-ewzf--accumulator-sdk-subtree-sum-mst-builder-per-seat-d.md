@@ -1,15 +1,85 @@
 ---
 # accord-ewzf
-title: 'Accumulator — SDK: subtree-sum MST builder, per-seat draw_seat, drop snapshot methods (ADR-0012)'
-status: todo
+title: "Accumulator — SDK: subtree-sum MST builder, per-seat draw_seat, drop snapshot methods (ADR-0012)"
+status: completed
 type: task
 priority: high
 created_at: 2026-08-05T17:12:02Z
-updated_at: 2026-08-05T22:46:01Z
+updated_at: 2026-08-06T01:35:00Z
 parent: accord-g74z
 blocked_by:
-    - accord-yz7c
+  - accord-yz7c
 ---
+
+## Summary of Changes
+
+Rewrote `@accord/sdk` to match the ADR-0012 accumulator IDL produced by
+`accord-yz7c`. Regenerated the Codama tree from the rebuilt IDL (`codama run
+js`), then adapted the hand-written facade to the subtree-sum accumulator +
+per-seat draw + frozen-root VRF flow.
+
+### Generated tree (`src/generated/`)
+
+- Regenerated from `target/idl/accord.json`. Now reflects: `drawSeat`,
+  `cancelDispute`, `settleRound` instructions; no `postSnapshot`/
+  `challengeSnapshot`/`finalizeSnapshot`/`draw`; no `Snapshot` account;
+  `Stake`/`Unstake` data args carry `path`; `CreateSubaccord` carries `depth`;
+  `LeafClaim` is `{ juror, stake }` (no `cumAfter`).
+
+### MST builder (`src/methods/mst.ts` — NEW; replaces `snapshot.ts`)
+
+- Subtree-sum accumulator: `leafHash = H(juror‖stake_le)`,
+  `nodeHash = H(left_hash‖left_sum‖right_hash‖right_sum)` (sums bound — Bad 5).
+- `buildAccumulator(leaves, depth)`, `proofFor(tree, index)` (the client-supplied
+  path for stake/unstake), `recomputeRoot`, `verifyMembership` (returns the
+  cumulative-from-left prefix for sortition), `emptyRoot(depth)`.
+- Byte-exact match to on-chain `mst_leaf_hash`/`mst_node_hash`/`empty_tree_root`/
+  `verify_and_recompute`/`verify_membership_and_prefix`. Deleted `snapshot.ts`
+  (post/challenge/finalize + the old cumulative-from-left builder).
+
+### staking (`methods/staking.ts`)
+
+- `stake`/`unstake` seams + functions take a `path: MSTNode[]` (ADR-0012). The
+  adapter threads it into the generated instruction data args.
+
+### VRF + draw (`methods/vrf.ts`)
+
+- One-shot `draw` → per-seat `drawSeat(seat, membership)`. `vrfSeed` drops
+  `draw_attempt`; `seatSlot` derives `r_i` per seat; `findLeafForSlot` resolves
+  the winning leaf + proof against a tracked tree; `drawSeat` builds one seat's
+  instruction (round `init_if_needed`, JurorStake as remaining_accounts[0]).
+- `awaitCommittedVrf` unchanged. Deterministic collision re-rülle (sampling
+  without replacement) remains bean `accord-tzo0` — the SDK exposes the
+  per-seat primitives it will compose.
+
+### Types / PDA / fetch / errors / constants / index
+
+- `types.ts`: dropped `SnapshotStatus`/`FraudProof`/`JurorMembership` re-exports.
+- `pda.ts`: dropped `findSnapshotPda` + `SEED_SNAPSHOT`.
+- `fetch.ts`: dropped `fetchSnapshot`/`fetchSnapshotMaybe`.
+- `errors.ts`: renumbered to match the new `errors.rs` enum order (accumulator
+  block at 18–19; removed the 7 snapshot/fraud variants; added `InvalidMerklePath`,
+  `TreeFull`).
+- `constants.ts`: dropped `SNAPSHOT_CHALLENGE_WINDOW_SECS`; added
+  `DEFAULT_TREE_DEPTH` (20).
+- `index.ts`: removed all snapshot exports + `getSnapshotDecoder`; exports the
+  MST accumulator builder surface.
+
+### Lifecycle / voting
+
+- `CreateSubaccordArgs` += `depth` (u8) — flows through to the generated ix.
+- `VotingAccounts` += optional `stakingToken`/`jurorTokenAccount`/`vault`
+  (reveal pays the participation fee — surfaces a pre-existing gap the regen
+  exposed as a type error).
+
+### Verification
+
+- `pnpm --filter @accord/sdk run lint` (tsc --noEmit) → 0 errors.
+- `pnpm --filter @accord/sdk test` → 42 passed, 0 failed (incl. 6 new
+  `mst.test.ts` cases + 5 rewritten `vrf.test.ts` per-seat cases).
+
+Out of scope (separate beans): the `tests/` jest e2e suite rewrite (accord-btel)
+and the deterministic collision-free sampling composition (accord-tzo0).
 
 ## Why
 
@@ -48,8 +118,6 @@ right_sum)`; `LeafClaim` drops `cum_after` (prefix computed from the path);
 
 ADR-0012; `accord-g74z`; `accord-tzo0` (per-seat draw + sampling); ADR-0010
 (SDK facade).
-
-## Blocker — blocked on `accord-yz7c` (on-chain accumulator not implemented)
 
 **Correction (2026-08-06):** the first re-block pointed `blocked_by` at the
 parent `accord-g74z` — that is a **deadlock**. A parent can never reach

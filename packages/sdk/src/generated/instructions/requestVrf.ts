@@ -52,7 +52,6 @@ export type RequestVrfInstruction<
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
-  TAccountSnapshot extends string | AccountMeta<string> = string,
   TAccountOracleQueue extends string | AccountMeta<string> =
     "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh",
   TAccountProgramIdentity extends string | AccountMeta<string> = string,
@@ -77,9 +76,6 @@ export type RequestVrfInstruction<
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
-      TAccountSnapshot extends string
-        ? ReadonlyAccount<TAccountSnapshot>
-        : TAccountSnapshot,
       TAccountOracleQueue extends string
         ? WritableAccount<TAccountOracleQueue>
         : TAccountOracleQueue,
@@ -130,7 +126,6 @@ export type RequestVrfAsyncInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountSnapshot extends string = string,
   TAccountOracleQueue extends string = string,
   TAccountProgramIdentity extends string = string,
   TAccountVrfProgram extends string = string,
@@ -140,7 +135,6 @@ export type RequestVrfAsyncInput<
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  snapshot: Address<TAccountSnapshot>;
   oracleQueue?: Address<TAccountOracleQueue>;
   programIdentity?: Address<TAccountProgramIdentity>;
   vrfProgram?: Address<TAccountVrfProgram>;
@@ -152,7 +146,6 @@ export async function getRequestVrfInstructionAsync<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountSnapshot extends string,
   TAccountOracleQueue extends string,
   TAccountProgramIdentity extends string,
   TAccountVrfProgram extends string,
@@ -164,7 +157,6 @@ export async function getRequestVrfInstructionAsync<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountOracleQueue,
     TAccountProgramIdentity,
     TAccountVrfProgram,
@@ -178,7 +170,6 @@ export async function getRequestVrfInstructionAsync<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountOracleQueue,
     TAccountProgramIdentity,
     TAccountVrfProgram,
@@ -194,7 +185,6 @@ export async function getRequestVrfInstructionAsync<
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    snapshot: { value: input.snapshot ?? null, isWritable: false },
     oracleQueue: { value: input.oracleQueue ?? null, isWritable: true },
     programIdentity: {
       value: input.programIdentity ?? null,
@@ -236,7 +226,6 @@ export async function getRequestVrfInstructionAsync<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("snapshot", accounts.snapshot),
       getAccountMeta("oracleQueue", accounts.oracleQueue),
       getAccountMeta("programIdentity", accounts.programIdentity),
       getAccountMeta("vrfProgram", accounts.vrfProgram),
@@ -250,7 +239,6 @@ export async function getRequestVrfInstructionAsync<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountOracleQueue,
     TAccountProgramIdentity,
     TAccountVrfProgram,
@@ -263,7 +251,6 @@ export type RequestVrfInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountSnapshot extends string = string,
   TAccountOracleQueue extends string = string,
   TAccountProgramIdentity extends string = string,
   TAccountVrfProgram extends string = string,
@@ -273,7 +260,6 @@ export type RequestVrfInput<
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  snapshot: Address<TAccountSnapshot>;
   oracleQueue?: Address<TAccountOracleQueue>;
   programIdentity: Address<TAccountProgramIdentity>;
   vrfProgram?: Address<TAccountVrfProgram>;
@@ -285,7 +271,6 @@ export function getRequestVrfInstruction<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountSnapshot extends string,
   TAccountOracleQueue extends string,
   TAccountProgramIdentity extends string,
   TAccountVrfProgram extends string,
@@ -297,7 +282,6 @@ export function getRequestVrfInstruction<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountOracleQueue,
     TAccountProgramIdentity,
     TAccountVrfProgram,
@@ -310,7 +294,6 @@ export function getRequestVrfInstruction<
   TAccountCaller,
   TAccountSubaccord,
   TAccountDispute,
-  TAccountSnapshot,
   TAccountOracleQueue,
   TAccountProgramIdentity,
   TAccountVrfProgram,
@@ -325,7 +308,6 @@ export function getRequestVrfInstruction<
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    snapshot: { value: input.snapshot ?? null, isWritable: false },
     oracleQueue: { value: input.oracleQueue ?? null, isWritable: true },
     programIdentity: {
       value: input.programIdentity ?? null,
@@ -364,7 +346,6 @@ export function getRequestVrfInstruction<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("snapshot", accounts.snapshot),
       getAccountMeta("oracleQueue", accounts.oracleQueue),
       getAccountMeta("programIdentity", accounts.programIdentity),
       getAccountMeta("vrfProgram", accounts.vrfProgram),
@@ -378,7 +359,6 @@ export function getRequestVrfInstruction<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountOracleQueue,
     TAccountProgramIdentity,
     TAccountVrfProgram,
@@ -396,12 +376,11 @@ export type ParsedRequestVrfInstruction<
     caller: TAccountMetas[0];
     subaccord: TAccountMetas[1];
     dispute: TAccountMetas[2];
-    snapshot: TAccountMetas[3];
-    oracleQueue: TAccountMetas[4];
-    programIdentity: TAccountMetas[5];
-    vrfProgram: TAccountMetas[6];
-    slotHashes: TAccountMetas[7];
-    systemProgram: TAccountMetas[8];
+    oracleQueue: TAccountMetas[3];
+    programIdentity: TAccountMetas[4];
+    vrfProgram: TAccountMetas[5];
+    slotHashes: TAccountMetas[6];
+    systemProgram: TAccountMetas[7];
   };
   data: RequestVrfInstructionData;
 };
@@ -414,12 +393,12 @@ export function parseRequestVrfInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedRequestVrfInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 8) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 8,
       },
     );
   }
@@ -435,7 +414,6 @@ export function parseRequestVrfInstruction<
       caller: getNextAccount(),
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
-      snapshot: getNextAccount(),
       oracleQueue: getNextAccount(),
       programIdentity: getNextAccount(),
       vrfProgram: getNextAccount(),
