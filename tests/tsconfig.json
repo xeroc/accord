@@ -1,10 +1,10 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "noEmit": true,
     "types": ["jest", "node"]
   },
-  "include": ["**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
