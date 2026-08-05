@@ -2,10 +2,21 @@
 
 ## Status
 
-**Proposed.** Implements the sortition enforcement and omission halves of
-ADR-0008's v1.1 scope. Depends on ADR-0008 (anchor-slot pattern, predicates 1,
-3, 4 — shipped). Supersedes the deferred items in bean `veridao-utcu` and fully
-addresses bean `veridao-i4jm` item #2 (richer fraud proof).
+**Proposed — partially superseded.** Implements the sortition enforcement and
+omission halves of ADR-0008's v1.1 scope. Depends on ADR-0008 (anchor-slot
+pattern, predicates 1, 3, 4 — shipped). Supersedes the deferred items in bean
+`veridao-utcu` and fully addresses bean `veridao-i4jm` item #2 (richer fraud
+proof).
+
+> **Partially superseded by ADR-0013 (VRF authentication) and ADR-0012
+> (on-chain accumulator).** ADR-0013 supersedes §2's caller-supplied
+> `commit_vrf(vrf_result)` design and the "oracle-verified VRF … still
+> deferred" consequence below — the shipped code uses an oracle-authenticated
+> callback instead. ADR-0012 supersedes the snapshot / MST layer (§1, §3, the
+> fraud-predicate table). The sortition _verification_ logic and the
+> commit/draw split rationale are retained. Treat the caller-supplied commit
+> language in §2 and the Consequences as **historical**; see ADR-0013 for the
+> current VRF security story.
 
 ## Context
 
