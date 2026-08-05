@@ -113,6 +113,68 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - Run `make lint` and the relevant test before committing. A milestone is
   `completed` only when all its leaf tests are green.
 
+### e2e suite — `tests/src` (Surfpool + jest + SDK)
+
+The jest suite in `tests/src/` is the **integration proof**: it drives the real
+program through the `@accord/sdk` facade against a live Surfpool instance.
+LiteSVM is the fast inner TDD loop; **e2e is the sign-off**, never skipped for a
+feature that touches the chain.
+
+- **Surfpool program deployment — do NOT start `surfpool` bare.** Surfpool does
+  not auto-deploy like `solana-test-validator --bpf-program`; it deploys via the
+  committed runbook `runbooks/deployment/main.tx` (`instant_surfnet_deployment =
+  true` cheatcode ⇒ direct program-data write, instant + deterministic) when
+  started with `--yes` (skips runbook-generation prompts). `make run_surfpool`
+  runs `surfpool start --yes --db :memory:` — the `--db :memory:` guarantees a
+  fresh Surfnet each start (singleton-PDA specs like `lifecycle.pause` stay
+  restart-safe). It airdrops `~/.config/solana/id.json`. If the program is
+  missing, `setup/env.ts` throws a clear `make run_surfpool` hint instead of
+  cascading red tests.
+
+- **Modular harness (mandatory — no copy-paste of RPC/payer/send boilerplate).**
+  Shared setup lives in `tests/src/setup/`, imported by every spec:
+  - `setup/env.ts` — `createTestEnv()` → `TestEnv` (`up`, `rpcUrl`, `rpc`, funded
+    `payer`, `accord` facade, `programId`, `sendIx(ix)`); `fundSigner(env)` for
+    SOL-funded jurors/appellants. Probes the validator + gates on program deploy.
+  - `setup/cheats.ts` — `surfnet_*` cheatcodes. **Warp split (don't mix):**
+    `warpForwardSeconds(env, s)` for timestamp window gates (commit/reveal/
+    snapshot-challenge/appeal — via `surfnet_timeTravel` ms-timestamp);
+    `warpForwardSlots(env, n)` for slot timelocks (propose/execute update,
+    unpause — overwrites the Clock sysvar, because `timeTravel` wraps slots at
+    `slotsInEpoch`). Also `readClock`, `setClock`, `setAccountRaw` (HEX), `cheat`.
+  - `setup/tokens.ts` — `createMint` (hand-encoded 82-B Mint via `setAccount`),
+    `setTokenBalance` (`surfnet_setTokenAccount`), `TOKEN_PROGRAM_ID`. Derive the
+    vault ATA with Kit `getProgramDerivedAddress` (ATA program
+    `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`) — NOT `@solana/spl-token`
+    (it pulls web3.js v1 → jest breaks on `uuid` ESM).
+  - `setup/vrf.ts` — `injectCommittedVrf(env, dispute, vrf32)`: writes
+    `committed_vrf` directly. Use INSTEAD of the SDK `requestVrf` — the on-chain
+    `request_vrf` CPIs the magicblock VRF oracle, which is not on a Surfnet.
+  - `setup/assertions.ts` — `expectAccordAccount(env, pda)` +
+    `fetchDecoded(env, pda, getXDecoder())`. **Use `fetchDecoded`**, not the
+    facade's `fetchX`/`getRuling`/`fetchJurorStake` — those need a
+    `ClientWithRpc` and break over a raw `createSolanaRpc`. Account decoders are
+    re-exported from `@accord/sdk`.
+  - `setup/fixtures.ts` — `randomBytes32()`, `DEFAULT_PUBKEY`,
+    `defaultSubaccordArgs(...)`.
+  One spec file per instruction group (`lifecycle.pause.timelock`,
+  `lifecycle.update`, `lifecycle.subaccord`, `staking`, `dispute`, `snapshot`,
+  `voting`, `appeal`, `draw`, `full-lifecycle`) + `draw-harness.ts` (the shared
+  VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
+  idempotently guards the PauseState singleton, so the **whole suite runs GREEN
+  together on one Surfnet** (`make test_surfpool`).
+
+- **The green rule (non-negotiable).** A feature/milestone is **not complete**
+  until its e2e spec passes against a running Surfpool — not skipped. "Skip if
+  validator down" is permitted only for the offline CI lane; for local + the
+  Surfpool lane the e2e MUST be GREEN:
+  1. `make run_surfpool` (terminal 1) — must show the Accord program deployed.
+  2. `make test_surfpool` (terminal 2) — every touched spec green.
+  Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
+  change**. Shipping an instruction without a green e2e spec is a blocker, not a
+  follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
+  SDK↔program↔Surfpool integration.
+
 ## Accord (Program B — built first)
 
 Standalone Schelling-point arbitration primitive. v1 instruction set target:

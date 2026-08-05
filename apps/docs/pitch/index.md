@@ -189,6 +189,22 @@ section.lead .sub {
 
 ---
 
+## The question a market can't price
+
+Decision markets answer **"what should we do?"** — forward, priced in capital.
+
+Accord answers the other question. Three properties:
+
+- **Subjective** — no oracle can settle it
+- **Backward-looking** — it already happened
+- **Fact-contested** — two parties swear different truths
+
+_Did the dev deliver? Was the exploit in scope? Did it resolve Yes?_
+
+A market predicts. A committee can be bought. **A Schelling court rules.**
+
+---
+
 ## Honesty is the profitable vote
 
 The **Schelling Point**: strangers converge on truth without talking.
@@ -252,7 +268,7 @@ let winner = accord.get_ruling(dispute_id)
 
 - **Freelance escrow** — "did the dev deliver?"
 - **DeFi insurance** — "was this exploit in scope?"
-- **Prediction markets** — "was this a suite?"
+- **Prediction markets** — "was this a suit?"
 
 One primitive. Every subjective question.
 
