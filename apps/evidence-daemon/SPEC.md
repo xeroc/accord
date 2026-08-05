@@ -50,14 +50,14 @@ Storage (S3/MinIO) holds ciphertext objects only.
 
 The daemon writes **nothing** on-chain. It reads via `@accord/sdk`:
 
-| Account / event      | Field(s) used                                          | Purpose                                                          |
-| -------------------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| `Subaccord`          | `evidence_operator`, `evidence_spec`                   | Resolve the per-Subaccord key; pin evidence/watermark scheme.    |
-| `Dispute`            | `subaccord`, `evidence_hash`, `state`                  | Locate key; integrity-gate cleartext; gate delivery on state.    |
-| `Round`              | `jurors[]`, `round_idx`                                | Authoritative source of the drawn set; re-encrypt target pubkeys.|
-| `DisputeCreated`     | `dispute`, `subaccord`, `evidence_hash`                | Indexing wake-up (ciphertext already ingested at file time).     |
-| `JurorsDrawn`        | `dispute`, `round`, `jurors`                           | Mark dispute as deliverable (cache hint; `Round` is authoritative). |
-| `RulingFinalized`    | `dispute`                                              | Retention sweep trigger.                                         |
+| Account / event   | Field(s) used                           | Purpose                                                             |
+| ----------------- | --------------------------------------- | ------------------------------------------------------------------- |
+| `Subaccord`       | `evidence_operator`, `evidence_spec`    | Resolve the per-Subaccord key; pin evidence/watermark scheme.       |
+| `Dispute`         | `subaccord`, `evidence_hash`, `state`   | Locate key; integrity-gate cleartext; gate delivery on state.       |
+| `Round`           | `jurors[]`, `round_idx`                 | Authoritative source of the drawn set; re-encrypt target pubkeys.   |
+| `DisputeCreated`  | `dispute`, `subaccord`, `evidence_hash` | Indexing wake-up (ciphertext already ingested at file time).        |
+| `JurorsDrawn`     | `dispute`, `round`, `jurors`            | Mark dispute as deliverable (cache hint; `Round` is authoritative). |
+| `RulingFinalized` | `dispute`                               | Retention sweep trigger.                                            |
 
 The drawn-set check is a **live `Round` account read**, not the event — events
 are cache/wake-up hints only.
@@ -121,7 +121,7 @@ verifies `sha256(cleartext) == dispute.evidence_hash` (ADR-0006).
 **Why pull + no auth is safe:** step 4 targets the Juror pubkey, so the returned
 `out` is decryptable only by the Juror key. A non-Juror fetching gets ciphertext
 it cannot read. Per-Juror watermarking (step 3, v1.1) embeds the fingerprint in
-`watermarked` *before* the Juror-bound encryption, so only the Juror key can
+`watermarked` _before_ the Juror-bound encryption, so only the Juror key can
 ever surface the fingerprint — attribution holds without request auth.
 
 ## Data model
@@ -130,13 +130,13 @@ ever surface the fingerprint — attribution holds without request auth.
 
 ```ts
 interface EvidenceBundle {
-  subaccord:          PublicKey;   // key selector (also S3 key prefix)
-  dispute:            PublicKey;   // primary index (S3 key suffix)
-  ct:                 Uint8Array;  // AES-GCM(plaintext) under DEK  — ciphertext
-  claimant_ephem_pub: Uint8Array;  // X25519, 32 bytes
-  wrapped:            Uint8Array;  // AES-GCM(DEK) under claimant↔operator ECDH — ciphertext
-  plaintext_hash:     [u8,32];     // == Dispute.evidence_hash (metadata, not secret)
-  ingested_at:        number;      // unix ms
+  subaccord: PublicKey; // key selector (also S3 key prefix)
+  dispute: PublicKey; // primary index (S3 key suffix)
+  ct: Uint8Array; // AES-GCM(plaintext) under DEK  — ciphertext
+  claimant_ephem_pub: Uint8Array; // X25519, 32 bytes
+  wrapped: Uint8Array; // AES-GCM(DEK) under claimant↔operator ECDH — ciphertext
+  plaintext_hash: [u8, 32]; // == Dispute.evidence_hash (metadata, not secret)
+  ingested_at: number; // unix ms
 }
 ```
 
@@ -146,7 +146,7 @@ No plaintext field exists. Idempotency key: `plaintext_hash`.
 
 ```ts
 interface EvidenceStore {
-  put(b: EvidenceBundle): Promise<void>;            // idempotent on plaintext_hash
+  put(b: EvidenceBundle): Promise<void>; // idempotent on plaintext_hash
   get(subaccord: PublicKey, dispute: PublicKey): Promise<EvidenceBundle | null>;
   delete(subaccord: PublicKey, dispute: PublicKey): Promise<void>;
   exists(subaccord: PublicKey, dispute: PublicKey): Promise<boolean>;
@@ -236,11 +236,11 @@ All routes TLS-only. Rate-limited per peer IP. An optional `X-Account-Key`
 header is accepted for **accounting only** — it never grants or denies access
 (security rests on the Juror-bound re-encryption, not on auth).
 
-| Method | Path                                            | Body / Result                                                                          |
-| ------ | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
-| POST   | `/evidence/{subaccord}/{dispute}`              | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists.  |
-| GET    | `/evidence/{dispute}/for/{juror}`              | → `200` `{ out, operator_ephem_pub }`. `404` if juror not drawn / not deliverable. `409` if integrity gate fails (alerts). |
-| GET    | `/healthz`                                      | `200` if Storage + RPC reachable, else `503`.                                          |
+| Method | Path                              | Body / Result                                                                                                              |
+| ------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/evidence/{subaccord}/{dispute}` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists.                                       |
+| GET    | `/evidence/{dispute}/for/{juror}` | → `200` `{ out, operator_ephem_pub }`. `404` if juror not drawn / not deliverable. `409` if integrity gate fails (alerts). |
+| GET    | `/healthz`                        | `200` if Storage + RPC reachable, else `503`.                                                                              |
 
 Delivery preconditions (enforced via live account reads): `Dispute.state` is at
 or past Drawn for the current round; `{juror}` ∈ `Round.jurors[]` for that
@@ -261,6 +261,7 @@ EVIDENCE_S3_ACCESS_KEY_ID=, EVIDENCE_S3_SECRET_ACCESS_KEY=   // or IAM/IRSA in p
 EVIDENCE_S3_FORCE_PATH_STYLE=  // true for MinIO
 EVIDENCE_PORT=443
 EVIDENCE_RATE_LIMIT_PER_MIN=   // per-IP
+EVIDENCE_TRUST_PROXY=          // true → honor X-Forwarded-For (only behind a trusted LB/Ingress); default false
 EVIDENCE_MAX_EVIDENCE_BYTES=
 EVIDENCE_RETENTION_DAYS=       // delete N days after RulingFinalized
 EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
@@ -269,7 +270,7 @@ EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
 ## Deployment / HA
 
 - **Stateless replicas.** Delivery is a pure function of `(bundle, juror_pubkey,
-  operator_key)`; ingest is an object PUT. Run N replicas behind a TCP/TLS load
+operator_key)`; ingest is an object PUT. Run N replicas behind a TCP/TLS load
   balancer. No session affinity.
 - **Shared state.** All replicas share the same `EVIDENCE_KEYRING` env (injected
   by the orchestrator) and the same S3/MinIO bucket.
@@ -283,7 +284,7 @@ EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
 ## Failure modes & edge cases
 
 - **Bad upload** (ciphertext undecryptable, or `sha256(plaintext) ≠
-  evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
+evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   bundle is ever stored, the delivery integrity gate refuses (`409`) and alerts.
 - **Premature fetch** (dispute not yet drawn, or juror not in `Round.jurors[]`):
   `404`. Juror retries after `JurorsDrawn`.

@@ -1,11 +1,11 @@
 ---
 # accord-0t29
 title: e2e Verification (green-rule sign-off)
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-05T14:32:37Z
-updated_at: 2026-08-05T14:32:37Z
+updated_at: 2026-08-05T15:33:23Z
 parent: accord-yjno
 blocked_by:
     - accord-s3ow
