@@ -54,6 +54,16 @@ make serve    # local dev server
 make build    # static site in apps/docs/site/
 ```
 
+## Deploy
+
+CI deploys `main` to Cloudflare Pages → **<https://docs.useaccord.xyz>** via
+`.github/workflows/deploy-docs.yml` (build here with `mkdocs build`, push
+`site/` with `wrangler pages deploy`). Requires repo secrets
+`CLOUDFLARE_API_TOKEN` (Account · Cloudflare Pages · Edit) and
+`CLOUDFLARE_ACCOUNT_ID`, plus a Cloudflare Pages project named `accord-docs`
+(Direct Upload, production branch `main`) with the `docs.useaccord.xyz` custom
+domain bound in the project's "Custom domains".
+
 ## Conventions
 
 - **ADRs are read-only here** — they're authored in the ADR format (see
