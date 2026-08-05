@@ -9,7 +9,7 @@
  */
 
 export {
-  type DisputeState,
+  DisputeState,
   getDisputeStateDecoder,
   getDisputeStateEncoder,
 } from "./generated/types/disputeState";

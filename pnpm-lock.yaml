@@ -10,6 +10,9 @@ importers:
 
   apps/evidence-daemon:
     dependencies:
+      '@accord/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@aws-sdk/client-s3':
         specifier: ^3.700.0
         version: 3.1103.0
