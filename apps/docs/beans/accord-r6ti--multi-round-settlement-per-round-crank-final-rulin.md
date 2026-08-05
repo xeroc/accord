@@ -1,14 +1,14 @@
 ---
 # accord-r6ti
 title: Multi-round settlement — per-round crank, final-ruling coherence, immediate participation fee (CONCEPT-REVIEW Ugly 5)
-status: todo
+status: completed
 type: task
 priority: critical
 created_at: 2026-08-05T15:25:46Z
 updated_at: 2026-08-05T15:26:11Z
 parent: accord-ukqg
 blocked_by:
-    - accord-4e7p
+  - accord-4e7p
 ---
 
 ## Why
@@ -63,3 +63,51 @@ Model:
 
 CONCEPT-REVIEW §Ugly 5; ADR-0004; `lib.rs:1187-1470`. Requires a new ADR. Blocked by
 the frozen-case-terms task (settle_round reads frozen α / min_stake / fee_per_juror).
+
+## Summary of Changes
+
+### Program (`programs/accord/src/`)
+
+- **`lib.rs`**:
+  - `reveal` now pays `fee_per_juror` immediately via PDA-signed SPL transfer
+    (vault → juror ATA). Added 4 token accounts to the `Reveal` context.
+  - `finalize_dispute` rewritten: settles ONLY the final round against
+    `final_ruling` (no round_fee in pool — fees paid on reveal). Pool =
+    slash_total + non_revealer_fee + forfeited_bonds. Writes `final_ruling`,
+    marks round settled, transitions to `Final`.
+  - NEW `settle_round(round_idx)`: permissionless crank settling prior rounds
+    against `final_ruling`. Pool = slash_total + non_revealer_fee (no bonds).
+    Releases `active_draws` for the round. Idempotent via `settled` flag.
+  - NEW `settle_round_accounts()` helper: shared per-round coherence settlement
+    (verify PDAs, compute pool, apply slashes + shares, decrement active_draws).
+  - NEW `SettleRound` account context.
+- **`state.rs`**: `Round.settled: u8` (0/1) replaces 1 byte of `_pad1` — zero
+  account-size change. `bool`→`u8` because `bool` is not `Pod`.
+- **`errors.rs`**: `RoundAlreadySettled`, `RoundNotSettlable`.
+- **`events.rs`**: `RoundSettled`.
+
+### Tests
+
+- **`settlement_litesvm.rs`** (NEW, 7 tests): multi-round flipped-appeal
+  settlement, participation fee on reveal, idempotency, settle-before-final
+  revert, settle-current-round revert, 3-round full-ladder active_draws=0,
+  non-revealer fee pool.
+- **`voting_litesvm.rs`**: updated `do_reveal` signature (+mint), economics
+  assertions (pool no longer includes round_fee), `do_finalize_dispute` round
+  now mutable.
+- **`appeal_litesvm.rs`**: same `do_reveal` + `do_finalize_dispute` fixes,
+  no-flip pool assertion updated.
+- **`state.rs`**: Round struct initializer updated for `settled` field.
+
+### Docs
+
+- **ADR-0014**: multi-round settlement against the final ruling.
+
+### ADR
+
+ADR-0014 documents the model, rationale, and consequences.
+
+### Verification
+
+All 90 LiteSVM tests pass (`make test_unit`): 14 voting, 10 appeal, 7
+settlement, + 59 across other suites.

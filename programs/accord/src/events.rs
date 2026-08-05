@@ -137,6 +137,15 @@ pub struct RulingFinalized {
     pub ruling: u8,
 }
 
+/// Emitted when a prior round's coherence settlement lands via `settle_round`
+/// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). The final round emits
+/// `RulingFinalized` instead (it carries the ruling write).
+#[event]
+pub struct RoundSettled {
+    pub dispute: Pubkey,
+    pub round_idx: u32,
+}
+
 /// Emitted on appeal (ADR-0004: permissionless). `bond` is the appeal bond
 /// custodied alongside the new round's juror fee (forfeited on no-flip,
 /// returned on flip at `finalize_dispute`).

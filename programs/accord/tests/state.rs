@@ -138,7 +138,8 @@ fn round_fits_max_jurors() {
         jurors: [Pubkey::default(); MAX_JURORS],
         commits: [[0u8; 32]; MAX_JURORS],
         reveals: [u8::MAX; MAX_JURORS],
-        _pad1: [0; 5],
+        settled: 0,
+        _pad1: [0; 4],
     };
     // zero-copy Round is Copy; verify field access works
     assert_eq!(r.jurors.len(), MAX_JURORS);
