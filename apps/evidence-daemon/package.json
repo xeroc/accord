@@ -1,0 +1,23 @@
+{
+  "name": "@accord/evidence-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Evidence Operator daemon — trusted off-chain re-encryption service (ADR-0011/0006)",
+  "type": "module",
+  "module": "src/main.ts",
+  "main": "src/main.ts",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "lint": "tsc --noEmit",
+    "lint:fix": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.5.0"
+  }
+}
