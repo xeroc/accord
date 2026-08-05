@@ -10,6 +10,7 @@
  * that a one-function change.
  */
 import { createApp } from "./server/app.js";
+import { createHealthProbe } from "./server/health.js";
 import type {
   DeliverResult,
   IngestResult,
@@ -29,14 +30,24 @@ const stubDeliver = async (): Promise<DeliverResult> => ({
   status: 409,
   error: NOT_WIRED,
 });
-const stubHealth = async () => ({ ok: false, detail: NOT_WIRED }) as const;
+
+// SEAM (accord-udiu / accord-h1v2): real storage HEAD-bucket + RPC getHealth
+// pings land with the store and chain-reader beans. Until then the probe
+// reports degraded (503) — honest, and the LB drains.
+const stubStoragePing = async (): Promise<boolean> => false;
+const stubRpcPing = async (): Promise<boolean> => false;
 
 function main(): void {
   const cfg = loadServerConfig();
+  const health = createHealthProbe({
+    storage: stubStoragePing,
+    rpc: stubRpcPing,
+    timeoutMs: cfg.healthTimeoutMs,
+  });
   const deps: ServerDeps = {
     ingest: stubIngest,
     deliver: stubDeliver,
-    health: stubHealth,
+    health,
   };
 
   const app = createApp(deps, {

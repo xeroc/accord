@@ -14,6 +14,8 @@ export interface ServerConfig {
   readonly maxEvidenceBytes: number;
   /** Accounting-only X-Account-Key (never denies). */
   readonly accountKeyEnabled: boolean;
+  /** Per-backend (storage/rpc) health-check timeout in ms. */
+  readonly healthTimeoutMs: number;
 }
 
 function num(
@@ -50,5 +52,6 @@ export function loadServerConfig(
     maxEvidenceBytes: num(env, "EVIDENCE_MAX_EVIDENCE_BYTES", 0),
     accountKeyEnabled:
       (env.EVIDENCE_ACCOUNT_KEY_ENABLED ?? "").toLowerCase() === "true",
+    healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
   };
 }
