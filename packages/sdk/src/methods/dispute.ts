@@ -82,7 +82,7 @@ export interface CreateDisputeResult {
 
 /** Minimal decoded view `getRuling` consumes (avoids duplicating the full Dispute shape). */
 export interface DisputeRulingView {
-  /** `Option<u8>`: the winning option index once `state == Final`, else `null`. */
+  /** u8 winning option index once `state == Final`; `u8::MAX` (255) → `null`. */
   finalRuling: number | null;
 }
 

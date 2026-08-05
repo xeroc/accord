@@ -124,8 +124,8 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
     async fetchDispute(address): Promise<DisputeRulingView | null> {
       const m = await accord.client.accord.accounts.dispute.fetchMaybe(address);
       if (!m.exists) return null;
-      const fr = m.data.finalRuling;
-      return { finalRuling: fr.__option === "Some" ? fr.value : null };
+      const fr = m.data.finalRuling; // u8; u8::MAX (255) sentinel = no ruling yet
+      return { finalRuling: fr === 255 ? null : fr };
     },
 
     // ── lifecycle (Subaccord + circuit breaker) ────────────────────────────

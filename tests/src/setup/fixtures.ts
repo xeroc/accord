@@ -1,0 +1,44 @@
+// fixtures.ts — deterministic-ish builders shared across specs.
+// Kept free of chain access so they're usable in any lane (incl. offline).
+
+import { address, type Address } from "@solana/kit";
+import type { CreateSubaccordArgs } from "@accord/sdk";
+
+/** Solana `Pubkey::default()` (all-ones). Used as `authority` ⇒ immutable Subaccord. */
+export const DEFAULT_PUBKEY: Address = address(
+  "11111111111111111111111111111111",
+);
+
+/** Cryptographically random 32 bytes. Unique per call ⇒ unique risk_type/PDA. */
+export function randomBytes32(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+/**
+ * Canonical `create_subaccord` args for tests, from AGENTS.md "v1 Defaults".
+ * `risk_type`/`evidence_spec` are freshly random so each run mints a distinct
+ * Subaccord PDA (namespace-squat guard requires risk_type ≠ 0). Override any
+ * field via `overrides`.
+ */
+export function defaultSubaccordArgs(
+  stakingToken: Address,
+  evidenceOperator: Address,
+  overrides: Partial<CreateSubaccordArgs> = {},
+): CreateSubaccordArgs {
+  return {
+    riskType: randomBytes32(),
+    evidenceSpec: randomBytes32(),
+    stakingToken,
+    minStake: 1_000n,
+    jurorsPerDispute: 3,
+    alphaBps: 1_000, // 10%
+    reviewWindow: 604_800n, // 7 days
+    commitWindow: 172_800n, // 2 days
+    revealWindow: 172_800n, // 2 days
+    maxAppeals: 3,
+    feePerJuror: 0n,
+    authority: DEFAULT_PUBKEY, // immutable
+    evidenceOperator,
+    ...overrides,
+  };
+}

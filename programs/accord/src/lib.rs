@@ -462,7 +462,7 @@ pub mod accord {
         d.evidence_hash = evidence_hash;
         d.state = DisputeState::Created;
         d.current_round = 0;
-        d.final_ruling = None;
+        d.final_ruling = u8::MAX;
         d.fee_paid = fee;
         d.bump = ctx.bumps.dispute;
 
@@ -1349,7 +1349,7 @@ pub mod accord {
         // crank (ADR-0004). Forfeited (no-flip) bonds were already folded into
         // the coherent pool above.
 
-        dispute.final_ruling = Some(final_ruling);
+        dispute.final_ruling = final_ruling;
         dispute.state = DisputeState::Final;
 
         emit!(RulingFinalized {
@@ -1524,9 +1524,10 @@ pub mod accord {
 
     /// Read-only: returns the dispute's `final_ruling`. The Arbitrable calls
     /// this via CPI to lazily read the outcome. Returns `None` until the
-    /// dispute reaches `Final`.
+    /// dispute reaches `Final` (stored on-chain as the `u8::MAX` sentinel).
     pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
-        Ok(ctx.accounts.dispute.final_ruling)
+        let r = ctx.accounts.dispute.final_ruling;
+        Ok((r != u8::MAX).then_some(r))
     }
 }
 

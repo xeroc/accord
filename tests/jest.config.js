@@ -9,6 +9,9 @@ export default {
   testMatch: ["**/*.spec.ts", "**/*.test.ts"],
   extensionsToTreatAsEsm: [".ts"],
   // Integration tests talk to a live validator (test-validator or Surfpool).
+  // SERIAL: `surfnet_timeTravel` advances the GLOBAL clock, and PauseState is a
+  // singleton — parallel specs would race on both. See AGENTS.md "green rule".
+  maxWorkers: 1,
   testTimeout: 120000,
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",

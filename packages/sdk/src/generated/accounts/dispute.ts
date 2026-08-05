@@ -71,8 +71,15 @@ export type Dispute = {
   evidenceHash: ReadonlyUint8Array;
   state: DisputeState;
   currentRound: number;
-  /** Winning option index once `state == Final`; `None` until then. */
-  finalRuling: Option<number>;
+  /**
+   * Winning option index once `state == Final`; `u8::MAX` until then.
+   * Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
+   * `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
+   * which made `finalize_dispute`'s `Some` write overflow the account
+   * (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
+   * sentinels for `reveals`/`result`.
+   */
+  finalRuling: number;
   /**
    * Total fee deposited by the filer (N * fee_per_juror at creation; appeals
    * add to the round's pool). Drives the redistribution economics.
@@ -96,8 +103,15 @@ export type DisputeArgs = {
   evidenceHash: ReadonlyUint8Array;
   state: DisputeStateArgs;
   currentRound: number;
-  /** Winning option index once `state == Final`; `None` until then. */
-  finalRuling: OptionOrNullable<number>;
+  /**
+   * Winning option index once `state == Final`; `u8::MAX` until then.
+   * Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
+   * `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
+   * which made `finalize_dispute`'s `Some` write overflow the account
+   * (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
+   * sentinels for `reveals`/`result`.
+   */
+  finalRuling: number;
   /**
    * Total fee deposited by the filer (N * fee_per_juror at creation; appeals
    * add to the round's pool). Drives the redistribution economics.
@@ -128,7 +142,7 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
       ["evidenceHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["state", getDisputeStateEncoder()],
       ["currentRound", getU32Encoder()],
-      ["finalRuling", getOptionEncoder(getU8Encoder())],
+      ["finalRuling", getU8Encoder()],
       ["feePaid", getU64Encoder()],
       ["committedVrf", getOptionEncoder(fixEncoderSize(getBytesEncoder(), 32))],
       ["bump", getU8Encoder()],
@@ -152,7 +166,7 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["evidenceHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["state", getDisputeStateDecoder()],
     ["currentRound", getU32Decoder()],
-    ["finalRuling", getOptionDecoder(getU8Decoder())],
+    ["finalRuling", getU8Decoder()],
     ["feePaid", getU64Decoder()],
     ["committedVrf", getOptionDecoder(fixDecoderSize(getBytesDecoder(), 32))],
     ["bump", getU8Decoder()],

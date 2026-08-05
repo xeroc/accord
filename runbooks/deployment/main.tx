@@ -1,0 +1,19 @@
+################################################################
+# Manage accord deployment through Crypto Infrastructure as Code
+################################################################
+
+addon "svm" {
+    rpc_api_url = input.rpc_api_url
+    network_id = input.network_id
+}
+
+action "deploy_accord" "svm::deploy_program" {
+    description = "Deploy accord program"
+    program = svm::get_program_from_anchor_project("accord")
+    authority = signer.authority
+    payer = signer.payer
+    # Instant cheatcode deploy: writes program data directly to the program
+    # account (deviates from devnet/mainnet tx-based deploy, but is what makes
+    # the local Surfnet harness deterministic + fast for `make run_surfpool`).
+    instant_surfnet_deployment = true
+}

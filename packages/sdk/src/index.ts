@@ -108,3 +108,26 @@ export * from "./methods/staking.js";
 // Dispute appeal + bond refund + appeal-ladder math (ADR-0004, ADR-0010,
 // bean veridao-yny6).
 export * from "./methods/appeal.js";
+
+// Account codecs — exposed for advanced/test use (e.g. e2e VRF injection via
+// `surfnet_setAccount`: decode → set committedVrf → re-encode). Generated surface.
+export {
+  getDisputeEncoder,
+  getDisputeCodec,
+  DISPUTE_DISCRIMINATOR,
+} from "./generated/accounts/dispute.js";
+
+// Account decoders — pure (no `client.rpc`). The facade's typed fetchers
+// (`fetchX`) currently require a `ClientWithRpc` and break when the facade is
+// built over a raw `createSolanaRpc`; until that's fixed, read accounts via
+// raw `getAccountInfo` + these decoders.
+export {
+  getAppealBondDecoder,
+  getDisputeDecoder,
+  getJurorStakeDecoder,
+  getPauseStateDecoder,
+  getPendingUpdateDecoder,
+  getRoundDecoder,
+  getSnapshotDecoder,
+  getSubaccordDecoder,
+} from "./generated/accounts/index.js";

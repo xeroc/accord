@@ -56,8 +56,9 @@ repos:
           (?x)^(
               .pre-commit-config.yaml|
               pnpm-lock.yaml|
-              apps/docs/.*|
-              context/.*
+              context/.*|
+              txtx\.yml|
+              runbooks/.*
           )$
 
   ######################################

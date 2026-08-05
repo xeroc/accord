@@ -59,8 +59,8 @@ test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .s
 test_surfpool: ## Run the full suite against a running Surfpool instance
 	pnpm --filter @accord/tests test
 
-run_surfpool: ## Start a Surfpool local fork (run in a separate terminal)
-	surfpool
+run_surfpool: ## Start a fresh Surfpool Surfnet (auto-deploys accord.so via runbook; separate terminal)
+	surfpool start --yes --db :memory:
 
 run_validator: ## Start a local test-validator with the Accord .so at its declared address (no keypair needed)
 	solana-test-validator --reset \

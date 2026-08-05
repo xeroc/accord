@@ -84,8 +84,13 @@ pub struct Dispute {
     pub evidence_hash: [u8; 32],          // ADR-0006: on-chain evidence commitment
     pub state: DisputeState,
     pub current_round: u32,
-    /// Winning option index once `state == Final`; `None` until then.
-    pub final_ruling: Option<u8>,
+    /// Winning option index once `state == Final`; `u8::MAX` until then.
+    /// Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
+    /// `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
+    /// which made `finalize_dispute`'s `Some` write overflow the account
+    /// (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
+    /// sentinels for `reveals`/`result`.
+    pub final_ruling: u8,
     /// Total fee deposited by the filer (N * fee_per_juror at creation; appeals
     /// add to the round's pool). Drives the redistribution economics.
     pub fee_paid: u64,
