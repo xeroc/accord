@@ -1,0 +1,68 @@
+---
+// Waitlist form — POSTs { email } to PUBLIC_WAITLIST_ENDPOINT (an n8n webhook).
+// Anti-hype microcopy: "one email when v1 ships", no airdrop-farming register.
+const endpoint = import.meta.env.PUBLIC_WAITLIST_ENDPOINT ?? "";
+---
+
+<form data-waitlist data-endpoint={endpoint} class="flex w-full max-w-md flex-col gap-2 sm:flex-row" novalidate>
+  <input
+    type="email"
+    name="email"
+    inputmode="email"
+    autocomplete="email"
+    required
+    placeholder="you@protocol.xyz"
+    aria-label="Email address"
+    class="w-full flex-1 rounded-md border border-border bg-raised px-4 py-3 font-mono text-sm text-nearwhite placeholder:text-muted/60 focus:border-amber focus:outline-none"
+  />
+  <button
+    type="submit"
+    class="shrink-0 rounded-md bg-amber px-5 py-3 font-sans text-sm font-medium text-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+  >
+    Join the waitlist
+  </button>
+  <p data-waitlist-status role="status" aria-live="polite" class="w-full text-left text-xs text-muted"></p>
+</form>
+
+<script>
+  // Bundled client script — wires every [data-waitlist] form to the n8n endpoint.
+  function initWaitlist(form: HTMLFormElement) {
+    const status = form.querySelector<HTMLParagraphElement>("[data-waitlist-status]");
+    const btn = form.querySelector<HTMLButtonElement>("button[type=submit]");
+    if (!status || !btn) return;
+
+    const set = (msg: string, ok: boolean) => {
+      status.textContent = msg;
+      status.style.color = ok ? "var(--color-confirm)" : "var(--color-slash)";
+    };
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = String(new FormData(form).get("email") ?? "").trim();
+      if (!email) return;
+      const endpoint = form.getAttribute("data-endpoint") ?? "";
+      if (!endpoint) {
+        set("Waitlist not wired yet — ping us on Telegram.", false);
+        return;
+      }
+      btn.disabled = true;
+      set("Sending…", true);
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, source: "landing" }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        set("On the list. One email when v1 ships on mainnet.", true);
+        form.reset();
+      } catch {
+        set("Couldn't reach the list — try Telegram.", false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  document.querySelectorAll<HTMLFormElement>("[data-waitlist]").forEach(initWaitlist);
+</script>

@@ -1,0 +1,72 @@
+---
+// Self-hosted IBM Plex (brand/DESIGN.md §05) — no third-party font request.
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "Accord — Mechanize the verdict. Trustless dispute resolution on Solana.",
+  description = "Accord is a composable arbitration primitive on Solana. Two CPI calls — create_dispute() → get_ruling() — and any program gets trustless dispute resolution. Jurors are secret, drawn by VRF, slashed for incoherence. Capture is structurally impossible.",
+} = Astro.props;
+
+const site = Astro.site ?? new URL("https://useaccord.xyz");
+const canonical = new URL(Astro.url.pathname, site);
+const ogImage = new URL("/og.svg", site);
+
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#0a0e14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Accord — Mechanize the verdict." />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:site_name" content="Accord" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Accord — Mechanize the verdict." />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <script is:inline>
+      (function () {
+        var d = document.documentElement;
+        d.classList.add("js");
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          d.classList.add("is-settled");
+        }
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen antialiased">
+    <a
+      href="#hero"
+      class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-raised focus:px-4 focus:py-2 focus:font-mono focus:text-sm focus:text-nearwhite"
+      >Skip to content</a
+    >
+    <Nav />
+    <main>
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

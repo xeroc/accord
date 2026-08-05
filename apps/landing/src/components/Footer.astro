@@ -1,0 +1,25 @@
+---
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-border/60">
+  <div class="mx-auto max-w-5xl px-6 py-12">
+    <div class="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
+      <div class="max-w-xs">
+        <p class="font-sans text-lg font-medium text-nearwhite">Mechanize the verdict.</p>
+        <p class="mt-2 text-sm text-muted">
+          Schelling-point arbitration as a composable Solana primitive. Two CPI calls.
+        </p>
+      </div>
+      <nav class="flex flex-col gap-2 text-sm sm:items-end" aria-label="Footer">
+        <a href="https://docs.useaccord.xyz" class="text-muted transition-colors hover:text-nearwhite">Docs</a>
+        <a href="https://t.me/useaccord" class="text-muted transition-colors hover:text-nearwhite" rel="noopener">Telegram</a>
+        <a href="https://github.com/xeroc/accord" class="text-muted transition-colors hover:text-nearwhite" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+    <div class="mt-10 flex flex-col gap-1 border-t border-border/60 pt-6 font-mono text-xs text-muted/60 sm:flex-row sm:items-center sm:justify-between">
+      <p>© {year} Accord · pre-launch · v1 is the build target</p>
+      <p>useaccord.xyz</p>
+    </div>
+  </div>
+</footer>

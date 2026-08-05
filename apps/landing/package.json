@@ -1,0 +1,24 @@
+{
+  "name": "@accord/landing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accord landing page — Mechanize the verdict.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "@fontsource/ibm-plex-sans": "^5.2.5",
+    "@tailwindcss/vite": "^4.1.11",
+    "astro": "^5.13.0",
+    "tailwindcss": "^4.1.11"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.9.2"
+  }
+}

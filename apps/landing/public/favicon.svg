@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Accord">
+  <!-- convergence glyph: three monoline strokes resolving at one node (the Schelling Point) -->
+  <rect width="32" height="32" rx="7" fill="#0A0E14"/>
+  <g stroke="#F0A830" stroke-width="2.4" stroke-linecap="square" fill="none">
+    <line x1="7.5" y1="8.5" x2="16" y2="16"/>
+    <line x1="24.5" y1="8.5" x2="16" y2="16"/>
+    <line x1="16" y1="25" x2="16" y2="16"/>
+  </g>
+  <circle cx="16" cy="16" r="2.6" fill="#F0A830"/>
+</svg>
