@@ -11,3 +11,28 @@ The Accord program's BPF upgrade authority is a Squads multisig for v1. Once the
 
 - The freeze is gated on "sufficiently audited" — a judgment call, not an automated milestone.
 - `pause` is instant (multisig-gated); `unpause` is timelocked, so a panic freeze cannot be held indefinitely without notice.
+
+## Residual trust assumptions
+
+Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../security/trust-profile.md)):
+
+- **Multisig members are trusted with capital-bearing code for the entire
+  multisig phase.** A quorum compromise — or a routine but buggy upgrade — can
+  change or brick the program before the freeze. The on-chain mechanism does not
+  constrain _what_ an upgrade may do.
+- **"Sufficiently audited" is a human judgment.** There is no automated trigger
+  for the freeze; it is a deliberate, offline decision. The multisig phase can
+  last indefinitely if no one decides to freeze.
+- **Freeze is irrevocable.** Once the authority is set to `None`, a discovered
+  bug cannot be patched. This is the intended trade (trustless end state vs.
+  recoverability), not a defect.
+- **`pause` is instant and unrestricted in scope.** The multisig can freeze all
+  new `create_dispute` / `stake` / `appeal` immediately; only `unpause` is
+  timelocked. A malicious multisig can halt growth at will (capital is never
+  trapped — `unstake` and in-flight cranks remain live).
+- **No on-chain identity is bound to the multisig.** Squads membership and key
+  custody are off-chain operational concerns; the program sees only an
+  authority pubkey.
+
+Until the post-audit freeze, "no central authority" overstates the upgrade
+surface: a small human-controlled quorum can replace the code.

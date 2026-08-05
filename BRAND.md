@@ -42,7 +42,8 @@ Level 3  IDENTITY       The Mechanist.
 
 Level 2  TRANSFORMATION Protocol goes from compromised (multisig committee or
                          no dispute resolution) → autonomous (subjective
-                         disputes resolved trustlessly via CPI).
+                         disputes resolved via trust-minimized CPI; see Trust
+                         Profile for residual assumptions).
 
 Level 1  PRODUCT        Two CPI calls: create_dispute() → get_ruling()
 ```
@@ -52,7 +53,9 @@ Level 1  PRODUCT        Two CPI calls: create_dispute() → get_ruling()
 **The forced choice.** Every Solana builder today faces a trap: trust a small
 group of humans (centralization, collusion, throughput ceiling) OR ship without
 dispute resolution (incomplete protocol, user risk). Accord dissolves the trap —
-resolution without trust.
+resolution with far fewer trusted humans (an honest stake majority replaces the
+committee; see the [Trust Profile](apps/docs/docs/security/trust-profile.md)
+for the full residual set).
 
 Concrete instantiation: UMA whale capture (March 2025) — one actor with 25% of
 tokens flipped a $7M Polymarket contract. Token-weighted voting = plutocracy.
@@ -61,12 +64,12 @@ impossible.
 
 ## Audience
 
-| Priority | Audience | Role |
-|---|---|---|
-| **Primary** | The Integrator (protocol builder) | Direct consumer of the infrastructure. The Mechanist. |
-| **Secondary** | The Juror | Human face. "I earn by being honest." Economic engine. |
-| **Tertiary** | The Subaccord Creator | Power-user integrator who also founds a community. |
-| **None** | The End User | Experiences the outcome through applications. Never the Accord's brand audience. |
+| Priority      | Audience                          | Role                                                                             |
+| ------------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| **Primary**   | The Integrator (protocol builder) | Direct consumer of the infrastructure. The Mechanist.                            |
+| **Secondary** | The Juror                         | Human face. "I earn by being honest." Economic engine.                           |
+| **Tertiary**  | The Subaccord Creator             | Power-user integrator who also founds a community.                               |
+| **None**      | The End User                      | Experiences the outcome through applications. Never the Accord's brand audience. |
 
 ## Co-branding
 
@@ -89,22 +92,22 @@ where." Lead with the mechanism, not the vision. Vision is the punchline.
 
 ## Campaign Lines (context-specific)
 
-| Context | Line |
-|---|---|
-| Permanent tagline | Mechanize the verdict. |
-| Belief statement (long-form) | Truth doesn't need a referee. |
-| Campaign question (hooks) | Who's right? |
-| Antagonist line | An accord, not a committee. |
-| MetaDAO hook | MetaDAO mechanized the decision. We mechanize the verdict. |
+| Context                      | Line                                                       |
+| ---------------------------- | ---------------------------------------------------------- |
+| Permanent tagline            | Mechanize the verdict.                                     |
+| Belief statement (long-form) | Truth doesn't need a referee.                              |
+| Campaign question (hooks)    | Who's right?                                               |
+| Antagonist line              | An accord, not a committee.                                |
+| MetaDAO hook                 | MetaDAO mechanized the decision. We mechanize the verdict. |
 
 ## Litmus Test
 
-| Criterion | Status |
-|---|---|
-| Solves a real problem | ✅ |
-| Creates emotional meaning | ✅ |
-| Gives customers an identity | ✅ The Mechanist |
-| Stands for a belief | ✅ honesty is profitable |
-| Opposes something | ✅ the forced choice |
-| Points toward a better future | ✅ any subjective question → mechanism |
-| Consistent expression across all surfaces | ⬜ ongoing |
+| Criterion                                 | Status                                 |
+| ----------------------------------------- | -------------------------------------- |
+| Solves a real problem                     | ✅                                     |
+| Creates emotional meaning                 | ✅                                     |
+| Gives customers an identity               | ✅ The Mechanist                       |
+| Stands for a belief                       | ✅ honesty is profitable               |
+| Opposes something                         | ✅ the forced choice                   |
+| Points toward a better future             | ✅ any subjective question → mechanism |
+| Consistent expression across all surfaces | ⬜ ongoing                             |

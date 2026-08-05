@@ -277,6 +277,39 @@ THEMSELVES changed stake — their choice, their consequence.
   (Err) and retry with incremented `draw_attempt`. For N=3 and pool >50,
   expected retries <1.1.
 
+## Residual trust assumptions
+
+Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../security/trust-profile.md)):
+
+- **Randomness availability is provider-dependent.** The draw requires the
+  magicblock VRF oracle to land `commit_vrf_callback`. A down, stalled, or
+  censoring oracle blocks every new draw until it recovers. The on-chain logic
+  verifies the result but cannot produce randomness itself.
+- **Brute-forcing is only partially closed.** The committed-VRF design stops
+  the caller swapping randomness _between retries_, but full closure of VRF
+  brute-force requires oracle-verified VRF (magicblock integration) — still
+  deferred (see "Consequences" above).
+- **Stake-weighting is not stake-independence.** Selection probability is
+  proportional to stake, so a large stake coalition dominates the panel. The
+  sortition is fair _given the stake distribution_; it does not defend against
+  majority-stake capture. Appeals grow the panel but not the honest-majority
+  requirement.
+- **Honest-majority-stake is load-bearing.** Every "Schelling honesty" claim in
+  this ADR presupposes an honest stake majority. Without it, the
+  commit-reveal + coherence-slashing incentives do not converge on truth.
+- **Distinct keys ≠ independent humans.** Admission is key-level pseudonymous.
+  One actor operating many min-stake keys increases their draw share. This is
+  ADR-0001's accepted trade-off; an identity / court-profile model is v2.
+- **Snapshot-layer caveats (superseded by ADR-0012).** The MST commitment and
+  fraud predicates described here are part of the **posted-snapshot** trust
+  model, which CONCEPT-REVIEW Bad 4 (data availability) and Bad 5 (sum
+  authentication) proved insufficient. **ADR-0012 supersedes this snapshot
+  layer** with an on-chain stake accumulator: the root becomes canonical by
+  construction, the poster/bond/challenge-window is deleted, and the sortition
+  _criterion_ is retained in subtree-sum form. This ADR's residual assumptions
+  about the VRF and the honest-majority-stake precondition survive the
+  accumulator redesign; the assumptions about the snapshot poster do not.
+
 ## References
 
 - ADR-0003 — original draw architecture (Merkle snapshot, VRF, distinct jurors)

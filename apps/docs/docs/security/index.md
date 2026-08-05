@@ -1,7 +1,11 @@
 # Security
 
-Why the mechanism is trustworthy without reading the source.
+Why the mechanism is trustworthy without reading the source — and where it still
+trusts something. Start with the **Trust Profile** for the honest distribution of
+power and the residual assumptions.
 
+- [Trust Profile](trust-profile.md) — who holds power, what's trusted, the
+  security-value ceiling, and the claim qualifications
 - [Snapshot Fraud Proofs](fraud-proofs.md) — the 5 on-chain-verifiable predicates
 - [Sortition & VRF](sortition-vrf.md) — committed VRF + Merkle-Sum Tree + inflation guard
 - [Circuit Breaker](circuit-breaker.md) — `PauseState`, instant freeze, timelocked unpause
