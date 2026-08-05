@@ -464,6 +464,19 @@ pub mod accord {
         d.current_round = 0;
         d.final_ruling = u8::MAX;
         d.fee_paid = fee;
+        // Ugly 6: freeze the economics-relevant params at filing time so the
+        // 48h timelock (ADR-0005) cannot shift slashing/fees/panel/windows
+        // mid-dispute. All later instructions read `d.terms`, never live `sub`.
+        d.terms = CaseTerms {
+            alpha_bps: sub.alpha_bps,
+            min_stake: sub.min_stake,
+            fee_per_juror: sub.fee_per_juror,
+            jurors_per_dispute: sub.jurors_per_dispute,
+            review_window: sub.review_window,
+            commit_window: sub.commit_window,
+            reveal_window: sub.reveal_window,
+            max_appeals: sub.max_appeals,
+        };
         d.bump = ctx.bumps.dispute;
 
         emit!(DisputeCreated {
@@ -493,10 +506,12 @@ pub mod accord {
             AccordError::InvalidState
         );
 
-        let sub = &ctx.accounts.subaccord;
-        let max_panel = max_appeal_panel_size(sub.jurors_per_dispute, sub.max_appeals)?;
+        // Ugly 6: bond sizing uses filing-time economics (frozen on the
+        // dispute), not live Subaccord params.
+        let max_panel =
+            max_appeal_panel_size(dispute.terms.jurors_per_dispute, dispute.terms.max_appeals)?;
         let bond = (max_panel as u64)
-            .checked_mul(sub.fee_per_juror)
+            .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Custody the bond: poster ATA -> Subaccord PDA vault.
@@ -877,7 +892,7 @@ pub mod accord {
 
         let sub = &ctx.accounts.subaccord;
         let round_idx = dispute.current_round;
-        let panel = panel_size_for_round(sub.jurors_per_dispute, round_idx)?;
+        let panel = panel_size_for_round(dispute.terms.jurors_per_dispute, round_idx)?;
 
         require!(
             memberships.len() <= MAX_JURORS,
@@ -913,7 +928,7 @@ pub mod accord {
                 AccordError::InvalidMembershipProof
             );
             require!(
-                m.leaf.stake >= sub.min_stake,
+                m.leaf.stake >= dispute.terms.min_stake,
                 AccordError::InsufficientStake
             );
             require!(
@@ -992,15 +1007,16 @@ pub mod accord {
         }
 
         // Record jurors in the Round (zero-copy: load_init writes discriminator).
+        // Ugly 6: windows are filing-time (frozen on the dispute).
         let now_ts = Clock::get()?.unix_timestamp;
         let review_end = now_ts
-            .checked_add(sub.review_window as i64)
+            .checked_add(dispute.terms.review_window as i64)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let commit_end = review_end
-            .checked_add(sub.commit_window as i64)
+            .checked_add(dispute.terms.commit_window as i64)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let reveal_end = commit_end
-            .checked_add(sub.reveal_window as i64)
+            .checked_add(dispute.terms.reveal_window as i64)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         let mut round = ctx.accounts.round.load_init()?;
@@ -1213,8 +1229,10 @@ pub mod accord {
             AccordError::InvalidPanelSize
         );
 
-        let slash_per_juror = (sub.alpha_bps as u64)
-            .checked_mul(sub.min_stake)
+        // Ugly 6: slashing + fees use filing-time economics (frozen on the
+        // dispute), not live Subaccord params.
+        let slash_per_juror = (dispute.terms.alpha_bps as u64)
+            .checked_mul(dispute.terms.min_stake)
             .and_then(|v| v.checked_div(10_000))
             .ok_or(AccordError::ArithmeticOverflow)?;
 
@@ -1294,7 +1312,7 @@ pub mod accord {
         }
 
         let round_fee = (panel as u64)
-            .checked_mul(sub.fee_per_juror)
+            .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let pool = slash_total
             .checked_add(round_fee)
@@ -1383,9 +1401,10 @@ pub mod accord {
         let sub = &ctx.accounts.subaccord;
         // Cap: `current_round` is the round just resolved. Appealing opens round
         // `current_round + 1`, i.e. appeal number `current_round + 1`. The
-        // number of appeals must not exceed `max_appeals`.
+        // number of appeals must not exceed `max_appeals`. Ugly 6: the cap is
+        // the filing-time value (frozen on the dispute).
         require!(
-            dispute.current_round < u32::from(sub.max_appeals),
+            dispute.current_round < u32::from(dispute.terms.max_appeals),
             AccordError::MaxAppealsReached
         );
 
@@ -1401,11 +1420,12 @@ pub mod accord {
         require!(now < appeal_deadline, AccordError::AppealWindowClosed);
 
         // New panel = 2N+1 (closed form `(J+1)·2^k − 1`, capped at MAX_JURORS).
+        // Ugly 6: panel base + fee are filing-time (frozen on the dispute).
         let new_round = dispute
             .current_round
             .checked_add(1)
             .ok_or(AccordError::ArithmeticOverflow)?;
-        let panel_new = panel_size_for_round(sub.jurors_per_dispute, new_round)?;
+        let panel_new = panel_size_for_round(dispute.terms.jurors_per_dispute, new_round)?;
         require!(
             sub.staker_count >= panel_new,
             AccordError::InsufficientJurors
@@ -1413,7 +1433,7 @@ pub mod accord {
 
         // Exponential cost: new-round fee + appeal bond (bond == new-round fee).
         let fee_new = (panel_new as u64)
-            .checked_mul(sub.fee_per_juror)
+            .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let bond = fee_new;
         let total = fee_new

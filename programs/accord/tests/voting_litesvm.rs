@@ -867,7 +867,7 @@ fn happy_commit_reveal_finalize() {
     assert_eq!(dispute_state(&fx.svm, &fx.dispute), DisputeState::Final);
 
     let d = read_dispute(&fx.svm, &fx.dispute);
-    assert_eq!(d.final_ruling, Some(0));
+    assert_eq!(d.final_ruling, 0);
 
     for (_, pda) in &fx.drawn {
         assert_eq!(
@@ -1321,7 +1321,7 @@ fn get_ruling_returns_none_before_final() {
 
     do_get_ruling(&mut fx.svm, &fx.caller, &fx.dispute).unwrap();
     let d = read_dispute(&fx.svm, &fx.dispute);
-    assert_eq!(d.final_ruling, None);
+    assert_eq!(d.final_ruling, u8::MAX);
 }
 
 #[test]
@@ -1382,7 +1382,7 @@ fn get_ruling_returns_some_after_final() {
 
     do_get_ruling(&mut fx.svm, &fx.caller, &fx.dispute).unwrap();
     let d = read_dispute(&fx.svm, &fx.dispute);
-    assert_eq!(d.final_ruling, Some(0));
+    assert_eq!(d.final_ruling, 0);
 }
 
 #[test]

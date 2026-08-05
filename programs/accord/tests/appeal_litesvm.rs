@@ -1244,7 +1244,7 @@ fn flip_returns_bond_to_appellant() {
     .unwrap();
     assert_eq!(dispute_state(&w.svm, &w.dispute), DisputeState::Final);
     let d = read_dispute(&w.svm, &w.dispute);
-    assert_eq!(d.final_ruling, Some(1));
+    assert_eq!(d.final_ruling, 1);
     assert_eq!(read_appeal_bond(&w.svm, &bond_pdas[0]).amount, bond);
 
     let before = token_balance(&w.svm, &appellant_ata);

@@ -69,6 +69,26 @@ pub struct JurorStake {
     pub last_change_slot: u64, // ADR-0008: anchor-slot watermark
 }
 
+/// Economics-relevant Subaccord params **frozen at `create_dispute` time**
+/// (CONCEPT-REVIEW Ugly 6 / bean accord-4e7p). Every post-filing instruction
+/// (`post_snapshot`, `draw`, `finalize_dispute`, `appeal`) reads this frozen
+/// copy, never the live `Subaccord`. The 48h timelock (ADR-0005) then governs
+/// only FUTURE disputes; an active case is immune to governance changes for
+/// its entire life. This is the arbitration-contract principle: parties cannot
+/// consent to a process whose economically load-bearing rules may shift
+/// ex-post.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub struct CaseTerms {
+    pub alpha_bps: u16,
+    pub min_stake: u64,
+    pub fee_per_juror: u64,
+    pub jurors_per_dispute: u32,
+    pub review_window: u64,
+    pub commit_window: u64,
+    pub reveal_window: u64,
+    pub max_appeals: u8,
+}
+
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
 /// Arbitrable reads `final_ruling` lazily.
 ///
@@ -84,6 +104,10 @@ pub struct Dispute {
     pub evidence_hash: [u8; 32],          // ADR-0006: on-chain evidence commitment
     pub state: DisputeState,
     pub current_round: u32,
+    /// Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
+    /// for the dispute's life; governance changes via ADR-0005 affect only
+    /// disputes filed after the change lands.
+    pub terms: CaseTerms,
     /// Winning option index once `state == Final`; `u8::MAX` until then.
     /// Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
     /// `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
