@@ -63,13 +63,15 @@ pub mod accord {
         Ok(())
     }
 
-    // --- Circuit breaker (ADR-0007; veridao-63v3) ---
+    // --- Circuit breaker (ADR-0007; veridao-63v3; scope split ADR-0013) ---
     // `pause` is instant + authority-gated; `unpause` is timelocked
     // (propose_unpause arms it, execute_unpause lands after the notice slot).
-    // While paused, create_dispute / stake / appeal revert; in-flight disputes
-    // resolve normally. The halt is enforced inside each of those instructions
-    // (`require!(!pause_state.paused, ProgramPaused)`); this module only owns
-    // the breaker itself.
+    // Split scope: while paused, only create_dispute / stake revert (new
+    // exposure); appeal + finalize_dispute are never pausable, so in-flight
+    // disputes always resolve and the pause authority cannot select an
+    // adjudicative outcome. The halt is enforced inside create_dispute and
+    // stake (`require!(!pause_state.paused, ProgramPaused)`); this module only
+    // owns the breaker itself.
 
     /// One-time init of the pause singleton. The caller becomes the pause
     /// authority (typically the Squads multisig / upgrade authority). Call at
@@ -1370,10 +1372,9 @@ pub mod accord {
     ///
     /// Gates: `RoundResolved` state, within the appeal window, under the
     /// `max_appeals` cap, and with enough active distinct stakers to fill the
-    /// larger panel. Reverts while the program is paused.
+    /// larger panel. Never pausable (ADR-0013) — pausing must not suppress the
+    /// right to appeal.
     pub fn appeal(ctx: Context<Appeal>) -> Result<()> {
-        require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
-
         let dispute = &mut ctx.accounts.dispute;
         require!(
             dispute.state == DisputeState::RoundResolved,
@@ -2218,6 +2219,9 @@ pub struct Appeal<'info> {
         bump = subaccord.bump,
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,
+    // ponytail: `pause_state` is retained here for IDL/SDK stability but is NOT
+    // consulted — `appeal` is never pausable (ADR-0013). Drop this field in a
+    // coordinated IDL revision (pair with the accord-r6ti settlement rework).
     #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
     pub pause_state: Account<'info, PauseState>,
     #[account(

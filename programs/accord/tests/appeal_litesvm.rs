@@ -11,7 +11,7 @@ use accord::constants::{
     SEED_PAUSE, SEED_ROUND, SEED_SNAPSHOT, SEED_SUBACCORD,
 };
 use accord::state::{
-    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, MSTNode, Round,
+    Dispute, DisputeState, JurorMembership, JurorStake, LeafClaim, MSTNode, PauseState, Round,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::{AccountDeserialize, AccountSerialize};
@@ -476,6 +476,28 @@ fn init_pause(svm: &mut anchor_litesvm::AnchorContext, authority: &Kp) {
     svm.execute_instruction(ix, &[authority])
         .unwrap()
         .assert_success();
+}
+
+fn do_pause(svm: &mut anchor_litesvm::AnchorContext, authority: &Kp) {
+    let ix = svm
+        .program()
+        .accounts(accounts::Pause {
+            authority: authority.pubkey(),
+            pause_state: pause_pda(),
+        })
+        .args(instruction::Pause {})
+        .instruction()
+        .unwrap();
+    svm.execute_instruction(ix, &[authority])
+        .unwrap()
+        .assert_success();
+}
+
+fn is_paused(svm: &anchor_litesvm::AnchorContext) -> bool {
+    let acc = svm.svm.get_account(&pause_pda()).expect("pause PDA exists");
+    PauseState::try_deserialize(&mut &acc.data[..])
+        .unwrap()
+        .paused
 }
 
 fn create_subaccord(
@@ -1244,7 +1266,7 @@ fn flip_returns_bond_to_appellant() {
     .unwrap();
     assert_eq!(dispute_state(&w.svm, &w.dispute), DisputeState::Final);
     let d = read_dispute(&w.svm, &w.dispute);
-    assert_eq!(d.final_ruling, Some(1));
+    assert_eq!(d.final_ruling, 1);
     assert_eq!(read_appeal_bond(&w.svm, &bond_pdas[0]).amount, bond);
 
     let before = token_balance(&w.svm, &appellant_ata);
@@ -1373,4 +1395,68 @@ fn no_flip_forfeits_bond_to_coherent_pool() {
         before,
         "no-flip appeal bond is not returned"
     );
+}
+
+// =========================================================================
+// Split-scope pause (ADR-0013 / CONCEPT-REVIEW Ugly 2 / bean accord-hh61)
+// =========================================================================
+//
+// `appeal` and `finalize_dispute` are NEVER pausable. A pause authority must
+// not be able to suppress the right to appeal (and thereby pick which
+// provisional rulings become final). Only `create_dispute` + `stake` (new
+// exposure) are pausable; `unstake` was already never paused (ADR-0007).
+//
+// create_dispute/stake-still-revert-while-paused is covered by their own
+// suites (create_dispute_litesvm.rs, stake_litesvm.rs), so these two tests
+// cover the NEW contract: appeal + finalize proceed while paused.
+
+#[test]
+fn appeal_succeeds_while_paused() {
+    let mut w = world(3);
+    let (round0, _) = resolve_round(&mut w, &[0, 0, 0]);
+    assert!(!is_paused(&w.svm));
+
+    // Pause mid-dispute, inside the appeal window.
+    do_pause(&mut w.svm, &w.creator);
+    assert!(is_paused(&w.svm));
+
+    let vault = vault_ata(&w.subaccord, &w.mint);
+    let (appellant, appellant_ata) = fund_appellant(&mut w, 100 * FEE_PER_JUROR);
+    do_appeal(
+        &mut w.svm,
+        &appellant,
+        &appellant_ata,
+        &w.subaccord,
+        &w.dispute,
+        &round0,
+        0,
+        &w.mint,
+        &vault,
+    )
+    .expect("appeal must succeed while paused (ADR-0013)");
+    assert_eq!(current_round(&w.svm, &w.dispute), 1);
+}
+
+#[test]
+fn finalize_dispute_proceeds_while_paused() {
+    let mut w = world(0); // max_appeals=0: single round, no appeal possible
+    let (round0, juror_pdas) = resolve_round(&mut w, &[0, 0, 0]);
+
+    // Past the appeal window so finalize_dispute is eligible, then pause.
+    let r = read_round(&w.svm, &round0);
+    warp_timestamp(&mut w.svm, r.reveal_end + APPEAL_WINDOW_SECS);
+    do_pause(&mut w.svm, &w.creator);
+    assert!(is_paused(&w.svm));
+
+    do_finalize_dispute(
+        &mut w.svm,
+        &w.caller,
+        &w.subaccord,
+        &w.dispute,
+        &round0,
+        &juror_pdas,
+        &[],
+    )
+    .expect("finalize_dispute must proceed while paused (ADR-0013)");
+    assert_eq!(dispute_state(&w.svm, &w.dispute), DisputeState::Final);
 }
