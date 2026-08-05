@@ -1,11 +1,11 @@
 ---
 # accord-ewzf
-title: "Accumulator — SDK: subtree-sum MST builder, per-seat draw_seat, drop snapshot methods (ADR-0012)"
+title: 'Accumulator — SDK: subtree-sum MST builder, per-seat draw_seat, drop snapshot methods (ADR-0012)'
 status: todo
 type: task
 priority: high
 created_at: 2026-08-05T17:12:02Z
-updated_at: 2026-08-05T22:28:29Z
+updated_at: 2026-08-05T22:30:30Z
 parent: accord-g74z
 ---
 
