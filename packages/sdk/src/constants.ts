@@ -38,9 +38,20 @@ export const DEFAULT_FEE_PER_JUROR = 0n; // set per-Subaccord
 export function panelSizeForRound(
   jurorsPerDispute: number,
   roundIdx: number,
-): number {
+): number | null {
+  if (
+    !Number.isInteger(jurorsPerDispute) ||
+    jurorsPerDispute < 0 ||
+    !Number.isInteger(roundIdx) ||
+    roundIdx < 0 ||
+    roundIdx >= 31
+  ) {
+    return null;
+  }
   const factor = 1 << roundIdx;
-  return Math.min((jurorsPerDispute + 1) * factor - 1, MAX_JURORS);
+  const panel = (jurorsPerDispute + 1) * factor - 1;
+  if (!Number.isSafeInteger(panel) || panel < 0) return null;
+  return Math.min(panel, MAX_JURORS);
 }
 
 export function maxAppealPanelSize(
