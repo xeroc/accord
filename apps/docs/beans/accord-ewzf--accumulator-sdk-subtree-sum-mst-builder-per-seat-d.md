@@ -5,10 +5,10 @@ status: todo
 type: task
 priority: high
 created_at: 2026-08-05T17:12:02Z
-updated_at: 2026-08-05T22:34:00Z
+updated_at: 2026-08-05T22:41:15Z
 parent: accord-g74z
 blocked_by:
-  - accord-g74z
+  - accord-yz7c
 ---
 
 ## Why
@@ -49,14 +49,23 @@ right_sum)`; `LeafClaim` drops `cum_after` (prefix computed from the path);
 ADR-0012; `accord-g74z`; `accord-tzo0` (per-seat draw + sampling); ADR-0010
 (SDK facade).
 
-## Blocker — blocked on `accord-g74z` (on-chain accumulator not implemented)
+## Blocker — blocked on `accord-yz7c` (on-chain accumulator not implemented)
 
-Re-dispatched 2026-08-06 after `af21c7b` ("chore: unblock bean") removed the
-prior block (commit `6c6e932`) **without changing the on-chain program**.
-Re-verified the state is unchanged: the on-chain program is still the **old
-optimistic-snapshot design**.
+**Correction (2026-08-06):** the first re-block pointed `blocked_by` at the
+parent `accord-g74z` — that is a **deadlock**. A parent can never reach
+`completed` while a child is open (status flows up), so a child blocked on its
+own parent can never be unblocked. Fixed by creating `accord-yz7c` (the
+previously-missing on-chain Rust implementation bean, child of `accord-g74z`)
+and repointing this bean's `blocked_by` there. `accord-g74z`'s four original
+children were docs / ADRs / SDK / tests — **none owned the Rust program**, which
+is the real prerequisite for both the SDK (the IDL it produces) and the tests
+(the `.so`).
 
-Evidence (re-checked this dispatch):
+`accord-yz7c` is `status: draft` pending human review (the on-chain work is
+substantial and TDD-pairs with `accord-btel`); promote to `todo` to dispatch it.
+`accord-btel` should also block on `accord-yz7c`.
+
+Evidence the prerequisite is unmet (re-verified 2026-08-06):
 
 - `JurorStake` still has `last_change_slot` (state.rs:69); no `tree_index`.
 - `Subaccord` has no accumulator fields (`root_hash`/`total_stake`/`next_index`/
@@ -68,26 +77,20 @@ Evidence (re-checked this dispatch):
 - `verify_mst_inclusion` (lib.rs:1894) is still cumulative-from-left, NOT
   subtree-sum.
 - No `target/idl/`, no `target/deploy/*.so`, no `target/types/` — nothing built.
-- Parent `accord-g74z` is `status: todo` — the on-chain accumulator has not been
-  started. No child bean exists for the Rust implementation (children are docs /
-  tests / SDK / ADRs only).
 
-All four acceptance criteria are unmeetable until the program lands:
+All four acceptance criteria are unmeetable until `accord-yz7c` lands:
 
 1. **"Types match the rebuilt IDL after accord-g74z"** — no IDL exists; the
    `generated/` tree is Codama output produced from it.
 2. **"MST builder unit-test matches on-chain verify on a fixture"** — on-chain
    `verify_mst_inclusion` is still the old design; a subtree-sum builder written
-   now is an unverifiable guess at the on-chain byte layout (domain separator,
-   sum encoding, node-hash preimage) and risks full rework.
+   now is an unverifiable guess at the on-chain byte layout and risks rework.
 3. **"Per-seat `draw_seat` round-trips end-to-end"** — `draw_seat` does not
    exist on-chain or in any IDL.
 4. **"Snapshot methods + types removed from entrypoint"** — the live program
    still defines them; removing now orphans the SDK↔IDL lockstep and the e2e
-   suite, and the `generated/` builders still reappear from the unchanged IDL.
+   suite.
 
-Action: `blocked_by: accord-g74z` re-recorded, status `todo`. **No speculative
-SDK code written** — will match the real IDL in one verified pass once `accord-g74z`
-lands the accumulator + rebuilt IDL. The prior block (`6c6e932`) was correct;
-`af21c7b` unblocked prematurely. This bean needs the on-chain Rust implementation
-of ADR-0012 to exist first.
+Action: `blocked_by: accord-yz7c`, status `todo`. **No speculative SDK code
+written** — will match the real IDL in one verified pass once `accord-yz7c`
+lands the accumulator + rebuilt IDL.
