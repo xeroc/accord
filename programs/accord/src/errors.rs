@@ -124,4 +124,16 @@ pub enum AccordError {
     // --- arithmetic ---
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
+
+    // --- multi-round settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti) ---
+    #[msg("Round has already been settled.")]
+    RoundAlreadySettled,
+    #[msg("Round index out of range for settlement (must be < current_round).")]
+    RoundNotSettlable,
+
+    // --- cancel / Failed state (Ugly 4) ---
+    #[msg("Dispute is in terminal Failed state.")]
+    DisputeFailed,
+    #[msg("Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.")]
+    CancelTooEarly,
 }

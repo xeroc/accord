@@ -23,6 +23,9 @@ that references the old one.
 | [0011](0011-evidence-operator-daemon-offchain-service.md)                     | Evidence Operator Daemon — off-chain decrypt-re-encryption service                   | Accepted                                                                                        |
 | [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)       | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed                                                                                        |
 | [0013](0013-pause-scope-split-contains-new-exposure-never-adjudication.md)    | Pause scope — split: pause contains new exposure, never adjudication (amends 0007)   | Accepted                                                                                        |
+| [0013](0013-vrf-authentication-via-oracle-callback.md)                    | VRF authentication via oracle callback (amends 0009 §2)                             | Accepted                                                                                        |
+| [0014](0014-failed-state-cancel-dispute-escape-hatch.md)                    | Failed state + cancel_dispute liveness-escape crank (Ugly 4)                         | Accepted                                                                                        |
+| [0014](0014-multi-round-settlement-against-final-ruling.md)                 | Multi-round settlement against the final ruling                                     | Accepted                                                                                        |
 
 ## How to read them
 

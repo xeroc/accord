@@ -69,6 +69,26 @@ pub struct JurorStake {
     pub last_change_slot: u64, // ADR-0008: anchor-slot watermark
 }
 
+/// Economics-relevant Subaccord params **frozen at `create_dispute` time**
+/// (CONCEPT-REVIEW Ugly 6 / bean accord-4e7p). Every post-filing instruction
+/// (`post_snapshot`, `draw`, `finalize_dispute`, `appeal`) reads this frozen
+/// copy, never the live `Subaccord`. The 48h timelock (ADR-0005) then governs
+/// only FUTURE disputes; an active case is immune to governance changes for
+/// its entire life. This is the arbitration-contract principle: parties cannot
+/// consent to a process whose economically load-bearing rules may shift
+/// ex-post.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub struct CaseTerms {
+    pub alpha_bps: u16,
+    pub min_stake: u64,
+    pub fee_per_juror: u64,
+    pub jurors_per_dispute: u32,
+    pub review_window: u64,
+    pub commit_window: u64,
+    pub reveal_window: u64,
+    pub max_appeals: u8,
+}
+
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
 /// Arbitrable reads `final_ruling` lazily.
 ///
@@ -84,6 +104,10 @@ pub struct Dispute {
     pub evidence_hash: [u8; 32],          // ADR-0006: on-chain evidence commitment
     pub state: DisputeState,
     pub current_round: u32,
+    /// Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
+    /// for the dispute's life; governance changes via ADR-0005 affect only
+    /// disputes filed after the change lands.
+    pub terms: CaseTerms,
     /// Winning option index once `state == Final`; `u8::MAX` until then.
     /// Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
     /// `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
@@ -98,6 +122,10 @@ pub struct Dispute {
     /// committed; `Some(vrf_result)` after. The draw reads this; the caller
     /// cannot swap it between retries.
     pub committed_vrf: Option<[u8; 32]>,
+    /// Unix timestamp at `create_dispute` (Ugly 4). Drives the pre-draw
+    /// `cancel_dispute` timeout: if the dispute has not been drawn within
+    /// `PRE_DRAW_CANCEL_TIMEOUT_SECS`, any cranker may cancel + refund the filer.
+    pub filed_at: i64,
     pub bump: u8,
 }
 
@@ -137,7 +165,13 @@ pub struct Round {
     pub commits: [[u8; 32]; MAX_JURORS],
     /// Revealed vote option index per drawn Juror; `u8::MAX` until revealed.
     pub reveals: [u8; MAX_JURORS],
-    pub _pad1: [u8; 5], // total = multiple of 8 (max alignment = i64)
+    /// Whether this round's coherence settlement has been applied
+    /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+    /// `finalize_dispute` (final round) or `settle_round` (prior rounds)
+    /// processes it; 1 after. Idempotency guard against double-settlement.
+    /// (`u8` not `bool` — `bool` is not `Pod`.)
+    pub settled: u8,
+    pub _pad1: [u8; 4], // total = multiple of 8 (max alignment = i64)
 }
 
 /// A committed Merkle root over the Subaccord's Juror set + cumulative stakes,
@@ -233,6 +267,11 @@ pub struct PauseState {
 
 /// Dispute lifecycle (SPEC state machine). A permissionless crank advances
 /// states when their windows elapse.
+///
+/// `Failed` is the liveness-escape terminal state (CONCEPT-REVIEW Ugly 4 /
+/// bean accord-18fb): `cancel_dispute` transitions a stalled dispute here,
+/// refunds the filer's round-1 fee, and releases the current round's
+/// `active_draws`. It is terminal — no lifecycle instruction accepts it.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum DisputeState {
     Created,
@@ -244,6 +283,7 @@ pub enum DisputeState {
     RoundResolved, // round tallied; appeal window or finalization
     Final,         // final ruling set
     Closed,        // fully settled
+    Failed,        // liveness-escape terminal (cancel_dispute)
 }
 
 /// Snapshot fraud-proof status (ADR-0003).

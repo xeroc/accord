@@ -26,6 +26,21 @@ pub const SNAPSHOT_CHALLENGE_WINDOW_SECS: i64 = 24 * 60 * 60;
 /// (SPEC state machine: RoundResolved →(appeal window)→ Final). 3 days.
 pub const APPEAL_WINDOW_SECS: i64 = 3 * 24 * 60 * 60;
 
+/// `cancel_dispute` liveness-escape timeouts (CONCEPT-REVIEW Ugly 4).
+///
+/// Pre-draw: max seconds a dispute may sit in `Created`/`SnapshotPosted` (no
+/// usable snapshot, no VRF commit) before any cranker may cancel + refund. 3
+/// days — the snapshot + VRF steps should land in minutes; this is a generous
+/// backstop against a dead indexer/oracle.
+pub const PRE_DRAW_CANCEL_TIMEOUT_SECS: i64 = 3 * 24 * 60 * 60;
+
+/// Post-draw grace: seconds after `round.reveal_end + APPEAL_WINDOW_SECS`
+/// before a stuck drawn round (never finalized) becomes cancelable. 3 days —
+/// long enough for any reasonable cranker to land `finalize_round` +
+/// `finalize_dispute`/`appeal`, short enough that funds are not locked
+/// indefinitely.
+pub const POST_DRAW_CANCEL_GRACE_SECS: i64 = 3 * 24 * 60 * 60;
+
 /// Timelock on `execute_unpause` (ADR-0007): a paused program cannot be
 /// unpaused without a notice period. 24h in slots (~400ms mainnet).
 pub const UNPAUSE_TIMELOCK_SLOTS: u64 = 24 * 60 * 60 / 400;

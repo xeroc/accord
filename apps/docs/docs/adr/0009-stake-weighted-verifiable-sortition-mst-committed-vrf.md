@@ -12,14 +12,16 @@ subaccord.root`), and the Omission / NotSorted fraud predicates are deleted (no
 
 ## Status
 
-**Partially superseded by [ADR-0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).**
+**Partially superseded by [ADR-0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) and [ADR-0013](0013-vrf-authentication-via-oracle-callback.md).**
 Originally implemented the sortition-enforcement and omission halves of this ADR's
 v1.1 scope (depending on ADR-0008's anchor-slot pattern + predicates 1/3/4).
 ADR-0012 now supersedes the MST shape (cumulative-from-left → subtree-sum), the
 caller-supplied `commit_vrf` step (→ root frozen in the VRF callback), and the
-Omission / NotSorted predicates (no snapshot to challenge). The sortition
-_criterion_ is retained, restated in subtree-sum form. Supersedes the deferred
-items in bean `veridao-utcu` and addresses bean `veridao-i4jm` item #2.
+Omission / NotSorted predicates (no snapshot to challenge). ADR-0013 supersedes
+§2's caller-supplied `commit_vrf(vrf_result)` design — the shipped code uses an
+oracle-authenticated callback instead. The sortition _criterion_ is retained,
+restated in subtree-sum form. Supersedes the deferred items in bean `veridao-utcu`
+and addresses bean `veridao-i4jm` item #2.
 
 ## Context
 
@@ -290,6 +292,39 @@ THEMSELVES changed stake — their choice, their consequence.
 - **Collision retries are expected.** The cranker must handle draw failures
   (Err) and retry with incremented `draw_attempt`. For N=3 and pool >50,
   expected retries <1.1.
+
+## Residual trust assumptions
+
+Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../security/trust-profile.md)):
+
+- **Randomness availability is provider-dependent.** The draw requires the
+  magicblock VRF oracle to land `commit_vrf_callback`. A down, stalled, or
+  censoring oracle blocks every new draw until it recovers. The on-chain logic
+  verifies the result but cannot produce randomness itself.
+- **Brute-forcing is only partially closed.** The committed-VRF design stops
+  the caller swapping randomness _between retries_, but full closure of VRF
+  brute-force requires oracle-verified VRF (magicblock integration) — still
+  deferred (see "Consequences" above).
+- **Stake-weighting is not stake-independence.** Selection probability is
+  proportional to stake, so a large stake coalition dominates the panel. The
+  sortition is fair _given the stake distribution_; it does not defend against
+  majority-stake capture. Appeals grow the panel but not the honest-majority
+  requirement.
+- **Honest-majority-stake is load-bearing.** Every "Schelling honesty" claim in
+  this ADR presupposes an honest stake majority. Without it, the
+  commit-reveal + coherence-slashing incentives do not converge on truth.
+- **Distinct keys ≠ independent humans.** Admission is key-level pseudonymous.
+  One actor operating many min-stake keys increases their draw share. This is
+  ADR-0001's accepted trade-off; an identity / court-profile model is v2.
+- **Snapshot-layer caveats (superseded by ADR-0012).** The MST commitment and
+  fraud predicates described here are part of the **posted-snapshot** trust
+  model, which CONCEPT-REVIEW Bad 4 (data availability) and Bad 5 (sum
+  authentication) proved insufficient. **ADR-0012 supersedes this snapshot
+  layer** with an on-chain stake accumulator: the root becomes canonical by
+  construction, the poster/bond/challenge-window is deleted, and the sortition
+  _criterion_ is retained in subtree-sum form. This ADR's residual assumptions
+  about the VRF and the honest-majority-stake precondition survive the
+  accumulator redesign; the assumptions about the snapshot poster do not.
 
 ## References
 

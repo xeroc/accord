@@ -2,11 +2,19 @@
 
 > **Mechanize the verdict.**
 
-Accord is a general-purpose, **Schelling-point arbitration primitive on
-Solana** — the "Kleros of Solana." Any Solana program (the _Arbitrable_) files a
-subjective Dispute via two CPI calls; the Accord draws stake-weighted Jurors
-(VRF), collects commit-reveal votes, and emits a Ruling governed by
-game-theoretic incentives instead of trusted humans.
+Accord is a general-purpose, **capital-weighted Schelling arbitration oracle on
+Solana** — an on-chain dispute-resolution primitive inspired by Kleros. Any
+Solana program (the _Arbitrable_) files a subjective Dispute via two CPI calls;
+the Accord draws stake-weighted Jurors (VRF), collects commit-reveal votes, and
+emits a Ruling governed by game-theoretic incentives (an honest-stake-majority
+assumption) instead of a hired-judge committee.
+
+> [!IMPORTANT] > **Accord is an arbitration oracle, not a self-enforcing decentralized court.**
+> Several roles hold privileged or concentrated power (Subaccord authority,
+> upgrade multisig, VRF provider, indexer, cranker, large stakeholders, evidence
+> operator). The honest [Trust Profile](apps/docs/docs/security/trust-profile.md)
+> states every residual assumption and the security-value ceiling. Read it before
+> securing real value. This is pre-mainnet, unaudited software.
 
 It is a **standalone, reusable product**: the Accord has no knowledge of the
 filing program's domain. Dispute resolution becomes composable infrastructure.
@@ -19,9 +27,11 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 
 ## Key Features
 
-- **Schelling Point = honesty.** Jurors converge on the truthful answer because
-  voting coherently with the majority is the profitable strategy. No central
-  authority picks judges.
+- **Schelling Point = honesty (honest-majority-stake assumed).** Jurors converge
+  on the truthful answer because voting coherently with the majority is the
+  profitable strategy. No central judge is picked — but see the
+  [Trust Profile](apps/docs/docs/security/trust-profile.md): Schelling honesty
+  holds conditional on an honest stake majority.
 - **Party-agnostic Arbitrable interface.** Integrate with two CPI calls:
   `create_dispute()` → `get_ruling()`. The Accord never learns your domain.
 - **Permissionless Subaccords.** Specialized Juror pools (automotive,
@@ -37,7 +47,8 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
   mechanism, not by fraud-proof (ADR-0012; supersedes ADR-0003/0008/0009).
 - **Commit-reveal + exponential appeals.** Secret votes prevent vote-copying so
   the Schelling Point forms independently; each appeal doubles the panel + 1
-  (3 → 7 → 15 → 31), making bribery prohibitively expensive.
+  (3 → 7 → 15 → 31), making bribery more expensive (deterred, not impossible —
+  see the security-value ceiling).
 
 > [!IMPORTANT] > **Project status.** The on-chain program (`programs/accord`) implements the
 > full v1 instruction set with a LiteSVM unit-test per instruction. The
@@ -572,6 +583,8 @@ pre-commit install
 
 - **Docs site:** [docs (domain TBD)](https://example.com/TBD) — Quickstart,
   Integration Guide, Protocol Reference, Security, ADRs
+- **[Trust Profile](apps/docs/docs/security/trust-profile.md)** — who holds
+  power, what's trusted, the security-value ceiling
 - **`CONTEXT.md`** — domain language / ubiquitous-language glossary
 - **`PROJECT.md`** — project rationale (the "why")
 - **`BRAND.md`** — brand model
@@ -600,10 +613,10 @@ pre-commit install
     sortition — MST, committed VRF _(partially superseded by 0012)_
   - [0010](https://example.com/TBD/adr/0010) SDK — Codama codegen + Solana Kit
     facade
-  - [0011](https://example.com/TBD/adr/0011) Evidence Operator Daemon —
+  - [0011](apps/docs/docs/adr/0011-evidence-operator-daemon-offchain-service.md) Evidence Operator Daemon —
     off-chain decrypt-re-encryption service
-  - [0012](https://example.com/TBD/adr/0012) On-chain stake accumulator
-    replaces the optimistic snapshot (current draw mechanism)
+  - [0012](apps/docs/docs/adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) On-chain stake
+    accumulator replaces the optimistic snapshot (current draw mechanism)
 
 ---
 

@@ -8,8 +8,8 @@
 
 use accord::constants::{MAX_JURORS, MAX_OPTIONS};
 use accord::state::{
-    Dispute, DisputeState, JurorStake, PendingUpdate, Round, Snapshot, SnapshotStatus, Subaccord,
-    UpdatePayload,
+    CaseTerms, Dispute, DisputeState, JurorStake, PendingUpdate, Round, Snapshot, SnapshotStatus,
+    Subaccord, UpdatePayload,
 };
 use anchor_lang::{AccountDeserialize, AccountSerialize, AnchorDeserialize, AnchorSerialize};
 use solana_program::pubkey::Pubkey;
@@ -82,14 +82,25 @@ fn dispute_state_round_trips_and_progresses() {
         evidence_hash: [9u8; 32],
         state: DisputeState::Created,
         current_round: 0,
-        final_ruling: None,
+        terms: CaseTerms {
+            alpha_bps: 1_000,
+            min_stake: 1_000,
+            fee_per_juror: 1_000_000,
+            jurors_per_dispute: 3,
+            review_window: 7 * 24 * 3600,
+            commit_window: 2 * 24 * 3600,
+            reveal_window: 2 * 24 * 3600,
+            max_appeals: 3,
+        },
+        final_ruling: u8::MAX,
         fee_paid: 3_000_000,
         committed_vrf: None,
+        filed_at: 1_700_000_000,
         bump: 252,
     };
     let decoded = round_trip(&d);
     assert_eq!(decoded.state, DisputeState::Created);
-    assert_eq!(decoded.final_ruling, None);
+    assert_eq!(decoded.final_ruling, u8::MAX);
 
     // state machine: every variant must round-trip (catches enum drift)
     for s in [
@@ -102,6 +113,7 @@ fn dispute_state_round_trips_and_progresses() {
         DisputeState::RoundResolved,
         DisputeState::Final,
         DisputeState::Closed,
+        DisputeState::Failed,
     ] {
         let mut b = Vec::new();
         s.serialize(&mut b).unwrap();
@@ -128,7 +140,8 @@ fn round_fits_max_jurors() {
         jurors: [Pubkey::default(); MAX_JURORS],
         commits: [[0u8; 32]; MAX_JURORS],
         reveals: [u8::MAX; MAX_JURORS],
-        _pad1: [0; 5],
+        settled: 0,
+        _pad1: [0; 4],
     };
     // zero-copy Round is Copy; verify field access works
     assert_eq!(r.jurors.len(), MAX_JURORS);
