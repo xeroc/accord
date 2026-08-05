@@ -1,11 +1,11 @@
 ---
 # accord-xrdc
 title: Encrypted-at-rest Storage
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-05T14:32:36Z
-updated_at: 2026-08-05T14:32:36Z
+updated_at: 2026-08-05T15:25:03Z
 parent: accord-yjno
 blocked_by:
     - accord-djso
