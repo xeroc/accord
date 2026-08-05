@@ -2,11 +2,20 @@
 
 > **Mechanize the verdict.**
 
-Accord is a general-purpose, **Schelling-point arbitration primitive on
-Solana** — the "Kleros of Solana." Any Solana program (the _Arbitrable_) files a
-subjective Dispute via two CPI calls; the Accord draws stake-weighted Jurors
-(VRF), collects commit-reveal votes, and emits a Ruling governed by
-game-theoretic incentives instead of trusted humans.
+Accord is a general-purpose, **capital-weighted Schelling arbitration oracle on
+Solana** — an on-chain dispute-resolution primitive inspired by Kleros. Any
+Solana program (the _Arbitrable_) files a subjective Dispute via two CPI calls;
+the Accord draws stake-weighted Jurors (VRF), collects commit-reveal votes, and
+emits a Ruling governed by game-theoretic incentives (an honest-stake-majority
+assumption) instead of a hired-judge committee.
+
+> [!IMPORTANT]
+> **Accord is an arbitration oracle, not a self-enforcing decentralized court.**
+> Several roles hold privileged or concentrated power (Subaccord authority,
+> upgrade multisig, VRF provider, indexer, cranker, large stakeholders, evidence
+> operator). The honest [Trust Profile](apps/docs/docs/security/trust-profile.md)
+> states every residual assumption and the security-value ceiling. Read it before
+> securing real value. This is pre-mainnet, unaudited software.
 
 It is a **standalone, reusable product**: the Accord has no knowledge of the
 filing program's domain. Dispute resolution becomes composable infrastructure.
@@ -19,9 +28,11 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 
 ## Key Features
 
-- **Schelling Point = honesty.** Jurors converge on the truthful answer because
-  voting coherently with the majority is the profitable strategy. No central
-  authority picks judges.
+- **Schelling Point = honesty (honest-majority-stake assumed).** Jurors converge
+  on the truthful answer because voting coherently with the majority is the
+  profitable strategy. No central judge is picked — but see the
+  [Trust Profile](apps/docs/docs/security/trust-profile.md): Schelling honesty
+  holds conditional on an honest stake majority.
 - **Party-agnostic Arbitrable interface.** Integrate with two CPI calls:
   `create_dispute()` → `get_ruling()`. The Accord never learns your domain.
 - **Permissionless Subaccords.** Specialized Juror pools (automotive,
@@ -30,12 +41,13 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 - **Per-Subaccord staking token.** Each pool picks the SPL token Jurors stake
   (USDC by default). Stake is the anti-sybil mechanism _and_ the
   coherence-slashing substrate.
-- **Verifiable sortition.** Stake-weighted Juror draw over a bonded
-  Merkle-Sum-Tree snapshot, seeded by committed VRF — manipulation-resistant and
-  fraud-proofable on-chain (ADR-0008/0009).
+- **Verifiable sortition.** Stake-weighted Juror draw, seeded by committed VRF —
+  selection is deterministic and on-chain verifiable (ADR-0008/0009; the
+  snapshot layer is being replaced by an on-chain stake accumulator — ADR-0012).
 - **Commit-reveal + exponential appeals.** Secret votes prevent vote-copying so
   the Schelling Point forms independently; each appeal doubles the panel + 1
-  (3 → 7 → 15 → 31), making bribery prohibitively expensive.
+  (3 → 7 → 15 → 31), making bribery more expensive (deterred, not impossible —
+  see the security-value ceiling).
 
 > [!IMPORTANT]
 > **Project status.** The on-chain program (`programs/accord`) implements the
@@ -248,7 +260,17 @@ to fit BPF's stack.
 
 ### Draw & Verifiable Sortition
 
-The draw is the security-critical path (ADR-0003, 0008, 0009):
+The draw is the security-critical path (ADR-0003, 0008, 0009; being redesigned
+by ADR-0012):
+
+> [!NOTE]
+> **Redesign in flight (ADR-0012).** The bonded snapshot + 1-day fraud window
+> below is the **shipped** v1 layer and a known trust dependency (CONCEPT-REVIEW
+> Bad 4/5). ADR-0012 replaces it with a **live on-chain stake accumulator**: the
+> juror-set root becomes canonical by construction, so there is no poster, no
+> bond, and no challenge window — removing the snapshot-poster as a trust role
+> entirely. See the [Trust Profile](apps/docs/docs/security/trust-profile.md)
+> for the target trust surface.
 
 1. **Snapshot.** An off-chain indexer posts a Merkle-Sum-Tree root over the
    Subaccord's Juror set + cumulative stakes, bonded at `1 × max-appeal-fee`.
@@ -568,6 +590,8 @@ pre-commit install
 
 - **Docs site:** [docs (domain TBD)](https://example.com/TBD) — Quickstart,
   Integration Guide, Protocol Reference, Security, ADRs
+- **[Trust Profile](apps/docs/docs/security/trust-profile.md)** — who holds
+  power, what's trusted, the security-value ceiling
 - **`CONTEXT.md`** — domain language / ubiquitous-language glossary
 - **`PROJECT.md`** — project rationale (the "why")
 - **`BRAND.md`** — brand model
@@ -596,6 +620,10 @@ pre-commit install
     sortition — MST, committed VRF
   - [0010](https://example.com/TBD/adr/0010) SDK — Codama codegen + Solana Kit
     facade
+  - [0011](apps/docs/docs/adr/0011-evidence-operator-daemon-offchain-service.md)
+    Evidence Operator Daemon — off-chain decrypt-re-encryption service
+  - [0012](apps/docs/docs/adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)
+    On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + 5)
 
 ---
 
