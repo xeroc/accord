@@ -339,9 +339,8 @@ export async function findSnapshotPda(
   dispute: Address,
   roundIdx: number,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } = await import(
-    "@solana/kit"
-  );
+  const { getAddressEncoder, getProgramDerivedAddress } =
+    await import("@solana/kit");
   const disputeBytes = new Uint8Array(getAddressEncoder().encode(dispute));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -358,6 +357,12 @@ export interface SnapshotAccounts {
   dispute: Address;
   /** `["snapshot", dispute, round_idx]` — provided so the seam stays stateless. */
   snapshot: Address;
+  /** The Subaccord's staking_token mint (bond + vault currency). */
+  stakingToken: Address;
+  /** Subaccord PDA's vault ATA (bond deposit / sweep source). */
+  vault: Address;
+  /** The snapshot poster's ATA — bond custody / false-challenge sweep destination. */
+  posterTokenAccount: Address;
 }
 
 /**
@@ -374,6 +379,8 @@ export interface AccordSnapshotClient {
   buildChallengeSnapshot(input: {
     programId: Address;
     accounts: SnapshotAccounts;
+    /** The challenger's ATA — receives the forfeited bond on a valid challenge. */
+    challengerTokenAccount: Address;
     /** The challenger's pubkey (FraudProof::Omission needs it as remaining_accounts witness owner). */
     proof: unknown; // FraudProof — a sum type; typed narrowly in the appeal/challenge task
   }): Instruction;
@@ -405,9 +412,15 @@ export function challengeSnapshot(
   client: AccordSnapshotClient,
   programId: Address,
   accounts: SnapshotAccounts,
+  challengerTokenAccount: Address,
   proof: unknown,
 ): Instruction {
-  return client.buildChallengeSnapshot({ programId, accounts, proof });
+  return client.buildChallengeSnapshot({
+    programId,
+    accounts,
+    challengerTokenAccount,
+    proof,
+  });
 }
 
 /** Build the permissionless `finalize_snapshot` crank (lib.rs:743). */

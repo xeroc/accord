@@ -188,6 +188,8 @@ export interface VrfDrawAccounts {
 export interface RequestVrfExtras {
   /** magicblock VRF oracle queue account. */
   oracleQueue: Address;
+  /** Accord program-identity PDA (CPI authority for the VRF oracle). */
+  programIdentity: Address;
 }
 
 /**

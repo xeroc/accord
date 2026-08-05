@@ -58,8 +58,16 @@ export interface CreateDisputeArgs {
 export interface CreateDisputeAccounts {
   /** The Arbitrable (a program signer via CPI) or any wallet. Fee + rent payer. */
   filer: Address;
-  /** Filer's associated token account of the Subaccord's staking_token (fee source). */
+  /** The Subaccord this dispute is filed against (fee/panel source). */
+  subaccord: Address;
+  /** The Subaccord's staking_token mint (fee currency). */
+  stakingToken: Address;
+  /** Filer's associated token account of the staking_token (fee source). */
   filerTokenAccount: Address;
+  /** Subaccord PDA's vault ATA (fee sink). */
+  vault: Address;
+  /** Circuit-breaker singleton PDA (`["pause"]`); stake/create revert while paused. */
+  pauseState: Address;
 }
 
 /** Result of preparing a `create_dispute`: the derived Dispute PDA + its instruction. */

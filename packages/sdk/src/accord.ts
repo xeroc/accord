@@ -22,6 +22,8 @@ import {
   type AccordPluginRequirements,
 } from "./generated/programs/accord";
 import { ACCORD_PROGRAM_ID } from "./pda";
+import { createAccordAdapter, type AccordAdapter } from "./adapter.js";
+import { createAccordMethods, type AccordMethods } from "./methods.js";
 
 /** A Kit client extended with the Accord plugin. */
 export type AccordClient = ReturnType<ReturnType<typeof accordProgram>>;
@@ -41,6 +43,8 @@ export class Accord {
   readonly signer: TransactionSigner;
   readonly client: AccordClient;
 
+  private _adapter?: AccordAdapter;
+
   constructor(config: AccordConfig) {
     this.rpc = createSolanaRpc(config.endpoint);
     this.signer = config.signer;
@@ -50,5 +54,24 @@ export class Accord {
     this.client = accordProgram()(
       this.rpc as unknown as AccordPluginRequirements,
     );
+  }
+
+  /**
+   * The concrete seam adapter — implements all seven `Accord*Client` seams
+   * against the generated Codama client. Pass to the pure orchestration
+   * functions in `src/methods/*.ts`, or use {@link methods} for bound helpers.
+   */
+  get adapter(): AccordAdapter {
+    if (!this._adapter) this._adapter = createAccordAdapter(this);
+    return this._adapter;
+  }
+
+  /**
+   * Bound orchestration namespace covering all eight method groups. Each helper
+   * validates (pure) + builds the instruction via {@link adapter}; the caller
+   * signs + sends the returned `Instruction` with `this.signer`.
+   */
+  get methods(): AccordMethods {
+    return createAccordMethods(this.adapter, ACCORD_PROGRAM_ID, this.signer);
   }
 }

@@ -16,6 +16,8 @@
  */
 
 export { Accord, type AccordClient, type AccordConfig } from "./accord";
+export { createAccordAdapter, type AccordAdapter } from "./adapter";
+export { createAccordMethods, type AccordMethods } from "./methods";
 export {
   type AccordSigner,
   type IWallet,
