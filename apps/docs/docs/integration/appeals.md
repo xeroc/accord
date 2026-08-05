@@ -39,7 +39,7 @@ total   = fee_new + bond                  // appellant ATA → vault
 
 ## Round reset
 
-`appeal` increments `current_round` and resets `state → Created`, so the snapshot → draw → vote cycle reruns for the larger panel.
+`appeal` increments `current_round` and resets `state → Created`, so the VRF → draw → vote cycle reruns for the larger panel. The same `committed_vrf` and `frozen_root` are reused — appeals draw a larger panel from the same fixed pool (no new VRF, no re-grind; [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ```rust
 accord::appeal(ctx.contexts)?;

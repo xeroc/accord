@@ -17,8 +17,10 @@ profitable strategy.
   1000+ disputes).
 - **Oracle-verified randomness**: the magicblock VRF (RFC 9381) determines juror
   selection. Unbiasable, unpredictable, on-chain verifiable.
-- **Five fraud predicates**: duplicate, omission, wrong-stake, inflation, and
-  not-sorted — every snapshot manipulation is detectable and punishable.
+- **Canonical juror-set root**: a live on-chain stake accumulator (Merkle-Sum
+  Tree) keeps the juror set + stake weights as a root maintained on every
+  `stake`/`unstake`. No posted root to withhold, no bond, no fraud window — the
+  draw is manipulation-resistant by mechanism (ADR-0012).
 - **Exponential appeals**: 3 → 7 → 15 → 31 jurors. Bribery becomes
   prohibitively expensive.
 

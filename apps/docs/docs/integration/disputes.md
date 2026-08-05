@@ -56,4 +56,4 @@ const { instruction, dispute } = await createDispute(
 );
 ```
 
-State after: `Created`. Next crank step: [`post_snapshot`](draw-voting.md). Why party-agnostic: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).
+State after: `Created`. Next crank step: [`request_vrf`](draw-voting.md) (VRF commit freezes `dispute.frozen_root`). Why party-agnostic: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).

@@ -23,12 +23,12 @@ A case filed with the Accord by any program (the Arbitrable). Contains the dispu
 _Avoid_: case, claim (in the Accord context), trial
 
 **Draw**:
-The random selection of distinct Jurors for a Dispute from a Snapshot, weighted by staked capital. Uses VRF for manipulation resistance.
+The random selection of distinct Jurors for a Dispute from the Subaccord's stake Accumulator, weighted by staked capital. Per-seat (`draw_seat`); seeded by a committed VRF. The Accumulator root is frozen at VRF-commit so the Draw is provably fair and manipulation-resistant.
 _Avoid_: jury selection, sortition
 
-**Snapshot**:
-A committed view of a Subaccord's Juror set and stake weights, frozen at Dispute creation so the Draw is provably fair and manipulation-resistant.
-_Avoid_: juror registry, roster
+**Accumulator**:
+A live on-chain Merkle-Sum Tree over a Subaccord's Juror set and stake weights, maintained incrementally on every `stake`/`unstake`. Only the root (`root_hash`, `total_stake`, `next_index`, `depth`) lives on-chain; the full tree is held off-chain by indexers. The root is canonical by construction — there is no posted root to withhold or fabricate, hence no bond, no challenge window, and no fraud predicates (ADR-0012).
+_Avoid_: snapshot, juror registry, roster
 
 **Commit**:
 A Juror's secret submission of `hash(vote, salt)`. Prevents vote-copying so the Schelling Point forms independently.

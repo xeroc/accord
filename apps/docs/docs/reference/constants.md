@@ -12,12 +12,14 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 
 ## Timelocks & windows
 
-| Constant                         | Value     | Unit / Notes                                                                                                                   |
-| -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `UPDATE_TIMELOCK_SLOTS`          | `432_000` | slots (~48h @ 400ms mainnet). Subaccord param update. [ADR-0005](../adr/0005-subaccord-authority-pubkey-timelock.md)           |
-| `SNAPSHOT_CHALLENGE_WINDOW_SECS` | `86_400`  | seconds (1 day). Fraud-proof window. [ADR-0003](../adr/0003-accord-draw-merkle-snapshot-distinct-vrf.md)                       |
-| `APPEAL_WINDOW_SECS`             | `259_200` | seconds (3 days). RoundResolved → appeal-or-finalize.                                                                          |
-| `UNPAUSE_TIMELOCK_SLOTS`         | `216_000` | slots (~24h @ 400ms). `propose_unpause` → `execute_unpause`. [ADR-0007](../adr/0007-upgrade-authority-multisig-then-freeze.md) |
+| Constant                 | Value     | Unit / Notes                                                                                                                   |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `UPDATE_TIMELOCK_SLOTS`  | `432_000` | slots (~48h @ 400ms mainnet). Subaccord param update. [ADR-0005](../adr/0005-subaccord-authority-pubkey-timelock.md)           |
+| `APPEAL_WINDOW_SECS`     | `259_200` | seconds (3 days). RoundResolved → appeal-or-finalize.                                                                          |
+| `UNPAUSE_TIMELOCK_SLOTS` | `216_000` | slots (~24h @ 400ms). `propose_unpause` → `execute_unpause`. [ADR-0007](../adr/0007-upgrade-authority-multisig-then-freeze.md) |
+
+> The `SNAPSHOT_CHALLENGE_WINDOW_SECS` (1-day fraud window) is removed — the
+> juror-set root is canonical by construction ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ## PDA seed prefixes
 
@@ -27,10 +29,11 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 | `SEED_JUROR_STAKE`    | `b"stake"`     | `JurorStake`             |
 | `SEED_DISPUTE`        | `b"dispute"`   | `Dispute`                |
 | `SEED_ROUND`          | `b"round"`     | `Round`                  |
-| `SEED_SNAPSHOT`       | `b"snapshot"`  | `Snapshot`               |
 | `SEED_PENDING_UPDATE` | `b"update"`    | `PendingUpdate`          |
 | `SEED_APPEAL_BOND`    | `b"bond"`      | `AppealBond`             |
 | `SEED_PAUSE`          | `b"pause"`     | `PauseState` (singleton) |
+
+> `SEED_SNAPSHOT` (`b"snapshot"`) is removed — there is no `Snapshot` account ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ## v1 default economics (per-Subaccord configurable)
 
