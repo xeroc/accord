@@ -1,7 +1,7 @@
 ---
-// Waitlist form — POSTs { email } to PUBLIC_WAITLIST_ENDPOINT (an n8n webhook).
-// Anti-hype microcopy: "one email when v1 ships", no airdrop-farming register.
-const endpoint = import.meta.env.PUBLIC_WAITLIST_ENDPOINT ?? "";
+// Waitlist form — POSTs { email, type, timestamp } to PUBLIC_N8N_WEBHOOK_URL (n8n webhook).
+// Mirrors chainsquad.com's n8n contract (routes on `type`); anti-hype microcopy.
+const endpoint = import.meta.env.PUBLIC_N8N_WEBHOOK_URL ?? "";
 ---
 
 <form data-waitlist data-endpoint={endpoint} class="flex w-full max-w-md flex-col gap-2 sm:flex-row" novalidate>
@@ -51,7 +51,7 @@ const endpoint = import.meta.env.PUBLIC_WAITLIST_ENDPOINT ?? "";
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, source: "landing" }),
+          body: JSON.stringify({ email, type: "waitlist", timestamp: new Date().toISOString() }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         set("On the list. One email when v1 ships on mainnet.", true);

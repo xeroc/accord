@@ -21,15 +21,16 @@ pnpm --filter @accord/landing run preview # serve the build locally
 
 ## Waitlist (n8n)
 
-The waitlist form POSTs `{ email, source }` to an n8n webhook. Set the endpoint
-via a **public** env var (it ships to the client, so it is not secret):
+The waitlist form POSTs `{ email, type, timestamp }` to an n8n webhook, mirroring
+chainsquad.com's contract (the workflow routes on `type`). Set the endpoint via a
+**public** env var (it ships to the client, so it is not secret):
 
 ```bash
 # apps/landing/.env  (gitignored — local dev)
-PUBLIC_WAITLIST_ENDPOINT=https://n8n.example.com/webhook/accord-waitlist
+PUBLIC_N8N_WEBHOOK_URL=https://n8n.example.com/webhook/accord-waitlist
 ```
 
-For the GitHub Pages build, set `PUBLIC_WAITLIST_ENDPOINT` as a repository
+For the GitHub Pages build, set `PUBLIC_N8N_WEBHOOK_URL` as a repository
 **variable** (Settings → Secrets and variables → Actions → Variables). The deploy
 workflow passes it through to the build. If unset, the form degrades to a
 "ping us on Telegram" message — it never throws.

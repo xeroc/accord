@@ -37,10 +37,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build landing
-        # PUBLIC_WAITLIST_ENDPOINT is a public (non-secret) repository variable.
+        # PUBLIC_N8N_WEBHOOK_URL is a public (non-secret) repository variable.
         run: pnpm --filter @accord/landing run build
         env:
-          PUBLIC_WAITLIST_ENDPOINT: ${{ vars.PUBLIC_WAITLIST_ENDPOINT }}
+          PUBLIC_N8N_WEBHOOK_URL: ${{ vars.PUBLIC_N8N_WEBHOOK_URL }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
