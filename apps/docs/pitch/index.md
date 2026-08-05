@@ -3,32 +3,40 @@ marp: true
 theme: default
 size: 16:9
 paginate: true
-footer: 'Accord · Mechanize the verdict.'
+footer: "Accord · Mechanize the verdict."
 ---
 
 <!--
   Accord — Pitch Deck
-  Methodology: pitch-deck skill (one-liner, Pixar blurb, real headlines, no buzzwords,
-               black bg / white font, no branding).
-  Format:      Marp markdown (single file, embedded minimal-dark CSS).
-               marp accord-pitch.md -o accord-pitch.html --html
-               marp accord-pitch.md --pdf --allow-local-files
+  Brand system: brand/ (Accord Brand Model, locked 2026-08-04).
+    - Surface:  Ink #0A0E14 (primary), Raised #11161D (code/panels)
+    - Accent:   Verdict Amber #F0A830 (the one color that means "Accord")
+    - Type:     IBM Plex Sans (prose/headline) + IBM Plex Mono (structural)
+    - Voice:    imperative, mechanism-first, crypto-native, no hedging.
+  Format: Marp markdown (single file, embedded brand CSS).
+    marp index.md --html --allow-local-files -o index.html
+    marp index.md --pdf --allow-local-files -o index.pdf
 -->
 
 <style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
 :root {
-  --bg:        #0b0b0d;
-  --fg:        #d0d0d2;
-  --fg-dim:    #8b949e;
-  --head:      #ffffff;
-  --accent:    #58a6ff;
-  --rule:      #2a2a30;
+  --ink:       #0A0E14;   /* primary surface */
+  --raised:    #11161D;   /* cards, code blocks */
+  --border:    #1F2630;   /* hairlines, dividers */
+  --fg:        #C9D1D9;   /* body text on dark */
+  --fg-dim:    #7D8590;   /* secondary text, captions */
+  --head:      #F0F6FC;   /* headlines on dark */
+  --accent:    #F0A830;   /* Verdict Amber — the identity accent */
+  --confirm:   #3FB950;   /* state: finalized / honest */
+  --slash:     #F85149;   /* state: slash / antagonist */
 }
 
 section {
-  background-color: var(--bg);
+  background-color: var(--ink);
   color: var(--fg);
-  font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: 'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-weight: 400;
   font-size: 23px;
   line-height: 1.55;
@@ -37,9 +45,9 @@ section {
   position: relative;
 }
 
-/* Headings: white, strong hierarchy, no decoration */
+/* Headings: near-white, strong hierarchy, no decoration */
 h1, h2, h3 {
-  font-weight: 800;
+  font-weight: 600;
   color: var(--head);
   margin: 0;
   letter-spacing: -0.01em;
@@ -47,7 +55,7 @@ h1, h2, h3 {
 
 h1 { font-size: 60px; line-height: 1.12; }
 
-/* Slide titles sit at top with a single thin accent rule */
+/* Slide titles sit at top with a single thin amber rule */
 h2 {
   font-size: 40px;
   line-height: 1.15;
@@ -74,23 +82,23 @@ li { margin-bottom: 9px; }
 li::marker { color: var(--accent); }
 
 /* One accent for emphasis only */
-strong { color: var(--accent); font-weight: 700; }
+strong { color: var(--accent); font-weight: 600; }
 
 /* Secondary copy */
 em { color: var(--fg-dim); font-style: normal; }
 
 code {
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, monospace;
+  font-family: 'IBM Plex Mono', 'Fira Code', Consolas, Monaco, monospace;
   font-size: 0.82em;
   color: var(--head);
-  background: #16161a;
-  border: 1px solid var(--rule);
+  background: var(--raised);
+  border: 1px solid var(--border);
   border-radius: 5px;
   padding: 1px 6px;
 }
 pre {
-  background: #16161a;
-  border: 1px solid var(--rule);
+  background: var(--raised);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 18px 20px;
   font-size: 17px;
@@ -108,11 +116,11 @@ pre code { background: none; border: none; padding: 0; }
   margin-top: 10px;
 }
 .flow span {
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
   font-size: 16px;
   color: var(--head);
-  background: #16161a;
-  border: 1px solid var(--rule);
+  background: var(--raised);
+  border: 1px solid var(--border);
   border-radius: 999px;
   padding: 6px 14px;
 }
@@ -122,11 +130,11 @@ pre code { background: none; border: none; padding: 0; }
 footer {
   color: var(--fg-dim);
   font-size: 13px;
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
 }
 section::after {
   color: var(--fg-dim);
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: 'IBM Plex Mono', Consolas, monospace;
   font-size: 13px;
 }
 
@@ -135,14 +143,23 @@ section.lead {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: flex-start;
 }
 section.lead h1 { font-size: 72px; }
 section.lead h2::after { display: none; }
 section.lead footer,
 section.lead::after { display: none; }
+
+/* Brand wordmark headline (logo-code on flat Ink — blends with the surface) */
+.brandmark {
+  height: 180px;
+  width: auto;
+  display: block;
+  margin: 0 0 10px;
+}
 section.lead .oneliner {
   font-size: 34px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--accent);
   margin-top: 14px;
 }
@@ -156,9 +173,7 @@ section.lead .sub {
 <!-- _class: lead -->
 <!-- _paginate: false -->
 
-# Accord
-
-<div class="oneliner">Mechanize the verdict.</div>
+<img class="brandmark" src="assets/logoMark.png" alt="Accord" />
 
 <div class="sub">Schelling-point arbitration, natively onchain.</div>
 
@@ -166,10 +181,10 @@ section.lead .sub {
 
 ## Solana has no onchain court
 
-- Subjective disputes are everywhere — escrow, insurance, NFT authenticity, oracle calls
+- **Subjective disputes** are everywhere: escrow, insurance, authenticity, ...
 - Smart contracts **execute**; they can't **judge intent**
-- Today: a trusted multisig — or nothing
-- Kleros solved this on Ethereum (2019, 1,000+ disputes)
+- Today: a trusted multisig or nothing
+- Kleros proved the model on Ethereum (2019, 1,000+ disputes)
 - **Solana has no native equivalent.**
 
 ---
@@ -178,8 +193,8 @@ section.lead .sub {
 
 The **Schelling Point**: strangers converge on truth without talking.
 
-- Jurors **stake capital**, drawn at random by weight
-- Vote with the majority → earn fees + slashed stake
+- Jurors **stake capital** and are drawn at random by weight
+- Vote with the majority → earn fees and slashed stake
 - Vote against → lose a slice of your own
 - **Truth pays.** No central judge picks winners.
 
@@ -191,7 +206,7 @@ The **Schelling Point**: strangers converge on truth without talking.
   <span>file</span><i>→</i><span>draw</span><i>→</i><span>commit</span><i>→</i><span>reveal</span><i>→</i><span>rule</span><i>→</i><span>appeal</span>
 </div>
 
-- Any program **files** a dispute via CPI
+- Any wallet **files** a dispute (or via CPI)
 - **N jurors drawn** — VRF, stake-weighted
 - Each **commits** `hash(vote, salt)` — votes stay secret
 - Jurors **reveal** — majority becomes the onchain Ruling
@@ -202,12 +217,8 @@ The **Schelling Point**: strangers converge on truth without talking.
 ## Two CPI calls. That's the integration
 
 ```
-// any Arbitrable program — you file:
-accord.create_dispute(subaccord, options, evidence_hash, fee)
-
-// ...time passes, jurors vote privately...
-
-// you read the verdict, lazily:
+let dispute_id = accord.create_dispute(subaccord, options, evidence_hash, fee)
+// ⏳
 let winner = accord.get_ruling(dispute_id)
 ```
 
@@ -219,7 +230,7 @@ let winner = accord.get_ruling(dispute_id)
 
 ## Built for Solana, not ported
 
-- **VRF** draws — manipulation-resistant
+- **VRF** draws - manipulation-resistant
 - **Per-Subaccord staking token** (USDC default, any SPL)
 - **Verifiable sortition** — MST-committed, provably fair
 - **Permissionless Subaccords** — specialized juror pools
@@ -241,9 +252,7 @@ let winner = accord.get_ruling(dispute_id)
 
 - **Freelance escrow** — "did the dev deliver?"
 - **DeFi insurance** — "was this exploit in scope?"
-- **Curated lists** — "does this token belong?"
-- **Prediction markets** — "did it resolve YES?"
-- **DAO governance** — "was this proposal executed correctly?"
+- **Prediction markets** — "was this a suite?"
 
 One primitive. Every subjective question.
 
@@ -254,16 +263,14 @@ One primitive. Every subjective question.
 - DeFi insurance, escrow, prediction markets — all growing on Solana
 - Each needs a trustless **"who is right?"**
 - **Zero** native Schelling arbitration exists today
-- Kleros proved the model: $5M+ disputes, profitable jurors
+- Kleros proved the model: 1,000+ disputes since 2019
 - **First native implementation wins the layer**
 
 ---
 
 ## Accord first, then depth
 
-- **v1 — now:** the arbitration primitive. *This deck.*
-- **v2:** Arcium encrypted vote-tally, accord token, tranched staking
-- **v3:** futarchy, evidence markets, AI risk pricing, ZK
+- **v1 — now:** the arbitration primitive. _This deck._
 - Ship the primitive — protocols plug in on top
 
 ---
@@ -273,10 +280,10 @@ One primitive. Every subjective question.
 
 # Dr.-Ing. Fabian Schuh
 
-<div class="oneliner">Let's build the court Solana is missing.</div>
+<div class="oneliner">Let's ship the primitive Solana is missing.</div>
 
 <div class="sub">
 Decades in blockchain, security & operations.<br/>
 Seeking: integrators, grants, feedback.<br/>
-<em>github.com · veridao · 2026</em>
+<em>github.com · accord · 2026</em>
 </div>
