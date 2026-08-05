@@ -68,6 +68,10 @@ plugins:
   - privacy:
   - llmstxt:
       full_output: llms-full.txt
+      sections:
+        Usage documentation:
+          - index.md: Main documentation page
+          - "*.md"
 
 markdown_extensions:
   - admonition
