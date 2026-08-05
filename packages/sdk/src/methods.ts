@@ -5,7 +5,7 @@
  * Each entry forwards to the pure orchestration function in `src/methods/*.ts`,
  * injecting the adapter as the `client` argument. The pure crypto helpers
  * (`buildMst`, `resolvePanel`, `commitHash`, `appealCost`, …) are NOT bound
- * here — they take no client, so import them directly from `@veridao/sdk`.
+ * here — they take no client, so import them directly from `@accord/sdk`.
  *
  * @see ADR-0010
  */

@@ -2,7 +2,7 @@
 // (PDA seeds, fee math, option/evidence/nonce validation).
 //
 // Excluded from the TypeScript build (tsconfig.json exclude); run via:
-//   pnpm --filter @veridao/sdk test
+//   pnpm --filter @accord/sdk test
 //
 // Kit-dependent paths (findDisputePda / createDispute / getRuling) are exercised
 // by the jest/Surfpool integration suite (bean veridao-7iiv) once the generated

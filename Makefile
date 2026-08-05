@@ -49,7 +49,7 @@ test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .s
 	# `anchor build` is unaffected — it manages its own toolchain.
 
 test_surfpool: ## Run the full suite against a running Surfpool instance
-	pnpm --filter @veridao/tests test
+	pnpm --filter @accord/tests test
 
 run_surfpool: ## Start a Surfpool local fork (run in a separate terminal)
 	surfpool

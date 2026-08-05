@@ -42,7 +42,7 @@ Your Program (Arbitrable)
    (permissionless).
 2. **Capital** — the filer pays `jurors_per_dispute × fee_per_juror` per round.
    Appeals cost exponentially more.
-3. **The SDK** — `@veridao/sdk` for TypeScript, or raw Anchor IDL for any
+3. **The SDK** — `@accord/sdk` for TypeScript, or raw Anchor IDL for any
    language.
 
 ## Next steps

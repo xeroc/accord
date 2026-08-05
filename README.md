@@ -234,17 +234,17 @@ Every account stores its canonical `bump` so handlers reuse the same PDA
 without re-deriving. Large accounts (`Round`) are `#[zero_copy]` (`AccountLoader`)
 to fit BPF's stack.
 
-| Account | Seeds | Purpose |
-| --- | --- | --- |
-| `Subaccord` | `["subaccord", creator, risk_type]` | A specialized Juror pool: staking token, windows, alpha, authority |
-| `JurorStake` | `["stake", subaccord, juror]` | A Juror's staked capital + `active_draws` lock count |
-| `Dispute` | `["dispute", filer, nonce]` | A case: options, evidence hash, state, `final_ruling` |
-| `Round` | `["round", dispute, round_idx]` | Per-round jurors, commits, reveals, result (zero-copy) |
-| `Snapshot` | `["snapshot", dispute, round_idx]` | Bonded Merkle-Sum-Tree root over the Juror set |
-| `AppealBond` | `["bond", dispute, round_idx]` | Custody record for one appeal bond |
-| `PendingUpdate` | `["update", subaccord, nonce]` | Timelocked Subaccord parameter update (48h) |
-| `PauseState` | `["pause"]` | Singleton program-level circuit breaker |
-| token vaults | Subaccord-PDA-owned SPL accounts | Stake pool + fee pool |
+| Account         | Seeds                               | Purpose                                                            |
+| --------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| `Subaccord`     | `["subaccord", creator, risk_type]` | A specialized Juror pool: staking token, windows, alpha, authority |
+| `JurorStake`    | `["stake", subaccord, juror]`       | A Juror's staked capital + `active_draws` lock count               |
+| `Dispute`       | `["dispute", filer, nonce]`         | A case: options, evidence hash, state, `final_ruling`              |
+| `Round`         | `["round", dispute, round_idx]`     | Per-round jurors, commits, reveals, result (zero-copy)             |
+| `Snapshot`      | `["snapshot", dispute, round_idx]`  | Bonded Merkle-Sum-Tree root over the Juror set                     |
+| `AppealBond`    | `["bond", dispute, round_idx]`      | Custody record for one appeal bond                                 |
+| `PendingUpdate` | `["update", subaccord, nonce]`      | Timelocked Subaccord parameter update (48h)                        |
+| `PauseState`    | `["pause"]`                         | Singleton program-level circuit breaker                            |
+| token vaults    | Subaccord-PDA-owned SPL accounts    | Stake pool + fee pool                                              |
 
 ### Draw & Verifiable Sortition
 
@@ -342,10 +342,10 @@ const ruling = await accord.getRuling(dispute);
 The program is configured on-chain (per-Subaccord params), not via env vars.
 Local development needs only Solana CLI config:
 
-| Variable | Description | Example |
-| --- | --- | --- |
+| Variable        | Description                                                  | Example                    |
+| --------------- | ------------------------------------------------------------ | -------------------------- |
 | `ANCHOR_WALLET` | Path to the provider keypair (defaults to Solana CLI config) | `~/.config/solana/id.json` |
-| `RPC_URL` | Cluster RPC endpoint (or use `solana config set --url`) | `localhost:8899` |
+| `RPC_URL`       | Cluster RPC endpoint (or use `solana config set --url`)      | `localhost:8899`           |
 
 `Anchor.toml` pins the provider:
 
@@ -362,20 +362,20 @@ wallet = "~/.config/solana/id.json"
 All orchestration lives in the root `Makefile`. The root `package.json` has no
 scripts by design.
 
-| Command | Description |
-| --- | --- |
-| `make prep` | Install Solana `3.1.10` + Anchor `1.0.2` (via `avm`), then `pnpm install` |
-| `make build` | `anchor build` (programs) then `pnpm -r run build` (packages/apps) |
-| `make test` | Rust unit tests + jest suite against a local validator (`anchor test`) |
-| `make test_unit` | LiteSVM Rust unit/TDD tests (fast, no validator) |
-| `make run_surfpool` | Start a Surfpool local fork (separate terminal) |
-| `make test_surfpool` | Full suite against a running Surfpool instance |
-| `make lint` | Lint every workspace that declares a lint script |
-| `make clean` | Remove build artifacts and `node_modules` |
-| `cd programs/accord && cargo test` | Rust unit tests in isolation |
-| `cd packages/sdk && pnpm run build` | Build the SDK |
-| `cd tests && npx jest -t "<name>"` | Run a single integration test by name |
-| `cd apps/docs && poetry run mkdocs serve` | Serve the docs site locally (localhost:8000) |
+| Command                                   | Description                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| `make prep`                               | Install Solana `3.1.10` + Anchor `1.0.2` (via `avm`), then `pnpm install` |
+| `make build`                              | `anchor build` (programs) then `pnpm -r run build` (packages/apps)        |
+| `make test`                               | Rust unit tests + jest suite against a local validator (`anchor test`)    |
+| `make test_unit`                          | LiteSVM Rust unit/TDD tests (fast, no validator)                          |
+| `make run_surfpool`                       | Start a Surfpool local fork (separate terminal)                           |
+| `make test_surfpool`                      | Full suite against a running Surfpool instance                            |
+| `make lint`                               | Lint every workspace that declares a lint script                          |
+| `make clean`                              | Remove build artifacts and `node_modules`                                 |
+| `cd programs/accord && cargo test`        | Rust unit tests in isolation                                              |
+| `cd packages/sdk && pnpm run build`       | Build the SDK                                                             |
+| `cd tests && npx jest -t "<name>"`        | Run a single integration test by name                                     |
+| `cd apps/docs && poetry run mkdocs serve` | Serve the docs site locally (localhost:8000)                              |
 
 Per-package lint auto-fix (where defined):
 
@@ -425,14 +425,14 @@ tests are green.
 
 ## Project Status
 
-| Component | Status | Notes |
-| --- | --- | --- |
-| `programs/accord` (on-chain) | ✅ Implemented | Full v1 instruction set + per-instruction LiteSVM tests |
-| Formal verification (`accord.qedspec`) | ⚠️ Declared | Four economic invariants modeled; pending VRF/param-bounds binding |
-| `@accord/sdk` (TypeScript) | 🚧 Scaffolded | Codama codegen pipeline in progress (ADR-0010); facade stub only |
-| `tests/` (jest/Surfpool) | 🚧 Scaffolded | Harness configured; integration specs in progress |
-| `apps/docs` (MkDocs) | ✅ Live | Full integration guide, protocol reference, security docs, ADRs |
-| Security audit | ❌ Not started | Pre-mainnet; do not secure real value yet |
+| Component                              | Status         | Notes                                                              |
+| -------------------------------------- | -------------- | ------------------------------------------------------------------ |
+| `programs/accord` (on-chain)           | ✅ Implemented | Full v1 instruction set + per-instruction LiteSVM tests            |
+| Formal verification (`accord.qedspec`) | ⚠️ Declared    | Four economic invariants modeled; pending VRF/param-bounds binding |
+| `@accord/sdk` (TypeScript)             | 🚧 Scaffolded  | Codama codegen pipeline in progress (ADR-0010); facade stub only   |
+| `tests/` (jest/Surfpool)               | 🚧 Scaffolded  | Harness configured; integration specs in progress                  |
+| `apps/docs` (MkDocs)                   | ✅ Live        | Full integration guide, protocol reference, security docs, ADRs    |
+| Security audit                         | ❌ Not started | Pre-mainnet; do not secure real value yet                          |
 
 ---
 
@@ -544,7 +544,7 @@ and standard build essentials (`build-essential` / Xcode CLT).
    tracking. Check
    `beans list --json --ready` before assuming docs reflect reality — active
    milestones may supersede code state. Include relevant bean IDs in commit
-   messages (the bean prefix is `veridao-` per `.beans.yml`).
+   messages (the bean prefix is `accord-` per `.beans.yml`).
 5. **ADRs are immutable once deployed.** A superseded decision gets a new ADR
    that references the old one.
 

@@ -19,7 +19,7 @@ that references the old one.
 | [0007](0007-upgrade-authority-multisig-then-freeze.md)                        | Upgrade authority — Squads multisig, then post-audit freeze                 | Accepted |
 | [0008](0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md) | Snapshot trust hardening — anchor-slot pattern, fraud predicates, sortition | Accepted |
 | [0009](0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md)         | Stake-weighted verifiable sortition — MST, committed VRF                    | Accepted |
-| [0010](0010-sdk-codama-solana-kit-facade.md)                              | `@veridao/sdk` — Codama codegen + Solana Kit + custom facade                 | Accepted |
+| [0010](0010-sdk-codama-solana-kit-facade.md)                              | `@accord/sdk` — Codama codegen + Solana Kit + custom facade                 | Accepted |
 
 ## How to read them
 

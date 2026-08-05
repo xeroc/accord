@@ -1,6 +1,6 @@
 // lifecycle.test.ts — runnable self-check for the Subaccord lifecycle helpers
 // (PDA seeds, timelock constants, validation). Excluded from the build; run via:
-//   pnpm --filter @veridao/sdk test
+//   pnpm --filter @accord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

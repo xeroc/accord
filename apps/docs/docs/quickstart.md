@@ -33,7 +33,7 @@ That's it. The Accord handles juror selection, voting, and finalization.
 ## TypeScript SDK
 
 ```typescript
-import { Accord } from "@veridao/sdk";
+import { Accord } from "@accord/sdk";
 
 // File a dispute
 const { dispute } = await accord.createDispute({

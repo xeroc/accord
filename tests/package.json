@@ -8,7 +8,7 @@
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch"
   },
   "dependencies": {
-    "@veridao/sdk": "workspace:*",
+    "@accord/sdk": "workspace:*",
     "@solana/kit": "^7.0.0",
     "@solana/spl-token": "^0.4.0",
     "bn.js": "^5.2.1"

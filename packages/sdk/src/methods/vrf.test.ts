@@ -5,7 +5,7 @@
 // type-stripper cannot resolve to `.ts` — so this test imports the COMPILED
 // dist output (built first by the `test` script). The other method tests are
 // self-contained and import source directly.
-//   pnpm --filter @veridao/sdk test
+//   pnpm --filter @accord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildMst } from "../../dist/methods/snapshot.js";

@@ -1,4 +1,4 @@
-# `@veridao/sdk` — Codama codegen + Solana Kit runtime + custom facade
+# `@accord/sdk` — Codama codegen + Solana Kit runtime + custom facade
 
 ## Status
 

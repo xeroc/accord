@@ -1,5 +1,5 @@
 /**
- * dispute.ts — the PRIMARY external surface of @veridao/sdk.
+ * dispute.ts — the PRIMARY external surface of @accord/sdk.
  *
  * Two methods every Arbitrable integrates against:
  *   - {@link createDispute} — files a Dispute (CPI from an Arbitrable program,

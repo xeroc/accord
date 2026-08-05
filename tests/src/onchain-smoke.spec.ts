@@ -1,7 +1,7 @@
 // onchain-smoke.spec.ts — real on-chain integration tests against a local
 // test-validator with the Accord program loaded at its declared address.
 //
-// Proves the full pipeline: jest → @solana/kit → @veridao/sdk → validator →
+// Proves the full pipeline: jest → @solana/kit → @accord/sdk → validator →
 // program → fetch → assert. Exercises `init` (PDA creation + owner check) and
 // the fetch round-trip — the two paths that are impossible to test offline.
 //
@@ -14,7 +14,7 @@ import {
   Accord,
   createSubaccord,
   initializePause,
-} from "@veridao/sdk";
+} from "@accord/sdk";
 import {
   address,
   appendTransactionMessageInstructions,

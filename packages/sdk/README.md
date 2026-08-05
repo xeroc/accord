@@ -1,4 +1,4 @@
-# @veridao/sdk
+# @accord/sdk
 
 TypeScript SDK for the **VeriDAO Accord** — a Schelling-point arbitration
 primitive on Solana (Anchor). Any program (the _Arbitrable_) files a Dispute
@@ -14,13 +14,13 @@ Built on [Solana Kit](https://github.com/anza-xyz/kit) (`@solana/kit`) with a
 ## Install
 
 ```bash
-pnpm add @veridao/sdk @solana/kit
+pnpm add @accord/sdk @solana/kit
 ```
 
 ## Quick start
 
 ```typescript
-import { Accord } from "@veridao/sdk";
+import { Accord } from "@accord/sdk";
 import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { readFileSync } from "node:fs";
 
@@ -40,7 +40,7 @@ The two-method surface for programs that want dispute resolution:
 
 ```typescript
 // File a dispute (the Arbitrable calls this via CPI)
-import { createDispute } from "@veridao/sdk";
+import { createDispute } from "@accord/sdk";
 const { instruction, dispute } = await createDispute(
   accord.adapter,
   accord.PROGRAM_ID,
@@ -48,7 +48,7 @@ const { instruction, dispute } = await createDispute(
 );
 
 // Read the ruling (lazy — returns null until finalized)
-import { fetchDisputeMaybe } from "@veridao/sdk";
+import { fetchDisputeMaybe } from "@accord/sdk";
 const disputeAccount = await fetchDisputeMaybe(accord, dispute);
 if (disputeAccount?.exists) {
   console.log(disputeAccount.data.finalRuling); // bigint | null
@@ -62,29 +62,29 @@ The `methods` namespace covers all eight instruction groups. Each returns a Kit
 
 ```typescript
 // Subaccord lifecycle + circuit breaker
-import { createSubaccord, initializePause, pause } from "@veridao/sdk";
+import { createSubaccord, initializePause, pause } from "@accord/sdk";
 
 // Staking
-import { stake, unstake } from "@veridao/sdk";
+import { stake, unstake } from "@accord/sdk";
 
 // Dispute filing
-import { createDispute } from "@veridao/sdk";
+import { createDispute } from "@accord/sdk";
 
 // Snapshot trust (ADR-0009 sortition)
 import {
   postSnapshot,
   challengeSnapshot,
   finalizeSnapshot,
-} from "@veridao/sdk";
+} from "@accord/sdk";
 
 // VRF + draw
-import { requestVrf, draw, resolvePanel } from "@veridao/sdk";
+import { requestVrf, draw, resolvePanel } from "@accord/sdk";
 
 // Commit-reveal voting
-import { commit, reveal, commitHash } from "@veridao/sdk";
+import { commit, reveal, commitHash } from "@accord/sdk";
 
 // Appeals
-import { appeal, claimAppealRefund } from "@veridao/sdk";
+import { appeal, claimAppealRefund } from "@accord/sdk";
 ```
 
 ## PDA helpers
@@ -95,7 +95,7 @@ import {
   findDisputePda,
   findJurorStakePda,
   findPauseStatePda,
-} from "@veridao/sdk";
+} from "@accord/sdk";
 
 const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, riskType);
 ```
