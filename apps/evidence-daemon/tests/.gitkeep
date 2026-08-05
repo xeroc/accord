@@ -1,0 +1,2 @@
+# Evidence daemon test suite lives here (crypto.test.ts, pipeline.test.ts, e2e.test.ts per SPEC).
+# Populated by test tasks: accord-c07y (crypto+keyring), accord-rc71 (pipeline), accord-xh6n (e2e).
