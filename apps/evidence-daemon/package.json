@@ -8,6 +8,7 @@
   "scripts": {
     "lint": "tsc -p tsconfig.json --noEmit",
     "lint:fix": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
     "start": "bun run src/main.ts",
     "clean": "rm -rf dist"
   },
