@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 /**
  * chain/reader.ts — read-only on-chain views for the Evidence Operator daemon.
  *

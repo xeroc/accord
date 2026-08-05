@@ -1,11 +1,11 @@
 ---
 # accord-djso
 title: Crypto & Foundation
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-05T14:32:36Z
-updated_at: 2026-08-05T14:32:36Z
+updated_at: 2026-08-05T15:27:09Z
 parent: accord-yjno
 ---
 

@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 /**
  * chain/events.ts — off-chain event subscriber for the Evidence Operator daemon.
  *
