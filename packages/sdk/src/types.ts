@@ -12,21 +12,21 @@
  */
 
 export {
-  type DisputeState,
+  DisputeState,
   getDisputeStateDecoder,
   getDisputeStateEncoder,
-} from "./generated/types/disputeState";
+} from "./generated/types/disputeState.js";
 
 export {
   type UpdatePayload,
   getUpdatePayloadCodec,
-} from "./generated/types/updatePayload";
+} from "./generated/types/updatePayload.js";
 
 export {
   type LeafClaim as LeafClaimIdl,
   getLeafClaimCodec,
-} from "./generated/types/leafClaim";
+} from "./generated/types/leafClaim.js";
 export {
   type MSTNode as MSTNodeIdl,
   getMSTNodeCodec,
-} from "./generated/types/mSTNode";
+} from "./generated/types/mSTNode.js";
