@@ -1238,6 +1238,11 @@ pub mod accord {
     /// right to appeal.
     pub fn appeal(ctx: Context<Appeal>) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
+        require_eq!(
+            dispute.subaccord,
+            ctx.accounts.subaccord.key(),
+            AccordError::SubaccordMismatch
+        );
         require!(
             dispute.state == DisputeState::RoundResolved,
             AccordError::InvalidState
@@ -1322,9 +1327,13 @@ pub mod accord {
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Open the new round: bump `current_round` and reset to `Created` so the
-        // snapshot → draw → vote cycle reruns for the larger panel.
+        // snapshot → draw → vote cycle reruns for the larger panel.  Stamp
+        // `filed_at = now` so the pre-draw cancel timeout starts fresh — without
+        // this, the original filing timestamp (long past) makes the dispute
+        // immediately cancelable (REVIEW #2).
         dispute.current_round = new_round;
         dispute.state = DisputeState::Created;
+        dispute.filed_at = now;
 
         emit!(Appealed {
             dispute: dispute.key(),
@@ -1347,7 +1356,7 @@ pub mod accord {
         let _ = round_idx; // consumed by the `#[instruction]` PDA seeds
         let dispute = &ctx.accounts.dispute;
         require!(
-            dispute.state == DisputeState::Final,
+            dispute.state == DisputeState::Final || dispute.state == DisputeState::Failed,
             AccordError::InvalidState
         );
 
@@ -1414,6 +1423,8 @@ pub mod accord {
         let dispute_key = dispute.key();
         let filer = dispute.filer;
         let state = dispute.state;
+        let current_round = dispute.current_round;
+        let sub_key = ctx.accounts.subaccord.key();
 
         let post_draw = matches!(
             state,
@@ -1424,7 +1435,8 @@ pub mod accord {
         );
 
         if post_draw {
-            // remaining_accounts = [current Round, ...JurorStake PDAs].
+            // remaining_accounts = [current Round, ...JurorStake PDAs,
+            //   ...prior Round PDAs + their JurorStake PDAs].
             require!(
                 !ctx.remaining_accounts.is_empty(),
                 AccordError::InvalidState
@@ -1434,7 +1446,7 @@ pub mod accord {
                 &[
                     SEED_ROUND,
                     dispute_key.as_ref(),
-                    &dispute.current_round.to_le_bytes(),
+                    &current_round.to_le_bytes(),
                 ],
                 &crate::ID,
             )
@@ -1456,7 +1468,7 @@ pub mod accord {
                 require!(now > deadline, AccordError::CancelTooEarly);
                 let count = round.juror_count as usize;
                 require!(
-                    ctx.remaining_accounts.len() == 1 + count,
+                    ctx.remaining_accounts.len() >= 1 + count,
                     AccordError::InvalidPanelSize
                 );
                 (count, round.jurors[..count].to_vec())
@@ -1464,7 +1476,6 @@ pub mod accord {
 
             // Release active_draws for every drawn juror (same offset pattern
             // as `draw`/`finalize_dispute`).
-            let sub_key = ctx.accounts.subaccord.key();
             const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
             for (i, acct_info) in ctx.remaining_accounts[1..=juror_count].iter().enumerate() {
                 let expected_pda = Pubkey::find_program_address(
@@ -1486,6 +1497,16 @@ pub mod accord {
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                     .copy_from_slice(&new_draws.to_le_bytes());
             }
+
+            // Release prior-round jurors (appeal rounds that completed but
+            // were never settled — settle_round requires Final).
+            release_prior_rounds(
+                &ctx.remaining_accounts,
+                &dispute_key,
+                &sub_key,
+                1 + juror_count,
+                current_round,
+            )?;
         } else {
             // Pre-draw stall (Created — no snapshot step under ADR-0012; the
             // VRF may simply never commit). Terminal states
@@ -1496,6 +1517,16 @@ pub mod accord {
                 .checked_add(PRE_DRAW_CANCEL_TIMEOUT_SECS)
                 .ok_or(AccordError::ArithmeticOverflow)?;
             require!(now > deadline, AccordError::CancelTooEarly);
+
+            // Release prior-round jurors (appeal rounds that completed but
+            // were never settled).
+            release_prior_rounds(
+                &ctx.remaining_accounts,
+                &dispute_key,
+                &sub_key,
+                0,
+                current_round,
+            )?;
         }
 
         // --- Refund the filer's round-1 fee from the vault (PDA-signed). ---
@@ -1695,6 +1726,71 @@ fn panel_size_for_round(jurors_per_dispute: u32, round_idx: u32) -> Result<u32> 
         .checked_sub(1)
         .ok_or(AccordError::ArithmeticOverflow)?;
     Ok(panel.min(MAX_JURORS as u32))
+}
+
+/// Release `active_draws` for every juror in every prior round
+/// (`0..current_round`). Used by `cancel_dispute` so that appeal-escalated
+/// disputes that stall don't permanently lock prior-round jurors
+/// (REVIEW #2).  Each round's `JurorStake` PDAs must follow the `Round` PDA
+/// in `remaining_accounts`, laid out sequentially starting at `start`.
+fn release_prior_rounds<'info>(
+    accounts: &'info [AccountInfo<'info>],
+    dispute_key: &Pubkey,
+    sub_key: &Pubkey,
+    start: usize,
+    current_round: u32,
+) -> Result<()> {
+    if current_round == 0 {
+        return Ok(());
+    }
+    let mut idx = start;
+    const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
+    for round_idx in 0..current_round {
+        require!(idx < accounts.len(), AccordError::InvalidState);
+        let round_info = &accounts[idx];
+        let expected = Pubkey::find_program_address(
+            &[SEED_ROUND, dispute_key.as_ref(), &round_idx.to_le_bytes()],
+            &crate::ID,
+        )
+        .0;
+        require!(
+            round_info.key == &expected,
+            AccordError::InvalidMembershipProof
+        );
+
+        let jurors: Vec<Pubkey> = {
+            let loader = AccountLoader::<Round>::try_from(round_info)?;
+            let round = loader.load()?;
+            round.jurors[..round.juror_count as usize].to_vec()
+        };
+        let count = jurors.len();
+        idx += 1;
+        require!(idx + count <= accounts.len(), AccordError::InvalidPanelSize);
+
+        for j in 0..count {
+            let acct_info = &accounts[idx + j];
+            let expected_pda = Pubkey::find_program_address(
+                &[SEED_JUROR_STAKE, sub_key.as_ref(), jurors[j].as_ref()],
+                &crate::ID,
+            )
+            .0;
+            require!(
+                acct_info.key == &expected_pda,
+                AccordError::InvalidMembershipProof
+            );
+            let mut data = acct_info.try_borrow_mut_data()?;
+            let draws = u32::from_le_bytes(
+                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                    .try_into()
+                    .unwrap(),
+            );
+            let new_draws = draws.saturating_sub(1);
+            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                .copy_from_slice(&new_draws.to_le_bytes());
+        }
+        idx += count;
+    }
+    Ok(())
 }
 
 /// Shared per-round coherence settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti).
@@ -2080,6 +2176,7 @@ pub struct RequestVrf<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     /// CHECK: VRF oracle queue (mainnet default).
@@ -2105,6 +2202,7 @@ pub struct CommitVrfCallback<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
 }
@@ -2152,6 +2250,7 @@ pub struct Commit<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(
@@ -2179,6 +2278,7 @@ pub struct Reveal<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(
@@ -2218,6 +2318,7 @@ pub struct FinalizeRound<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(
@@ -2247,6 +2348,7 @@ pub struct FinalizeDispute<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(
@@ -2274,6 +2376,7 @@ pub struct SettleRound<'info> {
     #[account(
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(
@@ -2362,6 +2465,7 @@ pub struct ClaimAppealRefund<'info> {
     #[account(
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     /// The specific appeal bond being claimed.
@@ -2418,6 +2522,7 @@ pub struct CancelDispute<'info> {
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
+        has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     #[account(address = subaccord.staking_token)]

@@ -8,6 +8,8 @@ pub enum AccordError {
     // --- authority / timelock (ADR-0005) ---
     #[msg("Signer is not the Subaccord authority.")]
     Unauthorized,
+    #[msg("Dispute does not belong to this Subaccord (cross-pool substitution rejected).")]
+    SubaccordMismatch,
     #[msg("Subaccord is immutable (authority == default).")]
     ImmutableSubaccord,
     #[msg("Timelock has not elapsed yet.")]

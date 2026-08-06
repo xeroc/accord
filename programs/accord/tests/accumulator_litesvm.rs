@@ -15,7 +15,9 @@
 //! Run via `make test_unit` (builds the `.so` then `cargo test --features
 //! no-entrypoint`). One fresh `AnchorLiteSVM` context per test.
 
-use accord::constants::{SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD};
+use accord::constants::{
+    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD,
+};
 use accord::state::{Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord};
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
@@ -26,6 +28,7 @@ use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use solana_sdk::sysvar::clock::Clock;
 use spl_associated_token_account::get_associated_token_address_with_program_id;
 use spl_token::solana_program::program_option::COption;
 use spl_token::solana_program::program_pack::Pack;
@@ -1230,6 +1233,303 @@ fn last_change_slot_field_absent_from_juror_stake() {
         8 + JurorStake::INIT_SPACE,
         "JurorStake size must match the last_change_slot-free layout"
     );
+}
+
+// ─── wrong-pool negative tests (REVIEW #1: cross-Subaccord substitution) ───
+
+/// Create a second Subaccord over the same mint (different risk_type).
+fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
+    let risk_type_b = {
+        let mut rt = [0u8; 32];
+        rt[0] = 99;
+        rt
+    };
+    let sub_b = subaccord_pda(&env.creator.pubkey(), &risk_type_b);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateSubaccord {
+            creator: env.creator.pubkey(),
+            subaccord: sub_b,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateSubaccord {
+            risk_type: risk_type_b,
+            evidence_spec: [0u8; 32],
+            staking_token: env.mint,
+            min_stake: 1_000,
+            jurors_per_dispute: 3,
+            alpha_bps: 1_000,
+            review_window: 60,
+            commit_window: 60,
+            reveal_window: 60,
+            max_appeals: 3,
+            fee_per_juror: 1_000_000,
+            authority: env.creator.pubkey(),
+            evidence_operator: env.creator.pubkey(),
+            depth: TEST_DEPTH,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    sub_b
+}
+
+/// Create a dispute under `env.subaccord` (pool A). Returns (dispute_pda, filer).
+fn create_dispute_under_a(env: &mut AccEnv) -> (Pubkey, Keypair) {
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for i in 0..3u8 {
+        let juror = Keypair::new();
+        arm_juror(env, &juror, 10_000);
+        let amt = 5_000u64;
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(env, &juror, amt, path).assert_success();
+        leaves.push((juror.pubkey(), amt));
+    }
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let fee = 3 * 1_000_000u64;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+    (dispute, filer)
+}
+
+/// Drop a minimal placeholder account so the SVM can resolve the address.
+/// `has_one = subaccord` on the dispute fires before this account is loaded.
+fn ensure_dummy_round(env: &mut AccEnv, dispute: &Pubkey, round_idx: u32) -> Pubkey {
+    let rnd = round_pda(dispute, round_idx);
+    env.ctx
+        .svm
+        .set_account(
+            rnd,
+            SvmAccount {
+                lamports: 1_000_000,
+                data: vec![0u8; 8 + std::mem::size_of::<accord::state::Round>()],
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+    rnd
+}
+
+#[test]
+fn cancel_dispute_rejects_wrong_subaccord() {
+    let mut env = setup_accumulator();
+    let sub_b = create_second_subaccord(&mut env);
+    let (dispute, filer) = create_dispute_under_a(&mut env);
+
+    let vault_b = vault_ata(&sub_b, &env.mint);
+    create_token_account(&mut env.ctx, &vault_b, &env.mint, &sub_b, 0);
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: env.creator.pubkey(),
+            subaccord: sub_b,
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_b,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
+    assert!(
+        !r.is_success(),
+        "cancel_dispute with wrong subaccord must be rejected; logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn commit_rejects_wrong_subaccord() {
+    let mut env = setup_accumulator();
+    let sub_b = create_second_subaccord(&mut env);
+    let (dispute, _filer) = create_dispute_under_a(&mut env);
+    let rnd = ensure_dummy_round(&mut env, &dispute, 0);
+
+    let juror = Keypair::new();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Commit {
+            juror: juror.pubkey(),
+            subaccord: sub_b,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Commit {
+            commitment: [0u8; 32],
+        })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&juror]).unwrap();
+    assert!(
+        !r.is_success(),
+        "commit with wrong subaccord must be rejected; logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn settle_round_rejects_wrong_subaccord() {
+    let mut env = setup_accumulator();
+    let sub_b = create_second_subaccord(&mut env);
+    let (dispute, _filer) = create_dispute_under_a(&mut env);
+    let rnd = ensure_dummy_round(&mut env, &dispute, 0);
+
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::SettleRound {
+            caller: env.creator.pubkey(),
+            subaccord: sub_b,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::SettleRound { round_idx: 0u32 })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
+    assert!(
+        !r.is_success(),
+        "settle_round with wrong subaccord must be rejected; logs={:?}",
+        r.logs()
+    );
+}
+
+// ─── appeal timestamp reset tests (REVIEW #2) ────────────────────────────────
+
+/// Advance the LiteSVM Clock sysvar by `secs` seconds.
+fn warp_seconds(env: &mut AccEnv, secs: i64) {
+    let mut clock = env.ctx.svm.get_sysvar::<Clock>();
+    clock.unix_timestamp = clock.unix_timestamp.saturating_add(secs);
+    env.ctx.svm.set_sysvar::<Clock>(&clock);
+}
+
+/// Overwrite `dispute.filed_at` (simulates the appeal handler's stamp).
+fn stamp_filed_at(env: &mut AccEnv, dispute: &Pubkey, filed_at: i64) {
+    let acc = env.ctx.svm.get_account(dispute).expect("dispute exists");
+    let mut d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+    d.filed_at = filed_at;
+    let mut data = acc.data[..8].to_vec();
+    AnchorSerialize::serialize(&d, &mut data).unwrap();
+    env.ctx
+        .svm
+        .set_account(
+            *dispute,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
+#[test]
+fn cancel_blocked_immediately_after_appeal_timestamp_reset() {
+    let mut env = setup_accumulator();
+    let (_dispute, filer) = create_dispute_under_a(&mut env);
+
+    // Simulate the first round completing: warp well past the original
+    // pre-draw timeout (so without the fix, cancel would fire now).
+    warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 10_000);
+
+    // Appeal resets filed_at to NOW (the fix under test).
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    stamp_filed_at(&mut env, &_dispute, now);
+
+    // Cancel immediately → must fail (CancelTooEarly).
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute: _dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
+    assert!(
+        !r.is_success(),
+        "cancel immediately after appeal must fail; logs={:?}",
+        r.logs()
+    );
+
+    // Warp past the new timeout → cancel succeeds.
+    warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 1);
+    let caller2 = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller2.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: caller2.pubkey(),
+            subaccord: env.subaccord,
+            dispute: _dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&caller2]).unwrap();
+    r.assert_success();
 }
 
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
