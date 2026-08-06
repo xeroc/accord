@@ -137,6 +137,14 @@ were an unsalted hash of a short label (`"Yes"`, `"Refund"`), anyone could
 rainbow-table the chain to recover the choices of a dispute that intended to
 keep them confidential. The salt closes that leak.
 
+> **Aggregation-governed (ADR-0014).** This option encoding is
+> **plurality-shaped**: an ordered list of labels, one of which a Juror selects.
+> It matches the v1 `Aggregation::Plurality` variant on the `Subaccord`.
+> Non-Plurality variants — `RankedChoice` (IRV; a Juror commits a permutation)
+> and `Median` (numeric outcomes) — will require an extended option/ballot
+> encoding and a future `accord-evidence/v2` schema. They are out-of-scope v1
+> (parked, bean `accord-ayqq`); `accord-evidence/v1` is plurality-only.
+
 ### Construction
 
 ```
@@ -271,6 +279,10 @@ require a new schema version.
 ## 10. Open / future
 
 - **On-chain option-hash enforcement** — see §4 open note + ADR-0013.
+- **Aggregation-variant option encoding (ADR-0014)** — v1 ships `Plurality`
+  only, so the manifest's option list (§4) is plurality-shaped. `RankedChoice`
+  (IRV) and `Median` variants will extend the option + ballot encoding under a
+  `v2` schema; no change to `accord-evidence/v1`.
 - **Per-Juror watermarking (v1.1)** — `policy.watermark` requests it; the
   daemon embeds the fingerprint inside the Juror-bound encryption (ADR-0011).
 - **Multi-file per-Juror delivery** — the manifest-as-root model already

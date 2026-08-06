@@ -20,7 +20,7 @@ Subaccord authority (ADR-0005), evidence (ADR-0006), and upgrade (ADR-0007).
 
 | Account         | Seeds                                    | Key fields                                                                                                                                                                                                                                            |
 | --------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Subaccord`     | `["subaccord", creator, risk_type_hash]` | `staking_token` (mint), `min_stake`, `jurors_per_dispute`, `alpha`, `review/commit/reveal_window`, `max_appeals`, `fee_per_juror`, `authority: Pubkey` (`default` ⇒ immutable), `evidence_operator: Pubkey`. `risk_type` + `evidence_spec` immutable. |
+| `Subaccord`     | `["subaccord", creator, risk_type_hash]` | `staking_token` (mint), `min_stake`, `alpha_bps`, `initial_num_jurors` (round-1 seed; appeals grow 2N+1 — ADR-0014), `review/commit/reveal_window`, `max_appeals`, `fee_per_juror`, `aggregation` (`Aggregation` enum; v1 `Plurality` — ADR-0014), `authority: Pubkey` (`default` ⇒ immutable), `evidence_operator: Pubkey`. `risk_type` + `evidence_spec` immutable. Appeal panel = 2N+1 per round; ladder bounded by `MAX_JURORS` (=31) — `create_subaccord` rejects `(initial_num_jurors, max_appeals)` whose final panel exceeds `MAX_JURORS`, and requires odd `initial_num_jurors` (default 3). |
 | `JurorStake`    | `["stake", subaccord, juror]`            | `amount: u64`, `active_draws: u32`                                                                                                                                                                                                                    |
 | `Dispute`       | `["dispute", filer, nonce]`              | `subaccord`, `options: [..; MAX]`, `evidence_hash: [u8;32]`, `state`, `current_round`, `final_ruling: Option<u8>`                                                                                                                                     |
 | `Round`         | `["round", dispute, round_idx]`          | `jurors: [Pubkey; MAX_JURORS]`, `commits: [[u8;32]; MAX_JURORS]`, `reveals`, `juror_count`, `result`                                                                                                                                                  |
@@ -97,7 +97,7 @@ Juror decrypts, verifies cleartext vs on-chain evidence_hash
 
 ## Out of scope (v2+)
 
-Accord token · dynamic params · stake-weighted Subaccord self-governance (ADR-0005 alt) · Arcium encrypted vote-tally (Juror vote privacy) · any on-chain evidence crypto beyond the trusted-operator hash model.
+Accord token · dynamic params · non-Plurality aggregation (IRV / median — ADR-0014) · stake-weighted Subaccord self-governance (ADR-0005 alt) · Arcium encrypted vote-tally (Juror vote privacy) · any on-chain evidence crypto beyond the trusted-operator hash model.
 
 ## References
 

@@ -23,6 +23,7 @@ that references the old one.
 | [0011](0011-evidence-operator-daemon-offchain-service.md)                   | Evidence Operator Daemon — off-chain decrypt-re-encryption service          | Accepted |
 | [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)   | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed |
 | [0013](0013-evidence-data-format-manifest-yaml.md) | Evidence data format — manifest.yaml Merkle root, salted option labels | Accepted |
+| [0014](0014-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md) | Subaccord dispute-kit — aggregation enum; rename jurors_per_dispute → initial_num_jurors | Accepted |
 
 ## How to read them
 
