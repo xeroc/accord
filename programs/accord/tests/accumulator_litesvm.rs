@@ -17,6 +17,7 @@
 
 use accord::constants::{
     PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD,
+    WITHDRAWAL_DELAY,
 };
 use accord::state::{Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord};
 use accord::{accounts, instruction, ID};
@@ -352,19 +353,35 @@ fn do_stake(
     env.ctx.execute_instruction(ix, &[juror]).unwrap()
 }
 
-fn do_unstake(
+fn do_request_withdraw(
     env: &mut AccEnv,
     juror: &Keypair,
     amount: u64,
     path: Vec<MSTNode>,
 ) -> TransactionResult {
+    let js = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::RequestWithdraw {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js,
+        })
+        .args(instruction::RequestWithdraw { amount, path })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[juror]).unwrap()
+}
+
+fn do_withdraw(env: &mut AccEnv, juror: &Keypair) -> TransactionResult {
     let jata = juror_ata(&juror.pubkey(), &env.mint);
     let vata = vault_ata(&env.subaccord, &env.mint);
     let js = juror_stake_pda(&env.subaccord, &juror.pubkey());
     let ix = env
         .ctx
         .program()
-        .accounts(accounts::Unstake {
+        .accounts(accounts::Withdraw {
             juror: juror.pubkey(),
             subaccord: env.subaccord,
             juror_stake: js,
@@ -372,9 +389,8 @@ fn do_unstake(
             juror_token_account: jata,
             vault: vata,
             token_program: TOKEN_PROGRAM_ID,
-            system_program: system_program::ID,
         })
-        .args(instruction::Unstake { amount, path })
+        .args(instruction::Withdraw {})
         .instruction()
         .unwrap();
     env.ctx.execute_instruction(ix, &[juror]).unwrap()
@@ -568,7 +584,7 @@ fn unstake_updates_root_and_reduces_stake() {
     // Unstake 2_000: old leaf (juror, 5000) → new leaf (juror, 3000) at index 0.
     let leaves_before = vec![(juror.pubkey(), 5_000)];
     let (_, _, path_unstake) = build_root_and_path(&leaves_before, TEST_DEPTH, 0);
-    do_unstake(&mut env, &juror, 2_000, path_unstake).assert_success();
+    do_request_withdraw(&mut env, &juror, 2_000, path_unstake).assert_success();
 
     let leaves_after = vec![(juror.pubkey(), 3_000)];
     let (expected_root, expected_total, _) = build_root_and_path(&leaves_after, TEST_DEPTH, 0);
@@ -601,7 +617,7 @@ fn full_unstake_zeros_leaf_but_retains_tree_index() {
     // Full unstake juror 1.
     let leaves_before = vec![(j1.pubkey(), 3_000), (j2.pubkey(), 2_000)];
     let (_, _, path) = build_root_and_path(&leaves_before, TEST_DEPTH, 0);
-    do_unstake(&mut env, &j1, 3_000, path).assert_success();
+    do_request_withdraw(&mut env, &j1, 3_000, path).assert_success();
 
     // Root matches a tree where index 0 has stake 0.
     let leaves_after = vec![(j1.pubkey(), 0), (j2.pubkey(), 2_000)];
@@ -629,7 +645,7 @@ fn re_stake_after_full_unstake_is_local_update() {
     do_stake(&mut env, &juror, 5_000, p0).assert_success();
     let leaves = vec![(juror.pubkey(), 5_000)];
     let (_, _, path_u) = build_root_and_path(&leaves, TEST_DEPTH, 0);
-    do_unstake(&mut env, &juror, 5_000, path_u).assert_success();
+    do_request_withdraw(&mut env, &juror, 5_000, path_u).assert_success();
 
     let sub_before = read_subaccord(&env);
     assert_eq!(sub_before.next_index, 1, "next_index advanced once");
@@ -2050,7 +2066,7 @@ fn unstake_respects_settlement_delta() {
     // Effective balance = 5000 - 500 = 4500. Unstaking 5000 must fail.
     let leaves = vec![(juror.pubkey(), stake_amt)];
     let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
-    let r = do_unstake(&mut env, &juror, 5_000, proof);
+    let r = do_request_withdraw(&mut env, &juror, 5_000, proof);
     assert!(
         !r.is_success(),
         "unstake over effective balance must fail; logs={:?}",
@@ -2059,12 +2075,109 @@ fn unstake_respects_settlement_delta() {
 
     // Unstaking 4500 (effective) succeeds.
     let (_, _, proof2) = build_root_and_path(&leaves, TEST_DEPTH, 0);
-    let r = do_unstake(&mut env, &juror, 4_500, proof2);
+    let r = do_request_withdraw(&mut env, &juror, 4_500, proof2);
     r.assert_success();
 
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
     assert_eq!(js.amount, 500, "amount reduced by withdrawal");
-    assert_eq!(js.settlement_delta, -500, "delta unchanged by unstake");
+    assert_eq!(
+        js.settlement_delta, -500,
+        "delta unchanged by request_withdraw"
+    );
+}
+
+// ─── two-phase withdraw + slash_reserve tests (REVIEW #5) ────────────────────
+
+#[test]
+fn two_phase_request_then_withdraw_after_timelock() {
+    let mut env = setup_accumulator();
+
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let stake_amt = 5_000u64;
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, stake_amt, path).assert_success();
+
+    // Phase 1: request_withdraw — root updates immediately.
+    // Warp forward so Clock::get() returns a non-zero timestamp.
+    warp_seconds(&mut env, 1);
+    let (_, _, proof) = build_root_and_path(&[(juror.pubkey(), stake_amt)], TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &juror, stake_amt, proof).assert_success();
+
+    // Amount reduced, pending withdrawal set.
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.amount, 0);
+    assert_eq!(js.pending_withdrawal, stake_amt);
+    assert!(js.withdraw_requested_at > 0);
+
+    // Phase 2 too early: warp just short of the delay, verify still pending.
+    warp_seconds(&mut env, WITHDRAWAL_DELAY - 1);
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(
+        js.pending_withdrawal, stake_amt,
+        "still pending before timelock"
+    );
+
+    // Warp past timelock.
+    warp_seconds(&mut env, 2);
+
+    // Phase 2: withdraw succeeds — tokens transferred.
+    let r = do_withdraw(&mut env, &juror);
+    r.assert_success();
+
+    // Pending withdrawal cleared.
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.pending_withdrawal, 0);
+    assert_eq!(js.withdraw_requested_at, 0);
+}
+
+#[test]
+fn request_withdraw_blocked_by_slash_reserve() {
+    let mut env = setup_accumulator();
+
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let stake_amt = 5_000u64;
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, stake_amt, path).assert_success();
+
+    // Inject slash_reserve = 4_000 (simulating active draws).
+    {
+        let js_pda = juror_stake_pda(&env.subaccord, &juror.pubkey());
+        let acc = env.ctx.svm.get_account(&js_pda).unwrap();
+        let mut data = acc.data.clone();
+        const SLASH_RESERVE_OFFSET: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4 + 8;
+        data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
+            .copy_from_slice(&4_000u64.to_le_bytes());
+        env.ctx
+            .svm
+            .set_account(
+                js_pda,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    // Free stake = 5000 - 4000 = 1000. Withdrawing 1001 must fail.
+    let leaves = vec![(juror.pubkey(), stake_amt)];
+    let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let r = do_request_withdraw(&mut env, &juror, 1_001, proof.clone());
+    assert!(
+        !r.is_success(),
+        "request_withdraw over free stake must fail; logs={:?}",
+        r.logs()
+    );
+
+    // Withdrawing exactly 1000 (the free stake) succeeds.
+    let (_, _, proof2) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let r = do_request_withdraw(&mut env, &juror, 1_000, proof2);
+    r.assert_success();
 }
 
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────

@@ -336,43 +336,32 @@ pub mod accord {
     ///
     /// Allowed while the program is paused (ADR-0007 lists only
     /// create_dispute / stake / appeal as halted — capital is never trapped).
-    pub fn unstake(ctx: Context<Unstake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
+    /// **Phase 1 of two-phase withdraw** (REVIEW #5): declares intent to
+    /// withdraw `amount` tokens. Updates the accumulator root immediately
+    /// (juror's sortition weight drops right away), reduces `JurorStake.amount`,
+    /// and locks the tokens in the vault until `withdraw` executes.
+    ///
+    /// Cannot withdraw more than the free stake (`amount - slash_reserve`).
+    /// Allowed while the program is paused (capital is never trapped).
+    pub fn request_withdraw(
+        ctx: Context<RequestWithdraw>,
+        amount: u64,
+        path: Vec<MSTNode>,
+    ) -> Result<()> {
         require!(amount > 0, AccordError::InvalidAmount);
-        require!(
-            ctx.accounts.juror_stake.active_draws == 0,
-            AccordError::StakeLocked
-        );
-        // Effective balance accounts for pending settlement deltas (REVIEW #4).
-        // The accumulator commits to `amount`; `settlement_delta` tracks
-        // slash/reward separately until `reconcile_stake` folds it in.
-        let effective = (ctx.accounts.juror_stake.amount as i64)
-            .saturating_add(ctx.accounts.juror_stake.settlement_delta)
-            .max(0) as u64;
-        require!(amount <= effective, AccordError::InsufficientBalance);
-
-        let bump = [ctx.accounts.subaccord.bump];
-        let signer_seeds = &[
-            SEED_SUBACCORD,
-            ctx.accounts.subaccord.creator.as_ref(),
-            ctx.accounts.subaccord.risk_type.as_ref(),
-            &bump,
-        ];
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.key(),
-                Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
-                    to: ctx.accounts.juror_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
-                },
-                &[signer_seeds],
-            ),
-            amount,
-        )?;
 
         let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;
         let sub = &mut ctx.accounts.subaccord;
+
+        // Cannot withdraw more than free stake: effective balance (accounting
+        // for settled slashes/rewards) minus pending slash reserve.
+        let effective = (js.amount as i64)
+            .saturating_add(js.settlement_delta)
+            .max(0) as u64;
+        let free_stake = effective.saturating_sub(js.slash_reserve);
+        require!(amount <= free_stake, AccordError::InsufficientBalance);
+
         let old_stake = js.amount;
         let new_stake = old_stake
             .checked_sub(amount)
@@ -390,11 +379,14 @@ pub mod accord {
             sub.total_stake,
         )?;
 
-        let prev_amount = js.amount;
         js.amount = new_stake;
+        js.pending_withdrawal = js
+            .pending_withdrawal
+            .checked_add(amount)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        js.withdraw_requested_at = Clock::get()?.unix_timestamp;
 
-        // Full unstake (positive -> 0) drops a distinct Juror from the counter.
-        if js.amount == 0 && prev_amount > 0 {
+        if new_stake == 0 && old_stake > 0 {
             sub.staker_count = sub.staker_count.saturating_sub(1);
         }
 
@@ -404,6 +396,54 @@ pub mod accord {
         emit!(Unstaked {
             subaccord: sub.key(),
             juror: juror_key,
+            amount,
+        });
+        Ok(())
+    }
+
+    /// **Phase 2 of two-phase withdraw** (REVIEW #5): transfers locked tokens
+    /// from the vault to the juror's ATA. Requires `WITHDRAWAL_DELAY` to have
+    /// elapsed since `request_withdraw` AND `active_draws == 0`.
+    pub fn withdraw(ctx: Context<Withdraw>) -> Result<()> {
+        let js = &mut ctx.accounts.juror_stake;
+        require!(js.pending_withdrawal > 0, AccordError::NoPendingWithdrawal);
+
+        let now = Clock::get()?.unix_timestamp;
+        let deadline = js
+            .withdraw_requested_at
+            .checked_add(WITHDRAWAL_DELAY)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(now >= deadline, AccordError::WithdrawalTooEarly);
+        require!(js.active_draws == 0, AccordError::StakeLocked);
+
+        let amount = js.pending_withdrawal;
+        js.pending_withdrawal = 0;
+        js.withdraw_requested_at = 0;
+
+        let sub = &ctx.accounts.subaccord;
+        let bump = [sub.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            sub.creator.as_ref(),
+            sub.risk_type.as_ref(),
+            &bump,
+        ];
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.juror_token_account.to_account_info(),
+                    authority: ctx.accounts.subaccord.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            amount,
+        )?;
+
+        emit!(Unstaked {
+            subaccord: sub.key(),
+            juror: ctx.accounts.juror.key(),
             amount,
         });
         Ok(())
@@ -855,7 +895,7 @@ pub mod accord {
         round.seat_prefix[seat as usize] = prefix;
         round.seat_stake[seat as usize] = leaf.stake;
 
-        // Inflation guard via remaining_accounts[0] (the drawn juror's stake).
+        // Inflation guard + slash reserve check via remaining_accounts[0].
         require!(
             ctx.remaining_accounts.len() == 1,
             AccordError::InvalidPanelSize
@@ -874,23 +914,41 @@ pub mod accord {
             js_info.key == &expected_pda,
             AccordError::InvalidMembershipProof
         );
-        let current_draws = {
+        let slash_per_juror = (dispute.terms.alpha_bps as u64)
+            .checked_mul(dispute.terms.min_stake)
+            .and_then(|v| v.checked_div(10_000))
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let (current_draws, new_slash_reserve) = {
             let data = js_info.try_borrow_data()?;
             let js = JurorStake::try_deserialize(&mut &data[..])?;
             require!(js.juror == leaf.juror, AccordError::InvalidMembershipProof);
             // ADR-0012 inflation guard: live amount must cover the frozen leaf.
             require!(js.amount >= leaf.stake, AccordError::InflatedStake);
-            js.active_draws
+            // REVIEW #5: free stake must cover this draw's slash + min_stake.
+            let free_stake = js.amount.saturating_sub(js.slash_reserve);
+            let required = dispute
+                .terms
+                .min_stake
+                .checked_add(slash_per_juror)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            require!(free_stake >= required, AccordError::InsufficientStake);
+            let new_reserve = js
+                .slash_reserve
+                .checked_add(slash_per_juror)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            (js.active_draws, new_reserve)
         };
         let new_draws = current_draws
             .checked_add(1)
             .ok_or(AccordError::ArithmeticOverflow)?;
         {
             let mut data = js_info.try_borrow_mut_data()?;
-            // Layout: disc(8)+subaccord(32)+juror(32)+amount(8) => active_draws.
             const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8;
+            const SLASH_RESERVE_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4 + 8; // draws+bump+tree_index+settlement_delta
             data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                 .copy_from_slice(&new_draws.to_le_bytes());
+            data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
+                .copy_from_slice(&new_slash_reserve.to_le_bytes());
         }
 
         round.jurors[seat as usize] = leaf.juror;
@@ -1489,6 +1547,10 @@ pub mod accord {
         let state = dispute.state;
         let current_round = dispute.current_round;
         let sub_key = ctx.accounts.subaccord.key();
+        let slash_per_juror = (dispute.terms.alpha_bps as u64)
+            .checked_mul(dispute.terms.min_stake)
+            .and_then(|v| v.checked_div(10_000))
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         let post_draw = matches!(
             state,
@@ -1561,6 +1623,18 @@ pub mod accord {
                 let new_draws = draws.saturating_sub(1);
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                     .copy_from_slice(&new_draws.to_le_bytes());
+                // Release slash reserve for this dispute.
+                const SLASH_RESERVE_OFF: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4 + 8;
+                if data.len() >= SLASH_RESERVE_OFF + 8 {
+                    let reserve = u64::from_le_bytes(
+                        data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    let new_reserve = reserve.saturating_sub(slash_per_juror);
+                    data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
+                        .copy_from_slice(&new_reserve.to_le_bytes());
+                }
             }
 
             // Release prior-round jurors.
@@ -1570,6 +1644,7 @@ pub mod accord {
                 &sub_key,
                 1 + juror_count,
                 current_round,
+                slash_per_juror,
             )?;
 
             // Strict accounting: rounds + bonds must exactly fill remaining_accounts.
@@ -1636,6 +1711,18 @@ pub mod accord {
                     );
                     data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                         .copy_from_slice(&draws.saturating_sub(1).to_le_bytes());
+                    // Release slash reserve for this dispute.
+                    const SLASH_RESERVE_OFF: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4 + 8;
+                    if data.len() >= SLASH_RESERVE_OFF + 8 {
+                        let reserve = u64::from_le_bytes(
+                            data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
+                                .try_into()
+                                .unwrap(),
+                        );
+                        let new_reserve = reserve.saturating_sub(slash_per_juror);
+                        data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
+                            .copy_from_slice(&new_reserve.to_le_bytes());
+                    }
                 }
                 idx = 1 + juror_count;
             }
@@ -1648,6 +1735,7 @@ pub mod accord {
                 &sub_key,
                 idx,
                 current_round,
+                slash_per_juror,
             )?;
 
             // Strict accounting: rounds + bonds must exactly fill remaining_accounts.
@@ -1917,12 +2005,14 @@ fn release_prior_rounds<'info>(
     sub_key: &Pubkey,
     start: usize,
     current_round: u32,
+    slash_per_juror: u64,
 ) -> Result<usize> {
     if current_round == 0 {
         return Ok(start);
     }
     let mut idx = start;
     const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
+    const SLASH_RESERVE_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4 + 8; // draws+bump+tree_index+settlement_delta
     for round_idx in 0..current_round {
         require!(idx < accounts.len(), AccordError::InvalidState);
         let round_info = &accounts[idx];
@@ -1965,6 +2055,17 @@ fn release_prior_rounds<'info>(
             let new_draws = draws.saturating_sub(1);
             data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                 .copy_from_slice(&new_draws.to_le_bytes());
+            // Release slash reserve for this dispute.
+            if data.len() >= SLASH_RESERVE_OFFSET + 8 {
+                let reserve = u64::from_le_bytes(
+                    data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
+                        .try_into()
+                        .unwrap(),
+                );
+                let new_reserve = reserve.saturating_sub(slash_per_juror);
+                data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
+                    .copy_from_slice(&new_reserve.to_le_bytes());
+            }
         }
         idx += count;
     }
@@ -2045,14 +2146,15 @@ fn settle_round_accounts(
     const AMOUNT_OFFSET: usize = 8 + 32 + 32; // disc + subaccord + juror
     const ACTIVE_DRAWS_OFFSET: usize = AMOUNT_OFFSET + 8;
     const SETTLEMENT_DELTA_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4; // draws+bump+tree_index
+    const SLASH_RESERVE_OFFSET: usize = SETTLEMENT_DELTA_OFFSET + 8;
 
     for i in 0..panel {
         let acct_info = &accounts[i];
         let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
 
-        let (amount, active_draws, existing_delta) = {
+        let (amount, active_draws, existing_delta, slash_reserve) = {
             let data = acct_info.try_borrow_data()?;
-            if data.len() < SETTLEMENT_DELTA_OFFSET + 8 {
+            if data.len() < SLASH_RESERVE_OFFSET + 8 {
                 return Err(AccordError::InvalidMembershipProof.into());
             }
             let amt =
@@ -2067,7 +2169,12 @@ fn settle_round_accounts(
                     .try_into()
                     .unwrap(),
             );
-            (amt, draws, delta)
+            let reserve = u64::from_le_bytes(
+                data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            (amt, draws, delta, reserve)
         };
 
         let net_delta = if is_coherent {
@@ -2077,12 +2184,15 @@ fn settle_round_accounts(
         };
         let new_delta = existing_delta.saturating_add(net_delta);
         let new_draws = active_draws.saturating_sub(1);
+        let new_reserve = slash_reserve.saturating_sub(slash_per_juror);
 
         let mut data = acct_info.try_borrow_mut_data()?;
         data[SETTLEMENT_DELTA_OFFSET..SETTLEMENT_DELTA_OFFSET + 8]
             .copy_from_slice(&new_delta.to_le_bytes());
         data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
             .copy_from_slice(&new_draws.to_le_bytes());
+        data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
+            .copy_from_slice(&new_reserve.to_le_bytes());
     }
 
     Ok(())
@@ -2217,12 +2327,34 @@ pub struct Stake<'info> {
 /// (both accounts already exist: the vault was created on first stake, the
 /// `JurorStake` on first stake). The vault is the **Subaccord PDA's** ATA so the
 /// program PDA-signs the transfer out.
+/// Account context for `request_withdraw` (REVIEW #5). Ledger-only — updates
+/// the accumulator root and JurorStake. No token transfer.
 #[derive(Accounts)]
-pub struct Unstake<'info> {
+pub struct RequestWithdraw<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
         mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, Subaccord>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+}
+
+/// Account context for `withdraw` (REVIEW #5). Transfers locked tokens from
+/// the vault to the juror's ATA (PDA-signed). No root update — root was
+/// updated at `request_withdraw` time.
+#[derive(Accounts)]
+pub struct Withdraw<'info> {
+    #[account(mut)]
+    pub juror: Signer<'info>,
+    #[account(
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -2241,7 +2373,6 @@ pub struct Unstake<'info> {
         associated_token::authority = juror,
     )]
     pub juror_token_account: Account<'info, TokenAccount>,
-    /// Subaccord PDA's vault ATA; program PDA-signs transfers out of it.
     #[account(
         mut,
         associated_token::mint = staking_token,
@@ -2249,7 +2380,6 @@ pub struct Unstake<'info> {
     )]
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
 }
 
 /// Account context for `reconcile_stake` (REVIEW #4). Permissionless — any

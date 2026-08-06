@@ -38,6 +38,10 @@ pub enum AccordError {
     StakeLocked,
     #[msg("Amount must be greater than zero.")]
     InvalidAmount,
+    #[msg("Withdrawal timelock has not elapsed yet.")]
+    WithdrawalTooEarly,
+    #[msg("No pending withdrawal to execute.")]
+    NoPendingWithdrawal,
     #[msg("Withdrawal exceeds the Juror's staked balance.")]
     InsufficientBalance,
 

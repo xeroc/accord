@@ -84,6 +84,18 @@ pub struct JurorStake {
     /// accumulator root canonical. Folded into `amount` by the permissionless
     /// `reconcile_stake` crank (which updates the root via a Merkle proof).
     pub settlement_delta: i64,
+    /// Pending slash exposure from all active draws. Incremented by
+    /// `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
+    /// by settlement or cancel. Ensures the juror can always cover every
+    /// concurrent slash. `amount - slash_reserve` is the truly free stake.
+    pub slash_reserve: u64,
+    /// Timestamp of `request_withdraw` (0 = no pending request). The
+    /// accumulator root is already updated at request time; `withdraw` just
+    /// transfers tokens after `WITHDRAWAL_DELAY` + `active_draws == 0`.
+    pub withdraw_requested_at: i64,
+    /// Tokens locked in the vault pending `withdraw`. Set at `request_withdraw`,
+    /// consumed at `withdraw`.
+    pub pending_withdrawal: u64,
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**

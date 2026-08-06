@@ -42,6 +42,14 @@ pub const PRE_DRAW_CANCEL_TIMEOUT_SECS: i64 = 3 * 24 * 60 * 60;
 /// indefinitely.
 pub const POST_DRAW_CANCEL_GRACE_SECS: i64 = 3 * 24 * 60 * 60;
 
+/// Two-phase withdraw timelock (REVIEW #5). `request_withdraw` updates the
+/// accumulator root immediately (juror exits the sortition pool); `withdraw`
+/// transfers tokens only after this delay elapses AND `active_draws == 0`.
+/// Set equal to `PRE_DRAW_CANCEL_TIMEOUT_SECS` so that any dispute which froze
+/// a root before the request has either completed its draw (juror not selected)
+/// or become cancelable (stuck seat) by the time the timelock expires.
+pub const WITHDRAWAL_DELAY: i64 = PRE_DRAW_CANCEL_TIMEOUT_SECS;
+
 /// Timelock on `execute_unpause` (ADR-0007): a paused program cannot be
 /// unpaused without a notice period. 24h in slots (~400ms mainnet).
 pub const UNPAUSE_TIMELOCK_SLOTS: u64 = 24 * 60 * 60 / 400;
