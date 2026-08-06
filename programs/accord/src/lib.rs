@@ -1457,9 +1457,11 @@ pub mod accord {
                 | DisputeState::RoundResolved
         );
 
+        let reserved: u64;
+
         if post_draw {
             // remaining_accounts = [current Round, ...JurorStake PDAs,
-            //   ...prior Round PDAs + their JurorStake PDAs].
+            //   ...prior Round PDAs + their JurorStake PDAs, ...AppealBond PDAs].
             require!(
                 !ctx.remaining_accounts.is_empty(),
                 AccordError::InvalidState
@@ -1490,16 +1492,15 @@ pub mod accord {
                     .ok_or(AccordError::ArithmeticOverflow)?;
                 require!(now > deadline, AccordError::CancelTooEarly);
                 let count = round.juror_count as usize;
-                require!(
-                    ctx.remaining_accounts.len() >= 1 + count,
-                    AccordError::InvalidPanelSize
-                );
                 (count, round.jurors[..count].to_vec())
             };
 
-            // Release active_draws for every drawn juror (same offset pattern
-            // as `draw`/`finalize_dispute`).
+            // Release active_draws for every drawn juror in the current round.
             const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
+            require!(
+                1 + juror_count <= ctx.remaining_accounts.len(),
+                AccordError::InvalidPanelSize
+            );
             for (i, acct_info) in ctx.remaining_accounts[1..=juror_count].iter().enumerate() {
                 let expected_pda = Pubkey::find_program_address(
                     &[SEED_JUROR_STAKE, sub_key.as_ref(), jurors[i].as_ref()],
@@ -1521,19 +1522,27 @@ pub mod accord {
                     .copy_from_slice(&new_draws.to_le_bytes());
             }
 
-            // Release prior-round jurors (appeal rounds that completed but
-            // were never settled — settle_round requires Final).
-            release_prior_rounds(
+            // Release prior-round jurors.
+            let rounds_end = release_prior_rounds(
                 &ctx.remaining_accounts,
                 &dispute_key,
                 &sub_key,
                 1 + juror_count,
                 current_round,
             )?;
+
+            // Strict accounting: rounds + bonds must exactly fill remaining_accounts.
+            let appeal_n = current_round as usize;
+            require!(
+                rounds_end + appeal_n == ctx.remaining_accounts.len(),
+                AccordError::InvalidPanelSize
+            );
+
+            // Read appeal bonds for vault-reserved computation.
+            reserved =
+                read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         } else {
-            // Pre-draw stall (Created — no snapshot step under ADR-0012; the
-            // VRF may simply never commit). Terminal states
-            // (Final/Closed/Failed/Review) are rejected here.
+            // Pre-draw stall (Created). Terminal states are rejected here.
             require!(state == DisputeState::Created, AccordError::InvalidState);
             let deadline = dispute
                 .filed_at
@@ -1541,63 +1550,77 @@ pub mod accord {
                 .ok_or(AccordError::ArithmeticOverflow)?;
             require!(now > deadline, AccordError::CancelTooEarly);
 
+            // REVIEW #3: probe for a partially-drawn current round. If any
+            // seats landed before the stall, release those jurors too.
+            let mut idx = 0;
+            let current_round_pda = Pubkey::find_program_address(
+                &[
+                    SEED_ROUND,
+                    dispute_key.as_ref(),
+                    &current_round.to_le_bytes(),
+                ],
+                &crate::ID,
+            )
+            .0;
+            if !ctx.remaining_accounts.is_empty()
+                && ctx.remaining_accounts[0].key == &current_round_pda
+            {
+                const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8;
+                let (juror_count, jurors) = {
+                    let loader = AccountLoader::<Round>::try_from(&ctx.remaining_accounts[0])?;
+                    let round = loader.load()?;
+                    let c = round.juror_count as usize;
+                    (c, round.jurors[..c].to_vec())
+                };
+                require!(
+                    1 + juror_count <= ctx.remaining_accounts.len(),
+                    AccordError::InvalidPanelSize
+                );
+                for (j, juror) in jurors.iter().enumerate() {
+                    let acct_info = &ctx.remaining_accounts[1 + j];
+                    let expected_pda = Pubkey::find_program_address(
+                        &[SEED_JUROR_STAKE, sub_key.as_ref(), juror.as_ref()],
+                        &crate::ID,
+                    )
+                    .0;
+                    require!(
+                        acct_info.key == &expected_pda,
+                        AccordError::InvalidMembershipProof
+                    );
+                    let mut data = acct_info.try_borrow_mut_data()?;
+                    let draws = u32::from_le_bytes(
+                        data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
+                        .copy_from_slice(&draws.saturating_sub(1).to_le_bytes());
+                }
+                idx = 1 + juror_count;
+            }
+
             // Release prior-round jurors (appeal rounds that completed but
             // were never settled).
-            release_prior_rounds(
+            let rounds_end = release_prior_rounds(
                 &ctx.remaining_accounts,
                 &dispute_key,
                 &sub_key,
-                0,
+                idx,
                 current_round,
             )?;
+
+            // Strict accounting: rounds + bonds must exactly fill remaining_accounts.
+            let appeal_n = current_round as usize;
+            require!(
+                rounds_end + appeal_n == ctx.remaining_accounts.len(),
+                AccordError::InvalidPanelSize
+            );
+
+            reserved =
+                read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         }
 
         // --- Refund: vault balance minus appeal-bond reserves (PDA-signed). ---
-        // AppealBond PDAs trail the remaining_accounts (one per appeal round,
-        // i.e. `current_round` of them). Each holds the total deposit
-        // (fee + bond); those tokens must stay in the vault for
-        // `claim_appeal_refund` to return to appellants.
-        let appeal_n = current_round as usize;
-        let mut reserved: u64 = 0;
-        if appeal_n > 0 {
-            const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32; // disc+dispute+round_idx+appellant
-            for i in 0..appeal_n {
-                let expected_pda = Pubkey::find_program_address(
-                    &[
-                        SEED_APPEAL_BOND,
-                        dispute_key.as_ref(),
-                        &(i as u32).to_le_bytes(),
-                    ],
-                    &crate::ID,
-                )
-                .0;
-                // Bonds are the LAST `appeal_n` entries in remaining_accounts.
-                let bond_idx = ctx
-                    .remaining_accounts
-                    .len()
-                    .checked_sub(appeal_n)
-                    .ok_or(AccordError::InvalidState)?
-                    + i;
-                let bond_info = &ctx.remaining_accounts[bond_idx];
-                require!(
-                    bond_info.key == &expected_pda,
-                    AccordError::InvalidMembershipProof
-                );
-                let d = bond_info.try_borrow_data()?;
-                require!(
-                    d.len() >= BOND_AMOUNT_OFFSET + 8,
-                    AccordError::InvalidMembershipProof
-                );
-                let amt = u64::from_le_bytes(
-                    d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
-                        .try_into()
-                        .unwrap(),
-                );
-                reserved = reserved
-                    .checked_add(amt)
-                    .ok_or(AccordError::ArithmeticOverflow)?;
-            }
-        }
         let vault_balance = ctx.accounts.vault.amount;
         let filer_fee = vault_balance.saturating_sub(reserved);
 
@@ -1795,20 +1818,67 @@ fn panel_size_for_round(jurors_per_dispute: u32, round_idx: u32) -> Result<u32> 
     Ok(panel.min(MAX_JURORS as u32))
 }
 
+/// Read and sum AppealBond `amount` fields from `accounts[start..start+n]`.
+/// Verifies each PDA against `["bond", dispute_key, i]`. Used by
+/// `cancel_dispute` to compute the vault reserve for appeal refunds.
+fn read_bond_amounts<'info>(
+    accounts: &'info [AccountInfo<'info>],
+    dispute_key: &Pubkey,
+    start: usize,
+    n: usize,
+) -> Result<u64> {
+    if n == 0 {
+        return Ok(0);
+    }
+    const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32; // disc+dispute+round_idx+appellant
+    let mut total: u64 = 0;
+    for i in 0..n {
+        let expected_pda = Pubkey::find_program_address(
+            &[
+                SEED_APPEAL_BOND,
+                dispute_key.as_ref(),
+                &(i as u32).to_le_bytes(),
+            ],
+            &crate::ID,
+        )
+        .0;
+        let bond_info = &accounts[start + i];
+        require!(
+            bond_info.key == &expected_pda,
+            AccordError::InvalidMembershipProof
+        );
+        let d = bond_info.try_borrow_data()?;
+        require!(
+            d.len() >= BOND_AMOUNT_OFFSET + 8,
+            AccordError::InvalidMembershipProof
+        );
+        let amt = u64::from_le_bytes(
+            d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
+                .try_into()
+                .unwrap(),
+        );
+        total = total
+            .checked_add(amt)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+    }
+    Ok(total)
+}
+
 /// Release `active_draws` for every juror in every prior round
 /// (`0..current_round`). Used by `cancel_dispute` so that appeal-escalated
 /// disputes that stall don't permanently lock prior-round jurors
 /// (REVIEW #2).  Each round's `JurorStake` PDAs must follow the `Round` PDA
 /// in `remaining_accounts`, laid out sequentially starting at `start`.
+/// Returns the index past the last consumed account.
 fn release_prior_rounds<'info>(
     accounts: &'info [AccountInfo<'info>],
     dispute_key: &Pubkey,
     sub_key: &Pubkey,
     start: usize,
     current_round: u32,
-) -> Result<()> {
+) -> Result<usize> {
     if current_round == 0 {
-        return Ok(());
+        return Ok(start);
     }
     let mut idx = start;
     const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
@@ -1857,7 +1927,7 @@ fn release_prior_rounds<'info>(
         }
         idx += count;
     }
-    Ok(())
+    Ok(idx)
 }
 
 /// Shared per-round coherence settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti).

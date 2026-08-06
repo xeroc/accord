@@ -1788,6 +1788,161 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
     );
 }
 
+// ─── partial-panel cancel test (REVIEW #3) ───────────────────────────────────
+
+#[test]
+fn cancel_releases_partially_drawn_panel() {
+    let mut env = setup_accumulator();
+
+    // Stake 3 jurors.
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let stakes = [5_000u64, 3_000, 2_000];
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+
+    // Create a dispute.
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let fee = 3 * 1_000_000u64;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    // Inject VRF + freeze. Find a VRF where seat 0 maps to juror 0.
+    let round_idx = 0u32;
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut acc = 0u64;
+        for (_, s) in &leaves {
+            p.push(acc);
+            acc += s;
+        }
+        p
+    };
+    let vrf = {
+        let mut candidate = [0u8; 32];
+        loop {
+            candidate[0] = candidate[0].wrapping_add(1);
+            if candidate[0] == 0 {
+                candidate[1] = candidate[1].wrapping_add(1);
+            }
+            let seed = hashv(&[&candidate, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+            let rh = hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+            let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+            if ri >= prefixes[0] && ri - prefixes[0] < leaves[0].1 {
+                break candidate;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    // Draw seat 0 only (partial — 1 of 3).
+    let rnd = round_pda(&dispute, round_idx);
+    submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves).assert_success();
+
+    // Verify the drawn juror has active_draws = 1.
+    let js = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
+    assert_eq!(js.active_draws, 1, "drawn juror should have active_draws=1");
+
+    // Dispute is still Created (panel not full).
+    let d_acc = env.ctx.svm.get_account(&dispute).unwrap();
+    let d = Dispute::try_deserialize(&mut &d_acc.data[..]).unwrap();
+    assert_eq!(d.state, DisputeState::Created);
+
+    // Warp past cancel timeout.
+    warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 1);
+
+    // Cancel: remaining_accounts = [Round_0, JurorStake_0].
+    let js_pda = juror_stake_pda(&env.subaccord, &jurors[0].pubkey());
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let ix_with_meta = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut accts = ix.accounts;
+            for key in &[rnd, js_pda] {
+                accts.push(solana_program::instruction::AccountMeta {
+                    pubkey: *key,
+                    is_signer: false,
+                    is_writable: true,
+                });
+            }
+            accts
+        },
+        data: ix.data,
+    };
+    let r = env
+        .ctx
+        .execute_instruction(ix_with_meta, &[&env.creator])
+        .unwrap();
+    r.assert_success();
+
+    // Drawn juror's active_draws must be released.
+    let js_after = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
+    assert_eq!(
+        js_after.active_draws, 0,
+        "partial-panel juror must be released on cancel"
+    );
+
+    // Dispute is now Failed.
+    let d_acc = env.ctx.svm.get_account(&dispute).unwrap();
+    let d = Dispute::try_deserialize(&mut &d_acc.data[..]).unwrap();
+    assert_eq!(d.state, DisputeState::Failed);
+}
+
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
 
 /// Write `committed_vrf` + `frozen_root` + `frozen_total_stake` directly onto
