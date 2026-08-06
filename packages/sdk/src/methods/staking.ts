@@ -175,8 +175,9 @@ export function stake(
   path: MSTNode[],
 ): Instruction {
   assertValidAmount(amount);
-  if (path.length === 0)
-    throw new Error("InvalidPath: stake requires a non-empty accumulator path");
+  // An empty `path` is the canonical proof for a depth-0 Subaccord (single
+  // leaf = root). The on-chain verifier authenticates the path against the
+  // stored root + depth; do not reject it here (REVIEW #13).
   return client.buildStake({ programId, accounts, amount, path });
 }
 
@@ -195,10 +196,7 @@ export function requestWithdraw(
   path: MSTNode[],
 ): Instruction {
   assertValidAmount(amount);
-  if (path.length === 0)
-    throw new Error(
-      "InvalidPath: requestWithdraw requires a non-empty accumulator path",
-    );
+  // Empty `path` is valid for depth-0 Subaccords (REVIEW #13).
   return client.buildRequestWithdraw({ programId, accounts, amount, path });
 }
 
@@ -238,9 +236,6 @@ export function reconcileStake(
   accounts: StakingAccounts,
   path: MSTNode[],
 ): Instruction {
-  if (path.length === 0)
-    throw new Error(
-      "InvalidPath: reconcileStake requires a non-empty accumulator path",
-    );
+  // Empty `path` is valid for depth-0 Subaccords (REVIEW #13).
   return client.buildReconcileStake({ programId, accounts, path });
 }
