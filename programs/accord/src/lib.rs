@@ -1097,17 +1097,20 @@ pub mod accord {
         let dispute_key = dispute.key();
         let panel = round.juror_count as usize;
         let appeal_n = dispute.current_round as usize;
+        let jurors_per_dispute = dispute.terms.jurors_per_dispute;
+        let fee_per_juror = dispute.terms.fee_per_juror;
         require!(
             ctx.remaining_accounts.len() == panel + appeal_n,
             AccordError::InvalidPanelSize
         );
 
         // --- Appeal bond forfeiture (ADR-0004) ---
-        // No flip (`prior_result == final_ruling`) => fold into the final-round
-        // coherent pool and consume (zero). Flip => leave for claim_appeal_refund.
-        let mut forfeited_total: u64 = 0;
+        // `amount` is the total deposit (fee + bond). Derive the fee from the
+        // round's panel size, forfeit only the bond portion on no-flip.
         // AppealBond layout: disc(8) + dispute(32) + round_idx(4) + appellant(32)
         // => amount @ 76 (u64), prior_result @ 84 (u8).
+        let mut forfeited_total: u64 = 0;
+        const BOND_ROUND_IDX_OFFSET: usize = 8 + 32; // disc + dispute
         const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32;
         const BOND_PRIOR_OFFSET: usize = BOND_AMOUNT_OFFSET + 8;
         for i in 0..appeal_n {
@@ -1125,22 +1128,30 @@ pub mod accord {
                 bond_info.key == &expected_pda,
                 AccordError::InvalidMembershipProof
             );
-            let (amount, prior_result) = {
+            let (bond_portion, prior_result) = {
                 let d = bond_info.try_borrow_data()?;
                 require!(
                     d.len() >= BOND_PRIOR_OFFSET + 1,
                     AccordError::InvalidMembershipProof
                 );
-                let amt = u64::from_le_bytes(
+                let total_deposit = u64::from_le_bytes(
                     d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
                         .try_into()
                         .unwrap(),
                 );
-                (amt, d[BOND_PRIOR_OFFSET])
+                let round_idx = u32::from_le_bytes(
+                    d[BOND_ROUND_IDX_OFFSET..BOND_ROUND_IDX_OFFSET + 4]
+                        .try_into()
+                        .unwrap(),
+                );
+                let fee = (panel_size_for_round(jurors_per_dispute, round_idx)? as u64)
+                    .checked_mul(fee_per_juror)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                (total_deposit.saturating_sub(fee), d[BOND_PRIOR_OFFSET])
             };
             if prior_result == final_ruling {
                 forfeited_total = forfeited_total
-                    .checked_add(amount)
+                    .checked_add(bond_portion)
                     .ok_or(AccordError::ArithmeticOverflow)?;
                 let mut d = bond_info.try_borrow_mut_data()?;
                 d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8].copy_from_slice(&0u64.to_le_bytes());
@@ -1317,7 +1328,7 @@ pub mod accord {
         bond_acc.dispute = dispute.key();
         bond_acc.round_idx = new_round;
         bond_acc.appellant = ctx.accounts.appellant.key();
-        bond_acc.amount = bond;
+        bond_acc.amount = total;
         bond_acc.prior_result = prior_result;
         bond_acc.bump = ctx.bumps.appeal_bond;
 
@@ -1339,7 +1350,7 @@ pub mod accord {
             dispute: dispute.key(),
             new_round_idx: new_round,
             appellant: ctx.accounts.appellant.key(),
-            bond,
+            deposit: total,
         });
         Ok(())
     }
@@ -1365,8 +1376,20 @@ pub mod accord {
             bond_acc.appellant == ctx.accounts.claimant_token_account.owner,
             AccordError::InvalidMembershipProof
         );
-        let amount = bond_acc.amount;
-        require!(amount > 0, AccordError::InvalidAmount);
+
+        // `amount` is the total deposit (fee + bond). On Failed (cancel), the
+        // round never consumed fees — return the full deposit. On Final, the
+        // fee was consumed by settlement — return only the bond portion.
+        let refund = if dispute.state == DisputeState::Failed {
+            bond_acc.amount
+        } else {
+            let fee = (panel_size_for_round(dispute.terms.jurors_per_dispute, bond_acc.round_idx)?
+                as u64)
+                .checked_mul(dispute.terms.fee_per_juror)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            bond_acc.amount.saturating_sub(fee)
+        };
+        require!(refund > 0, AccordError::InvalidAmount);
 
         let sub = &ctx.accounts.subaccord;
         let bump = [sub.bump];
@@ -1387,7 +1410,7 @@ pub mod accord {
                 },
                 &[signer_seeds],
             ),
-            amount,
+            refund,
         )?;
 
         // Mark claimed (idempotent): no double-refund on re-invocation.
@@ -1529,10 +1552,54 @@ pub mod accord {
             )?;
         }
 
-        // --- Refund the filer's round-1 fee from the vault (PDA-signed). ---
-        let filer_fee = (dispute.terms.jurors_per_dispute as u64)
-            .checked_mul(dispute.terms.fee_per_juror)
-            .ok_or(AccordError::ArithmeticOverflow)?;
+        // --- Refund: vault balance minus appeal-bond reserves (PDA-signed). ---
+        // AppealBond PDAs trail the remaining_accounts (one per appeal round,
+        // i.e. `current_round` of them). Each holds the total deposit
+        // (fee + bond); those tokens must stay in the vault for
+        // `claim_appeal_refund` to return to appellants.
+        let appeal_n = current_round as usize;
+        let mut reserved: u64 = 0;
+        if appeal_n > 0 {
+            const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32; // disc+dispute+round_idx+appellant
+            for i in 0..appeal_n {
+                let expected_pda = Pubkey::find_program_address(
+                    &[
+                        SEED_APPEAL_BOND,
+                        dispute_key.as_ref(),
+                        &(i as u32).to_le_bytes(),
+                    ],
+                    &crate::ID,
+                )
+                .0;
+                // Bonds are the LAST `appeal_n` entries in remaining_accounts.
+                let bond_idx = ctx
+                    .remaining_accounts
+                    .len()
+                    .checked_sub(appeal_n)
+                    .ok_or(AccordError::InvalidState)?
+                    + i;
+                let bond_info = &ctx.remaining_accounts[bond_idx];
+                require!(
+                    bond_info.key == &expected_pda,
+                    AccordError::InvalidMembershipProof
+                );
+                let d = bond_info.try_borrow_data()?;
+                require!(
+                    d.len() >= BOND_AMOUNT_OFFSET + 8,
+                    AccordError::InvalidMembershipProof
+                );
+                let amt = u64::from_le_bytes(
+                    d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
+                        .try_into()
+                        .unwrap(),
+                );
+                reserved = reserved
+                    .checked_add(amt)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
+        }
+        let vault_balance = ctx.accounts.vault.amount;
+        let filer_fee = vault_balance.saturating_sub(reserved);
 
         let sub = &ctx.accounts.subaccord;
         let bump = [sub.bump];

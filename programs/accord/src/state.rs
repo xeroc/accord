@@ -213,10 +213,13 @@ pub struct Round {
 ///
 /// `prior_result` is the winning option of the round the appellant sought to
 /// flip (the just-resolved `current_round` at appeal time). Flip detection at
-/// final settlement is `final_ruling != prior_result`. A no-flip bond is zeroed
-/// (`amount = 0`) by `finalize_dispute` as it folds the tokens into the coherent
-/// pool; a flipped bond keeps its `amount` until `claim_appeal_refund` returns
-/// it and zeroes the record (idempotent).
+/// final settlement is `final_ruling != prior_result`. `amount` stores the
+/// **total deposit** (fee + bond); the fee portion is derived at settlement as
+/// `panel_size_for_round(terms, round_idx) * fee_per_juror`. A no-flip bond is
+/// zeroed (`amount = 0`) by `finalize_dispute` as it folds the bond portion
+/// into the coherent pool; a flipped bond keeps its `amount` until
+/// `claim_appeal_refund` returns the bond portion (Final) or the full amount
+/// (Failed/cancel) and zeroes the record (idempotent).
 #[account]
 #[derive(InitSpace)]
 pub struct AppealBond {

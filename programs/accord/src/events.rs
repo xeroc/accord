@@ -132,7 +132,7 @@ pub struct Appealed {
     pub dispute: Pubkey,
     pub new_round_idx: u32,
     pub appellant: Pubkey,
-    pub bond: u64,
+    pub deposit: u64,
 }
 
 // --- circuit breaker (ADR-0007) ---

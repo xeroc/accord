@@ -16,7 +16,7 @@
 //! no-entrypoint`). One fresh `AnchorLiteSVM` context per test.
 
 use accord::constants::{
-    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD,
+    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD,
 };
 use accord::state::{Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord};
 use accord::{accounts, instruction, ID};
@@ -1530,6 +1530,262 @@ fn cancel_blocked_immediately_after_appeal_timestamp_reset() {
         .unwrap();
     let r = env.ctx.execute_instruction(ix, &[&caller2]).unwrap();
     r.assert_success();
+}
+
+// ─── appeal fee recovery test (REVIEW #2 — fee+bond merge) ──────────────────
+
+/// Fabricate a Round PDA with juror_count = 0 (no jurors to release).
+fn fabricate_empty_round(env: &mut AccEnv, dispute: &Pubkey, round_idx: u32) -> Pubkey {
+    let rnd = round_pda(dispute, round_idx);
+    let disc = solana_program::hash::hash(b"account:Round").to_bytes();
+    let size = 8 + std::mem::size_of::<accord::state::Round>();
+    let mut data = vec![0u8; size];
+    data[..8].copy_from_slice(&disc[..8]);
+    // round_idx at offset 8, juror_count at offset 12 = 0 (zeroed).
+    data[8..12].copy_from_slice(&round_idx.to_le_bytes());
+    env.ctx
+        .svm
+        .set_account(
+            rnd,
+            SvmAccount {
+                lamports: 1_000_000,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+    rnd
+}
+
+/// Fabricate an AppealBond PDA with the given fields.
+fn fabricate_appeal_bond(
+    env: &mut AccEnv,
+    dispute: &Pubkey,
+    bond_seed: u32,
+    round_idx: u32,
+    appellant: &Pubkey,
+    amount: u64,
+) -> Pubkey {
+    let (pda, bump) = Pubkey::find_program_address(
+        &[SEED_APPEAL_BOND, dispute.as_ref(), &bond_seed.to_le_bytes()],
+        &ID,
+    );
+    let disc = solana_program::hash::hash(b"account:AppealBond").to_bytes();
+    // disc(8) + dispute(32) + round_idx(4) + appellant(32) + amount(8) + prior(1) + bump(1) = 86
+    let mut data = vec![0u8; 86];
+    data[..8].copy_from_slice(&disc[..8]);
+    data[8..40].copy_from_slice(dispute.as_ref());
+    data[40..44].copy_from_slice(&round_idx.to_le_bytes());
+    data[44..76].copy_from_slice(appellant.as_ref());
+    data[76..84].copy_from_slice(&amount.to_le_bytes());
+    data[84] = 0; // prior_result
+    data[85] = bump;
+    env.ctx
+        .svm
+        .set_account(
+            pda,
+            SvmAccount {
+                lamports: 1_000_000,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+    pda
+}
+
+/// Add tokens to the vault's SPL token account (simulates appeal deposit).
+fn add_vault_tokens(env: &mut AccEnv, extra: u64) {
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let acc = env.ctx.svm.get_account(&vault).unwrap();
+    let mut data = acc.data.clone();
+    let current = u64::from_le_bytes(data[64..72].try_into().unwrap());
+    data[64..72].copy_from_slice(&(current + extra).to_le_bytes());
+    env.ctx
+        .svm
+        .set_account(
+            vault,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: TOKEN_PROGRAM_ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
+#[test]
+fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
+    let mut env = setup_accumulator();
+    let (dispute, filer) = create_dispute_under_a(&mut env);
+
+    // The filer deposited 3 * fee_per_juror = 3_000_000 into the vault.
+    let round_0_fee = 3u64 * 1_000_000;
+
+    // Simulate an appeal: appellant deposits fee_new(7*fpj) + bond(7*fpj) = 14_000_000.
+    let fee_new = 7u64 * 1_000_000;
+    let total_deposit = fee_new * 2; // fee + bond
+    add_vault_tokens(&mut env, total_deposit);
+
+    // Simulate post-appeal dispute state: current_round = 1, filed_at = now.
+    {
+        let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+        let acc = env.ctx.svm.get_account(&dispute).unwrap();
+        let mut d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+        d.current_round = 1;
+        d.filed_at = now;
+        let mut data = acc.data[..8].to_vec();
+        AnchorSerialize::serialize(&d, &mut data).unwrap();
+        env.ctx
+            .svm
+            .set_account(
+                dispute,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    // Fabricate post-appeal accounts.
+    let appellant = Keypair::new();
+    let bond_pda = fabricate_appeal_bond(
+        &mut env,
+        &dispute,
+        0, // PDA seed = round being appealed
+        1, // round_idx = new round opened
+        &appellant.pubkey(),
+        total_deposit,
+    );
+    let round_0 = fabricate_empty_round(&mut env, &dispute, 0);
+
+    // Warp past cancel timeout.
+    warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 1);
+
+    // Create appellant's token account for claim_appeal_refund later.
+    let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
+    create_token_account(
+        &mut env.ctx,
+        &appellant_ata,
+        &env.mint,
+        &appellant.pubkey(),
+        0,
+    );
+
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let vault_before = env.ctx.svm.get_account(&vault).unwrap();
+    let vault_balance = u64::from_le_bytes(vault_before.data[64..72].try_into().unwrap());
+    let filer_before = u64::from_le_bytes(
+        env.ctx.svm.get_account(&fata).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+
+    // Cancel: remaining_accounts = [Round_0, AppealBond_0].
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+
+    // Append remaining_accounts manually.
+    let ix_with_meta = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut accts = ix.accounts;
+            for key in &[round_0, bond_pda] {
+                accts.push(solana_program::instruction::AccountMeta {
+                    pubkey: *key,
+                    is_signer: false,
+                    is_writable: false,
+                });
+            }
+            accts
+        },
+        data: ix.data,
+    };
+    let r = env
+        .ctx
+        .execute_instruction(ix_with_meta, &[&env.creator])
+        .unwrap();
+    r.assert_success();
+
+    // Filer should have received vault_balance - total_deposit.
+    let filer_after = u64::from_le_bytes(
+        env.ctx.svm.get_account(&fata).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    assert_eq!(
+        filer_after - filer_before,
+        vault_balance - total_deposit,
+        "filer gets vault minus reserved appeal deposits"
+    );
+
+    // Vault should now hold exactly total_deposit (for the appeal refund).
+    let vault_after = env.ctx.svm.get_account(&vault).unwrap();
+    let vault_remaining = u64::from_le_bytes(vault_after.data[64..72].try_into().unwrap());
+    assert_eq!(
+        vault_remaining, total_deposit,
+        "vault retains exactly the deposit"
+    );
+
+    // claim_appeal_refund: appellant gets the full deposit back.
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ClaimAppealRefund {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            appeal_bond: bond_pda,
+            staking_token: env.mint,
+            claimant_token_account: appellant_ata,
+            vault,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::ClaimAppealRefund { round_idx: 0u32 })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
+    r.assert_success();
+
+    // Appellant received the full deposit.
+    let appellant_after = env.ctx.svm.get_account(&appellant_ata).unwrap();
+    let appellant_balance = u64::from_le_bytes(appellant_after.data[64..72].try_into().unwrap());
+    assert_eq!(
+        appellant_balance, total_deposit,
+        "appellant recovers full fee+bond on cancel"
+    );
+
+    // Vault is now empty (both filer refund and appeal refund paid out).
+    let vault_final = env.ctx.svm.get_account(&vault).unwrap();
+    let vault_final_balance = u64::from_le_bytes(vault_final.data[64..72].try_into().unwrap());
+    assert_eq!(
+        vault_final_balance, 0,
+        "vault fully drained after both refunds"
+    );
 }
 
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
