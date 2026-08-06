@@ -733,8 +733,17 @@ pub mod accord {
         require!(r_i - prefix < leaf.stake, AccordError::SortitionMismatch);
 
         // Load the round (init_if_needed — persists across the N seat txs).
+        // `load_init` writes the discriminator; on the 2nd..Nth draw_seat the
+        // account already exists, so write the disc only if absent then load_mut.
         let dispute_key = dispute.key();
-        let mut round = ctx.accounts.round.load_init()?;
+        {
+            let info = ctx.accounts.round.to_account_info();
+            let mut data = info.try_borrow_mut_data()?;
+            if data[..8].iter().all(|&b| b == 0) {
+                data[..8].copy_from_slice(&Round::DISCRIMINATOR);
+            }
+        }
+        let mut round = ctx.accounts.round.load_mut()?;
         if round.dispute == Pubkey::default() {
             round.dispute = dispute_key;
             round.round_idx = round_idx;
