@@ -1,11 +1,11 @@
 ---
 # accord-g74z
 title: On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5; ADR-0012)
-status: todo
+status: completed
 type: feature
 priority: critical
 created_at: 2026-08-05T16:20:23Z
-updated_at: 2026-08-05T17:12:01Z
+updated_at: 2026-08-06T02:36:23Z
 parent: accord-ukqg
 ---
 
