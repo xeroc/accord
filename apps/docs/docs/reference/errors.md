@@ -26,43 +26,37 @@
 
 | Code                  | Message                                                                              | Raised by                                 |
 | --------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
-| `InsufficientStake`   | Staked amount is below the Subaccord minimum.                                        | `draw`                                    |
+| `InsufficientStake`   | Staked amount is below the Subaccord minimum.                                        | `draw_seat`                               |
 | `StakeLocked`         | Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle). | `unstake`                                 |
 | `InvalidAmount`       | Amount must be greater than zero.                                                    | `stake`, `unstake`, `claim_appeal_refund` |
 | `InsufficientBalance` | Withdrawal exceeds the Juror's staked balance.                                       | `unstake`                                 |
 
 ## Dispute intake
 
-| Code                 | Message                                                                                     | Raised by                                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `InsufficientJurors` | Subaccord has fewer active distinct stakers than the required panel size.                   | `create_dispute`, `appeal`                                                                                                                                    |
-| `InvalidOptions`     | Dispute options are invalid (need 2..=MAX_OPTIONS).                                         | `create_dispute`, `create_subaccord`                                                                                                                          |
-| `InvalidState`       | Dispute is not in the required state for this instruction.                                  | `post_snapshot`, `challenge_snapshot`, `finalize_snapshot`, `draw`, `commit`, `reveal`, `finalize_round`, `finalize_dispute`, `appeal`, `claim_appeal_refund` |
-| `FeeMismatch`        | Tendered fee does not match the required dispute fee (jurors_per_dispute \* fee_per_juror). | `create_dispute`                                                                                                                                              |
+| Code                 | Message                                                                                     | Raised by                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `InsufficientJurors` | Subaccord has fewer active distinct stakers than the required panel size.                   | `create_dispute`, `appeal`                                                                             |
+| `InvalidOptions`     | Dispute options are invalid (need 2..=MAX_OPTIONS).                                         | `create_dispute`, `create_subaccord`                                                                   |
+| `InvalidState`       | Dispute is not in the required state for this instruction.                                  | `draw_seat`, `commit`, `reveal`, `finalize_round`, `finalize_dispute`, `appeal`, `claim_appeal_refund` |
+| `FeeMismatch`        | Tendered fee does not match the required dispute fee (jurors_per_dispute \* fee_per_juror). | `create_dispute`                                                                                       |
 
-## Snapshot ([ADR-0003](../adr/0003-accord-draw-merkle-snapshot-distinct-vrf.md), [ADR-0008](../adr/0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md))
+> The snapshot-era error codes (`SnapshotNotFinalized`, `SnapshotVoided`,
+> `SnapshotChallengeWindowOpen`, `SnapshotChallengeWindowExpired`,
+> `FraudProofInvalid`, `TreeNotSorted`, `OmissionProofInvalid`) are removed — the
+> juror-set root is canonical by construction, so there is no posted root, bond,
+> challenge window, or fraud proof ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
-| Code                             | Message                                                            | Raised by             |
-| -------------------------------- | ------------------------------------------------------------------ | --------------------- |
-| `SnapshotNotFinalized`           | Snapshot is not finalized (challenge window still open or voided). | `request_vrf`, `draw` |
-| `SnapshotVoided`                 | Snapshot was voided by a successful fraud proof.                   | (status sentinel)     |
-| `SnapshotChallengeWindowOpen`    | Snapshot challenge window has not yet elapsed.                     | `finalize_snapshot`   |
-| `SnapshotChallengeWindowExpired` | Snapshot challenge window has expired.                             | `challenge_snapshot`  |
-| `FraudProofInvalid`              | Fraud proof does not invalidate the posted Merkle root.            | `challenge_snapshot`  |
+## Draw / sortition ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md))
 
-## Draw / sortition ([ADR-0009](../adr/0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md))
-
-| Code                     | Message                                                                                              | Raised by                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `DuplicateJuror`         | Draw selected a duplicate Juror.                                                                     | `draw`                                                                  |
-| `InvalidMembershipProof` | Juror Merkle membership/weight proof is invalid.                                                     | `draw`, `challenge_snapshot`, `finalize_dispute`, `claim_appeal_refund` |
-| `InvalidPanelSize`       | Number of juror memberships does not match the required panel size.                                  | `draw`, `finalize_dispute`                                              |
-| `InflatedStake`          | Drawn juror's live stake is below the snapshot leaf's claim (inflation guard, ADR-0008).             | `draw`                                                                  |
-| `SortitionMismatch`      | Submitted membership does not match the VRF-derived sortition selection (ADR-0009).                  | `draw`                                                                  |
-| `TreeNotSorted`          | Snapshot tree is not sorted by juror pubkey (ADR-0009 predicate 5).                                  | (predicate)                                                             |
-| `OmissionProofInvalid`   | Omission proof is invalid (non-adjacent leaves, wrong order, or witness stake changed since anchor). | (predicate)                                                             |
-| `VrfAlreadyCommitted`    | VRF result already committed for this dispute.                                                       | `request_vrf`, `commit_vrf_callback`                                    |
-| `VrfNotCommitted`        | No VRF result committed for this dispute; call commit_vrf first.                                     | `draw`                                                                  |
+| Code                     | Message                                                                      | Raised by                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `DuplicateJuror`         | Draw selected a duplicate Juror.                                             | `draw_seat`                                                                |
+| `InvalidMembershipProof` | Juror Merkle membership/weight proof is invalid.                             | `stake`, `unstake`, `draw_seat`, `finalize_dispute`, `claim_appeal_refund` |
+| `InvalidPanelSize`       | Number of juror memberships does not match the required panel size.          | `draw_seat`, `finalize_dispute`                                            |
+| `InflatedStake`          | Drawn juror's live stake is below the frozen leaf's claim (inflation guard). | `draw_seat`                                                                |
+| `SortitionMismatch`      | Submitted membership does not match the VRF-derived sortition selection.     | `draw_seat`                                                                |
+| `VrfAlreadyCommitted`    | VRF result already committed for this dispute.                               | `request_vrf`, `commit_vrf_callback`                                       |
+| `VrfNotCommitted`        | No VRF result committed for this dispute; call commit_vrf first.             | `draw_seat`                                                                |
 
 ## Voting
 

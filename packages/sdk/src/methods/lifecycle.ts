@@ -82,6 +82,11 @@ export interface CreateSubaccordArgs {
   authority: Address;
   /** ADR-0006 trusted re-encryption service. */
   evidenceOperator: Address;
+  /**
+   * Fixed accumulator tree depth (ADR-0012). Bounds the juror pool at
+   * `2^depth`; the tree never grows a level during operation. Default 20.
+   */
+  depth: number; // u8
 }
 
 /**

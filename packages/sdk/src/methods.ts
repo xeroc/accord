@@ -30,24 +30,25 @@ import {
   type CreateSubaccordArgs,
   type UpdatePayload,
 } from "./methods/lifecycle.js";
+import type { MSTNode } from "./methods/mst.js";
 import {
   stake as pureStake,
-  unstake as pureUnstake,
-  type JurorStakeView,
+  requestWithdraw as pureRequestWithdraw,
+  withdraw as pureWithdraw,
+  reconcileStake as pureReconcileStake,
   type StakingAccounts,
 } from "./methods/staking.js";
 import {
-  challengeSnapshot as pureChallengeSnapshot,
-  finalizeSnapshot as pureFinalizeSnapshot,
-  postSnapshot as purePostSnapshot,
-  type JurorMembership,
-  type MerkleSumTree,
-  type SnapshotAccounts,
-} from "./methods/snapshot.js";
+  settleRound as pureSettleRound,
+  cancelDispute as pureCancelDispute,
+  type CancelDisputeAccounts,
+  type SettleRoundAccounts,
+} from "./methods/settlement.js";
 import {
   awaitCommittedVrf as pureAwaitCommittedVrf,
-  draw as pureDraw,
+  drawSeat as pureDrawSeat,
   requestVrf as pureRequestVrf,
+  type SeatMembership,
   type RequestVrfExtras,
   type VrfDrawAccounts,
 } from "./methods/vrf.js";
@@ -102,38 +103,42 @@ export interface AccordMethods {
   proposeUnpause(authority: Address, pauseState: Address): Instruction;
   executeUnpause(caller: Address, pauseState: Address): Instruction;
 
-  // staking
-  stake(accounts: StakingAccounts, amount: bigint): Instruction;
-  unstake(
+  // staking (ADR-0012: path-verified accumulator update)
+  stake(
     accounts: StakingAccounts,
     amount: bigint,
-    stakeView?: JurorStakeView,
-  ): Promise<Instruction>;
-
-  // snapshot
-  postSnapshot(
-    accounts: SnapshotAccounts,
-    tree: Pick<MerkleSumTree, "rootHash" | "rootSum">,
+    path: MSTNode[],
   ): Instruction;
-  challengeSnapshot(
-    accounts: SnapshotAccounts,
-    challengerTokenAccount: Address,
-    proof: unknown,
+  requestWithdraw(
+    accounts: StakingAccounts,
+    amount: bigint,
+    path: MSTNode[],
   ): Instruction;
-  finalizeSnapshot(accounts: SnapshotAccounts): Instruction;
+  withdraw(accounts: StakingAccounts): Instruction;
+  reconcileStake(accounts: StakingAccounts, path: MSTNode[]): Instruction;
 
-  // vrf + draw
+  // settlement (per-round crank + dispute cancellation)
+  settleRound(
+    accounts: SettleRoundAccounts,
+    roundIdx: number,
+    remainingAccounts: Address[],
+  ): Instruction;
+  cancelDispute(
+    accounts: CancelDisputeAccounts,
+    remainingAccounts: Address[],
+  ): Instruction;
+
+  // vrf + per-seat draw (ADR-0009/0012)
   requestVrf(accounts: VrfDrawAccounts, extras: RequestVrfExtras): Instruction;
   awaitCommittedVrf(
     dispute: Address,
     opts?: { pollIntervalMs?: number; timeoutMs?: number },
   ): Promise<Uint8Array>;
-  draw(
+  drawSeat(
     accounts: VrfDrawAccounts,
     roundPda: Address,
-    drawAttempt: number,
-    memberships: JurorMembership[],
-    jurorStakeAccounts: Address[],
+    seat: number,
+    membership: SeatMembership,
   ): Instruction;
 
   // voting
@@ -206,40 +211,33 @@ export function createAccordMethods(
       pureExecuteUnpause(adapter, programId, caller, pauseState),
 
     // staking
-    stake: (accounts, amount) =>
-      pureStake(adapter, programId, accounts, amount),
-    unstake: (accounts, amount, stakeView) =>
-      pureUnstake(adapter, programId, accounts, amount, stakeView),
+    stake: (accounts, amount, path) =>
+      pureStake(adapter, programId, accounts, amount, path),
+    requestWithdraw: (accounts, amount, path) =>
+      pureRequestWithdraw(adapter, programId, accounts, amount, path),
+    withdraw: (accounts) => pureWithdraw(adapter, programId, accounts),
+    reconcileStake: (accounts, path) =>
+      pureReconcileStake(adapter, programId, accounts, path),
 
-    // snapshot
-    postSnapshot: (accounts, tree) =>
-      purePostSnapshot(adapter, programId, accounts, tree),
-    challengeSnapshot: (accounts, challengerTokenAccount, proof) =>
-      pureChallengeSnapshot(
+    // settlement
+    settleRound: (accounts, roundIdx, remainingAccounts) =>
+      pureSettleRound(
         adapter,
         programId,
         accounts,
-        challengerTokenAccount,
-        proof,
+        roundIdx,
+        remainingAccounts,
       ),
-    finalizeSnapshot: (accounts) =>
-      pureFinalizeSnapshot(adapter, programId, accounts),
+    cancelDispute: (accounts, remainingAccounts) =>
+      pureCancelDispute(adapter, programId, accounts, remainingAccounts),
 
-    // vrf + draw
+    // vrf + per-seat draw
     requestVrf: (accounts, extras) =>
       pureRequestVrf(adapter, programId, accounts, extras),
     awaitCommittedVrf: (dispute, opts) =>
       pureAwaitCommittedVrf(adapter, dispute, opts),
-    draw: (accounts, roundPda, drawAttempt, memberships, jurorStakeAccounts) =>
-      pureDraw(
-        adapter,
-        programId,
-        accounts,
-        roundPda,
-        drawAttempt,
-        memberships,
-        jurorStakeAccounts,
-      ),
+    drawSeat: (accounts, roundPda, seat, membership) =>
+      pureDrawSeat(adapter, programId, accounts, roundPda, seat, membership),
 
     // voting
     commit: (accounts, args) => pureCommit(adapter, programId, accounts, args),

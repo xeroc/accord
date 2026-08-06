@@ -12,5 +12,4 @@ export * from "./jurorStake";
 export * from "./pauseState";
 export * from "./pendingUpdate";
 export * from "./round";
-export * from "./snapshot";
 export * from "./subaccord";

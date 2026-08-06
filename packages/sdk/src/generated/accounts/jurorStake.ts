@@ -19,6 +19,8 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getI64Decoder,
+  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -56,7 +58,33 @@ export type JurorStake = {
   amount: bigint;
   activeDraws: number;
   bump: number;
-  lastChangeSlot: bigint;
+  /** Leaf position in the Subaccord accumulator (assigned at first stake). */
+  treeIndex: number;
+  /**
+   * Net slash(-)/reward(+) accumulated from settlements. Written by
+   * `settle_round_accounts` instead of mutating `amount` — keeps the
+   * accumulator root canonical. Folded into `amount` by the permissionless
+   * `reconcile_stake` crank (which updates the root via a Merkle proof).
+   */
+  settlementDelta: bigint;
+  /**
+   * Pending slash exposure from all active draws. Incremented by
+   * `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
+   * by settlement or cancel. Ensures the juror can always cover every
+   * concurrent slash. `amount - slash_reserve` is the truly free stake.
+   */
+  slashReserve: bigint;
+  /**
+   * Timestamp of `request_withdraw` (0 = no pending request). The
+   * accumulator root is already updated at request time; `withdraw` just
+   * transfers tokens after `WITHDRAWAL_DELAY` + `active_draws == 0`.
+   */
+  withdrawRequestedAt: bigint;
+  /**
+   * Tokens locked in the vault pending `withdraw`. Set at `request_withdraw`,
+   * consumed at `withdraw`.
+   */
+  pendingWithdrawal: bigint;
 };
 
 export type JurorStakeArgs = {
@@ -65,7 +93,33 @@ export type JurorStakeArgs = {
   amount: number | bigint;
   activeDraws: number;
   bump: number;
-  lastChangeSlot: number | bigint;
+  /** Leaf position in the Subaccord accumulator (assigned at first stake). */
+  treeIndex: number;
+  /**
+   * Net slash(-)/reward(+) accumulated from settlements. Written by
+   * `settle_round_accounts` instead of mutating `amount` — keeps the
+   * accumulator root canonical. Folded into `amount` by the permissionless
+   * `reconcile_stake` crank (which updates the root via a Merkle proof).
+   */
+  settlementDelta: number | bigint;
+  /**
+   * Pending slash exposure from all active draws. Incremented by
+   * `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
+   * by settlement or cancel. Ensures the juror can always cover every
+   * concurrent slash. `amount - slash_reserve` is the truly free stake.
+   */
+  slashReserve: number | bigint;
+  /**
+   * Timestamp of `request_withdraw` (0 = no pending request). The
+   * accumulator root is already updated at request time; `withdraw` just
+   * transfers tokens after `WITHDRAWAL_DELAY` + `active_draws == 0`.
+   */
+  withdrawRequestedAt: number | bigint;
+  /**
+   * Tokens locked in the vault pending `withdraw`. Set at `request_withdraw`,
+   * consumed at `withdraw`.
+   */
+  pendingWithdrawal: number | bigint;
 };
 
 /** Gets the encoder for {@link JurorStakeArgs} account data. */
@@ -78,7 +132,11 @@ export function getJurorStakeEncoder(): FixedSizeEncoder<JurorStakeArgs> {
       ["amount", getU64Encoder()],
       ["activeDraws", getU32Encoder()],
       ["bump", getU8Encoder()],
-      ["lastChangeSlot", getU64Encoder()],
+      ["treeIndex", getU32Encoder()],
+      ["settlementDelta", getI64Encoder()],
+      ["slashReserve", getU64Encoder()],
+      ["withdrawRequestedAt", getI64Encoder()],
+      ["pendingWithdrawal", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: JUROR_STAKE_DISCRIMINATOR }),
   );
@@ -93,7 +151,11 @@ export function getJurorStakeDecoder(): FixedSizeDecoder<JurorStake> {
     ["amount", getU64Decoder()],
     ["activeDraws", getU32Decoder()],
     ["bump", getU8Decoder()],
-    ["lastChangeSlot", getU64Decoder()],
+    ["treeIndex", getU32Decoder()],
+    ["settlementDelta", getI64Decoder()],
+    ["slashReserve", getU64Decoder()],
+    ["withdrawRequestedAt", getI64Decoder()],
+    ["pendingWithdrawal", getU64Decoder()],
   ]);
 }
 
@@ -159,5 +221,5 @@ export async function fetchAllMaybeJurorStake(
 }
 
 export function getJurorStakeSize(): number {
-  return 93;
+  return 121;
 }

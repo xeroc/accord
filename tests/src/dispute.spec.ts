@@ -24,6 +24,8 @@ import {
   initializePause,
   createSubaccord,
   getDisputeDecoder,
+  buildAccumulator,
+  proofFor,
   type CreateDisputeAccounts,
   type CreateDisputeArgs,
   type StakingAccounts,
@@ -35,7 +37,11 @@ import {
 } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { createMint, setTokenBalance, TOKEN_PROGRAM_ID } from "./setup/tokens.js";
+import {
+  createMint,
+  setTokenBalance,
+  TOKEN_PROGRAM_ID,
+} from "./setup/tokens.js";
 import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
 import { expectAccordAccount, fetchDecoded } from "./setup/assertions.js";
 
@@ -167,6 +173,10 @@ describe("e2e: dispute (requires Surfpool)", () => {
     await env.sendIx(sub.instruction);
     const vault = await ata(mint, sub.subaccord);
 
+    // ADR-0012: each stake carries a Merkle membership `path` the program
+    // re-verifies against the live root, so track the off-chain tree here.
+    let tree = await buildAccumulator([], 4);
+    const leaves: { juror: Uint8Array; stake: bigint }[] = [];
     for (let i = 0; i < nJurors; i++) {
       const juror = await fundSigner(env);
       await setTokenBalance(env, juror.address, mint, 10_000n);
@@ -185,8 +195,16 @@ describe("e2e: dispute (requires Surfpool)", () => {
         vault,
       };
       const facade = new Accord({ endpoint: env.rpcUrl, signer: juror });
+      const path = await proofFor(tree, i);
       // any amount > 0 bumps the distinct-staker counter once (first stake)
-      await env.sendIx(stake(facade.adapter, env.programId, accounts, 5_000n));
+      await env.sendIx(
+        stake(facade.adapter, env.programId, accounts, 5_000n, path),
+      );
+      leaves[i] = {
+        juror: new Uint8Array(getAddressEncoder().encode(juror.address)),
+        stake: 5_000n,
+      };
+      tree = await buildAccumulator(leaves, 4);
     }
     return { subaccord: sub.subaccord, vault };
   }

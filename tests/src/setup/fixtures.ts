@@ -39,6 +39,7 @@ export function defaultSubaccordArgs(
     feePerJuror: 0n,
     authority: DEFAULT_PUBKEY, // immutable
     evidenceOperator,
+    depth: 4, // small for tests (2^4 = 16 seats max)
     ...overrides,
   };
 }

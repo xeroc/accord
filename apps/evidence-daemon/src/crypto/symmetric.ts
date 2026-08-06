@@ -11,9 +11,14 @@ const AES_NONCE_BYTES = 12;
 const AES_TAG_BITS = 128;
 const subtle = globalThis.crypto.subtle;
 
+// TS 5.7: Uint8Array is generic over its backing buffer; WebCrypto's
+// BufferSource requires an ArrayBuffer-backed view. Daemon data is always
+// ArrayBuffer-backed at runtime, so coerce at this boundary.
+const bs = (u: Uint8Array): ArrayBufferView => u as unknown as ArrayBufferView;
+
 /** SHA-256 digest (32 bytes). */
 export async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await subtle.digest("SHA-256", data));
+  return new Uint8Array(await subtle.digest("SHA-256", bs(data)));
 }
 
 /** HKDF-SHA256 to a `length`-byte key (empty salt, per SPEC §Crypto model). */
@@ -22,9 +27,9 @@ export async function hkdfSha256(
   info: Uint8Array,
   length = 32,
 ): Promise<Uint8Array> {
-  const keyMaterial = await subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+  const keyMaterial = await subtle.importKey("raw", bs(ikm), "HKDF", false, ["deriveBits"]);
   const bits = await subtle.deriveBits(
-    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info },
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: bs(info) },
     keyMaterial,
     length * 8,
   );
@@ -34,12 +39,12 @@ export async function hkdfSha256(
 /** AES-256-GCM encrypt: returns `nonce(12) || ciphertext || tag(16)`. */
 export async function aesGcmEncrypt(key: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
   requireKey(key);
-  const cryptoKey = await subtle.importKey("raw", key, { name: "AES-GCM" }, false, ["encrypt"]);
+  const cryptoKey = await subtle.importKey("raw", bs(key), { name: "AES-GCM" }, false, ["encrypt"]);
   const nonce = globalThis.crypto.getRandomValues(new Uint8Array(AES_NONCE_BYTES));
   const ct = await subtle.encrypt(
-    { name: "AES-GCM", iv: nonce, tagLength: AES_TAG_BITS },
+    { name: "AES-GCM", iv: bs(nonce), tagLength: AES_TAG_BITS },
     cryptoKey,
-    plaintext,
+    bs(plaintext),
   );
   const out = new Uint8Array(nonce.length + ct.byteLength);
   out.set(nonce, 0);
@@ -53,13 +58,13 @@ export async function aesGcmDecrypt(key: Uint8Array, blob: Uint8Array): Promise<
   if (blob.length < AES_NONCE_BYTES + 16) {
     throw new Error("AES-GCM blob too short (missing nonce/tag)");
   }
-  const cryptoKey = await subtle.importKey("raw", key, { name: "AES-GCM" }, false, ["decrypt"]);
+  const cryptoKey = await subtle.importKey("raw", bs(key), { name: "AES-GCM" }, false, ["decrypt"]);
   const nonce = blob.subarray(0, AES_NONCE_BYTES);
   const ct = blob.subarray(AES_NONCE_BYTES);
   const pt = await subtle.decrypt(
-    { name: "AES-GCM", iv: nonce, tagLength: AES_TAG_BITS },
+    { name: "AES-GCM", iv: bs(nonce), tagLength: AES_TAG_BITS },
     cryptoKey,
-    ct,
+    bs(ct),
   );
   return new Uint8Array(pt);
 }

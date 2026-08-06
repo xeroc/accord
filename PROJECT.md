@@ -12,7 +12,19 @@ Meanwhile, the demand for trustless adjudication is growing: DeFi insurance, fre
 
 ## What
 
-**Accord** is a general-purpose, Schelling-point-based decentralized arbitration accord on Solana. Any Solana program can file disputes; the Accord draws jurors, collects commit-reveal votes, and emits rulings — all governed by game-theoretic incentives, not trusted humans.
+**Accord** is a general-purpose, Schelling-point-based arbitration oracle on
+Solana. Any Solana program can file disputes; the Accord draws jurors, collects
+commit-reveal votes, and emits rulings — governed by game-theoretic incentives
+rather than a hired-judge committee.
+
+> **Honest positioning.** Accord is an **arbitration oracle**, not a
+> self-enforcing decentralized court. The Schelling honesty equilibrium holds
+> _conditional on an honest stake majority_; randomness is externally supplied,
+> evidence is delivered via a trusted operator, and enforcement is the
+> integrator's responsibility. Several roles retain privileged or concentrated
+> power. The [Trust Profile](apps/docs/docs/security/trust-profile.md) states
+> each residual assumption and the security-value ceiling. "Decentralized court"
+> / "trustless" overstate the trust distribution.
 
 ### Core mechanism
 
@@ -30,7 +42,11 @@ Meanwhile, the demand for trustless adjudication is growing: DeFi insurance, fre
 
 ### Key properties
 
-- **Schelling Point = honesty.** Jurors converge on the truthful answer because voting coherently with the group is the profitable strategy. No central authority picks judges.
+- **Schelling Point = honesty (honest-majority-stake assumed).** Jurors converge
+  on the truthful answer because voting coherently with the group is the
+  profitable strategy. No central judge is picked — the honesty equilibrium
+  holds conditional on an honest stake majority (see
+  [Trust Profile](apps/docs/docs/security/trust-profile.md)).
 - **Subaccords.** Specialized juror pools (automotive, dental, freelancing, NFTs). Jurors self-select by expertise. Permissionless creation — anyone can register a Subaccord.
 - **Per-Subaccord staking token.** Each Subaccord defines which SPL token Jurors stake (USDC by default; any token). The stake is the anti-sybil mechanism and the coherence-slashing substrate.
 - **Arbitrable interface.** Any Solana program can use the Accord: `create_dispute()` → `get_ruling()`. Two CPI calls. The Accord has no knowledge of the filing program's domain.
@@ -39,15 +55,18 @@ Meanwhile, the demand for trustless adjudication is growing: DeFi insurance, fre
 
 ### Why this is a standalone product
 
-The Accord doesn't depend on any specific application. It's a general-purpose primitive — the "Kleros of Solana." Any program that needs subjective dispute resolution can use it:
+The Accord doesn't depend on any specific application. It's a general-purpose
+primitive — a Solana-native Schelling arbitration oracle (inspired by Kleros,
+not a port of it). Any program that needs subjective dispute resolution can use
+it:
 
-| Use case | Dispute example |
-|---|---|
-| Freelancing escrow | "Did the developer deliver as specified?" |
-| NFT authenticity | "Is this token an authentic original?" |
-| Curated lists | "Does this token belong on the whitelist?" |
-| DAO governance | "Was this proposal executed correctly?" |
-| Prediction markets | "Did the event resolve YES or NO?" |
+| Use case           | Dispute example                            |
+| ------------------ | ------------------------------------------ |
+| Freelancing escrow | "Did the developer deliver as specified?"  |
+| NFT authenticity   | "Is this token an authentic original?"     |
+| Curated lists      | "Does this token belong on the whitelist?" |
+| DAO governance     | "Was this proposal executed correctly?"    |
+| Prediction markets | "Did the event resolve YES or NO?"         |
 
 The Accord ships first and proves the Schelling mechanism on Solana; client programs plug in on top via the Arbitrable CPI.
 

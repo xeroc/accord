@@ -1,14 +1,14 @@
 ---
 # accord-18fb
 title: General escape path — Failed state + cancel_dispute with stage timeouts (CONCEPT-REVIEW Ugly 4)
-status: todo
+status: completed
 type: task
 priority: high
 created_at: 2026-08-05T15:25:46Z
-updated_at: 2026-08-05T15:26:11Z
+updated_at: 2026-08-05T21:38:17Z
 parent: accord-ukqg
 blocked_by:
-    - accord-4e7p
+  - accord-4e7p
 ---
 
 ## Why
@@ -55,3 +55,37 @@ original case terms (out of scope here — application responsibility).
 CONCEPT-REVIEW §Ugly 4; `state.rs:229-242`. Requires a new ADR. Blocked by the
 frozen-case-terms task (stage timeouts live there). Pairs with the repost task to
 close the snapshot-fraud recovery loop.
+
+## Summary of Changes
+
+Added `DisputeState::Failed` (terminal) + a permissionless `cancel_dispute`
+crank gated on per-stage timeouts, so no stalled dispute can lock the filer's
+fee or drawn jurors' stake indefinitely.
+
+**Code (`programs/accord/src/`):**
+
+- `state.rs`: `DisputeState::Failed` variant; `Dispute.filed_at: i64` (set at
+  `create_dispute`) — the pre-draw cancel anchor.
+- `lib.rs`: `cancel_dispute` instruction (pre-draw deadline from `filed_at`;
+  post-draw deadline from `round.reveal_end + APPEAL_WINDOW + grace`);
+  `Failed`-state guards on `request_vrf` + `commit_vrf_callback` (the two
+  instructions that lacked explicit state checks); `CancelDispute` account
+  context (filer ATA constrained via `associated_token::authority = dispute.filer`).
+- `constants.rs`: `PRE_DRAW_CANCEL_TIMEOUT_SECS` (3d), `POST_DRAW_CANCEL_GRACE_SECS` (3d).
+- `errors.rs`: `DisputeFailed`, `CancelTooEarly`. `events.rs`: `DisputeCancelled`.
+
+**On cancel:** refunds the filer's round-1 fee (`terms.jurors_per_dispute ·
+fee_per_juror`) from the vault; releases the current round's drawn jurors'
+`active_draws` (post-draw only); transitions to `Failed`.
+
+**Design call:** timeouts are immutable program constants (not `CaseTerms`
+fields) — a constant is frozen for the dispute's life by definition, with none
+of the `Subaccord`/`CaseTerms`/`create_subaccord`-signature churn. Per-Subaccord
+SLA configurability deferred. Multi-round appeal fee/bond return is deferred to
+`accord-r6ti` (settlement rework); the single-round path is exact.
+
+**ADR:** `0014-failed-state-cancel-dispute-escape-hatch.md` (Accepted).
+
+**Tests:** `tests/cancel_dispute_litesvm.rs` (5 tests: pre-draw cancel +
+refund, cancel-before-timeout reverts, Failed-is-terminal, post-draw cancel +
+active_draws release, post-draw-before-grace reverts). All 88 unit tests green.

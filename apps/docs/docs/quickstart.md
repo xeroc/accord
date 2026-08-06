@@ -54,8 +54,8 @@ if (ruling !== null) {
 ## Lifecycle
 
 ```
-create_dispute → post_snapshot → finalize_snapshot → request_vrf
-  → commit_vrf_callback → draw → commit → reveal → finalize_round
+create_dispute → request_vrf → commit_vrf_callback (freezes root)
+  → draw_seat × N → commit → reveal → finalize_round
   → finalize_dispute → get_ruling
 ```
 

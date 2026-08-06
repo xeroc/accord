@@ -32,7 +32,6 @@ export {
   findPauseStatePda,
   findPendingUpdatePda,
   findRoundPda,
-  findSnapshotPda,
   findSubaccordPda,
 } from "./pda";
 export * from "./constants";
@@ -49,8 +48,6 @@ export {
   fetchPendingUpdateMaybe,
   fetchRound,
   fetchRoundMaybe,
-  fetchSnapshot,
-  fetchSnapshotMaybe,
   fetchSubaccord,
   fetchSubaccordMaybe,
 } from "./fetch";
@@ -72,38 +69,38 @@ export * from "./methods/dispute.js";
 // (ADR-0010, bean veridao-a0mc).
 export * from "./methods/voting.js";
 
-// Snapshot trust (post/challenge/finalize) + Merkle-Sum Tree membership builder
-// for ADR-0009 sortition (ADR-0010, bean veridao-dsc2).
-// NOTE: LeafClaim/MSTNode/JurorMembership are intentionally NOT re-exported
-// here — the canonical (generated) types from ./types are the public API.
-// snapshot.ts keeps byte-oriented variants for internal MST crypto.
+// Stake accumulator (ADR-0012): subtree-sum MST builder + proofs — the
+// byte-exact reference the on-chain verifier matches. Used by `stake`/
+// `requestWithdraw`/`reconcileStake` (path) and `draw_seat` (membership +
+// sortition prefix).
 export {
-  type MerkleSumTree,
+  type MerkleAccumulator,
+  type MSTNode,
+  type LeafClaim,
   leafHash,
-  buildMst,
-  proveMembership,
-  selectSlot,
-  buildMemberships,
-  verifyMstInclusion,
-  snapshotSeeds,
-  type SnapshotAccounts,
-  type AccordSnapshotClient,
-  postSnapshot,
-  challengeSnapshot,
-  finalizeSnapshot,
-} from "./methods/snapshot.js";
+  emptyRoot,
+  buildAccumulator,
+  proofFor,
+  recomputeRoot,
+  verifyMembership,
+} from "./methods/mst.js";
 
 // Subaccord lifecycle + circuit breaker (ADR-0005/0007) + timelock helpers
 // (ADR-0010, bean veridao-erv7).
 export * from "./methods/lifecycle.js";
 
-// VRF request + draw choreography + sortition slot derivation (ADR-0009 §2,
-// ADR-0010, bean veridao-j7tx).
+// VRF request + per-seat draw_seat choreography + sortition slot derivation
+// (ADR-0009 §2 + ADR-0012, bean veridao-j7tx).
 export * from "./methods/vrf.js";
 
-// Juror capital stake / unstake + the active_draws typed guard (ADR-0003/0007,
-// ADR-0010, bean veridao-o8ki).
+// Juror capital stake / two-phase withdraw (requestWithdraw + withdraw) +
+// reconcileStake crank + the active_draws typed guard (ADR-0003/0007/0012,
+// REVIEW #4/#5, bean veridao-o8ki).
 export * from "./methods/staking.js";
+
+// Per-round settlement crank + dispute cancellation (settleRound / cancelDispute,
+// ADR-0010, bean accord-dedf).
+export * from "./methods/settlement.js";
 
 // Dispute appeal + bond refund + appeal-ladder math (ADR-0004, ADR-0010,
 // bean veridao-yny6).
@@ -128,6 +125,5 @@ export {
   getPauseStateDecoder,
   getPendingUpdateDecoder,
   getRoundDecoder,
-  getSnapshotDecoder,
   getSubaccordDecoder,
 } from "./generated/accounts/index.js";

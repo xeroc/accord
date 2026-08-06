@@ -26,6 +26,7 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
+  type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
@@ -50,6 +51,7 @@ export type CommitVrfCallbackInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountVrfProgramIdentity extends string | AccountMeta<string> =
     "9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw",
+  TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -60,6 +62,9 @@ export type CommitVrfCallbackInstruction<
         ? ReadonlySignerAccount<TAccountVrfProgramIdentity> &
             AccountSignerMeta<TAccountVrfProgramIdentity>
         : TAccountVrfProgramIdentity,
+      TAccountSubaccord extends string
+        ? ReadonlyAccount<TAccountSubaccord>
+        : TAccountSubaccord,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
@@ -105,23 +110,31 @@ export function getCommitVrfCallbackInstructionDataCodec(): FixedSizeCodec<
 
 export type CommitVrfCallbackInput<
   TAccountVrfProgramIdentity extends string = string,
+  TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
 > = {
   vrfProgramIdentity?: TransactionSigner<TAccountVrfProgramIdentity>;
+  subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
   randomness: CommitVrfCallbackInstructionDataArgs["randomness"];
 };
 
 export function getCommitVrfCallbackInstruction<
   TAccountVrfProgramIdentity extends string,
+  TAccountSubaccord extends string,
   TAccountDispute extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: CommitVrfCallbackInput<TAccountVrfProgramIdentity, TAccountDispute>,
+  input: CommitVrfCallbackInput<
+    TAccountVrfProgramIdentity,
+    TAccountSubaccord,
+    TAccountDispute
+  >,
   config?: { programAddress?: TProgramAddress },
 ): CommitVrfCallbackInstruction<
   TProgramAddress,
   TAccountVrfProgramIdentity,
+  TAccountSubaccord,
   TAccountDispute
 > {
   // Program address.
@@ -133,6 +146,7 @@ export function getCommitVrfCallbackInstruction<
       value: input.vrfProgramIdentity ?? null,
       isWritable: false,
     },
+    subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
@@ -153,6 +167,7 @@ export function getCommitVrfCallbackInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("vrfProgramIdentity", accounts.vrfProgramIdentity),
+      getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
     ],
     data: getCommitVrfCallbackInstructionDataEncoder().encode(
@@ -162,6 +177,7 @@ export function getCommitVrfCallbackInstruction<
   } as CommitVrfCallbackInstruction<
     TProgramAddress,
     TAccountVrfProgramIdentity,
+    TAccountSubaccord,
     TAccountDispute
   >);
 }
@@ -173,7 +189,8 @@ export type ParsedCommitVrfCallbackInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     vrfProgramIdentity: TAccountMetas[0];
-    dispute: TAccountMetas[1];
+    subaccord: TAccountMetas[1];
+    dispute: TAccountMetas[2];
   };
   data: CommitVrfCallbackInstructionData;
 };
@@ -186,12 +203,12 @@ export function parseCommitVrfCallbackInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCommitVrfCallbackInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 2) {
+  if (instruction.accounts.length < 3) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 2,
+        expectedAccountMetas: 3,
       },
     );
   }
@@ -205,6 +222,7 @@ export function parseCommitVrfCallbackInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       vrfProgramIdentity: getNextAccount(),
+      subaccord: getNextAccount(),
       dispute: getNextAccount(),
     },
     data: getCommitVrfCallbackInstructionDataDecoder().decode(instruction.data),

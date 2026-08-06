@@ -45,17 +45,28 @@ pub struct Subaccord {
     /// (amount ≥ min_stake, distinctness) is verified at `draw` against the
     /// finalized Merkle Snapshot.
     pub staker_count: u32,
+    /// On-chain stake accumulator root (ADR-0012). Maintained incrementally on
+    /// every `stake`/`unstake` via client-supplied Merkle paths; canonical by
+    /// construction — there is no posted root to withhold or fabricate.
+    pub root_hash: [u8; 32],
+    /// Total stake committed to by the accumulator tree (= root node sum).
+    pub total_stake: u64,
+    /// Next free leaf index in the append-only tree. Incremented once per
+    /// first-time staker; never reused (full unstake zeros the leaf weight but
+    /// keeps its `tree_index`).
+    pub next_index: u32,
+    /// Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`.
+    pub depth: u8,
     pub bump: u8,
 }
 
 /// A Juror's staked capital in a Subaccord. `unstake` reverts while
 /// `active_draws > 0` (ADR-0003: stake frozen until every drawn dispute settles).
 ///
-/// `last_change_slot` is the Solana slot of the most recent `stake`/`unstake`.
-/// It is the anchor-slot witness (ADR-0008): if `last_change_slot <
-/// Snapshot.anchor_slot`, the current `amount` equals the anchor-time amount,
-/// making the live account its own historical stake witness — no ring buffer
-/// or epoch snapshot needed.
+/// `tree_index` (ADR-0012) is the leaf position in the Subaccord's accumulator
+/// tree, assigned once at first stake and never changed. A full unstake zeros
+/// the leaf's selection weight but keeps the index, so re-staking is a local
+/// update (O(log N)).
 ///
 /// Seeds: `["stake", subaccord, juror]`.
 #[account]
@@ -66,7 +77,45 @@ pub struct JurorStake {
     pub amount: u64,
     pub active_draws: u32, // disputes this juror is currently drawn into
     pub bump: u8,
-    pub last_change_slot: u64, // ADR-0008: anchor-slot watermark
+    /// Leaf position in the Subaccord accumulator (assigned at first stake).
+    pub tree_index: u32,
+    /// Net slash(-)/reward(+) accumulated from settlements. Written by
+    /// `settle_round_accounts` instead of mutating `amount` — keeps the
+    /// accumulator root canonical. Folded into `amount` by the permissionless
+    /// `reconcile_stake` crank (which updates the root via a Merkle proof).
+    pub settlement_delta: i64,
+    /// Pending slash exposure from all active draws. Incremented by
+    /// `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
+    /// by settlement or cancel. Ensures the juror can always cover every
+    /// concurrent slash. `amount - slash_reserve` is the truly free stake.
+    pub slash_reserve: u64,
+    /// Timestamp of `request_withdraw` (0 = no pending request). The
+    /// accumulator root is already updated at request time; `withdraw` just
+    /// transfers tokens after `WITHDRAWAL_DELAY` + `active_draws == 0`.
+    pub withdraw_requested_at: i64,
+    /// Tokens locked in the vault pending `withdraw`. Set at `request_withdraw`,
+    /// consumed at `withdraw`.
+    pub pending_withdrawal: u64,
+}
+
+/// Economics-relevant Subaccord params **frozen at `create_dispute` time**
+/// (CONCEPT-REVIEW Ugly 6 / bean accord-4e7p). Every post-filing instruction
+/// (`post_snapshot`, `draw`, `finalize_dispute`, `appeal`) reads this frozen
+/// copy, never the live `Subaccord`. The 48h timelock (ADR-0005) then governs
+/// only FUTURE disputes; an active case is immune to governance changes for
+/// its entire life. This is the arbitration-contract principle: parties cannot
+/// consent to a process whose economically load-bearing rules may shift
+/// ex-post.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub struct CaseTerms {
+    pub alpha_bps: u16,
+    pub min_stake: u64,
+    pub fee_per_juror: u64,
+    pub jurors_per_dispute: u32,
+    pub review_window: u64,
+    pub commit_window: u64,
+    pub reveal_window: u64,
+    pub max_appeals: u8,
 }
 
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
@@ -84,6 +133,10 @@ pub struct Dispute {
     pub evidence_hash: [u8; 32],          // ADR-0006: on-chain evidence commitment
     pub state: DisputeState,
     pub current_round: u32,
+    /// Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
+    /// for the dispute's life; governance changes via ADR-0005 affect only
+    /// disputes filed after the change lands.
+    pub terms: CaseTerms,
     /// Winning option index once `state == Final`; `u8::MAX` until then.
     /// Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
     /// `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
@@ -98,6 +151,19 @@ pub struct Dispute {
     /// committed; `Some(vrf_result)` after. The draw reads this; the caller
     /// cannot swap it between retries.
     pub committed_vrf: Option<[u8; 32]>,
+    /// Accumulator root frozen atomically when the VRF lands in
+    /// `commit_vrf_callback` (ADR-0012). All `draw_seat` calls for every round
+    /// of this dispute select against this one root (per-seat coherence +
+    /// manipulation resistance). `[0;32]` until frozen; readable once
+    /// `committed_vrf.is_some()`.
+    pub frozen_root: [u8; 32],
+    /// Total stake captured with `frozen_root` at freeze time. Drives
+    /// sortition (`r_i % frozen_total_stake`).
+    pub frozen_total_stake: u64,
+    /// Unix timestamp at `create_dispute` (Ugly 4). Drives the pre-draw
+    /// `cancel_dispute` timeout: if the dispute has not been drawn within
+    /// `PRE_DRAW_CANCEL_TIMEOUT_SECS`, any cranker may cancel + refund the filer.
+    pub filed_at: i64,
     pub bump: u8,
 }
 
@@ -137,54 +203,40 @@ pub struct Round {
     pub commits: [[u8; 32]; MAX_JURORS],
     /// Revealed vote option index per drawn Juror; `u8::MAX` until revealed.
     pub reveals: [u8; MAX_JURORS],
-    pub _pad1: [u8; 5], // total = multiple of 8 (max alignment = i64)
-}
-
-/// A committed Merkle root over the Subaccord's Juror set + cumulative stakes,
-/// posted optimistically and protected by a 1-day fraud-proof window
-/// (ADR-0003). `anchor_slot` freezes the juror set at `post_snapshot` time
-/// (ADR-0008): all fraud predicates compare against state as of this slot, not
-/// current chain state.
-///
-/// Seeds: `["snapshot", dispute, round_idx]`.
-#[account]
-#[derive(InitSpace)]
-pub struct Snapshot {
-    pub dispute: Pubkey,
-    pub round_idx: u32,
-    pub merkle_root: [u8; 32],
-    pub poster: Pubkey,
-    /// Bond = 1x the dispute's max-appeal fee (forfeited if the root is fraud).
-    pub bond: u64,
-    /// Unix timestamp after which an unchallenged root is final.
-    pub challenge_deadline: i64,
-    pub status: SnapshotStatus,
-    pub bump: u8,
-    /// Slot at which the snapshot was posted (ADR-0008 anchor-slot pattern).
-    /// `JurorStake.last_change_slot < anchor_slot` certifies the live amount
-    /// equals the anchor-time amount — the witness for omission and wrong-stake
-    /// fraud predicates.
-    pub anchor_slot: u64,
-    /// MST root sum: the total stake committed to by the snapshot tree
-    /// (ADR-0009). Used for sortition: `r_i % total_stake` selects a juror.
-    pub total_stake: u64,
+    /// Whether this round's coherence settlement has been applied
+    /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+    /// `finalize_dispute` (final round) or `settle_round` (prior rounds)
+    /// processes it; 1 after. Idempotency guard against double-settlement.
+    /// (`u8` not `bool` — `bool` is not `Pod`.)
+    pub settled: u8,
+    pub _pad1: [u8; 4], // align seat_prefix to 8
+    /// Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
+    /// when the seat lands; later seats read these to verify that every prior
+    /// sortition retry genuinely collided with an already-drawn juror —
+    /// eliminating caller choice (no draw_attempt grind).
+    pub seat_prefix: [u64; MAX_JURORS],
+    /// Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
+    /// range `[prefix, prefix+stake)` used for deterministic collision checks.
+    pub seat_stake: [u64; MAX_JURORS], // total = multiple of 8
 }
 
 /// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per
 /// appeal, created by `appeal`, settled by `finalize_dispute` (forfeit on
 /// no-flip) / `claim_appeal_refund` (return on flip). Storing the appeal state
-/// here — rather than on `Dispute` — keeps the `Dispute` account small (a
-/// larger `Dispute` trips an anchor-litesvm CPI edge case in `finalize_snapshot`).
+/// here — rather than on `Dispute` — keeps the `Dispute` account small.
 ///
 /// Seeds: `["bond", dispute, round_idx]` where `round_idx` is the round the
 /// appeal opens (the larger panel).
 ///
 /// `prior_result` is the winning option of the round the appellant sought to
 /// flip (the just-resolved `current_round` at appeal time). Flip detection at
-/// final settlement is `final_ruling != prior_result`. A no-flip bond is zeroed
-/// (`amount = 0`) by `finalize_dispute` as it folds the tokens into the coherent
-/// pool; a flipped bond keeps its `amount` until `claim_appeal_refund` returns
-/// it and zeroes the record (idempotent).
+/// final settlement is `final_ruling != prior_result`. `amount` stores the
+/// **total deposit** (fee + bond); the fee portion is derived at settlement as
+/// `panel_size_for_round(terms, round_idx) * fee_per_juror`. A no-flip bond is
+/// zeroed (`amount = 0`) by `finalize_dispute` as it folds the bond portion
+/// into the coherent pool; a flipped bond keeps its `amount` until
+/// `claim_appeal_refund` returns the bond portion (Final) or the full amount
+/// (Failed/cancel) and zeroes the record (idempotent).
 #[account]
 #[derive(InitSpace)]
 pub struct AppealBond {
@@ -233,10 +285,14 @@ pub struct PauseState {
 
 /// Dispute lifecycle (SPEC state machine). A permissionless crank advances
 /// states when their windows elapse.
+///
+/// `Failed` is the liveness-escape terminal state (CONCEPT-REVIEW Ugly 4 /
+/// bean accord-18fb): `cancel_dispute` transitions a stalled dispute here,
+/// refunds the filer's round-1 fee, and releases the current round's
+/// `active_draws`. It is terminal — no lifecycle instruction accepts it.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum DisputeState {
     Created,
-    SnapshotPosted, // within 1-day challenge window
     Drawn,
     Review,
     Commit,
@@ -244,14 +300,7 @@ pub enum DisputeState {
     RoundResolved, // round tallied; appeal window or finalization
     Final,         // final ruling set
     Closed,        // fully settled
-}
-
-/// Snapshot fraud-proof status (ADR-0003).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
-pub enum SnapshotStatus {
-    Posted,    // challenge window open
-    Finalized, // window passed unchallenged — drawable
-    Voided,    // fraud proven — root no longer usable
+    Failed,        // liveness-escape terminal (cancel_dispute)
 }
 
 /// Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are
@@ -270,24 +319,25 @@ pub enum UpdatePayload {
     EvidenceOperator(Pubkey),
 }
 
-// --- Draw (ADR-0003/0009; veridao-fr1x/veridao-4nyi) ------------------------
+// --- Draw (ADR-0012 accumulator; veridao-fr1x/veridao-4nyi) ------------------
 
-/// Merkle-Sum Tree proof element (ADR-0009). Each level of the proof carries
-/// the sibling's hash AND the sibling's stake sum, allowing the chain to verify
-/// both structural integrity (hash) and cumulative-range consistency (sum)
-/// along the root path.
+/// Merkle-Sum Tree proof element (ADR-0012 subtree-sum form). Each level of the
+/// proof carries the sibling subtree's hash AND its stake sum. Sums are bound
+/// into every node hash, so stake-weighted ranges are cryptographically
+/// authenticated (CONCEPT-REVIEW Bad 5 fixed by construction).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct MSTNode {
     pub sibling_hash: [u8; 32],
     pub sibling_sum: u64,
 }
 
-/// A drawn Juror's MST membership proof: the leaf claim (with cumulative stake),
-/// the sibling nodes rootward, and the leaf's position in the tree. The on-chain
-/// `draw` verifies each proof against the finalized snapshot root hash + total
-/// stake, checks the sortition criterion (`cum_before ≤ r_i < cum_after`),
-/// enforces the inflation guard (`JurorStake.amount ≥ leaf.stake`), and
-/// enforces distinctness.
+/// A drawn Juror's MST membership proof against the dispute's `frozen_root`:
+/// the leaf claim `(juror, stake)`, the sibling nodes rootward, and the leaf's
+/// position in the tree. The on-chain `draw_seat` verifies the proof against
+/// the frozen root, reconstructs the cumulative-from-left prefix from the
+/// authenticated sibling sums, enforces the sortition criterion
+/// (`prefix ≤ r_i < prefix + stake`), and the inflation guard
+/// (`JurorStake.amount ≥ leaf.stake`).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
 pub struct JurorMembership {
     pub leaf: LeafClaim,
@@ -295,78 +345,13 @@ pub struct JurorMembership {
     pub index: u32,
 }
 
-// --- Snapshot fraud proof (ADR-0003; veridao-rrxs) ---------------------------
-
-/// A single leaf claim from the posted Merkle-Sum tree (ADR-0009). The leaf
-/// is hashed as `H(juror || stake_le || cum_after_le)`. `cum_after` is the
-/// running stake total up to and including this leaf (in pubkey-sorted order),
-/// enabling the on-chain sortition check: `cum_before ≤ r_i < cum_after` where
-/// `cum_before = cum_after - stake`.
+/// A single leaf of the subtree-sum accumulator (ADR-0012). The leaf is hashed
+/// as `H(juror || stake_le)`. The cumulative-from-left prefix used for
+/// sortition is reconstructed on-chain from the authenticated sibling sums
+/// along the proof path (no `cum_after` carried on the leaf — the subtree-sum
+/// form makes it derivable, unlike ADR-0009's O(N) cumulative form).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LeafClaim {
     pub juror: Pubkey,
     pub stake: u64,
-    pub cum_after: u64,
-}
-
-/// Fraud proof for `challenge_snapshot` (ADR-0003 + ADR-0008 + ADR-0009).
-/// Tagged union covering all five on-chain-verifiable fraud classes:
-///
-/// - `Duplicate` (pred 1): two leaves with the same juror pubkey.
-/// - `WrongStake` (pred 3): a leaf whose `stake` differs from the juror's
-///   actual anchor-time stake. Requires `JurorStake.last_change_slot <
-///   anchor_slot` as the witness.
-/// - `NotSorted` (pred 5): two leaves at indices i < j where
-///   `leaf[i].juror > leaf[j].juror` — proves the tree is not sorted by pubkey,
-///   which breaks omission proofs. Forces sorted trees.
-/// - `Omission` (pred 2): two adjacent sorted leaves bracketing the challenger's
-///   pubkey + the challenger's JurorStake showing `last_change_slot <
-///   anchor_slot` and `amount > 0` — proves the snapshot omitted a staked juror.
-///
-/// Inflation (pred 4, leaf overstates stake) is enforced at `draw` time via
-/// `JurorStake.amount >= leaf.stake`, which is race-immune.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
-pub enum FraudProof {
-    /// Two leaves at different indices with the same juror pubkey, both
-    /// verifying against the snapshot root.
-    Duplicate {
-        leaf_a: LeafClaim,
-        proof_a: Vec<MSTNode>,
-        index_a: u32,
-        leaf_b: LeafClaim,
-        proof_b: Vec<MSTNode>,
-        index_b: u32,
-    },
-    /// A leaf whose `stake` field doesn't match the juror's actual stake at
-    /// the anchor slot. The challenger passes the juror's `JurorStake` as
-    /// `remaining_accounts[0]`.
-    WrongStake {
-        leaf: LeafClaim,
-        proof: Vec<MSTNode>,
-        index: u32,
-    },
-    /// Two leaves at indices `index_lo < index_hi` where
-    /// `leaf_lo.juror > leaf_hi.juror` — proves the tree is not sorted by
-    /// pubkey ascending, which breaks omission proofs.
-    NotSorted {
-        leaf_lo: LeafClaim,
-        proof_lo: Vec<MSTNode>,
-        index_lo: u32,
-        leaf_hi: LeafClaim,
-        proof_hi: Vec<MSTNode>,
-        index_hi: u32,
-    },
-    /// Two adjacent leaves (consecutive indices) where
-    /// `leaf_lo.juror < challenger.key() < leaf_hi.juror` — proves the
-    /// challenger is not in the tree. Combined with the challenger's
-    /// `JurorStake` (`remaining_accounts[0]`) showing `last_change_slot <
-    /// anchor_slot` and `amount > 0`, proves the snapshot omitted a staked juror.
-    Omission {
-        leaf_lo: LeafClaim,
-        proof_lo: Vec<MSTNode>,
-        index_lo: u32,
-        leaf_hi: LeafClaim,
-        proof_hi: Vec<MSTNode>,
-        index_hi: u32,
-    },
 }

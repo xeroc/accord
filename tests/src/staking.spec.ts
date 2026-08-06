@@ -1,24 +1,27 @@
 // staking.spec.ts — Juror capital stake / unstake against Surfpool (port of
-// programs/accord/tests/stake_litesvm.rs).
+// programs/accord/tests/stake_litesvm.rs), ADR-0012 accumulator paths.
 //
-// Coverage (per the assignment):
+// Coverage:
 //  - happy stake  : SPL-transfer into the vault + JurorStake.amount credited
-//  - happy unstake: full unstake drains JurorStake.amount to 0
+//                   + the on-chain accumulator root updated via the client path
+//  - happy unstake: full unstake drains JurorStake.amount to 0 (path-verified)
 //  - invalid amount (0) revert (SDK `InvalidAmount` guard, mirrors on-chain)
 //  - over-balance unstake reverts on-chain (InsufficientBalance)
 //  - canUnstake active_draws>0 guard (pure unit cases + on-chain StakeLocked)
 //
-// Multi-signer note: the SDK adapter pins `juror = accord.signer`, so each
-// juror gets its own `new Accord({ endpoint, signer: jurorKp })` facade; the
-// built instruction carries the juror signer, and `env.sendIx` signs with both
-// the fee payer + the juror (Kit `signTransactionMessageWithSigners` signs every
-// signer referenced by the message). The juror — not the fee payer — funds the
-// `init_if_needed` rent for JurorStake + the vault ATA (lib.rs:1728-1752), so it
-// is airdropped SOL up front via the shared `fundSigner`.
+// ADR-0012: every stake/unstake carries a Merkle membership `path` the program
+// re-verifies against the live Subaccord root, then recomputes the new root. A
+// shared off-chain TreeTracker mirrors the on-chain tree so each test can mint a
+// valid path for the juror's leaf index.
 //
-// Singleton note: PauseState is a program-wide singleton; `initializePause` is
-// only sent when it does not already exist on this Surfnet, so the suite is
-// re-runnable within one session and coexists with the sibling dispute spec.
+// Multi-signer: the SDK adapter pins `juror = accord.signer`, so each juror
+// gets its own `new Accord({ endpoint, signer: jurorKp })` facade; the juror
+// (not the fee payer) funds JurorStake + vault-ATA rent, so it is airdropped
+// SOL up front via fundSigner.
+//
+// Singleton: PauseState is a program-wide singleton; initializePause is only
+// sent when it does not already exist, so the suite is re-runnable and
+// coexists with sibling specs.
 import {
   Accord,
   stake,
@@ -27,18 +30,29 @@ import {
   initializePause,
   createSubaccord,
   getJurorStakeDecoder,
+  getSubaccordDecoder,
+  buildAccumulator,
+  proofFor,
+  emptyRoot,
   type StakingAccounts,
   type JurorStakeView,
+  type MerkleAccumulator,
+  type MSTNode,
 } from "@accord/sdk";
 import {
   getProgramDerivedAddress,
   getAddressEncoder,
+  getAddressDecoder,
   type Address,
 } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
 import { setAccountRaw } from "./setup/cheats.js";
-import { createMint, setTokenBalance, TOKEN_PROGRAM_ID } from "./setup/tokens.js";
+import {
+  createMint,
+  setTokenBalance,
+  TOKEN_PROGRAM_ID,
+} from "./setup/tokens.js";
 import { defaultSubaccordArgs } from "./setup/fixtures.js";
 import { fetchDecoded } from "./setup/assertions.js";
 
@@ -53,6 +67,7 @@ const FEE_PER_JUROR = 1_000_000n;
 const MIN_STAKE = 1_000n;
 const STAKE_FUND = 10_000n; // juror ATA balance before staking
 const STAKE_AMT = 5_000n;
+const DEPTH = 4;
 
 /** Derive the canonical ATA for (mint, owner) the way the program does. */
 async function ata(mint: Address, owner: Address): Promise<Address> {
@@ -86,6 +101,69 @@ async function jurorStakePda(
   return addr;
 }
 
+function addrBytes(a: Address): Uint8Array {
+  return new Uint8Array(getAddressEncoder().encode(a));
+}
+
+/**
+ * Off-chain accumulator mirror. Tracks every staked leaf so each test can mint
+ * a valid Merkle `path` for the juror's index against the live on-chain root.
+ * Same reference indexers use (SDK `buildAccumulator` + `proofFor`).
+ *
+ * Index accounting: `nextIndex` advances ONLY inside {@link setLeaf}, so a test
+ * that arms a juror but throws before staking (e.g. the InvalidAmount case) does
+ * not leave a hole in the leaf array — which would desync every later path.
+ */
+class TreeTracker {
+  tree!: MerkleAccumulator;
+  depth: number;
+  nextIndex = 0;
+
+  constructor(depth: number) {
+    this.depth = depth;
+  }
+
+  async init() {
+    this.tree = await buildAccumulator([], this.depth);
+    return this;
+  }
+
+  /** Path for the NEXT leaf to be staked (the upcoming stake's proof). */
+  pathForNext(): Promise<MSTNode[]> {
+    return proofFor(this.tree, this.nextIndex);
+  }
+
+  /** Path for an already-staked leaf (used by unstake/mutation at a known index). */
+  pathFor(index: number): Promise<MSTNode[]> {
+    return proofFor(this.tree, index);
+  }
+
+  /**
+   * Append a freshly-staked juror at `nextIndex`; rebuild; return the index.
+   * Advancing `nextIndex` HERE (not in armJuror) keeps the leaf array hole-free
+   * when a stake is bypassed client-side.
+   */
+  async setLeaf(juror: Address, amount: bigint): Promise<number> {
+    const index = this.nextIndex;
+    const leaves = [...this.tree.leaves];
+    leaves[index] = { juror: addrBytes(juror), stake: amount };
+    this.tree = await buildAccumulator(leaves, this.depth);
+    this.nextIndex++;
+    return index;
+  }
+
+  /** Rewrite an existing leaf (e.g. unstake reduces a stake); rebuild. */
+  async updateLeaf(index: number, juror: Address, amount: bigint) {
+    const leaves = [...this.tree.leaves];
+    leaves[index] = { juror: addrBytes(juror), stake: amount };
+    this.tree = await buildAccumulator(leaves, this.depth);
+  }
+
+  get rootHash(): Uint8Array {
+    return this.tree.rootHash;
+  }
+}
+
 /** Read an SPL token account amount (u64 LE @ offset 64). */
 async function readTokenAmount(
   env: TestEnv,
@@ -105,13 +183,14 @@ describe("e2e: staking (requires Surfpool)", () => {
   let subaccord!: Address;
   let vault!: Address;
   let pauseState!: Address;
+  let tree!: TreeTracker;
 
   beforeAll(async () => {
     env = await createTestEnv();
     if (!env.up) return;
 
-    // 1) Pause singleton (idempotent: skip init if it already exists on this
-    //    Surfnet — stake reverts while paused, so it must be present + unpaused).
+    // 1) Pause singleton (idempotent: skip init if it already exists — stake
+    //    reverts while paused, so it must be present + unpaused).
     const pause = await initializePause(
       env.accord.adapter,
       env.programId,
@@ -126,11 +205,11 @@ describe("e2e: staking (requires Surfpool)", () => {
     // 2) Fresh staking-token mint.
     mint = (await createMint(env, 6)).mint;
 
-    // 3) A Subaccord over `mint`. feePerJuror is irrelevant to staking but set
-    //    to a non-zero default to mirror the dispute spec's economics.
+    // 3) A Subaccord over `mint`.
     const args = defaultSubaccordArgs(mint, env.payer.address, {
       feePerJuror: FEE_PER_JUROR,
       minStake: MIN_STAKE,
+      depth: DEPTH,
     });
     const sub = await createSubaccord(
       env.accord.adapter,
@@ -141,12 +220,16 @@ describe("e2e: staking (requires Surfpool)", () => {
     subaccord = sub.subaccord;
     await env.sendIx(sub.instruction);
 
-    // 4) Vault ATA = associated(mint, subaccordPda) — derived the same way the
-    //    program / LiteSVM `vault_ata()` does. Lazily created on first stake.
     vault = await ata(mint, subaccord);
+    tree = await new TreeTracker(DEPTH).init();
+
+    // Sanity: on-chain root == empty-tree root.
+    const onChain = await fetchDecoded(env, subaccord, getSubaccordDecoder());
+    expect(new Uint8Array(onChain!.rootHash)).toEqual(await emptyRoot(DEPTH));
   }, 120_000);
 
-  /** Fresh funded juror + its staking ATA + a per-juror Accord facade. */
+  /** Fresh funded juror + its staking ATA + a per-juror Accord facade. The
+   *  accumulator leaf index is claimed inside the test on successful stake. */
   async function armJuror() {
     const juror = await fundSigner(env);
     await setTokenBalance(env, juror.address, mint, STAKE_FUND);
@@ -172,12 +255,18 @@ describe("e2e: staking (requires Surfpool)", () => {
   /** Decode the JurorStake at `pda` (account exists post-stake). */
   const readStake = (pda: Address) =>
     fetchDecoded(env, pda, getJurorStakeDecoder());
+  const readSubaccord = () =>
+    fetchDecoded(env, subaccord, getSubaccordDecoder());
 
   it("happy stake moves tokens into the vault + credits JurorStake.amount", async () => {
     if (!env.up) return;
-    const { jurorStake, accounts, facade } = await armJuror();
+    const { juror, jurorStake, accounts, facade } = await armJuror();
 
-    await env.sendIx(stake(facade.adapter, env.programId, accounts, STAKE_AMT));
+    const path = await tree.pathForNext();
+    await env.sendIx(
+      stake(facade.adapter, env.programId, accounts, STAKE_AMT, path),
+    );
+    const index = await tree.setLeaf(juror.address, STAKE_AMT);
 
     // vault gained the stake; juror ATA lost it.
     expect(await readTokenAmount(env, vault)).toBe(STAKE_AMT);
@@ -192,60 +281,82 @@ describe("e2e: staking (requires Surfpool)", () => {
     expect(js!.juror).toBe(accounts.juror);
     expect(js!.activeDraws).toBe(0);
     expect(js!.bump).toBeGreaterThan(0);
+
+    // On-chain accumulator root matches the off-chain rebuild.
+    const onChain = await readSubaccord();
+    expect(new Uint8Array(onChain!.rootHash)).toEqual(tree.rootHash);
+    void index;
   }, 60_000);
 
   it("happy unstake drains the full stake (amount → 0)", async () => {
     if (!env.up) return;
-    const { jurorStake, jurorAta, accounts, facade } = await armJuror();
+    const { juror, jurorStake, jurorAta, accounts, facade } = await armJuror();
 
-    await env.sendIx(stake(facade.adapter, env.programId, accounts, STAKE_AMT));
+    const stakePath = await tree.pathForNext();
+    await env.sendIx(
+      stake(facade.adapter, env.programId, accounts, STAKE_AMT, stakePath),
+    );
+    const index = await tree.setLeaf(juror.address, STAKE_AMT);
     let js = await readStake(jurorStake);
     expect(js!.amount).toBe(STAKE_AMT);
 
-    // Full unstake. The facade's `unstake` would fetch JurorStake via the broken
-    // typed fetcher, so pass a pre-fetched JurorStakeView to skip the fetch.
+    // Full unstake with a fresh path against the current tree.
     const view: JurorStakeView = {
       juror: js!.juror,
       amount: js!.amount,
       activeDraws: js!.activeDraws,
     };
+    const unstakePath = await tree.pathFor(index);
     const ix = await unstake(
       facade.adapter,
       env.programId,
       accounts,
       STAKE_AMT,
+      unstakePath,
       view,
     );
     await env.sendIx(ix);
+    await tree.updateLeaf(index, juror.address, 0n);
 
     js = await readStake(jurorStake);
     expect(js!.amount).toBe(0n);
     // capital returned to the juror ATA
     expect(await readTokenAmount(env, jurorAta)).toBe(STAKE_FUND);
+
+    const onChain = await readSubaccord();
+    expect(new Uint8Array(onChain!.rootHash)).toEqual(tree.rootHash);
   }, 60_000);
 
   it("stake with amount 0 is rejected (InvalidAmount)", async () => {
     if (!env.up) return;
     const { accounts, facade } = await armJuror();
-    // The SDK surfaces the on-chain `InvalidAmount` require as a typed client
-    // guard before building the instruction (lib.rs:208).
-    expect(() => stake(facade.adapter, env.programId, accounts, 0n)).toThrow(
-      /InvalidAmount/,
-    );
+    const path = await tree.pathForNext();
+    // SDK surfaces the on-chain `InvalidAmount` require as a typed client guard
+    // before building the instruction. No stake ⇒ nextIndex unchanged (no hole).
+    expect(() =>
+      stake(facade.adapter, env.programId, accounts, 0n, path),
+    ).toThrow(/InvalidAmount/);
   }, 60_000);
 
   it("unstake over balance reverts on-chain (InsufficientBalance)", async () => {
     if (!env.up) return;
-    const { jurorStake, accounts, facade } = await armJuror();
-    await env.sendIx(stake(facade.adapter, env.programId, accounts, STAKE_AMT));
+    const { juror, jurorStake, accounts, facade } = await armJuror();
+    const stakePath = await tree.pathForNext();
+    await env.sendIx(
+      stake(facade.adapter, env.programId, accounts, STAKE_AMT, stakePath),
+    );
+    const index = await tree.setLeaf(juror.address, STAKE_AMT);
     expect((await readStake(jurorStake))!.amount).toBe(STAKE_AMT);
 
     // Bypass the facade's `assertCanUnstake` pre-check to exercise the on-chain
-    // `InsufficientBalance` require (lib.rs:276-278).
+    // `InsufficientBalance` require, but with a VALID path so the path-verify
+    // gate passes first.
+    const path = await tree.pathFor(index);
     const ix = facade.adapter.buildUnstake({
       programId: env.programId,
       accounts,
       amount: STAKE_AMT + 1n,
+      path,
     });
     await expect(env.sendIx(ix)).rejects.toThrow();
 
@@ -255,8 +366,12 @@ describe("e2e: staking (requires Surfpool)", () => {
 
   it("unstake while active_draws>0 reverts on-chain (StakeLocked)", async () => {
     if (!env.up) return;
-    const { jurorStake, accounts, facade } = await armJuror();
-    await env.sendIx(stake(facade.adapter, env.programId, accounts, STAKE_AMT));
+    const { juror, jurorStake, accounts, facade } = await armJuror();
+    const stakePath = await tree.pathForNext();
+    await env.sendIx(
+      stake(facade.adapter, env.programId, accounts, STAKE_AMT, stakePath),
+    );
+    const index = await tree.setLeaf(juror.address, STAKE_AMT);
 
     // Simulate the juror being drawn into a live dispute by mutating
     // `active_draws` directly on the JurorStake PDA (the LiteSVM test does the
@@ -273,18 +388,22 @@ describe("e2e: staking (requires Surfpool)", () => {
       owner: env.programId,
     });
 
-    // Bypass the facade's StakeLocked pre-check → on-chain require fires.
+    // VALID path + amount ⇒ on-chain StakeLocked require fires (active_draws>0).
+    const path = await tree.pathFor(index);
     const ix = facade.adapter.buildUnstake({
       programId: env.programId,
       accounts,
       amount: STAKE_AMT,
+      path,
     });
     await expect(env.sendIx(ix)).rejects.toThrow();
   }, 60_000);
 });
 
 describe("canUnstake guard (pure, no chain)", () => {
-  const view = (over: Partial<{ amount: bigint; activeDraws: number }> = {}) => ({
+  const view = (
+    over: Partial<{ amount: bigint; activeDraws: number }> = {},
+  ) => ({
     juror: "11111111111111111111111111111111" as Address,
     amount: 1_000n,
     activeDraws: 0,
@@ -292,7 +411,10 @@ describe("canUnstake guard (pure, no chain)", () => {
   });
 
   it("rejects a zero / negative amount (InvalidAmount)", () => {
-    expect(canUnstake(view(), 0n)).toEqual({ ok: false, reason: "InvalidAmount" });
+    expect(canUnstake(view(), 0n)).toEqual({
+      ok: false,
+      reason: "InvalidAmount",
+    });
   });
 
   it("rejects while the juror is drawn into a live dispute (StakeLocked)", () => {

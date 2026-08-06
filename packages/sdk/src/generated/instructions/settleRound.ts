@@ -10,8 +10,6 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getArrayDecoder,
-  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -24,9 +22,9 @@ import {
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type Codec,
-  type Decoder,
-  type Encoder,
+  type FixedSizeCodec,
+  type FixedSizeDecoder,
+  type FixedSizeEncoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -38,33 +36,29 @@ import {
 } from "@solana/kit";
 import {
   getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
+import { findRoundPda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
-import {
-  getJurorMembershipDecoder,
-  getJurorMembershipEncoder,
-  type JurorMembership,
-  type JurorMembershipArgs,
-} from "../types";
 
-export const DRAW_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
-  61, 40, 62, 184, 31, 176, 24, 130,
+export const SETTLE_ROUND_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  40, 101, 18, 1, 31, 129, 52, 77,
 ]);
 
-export function getDrawDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(DRAW_DISCRIMINATOR);
+export function getSettleRoundDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(
+    SETTLE_ROUND_DISCRIMINATOR,
+  );
 }
 
-export type DrawInstruction<
+export type SettleRoundInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
-  TAccountSnapshot extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -78,105 +72,84 @@ export type DrawInstruction<
         ? ReadonlyAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
-        ? WritableAccount<TAccountDispute>
+        ? ReadonlyAccount<TAccountDispute>
         : TAccountDispute,
-      TAccountSnapshot extends string
-        ? ReadonlyAccount<TAccountSnapshot>
-        : TAccountSnapshot,
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
-      TAccountSystemProgram extends string
-        ? ReadonlyAccount<TAccountSystemProgram>
-        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type DrawInstructionData = {
+export type SettleRoundInstructionData = {
   discriminator: ReadonlyUint8Array;
-  drawAttempt: number;
-  memberships: Array<JurorMembership>;
+  roundIdx: number;
 };
 
-export type DrawInstructionDataArgs = {
-  drawAttempt: number;
-  memberships: Array<JurorMembershipArgs>;
-};
+export type SettleRoundInstructionDataArgs = { roundIdx: number };
 
-export function getDrawInstructionDataEncoder(): Encoder<DrawInstructionDataArgs> {
+export function getSettleRoundInstructionDataEncoder(): FixedSizeEncoder<SettleRoundInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["drawAttempt", getU32Encoder()],
-      ["memberships", getArrayEncoder(getJurorMembershipEncoder())],
+      ["roundIdx", getU32Encoder()],
     ]),
-    (value) => ({ ...value, discriminator: DRAW_DISCRIMINATOR }),
+    (value) => ({ ...value, discriminator: SETTLE_ROUND_DISCRIMINATOR }),
   );
 }
 
-export function getDrawInstructionDataDecoder(): Decoder<DrawInstructionData> {
+export function getSettleRoundInstructionDataDecoder(): FixedSizeDecoder<SettleRoundInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["drawAttempt", getU32Decoder()],
-    ["memberships", getArrayDecoder(getJurorMembershipDecoder())],
+    ["roundIdx", getU32Decoder()],
   ]);
 }
 
-export function getDrawInstructionDataCodec(): Codec<
-  DrawInstructionDataArgs,
-  DrawInstructionData
+export function getSettleRoundInstructionDataCodec(): FixedSizeCodec<
+  SettleRoundInstructionDataArgs,
+  SettleRoundInstructionData
 > {
   return combineCodec(
-    getDrawInstructionDataEncoder(),
-    getDrawInstructionDataDecoder(),
+    getSettleRoundInstructionDataEncoder(),
+    getSettleRoundInstructionDataDecoder(),
   );
 }
 
-export type DrawInput<
+export type SettleRoundAsyncInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountSnapshot extends string = string,
   TAccountRound extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  snapshot: Address<TAccountSnapshot>;
-  round: Address<TAccountRound>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  drawAttempt: DrawInstructionDataArgs["drawAttempt"];
-  memberships: DrawInstructionDataArgs["memberships"];
+  round?: Address<TAccountRound>;
+  roundIdx: SettleRoundInstructionDataArgs["roundIdx"];
 };
 
-export function getDrawInstruction<
+export async function getSettleRoundInstructionAsync<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountSnapshot extends string,
   TAccountRound extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: DrawInput<
+  input: SettleRoundAsyncInput<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
-    TAccountRound,
-    TAccountSystemProgram
+    TAccountRound
   >,
   config?: { programAddress?: TProgramAddress },
-): DrawInstruction<
-  TProgramAddress,
-  TAccountCaller,
-  TAccountSubaccord,
-  TAccountDispute,
-  TAccountSnapshot,
-  TAccountRound,
-  TAccountSystemProgram
+): Promise<
+  SettleRoundInstruction<
+    TProgramAddress,
+    TAccountCaller,
+    TAccountSubaccord,
+    TAccountDispute,
+    TAccountRound
+  >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -185,10 +158,8 @@ export function getDrawInstruction<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
-    dispute: { value: input.dispute ?? null, isWritable: true },
-    snapshot: { value: input.snapshot ?? null, isWritable: false },
+    dispute: { value: input.dispute ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -199,9 +170,14 @@ export function getDrawInstruction<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
+  if (!accounts.round.value) {
+    accounts.round.value = await findRoundPda({
+      dispute: getAddressFromResolvedInstructionAccount(
+        "dispute",
+        accounts.dispute.value,
+      ),
+      roundIdx: getNonNullResolvedInstructionInput("roundIdx", args.roundIdx),
+    });
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
@@ -210,26 +186,95 @@ export function getDrawInstruction<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("snapshot", accounts.snapshot),
       getAccountMeta("round", accounts.round),
-      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getDrawInstructionDataEncoder().encode(
-      args as DrawInstructionDataArgs,
+    data: getSettleRoundInstructionDataEncoder().encode(
+      args as SettleRoundInstructionDataArgs,
     ),
     programAddress,
-  } as DrawInstruction<
+  } as SettleRoundInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
-    TAccountRound,
-    TAccountSystemProgram
+    TAccountRound
   >);
 }
 
-export type ParsedDrawInstruction<
+export type SettleRoundInput<
+  TAccountCaller extends string = string,
+  TAccountSubaccord extends string = string,
+  TAccountDispute extends string = string,
+  TAccountRound extends string = string,
+> = {
+  caller: TransactionSigner<TAccountCaller>;
+  subaccord: Address<TAccountSubaccord>;
+  dispute: Address<TAccountDispute>;
+  round: Address<TAccountRound>;
+  roundIdx: SettleRoundInstructionDataArgs["roundIdx"];
+};
+
+export function getSettleRoundInstruction<
+  TAccountCaller extends string,
+  TAccountSubaccord extends string,
+  TAccountDispute extends string,
+  TAccountRound extends string,
+  TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
+>(
+  input: SettleRoundInput<
+    TAccountCaller,
+    TAccountSubaccord,
+    TAccountDispute,
+    TAccountRound
+  >,
+  config?: { programAddress?: TProgramAddress },
+): SettleRoundInstruction<
+  TProgramAddress,
+  TAccountCaller,
+  TAccountSubaccord,
+  TAccountDispute,
+  TAccountRound
+> {
+  // Program address.
+  const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    caller: { value: input.caller ?? null, isWritable: true },
+    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    dispute: { value: input.dispute ?? null, isWritable: false },
+    round: { value: input.round ?? null, isWritable: true },
+  };
+  const accounts = originalAccounts as Record<
+    keyof typeof originalAccounts,
+    ResolvedInstructionAccount
+  >;
+
+  // Original args.
+  const args = { ...input };
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
+  return Object.freeze({
+    accounts: [
+      getAccountMeta("caller", accounts.caller),
+      getAccountMeta("subaccord", accounts.subaccord),
+      getAccountMeta("dispute", accounts.dispute),
+      getAccountMeta("round", accounts.round),
+    ],
+    data: getSettleRoundInstructionDataEncoder().encode(
+      args as SettleRoundInstructionDataArgs,
+    ),
+    programAddress,
+  } as SettleRoundInstruction<
+    TProgramAddress,
+    TAccountCaller,
+    TAccountSubaccord,
+    TAccountDispute,
+    TAccountRound
+  >);
+}
+
+export type ParsedSettleRoundInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
@@ -238,27 +283,25 @@ export type ParsedDrawInstruction<
     caller: TAccountMetas[0];
     subaccord: TAccountMetas[1];
     dispute: TAccountMetas[2];
-    snapshot: TAccountMetas[3];
-    round: TAccountMetas[4];
-    systemProgram: TAccountMetas[5];
+    round: TAccountMetas[3];
   };
-  data: DrawInstructionData;
+  data: SettleRoundInstructionData;
 };
 
-export function parseDrawInstruction<
+export function parseSettleRoundInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedDrawInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+): ParsedSettleRoundInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 4) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 6,
+        expectedAccountMetas: 4,
       },
     );
   }
@@ -274,10 +317,8 @@ export function parseDrawInstruction<
       caller: getNextAccount(),
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
-      snapshot: getNextAccount(),
       round: getNextAccount(),
-      systemProgram: getNextAccount(),
     },
-    data: getDrawInstructionDataDecoder().decode(instruction.data),
+    data: getSettleRoundInstructionDataDecoder().decode(instruction.data),
   };
 }

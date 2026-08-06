@@ -1,21 +1,13 @@
-// full-lifecycle.spec.ts — M5: the crown. Drives the entire Accord dispute
-// state machine once, end-to-end, against Surfpool:
+// full-lifecycle.spec.ts — the crown. Drives the entire Accord dispute state
+// machine once, end-to-end, against Surfpool:
 //
-//   create_subaccord → stake 3 → create_dispute → buildMst → post_snapshot →
-//   finalize_snapshot → injectCommittedVrf → resolvePanel → draw →
+//   create_subaccord → stake 3 (accumulator paths) → create_dispute →
+//   injectCommittedVrf (freezes root) → resolveSeat × 3 → draw_seat × 3 →
 //   commit all → reveal all → finalize_round → (no appeal) warp appeal window →
 //   finalize_dispute
 //
-// Asserts the final ruling equals the revealed-vote plurality and that
-// getRuling() returns it. Each juror signs its own commit/reveal via a per-juror
-// Accord facade (env.sendIx collects payer + juror signers). Requires Surfpool
-//
-// RESOLVED: an earlier `finalize_dispute` `AccountDidNotSerialize` (#3004) —
-// `Dispute::INIT_SPACE` under-counted `Option<u8>` by 1 (1185 alloc vs 1186
-// serialize-Some) — was fixed by changing `final_ruling: Option<u8>` → `u8`
-// u8::MAX sentinel (state.rs + lib.rs + SDK regen; matches Round). The full
-// pipeline (staking/dispute/snapshot/voting/draw + the final ruling write) is
-// now exercised end-to-end and GREEN.
+// Asserts the final ruling equals the revealed-vote plurality. Each juror signs
+// its own commit/reveal via a per-juror Accord facade.
 import {
   APPEAL_WINDOW_SECS,
   commit,
@@ -41,10 +33,12 @@ import {
   type JurorCtx,
 } from "./draw-harness.js";
 
-/** DisputeState numeric tags (generated/types/disputeState.ts). */
-const DRAWN = 2;
-const ROUND_RESOLVED = 6;
-const FINAL = 7;
+/** DisputeState numeric tags (state.rs — ADR-0012 dropped SnapshotPosted, so
+ * the tags shifted: Created=0, Drawn=1, Review=2, Commit=3, Reveal=4,
+ * RoundResolved=5, Final=6, Closed=7, Failed=8). */
+const DRAWN = 1;
+const ROUND_RESOLVED = 5;
+const FINAL = 6;
 
 describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
   let env: TestEnv;
@@ -68,22 +62,15 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
     // fixed nonce would collide with disputes from sibling specs (draw.spec
     // uses 1/2) or this spec's own prior runs on the same Surfnet. Random keeps
     // it green in isolation, on re-run, and under the unified `make test_surfpool`.
-    const disputeNonce = crypto.getRandomValues(new Uint8Array(8)).reduce(
-      (acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)),
-      0n,
-    );
+    const disputeNonce = crypto
+      .getRandomValues(new Uint8Array(8))
+      .reduce((acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)), 0n);
     const armed = await armDispute(fx, disputeNonce);
 
-    // --- resolvePanel → draw (caller = payer, permissionless crank) ---
-    const { drawAttempt, memberships } = await resolveDistinctPanel(fx, armed);
+    // --- resolveDistinctPanel → draw_seat × N (caller = payer, permissionless) ---
+    const memberships = await resolveDistinctPanel(fx, armed);
     const jurorStakeAccounts = jurorStakeAccountsFor(fx, memberships);
-    const roundPda = await submitDraw(
-      fx,
-      armed,
-      drawAttempt,
-      memberships,
-      jurorStakeAccounts,
-    );
+    const roundPda = await submitDraw(fx, armed, memberships);
     expect(await readDisputeState(env, armed.dispute)).toBe(DRAWN);
 
     // Map each drawn membership back to its staked juror (membership order ≠
@@ -131,6 +118,9 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
           subaccord: fx.subaccord,
           dispute: armed.dispute,
           round: roundPda,
+          stakingToken: fx.mint,
+          jurorTokenAccount: drawnJurors[i]!.jurorAta,
+          vault: fx.vault,
         },
         { vote: votes[i]!, salt: salts[i]! },
       );

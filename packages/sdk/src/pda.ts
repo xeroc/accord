@@ -4,13 +4,15 @@
  * Seeds sourced from `programs/accord/src/state.rs` + `constants.rs`:
  *   SEED_SUBACCORD = "subaccord"   SEED_DISPUTE = "dispute"
  *   SEED_JUROR_STAKE = "stake"     SEED_ROUND = "round"
- *   SEED_SNAPSHOT = "snapshot"     SEED_PENDING_UPDATE = "update"
- *   SEED_APPEAL_BOND = "bond"      SEED_PAUSE = "pause"
+ *   SEED_PENDING_UPDATE = "update" SEED_APPEAL_BOND = "bond"
+ *   SEED_PAUSE = "pause"
  *
- * Six of eight PDAs are emitted by Codama into `./generated/pdas/` and
- * re-exported here unchanged. `Round` and `Snapshot` are hand-written because
- * their on-chain seeds reference `dispute.key()` (a runtime address, not a
- * static field) — Codama cannot encode that statically, so it omits them.
+ * Five of seven PDAs are emitted by Codama into `./generated/pdas/` and
+ * re-exported here unchanged. `Round` is hand-written because its on-chain seeds
+ * reference `dispute.key()` (a runtime address, not a static field) — Codama
+ * cannot encode that statically, so it omits it.
+ *
+ * ADR-0012: the `Snapshot` PDA is gone (snapshot layer deleted).
  *
  * Every function returns `ProgramDerivedAddress` = `{ address: Address; bump: number }`.
  *
@@ -29,9 +31,9 @@ import {
 // --- Program identity -------------------------------------------------------
 
 export const ACCORD_PROGRAM_ID =
-  "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe" as Address<"RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe">;
+  "9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b" as Address<"9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b">;
 
-// --- Re-exported generated PDA helpers (6/8) ---------------------------------
+// --- Re-exported generated PDA helpers (5/7) ---------------------------------
 
 export {
   findAppealBondPda,
@@ -52,20 +54,14 @@ export {
   type SubaccordSeeds,
 } from "./generated/pdas/subaccord";
 
-// --- Hand-written PDA helpers (2/8) -----------------------------------------
-// Round + Snapshot: seeds use `dispute.key()` (the account address), which
-// Codama can't statically encode. Same encoding pattern as AppealBond:
+// --- Hand-written PDA helper (1/7) ------------------------------------------
+// Round: seeds use `dispute.key()` (the account address), which Codama can't
+// statically encode. Same encoding pattern as AppealBond:
 // [seed_bytes, dispute_address, u32_le(round_idx)].
 
 const ROUND_SEED = new Uint8Array([114, 111, 117, 110, 100]); // b"round"
-const SNAPSHOT_SEED = new Uint8Array([115, 110, 97, 112, 115, 104, 111, 116]); // b"snapshot"
 
 export type RoundSeeds = {
-  dispute: Address;
-  roundIdx: number;
-};
-
-export type SnapshotSeeds = {
   dispute: Address;
   roundIdx: number;
 };
@@ -79,21 +75,6 @@ export async function findRoundPda(
     programAddress,
     seeds: [
       getBytesEncoder().encode(ROUND_SEED),
-      getAddressEncoder().encode(seeds.dispute),
-      getU32Encoder().encode(seeds.roundIdx),
-    ],
-  });
-}
-
-export async function findSnapshotPda(
-  seeds: SnapshotSeeds,
-  config: { programAddress?: Address } = {},
-): Promise<ProgramDerivedAddress> {
-  const { programAddress = ACCORD_PROGRAM_ID } = config;
-  return await getProgramDerivedAddress({
-    programAddress,
-    seeds: [
-      getBytesEncoder().encode(SNAPSHOT_SEED),
       getAddressEncoder().encode(seeds.dispute),
       getU32Encoder().encode(seeds.roundIdx),
     ],

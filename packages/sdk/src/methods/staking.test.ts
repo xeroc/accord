@@ -8,8 +8,15 @@ import {
   assertValidAmount,
   canUnstake,
   jurorStakeSeeds,
+  reconcileStake,
+  requestWithdraw,
+  stake as buildStakeIx,
+  type AccordStakingClient,
   type JurorStakeView,
+  type StakingAccounts,
 } from "./staking.ts";
+import { buildAccumulator, proofFor, type MSTNode } from "./mst.ts";
+import type { Instruction } from "@solana/kit";
 
 const stake = (over: Partial<JurorStakeView>): JurorStakeView => ({
   juror: "11111111111111111111111111111111" as never,
@@ -85,4 +92,57 @@ test("jurorStakeSeeds: [b'stake', subaccord[32], juror[32]]", () => {
     /InvalidSubaccord/,
   );
   assert.throws(() => jurorStakeSeeds(sub, new Uint8Array(33)), /InvalidJuror/);
+});
+
+// --- REVIEW #13: depth-0 Subaccords use an empty (canonical) accumulator proof -
+
+/** A recording seam: captures the path each builder was called with. */
+function recordingClient(): {
+  seen: Record<string, MSTNode[]>;
+  client: AccordStakingClient;
+} {
+  const seen: Record<string, MSTNode[]> = {};
+  const I = {} as Instruction;
+  return {
+    seen,
+    client: {
+      buildStake: (i) => ((seen.stake = i.path), I),
+      buildRequestWithdraw: (i) => ((seen.requestWithdraw = i.path), I),
+      buildWithdraw: () => I,
+      buildReconcileStake: (i) => ((seen.reconcile = i.path), I),
+      fetchJurorStake: async () => null,
+    },
+  };
+}
+
+const ACCOUNTS: StakingAccounts = {
+  juror: "J".repeat(44) as never,
+  subaccord: "S".repeat(44) as never,
+  jurorStake: "JS".repeat(22) as never,
+  stakingToken: "T".repeat(44) as never,
+  jurorTokenAccount: "JT".repeat(22) as never,
+  vault: "V".repeat(44) as never,
+};
+const PROGRAM = "P".repeat(44) as never;
+
+test("depth-0 accumulator: proofFor yields the canonical empty path (REVIEW #13)", async () => {
+  const tree = await buildAccumulator(
+    [{ juror: new Uint8Array(32).fill(7), stake: 1_000n }],
+    0,
+  );
+  assert.equal(tree.depth, 0);
+  assert.equal(tree.leaves.length, 1);
+  const path = await proofFor(tree, 0);
+  assert.deepEqual(path, [], "depth-0 proof must be the empty path");
+});
+
+test("stake/requestWithdraw/reconcileStake accept an empty path (REVIEW #13)", () => {
+  const { seen, client } = recordingClient();
+  // Previously these threw "InvalidPath" on []. Depth-0 Subaccords need [].
+  buildStakeIx(client, PROGRAM, ACCOUNTS, 1_000n, []);
+  requestWithdraw(client, PROGRAM, ACCOUNTS, 1_000n, []);
+  reconcileStake(client, PROGRAM, ACCOUNTS, []);
+  assert.deepEqual(seen.stake, []);
+  assert.deepEqual(seen.requestWithdraw, []);
+  assert.deepEqual(seen.reconcile, []);
 });

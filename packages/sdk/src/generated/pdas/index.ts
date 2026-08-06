@@ -12,4 +12,5 @@ export * from "./jurorStake";
 export * from "./pauseState";
 export * from "./pendingUpdate";
 export * from "./programIdentity";
+export * from "./round";
 export * from "./subaccord";

@@ -14,6 +14,9 @@ import {
   pendingUpdateSeeds,
   subaccordSeeds,
 } from "../../dist/methods/lifecycle.js";
+// Imports through dist/types.js — the public re-export surface. Guards REVIEW #12
+// (DisputeState must be a value export, not type-only) at the line that broke.
+import { DisputeState } from "../../dist/types.js";
 
 const ZERO32 = new Uint8Array(32);
 const RISK = new Uint8Array(32).fill(0xab);
@@ -79,4 +82,12 @@ test("canExecuteAt: slot >= execute_after_slot", () => {
   assert.equal(canExecuteAt(100n, 100n), true);
   assert.equal(canExecuteAt(100n, 101n), true);
   assert.equal(canExecuteAt(100n, 99n), false);
+});
+
+test("DisputeState is a runtime enum via the public root (REVIEW #12)", () => {
+  // Regression: types.ts once re-exported it `type`-only, erasing the value and
+  // breaking `dispute.state === DisputeState.Failed`. Must stay a value export.
+  assert.equal(DisputeState.Created, 0);
+  assert.equal(DisputeState.Drawn, 1);
+  assert.equal(DisputeState.Failed, 8);
 });

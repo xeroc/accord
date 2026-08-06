@@ -2,11 +2,19 @@
 
 > **Mechanize the verdict.**
 
-Accord is a general-purpose, **Schelling-point arbitration primitive on
-Solana** — the "Kleros of Solana." Any Solana program (the _Arbitrable_) files a
-subjective Dispute via two CPI calls; the Accord draws stake-weighted Jurors
-(VRF), collects commit-reveal votes, and emits a Ruling governed by
-game-theoretic incentives instead of trusted humans.
+Accord is a general-purpose, **capital-weighted Schelling arbitration oracle on
+Solana** — an on-chain dispute-resolution primitive inspired by Kleros. Any
+Solana program (the _Arbitrable_) files a subjective Dispute via two CPI calls;
+the Accord draws stake-weighted Jurors (VRF), collects commit-reveal votes, and
+emits a Ruling governed by game-theoretic incentives (an honest-stake-majority
+assumption) instead of a hired-judge committee.
+
+> [!IMPORTANT] > **Accord is an arbitration oracle, not a self-enforcing decentralized court.**
+> Several roles hold privileged or concentrated power (Subaccord authority,
+> upgrade multisig, VRF provider, indexer, cranker, large stakeholders, evidence
+> operator). The honest [Trust Profile](apps/docs/docs/security/trust-profile.md)
+> states every residual assumption and the security-value ceiling. Read it before
+> securing real value. This is pre-mainnet, unaudited software.
 
 It is a **standalone, reusable product**: the Accord has no knowledge of the
 filing program's domain. Dispute resolution becomes composable infrastructure.
@@ -19,9 +27,11 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 
 ## Key Features
 
-- **Schelling Point = honesty.** Jurors converge on the truthful answer because
-  voting coherently with the majority is the profitable strategy. No central
-  authority picks judges.
+- **Schelling Point = honesty (honest-majority-stake assumed).** Jurors converge
+  on the truthful answer because voting coherently with the majority is the
+  profitable strategy. No central judge is picked — but see the
+  [Trust Profile](apps/docs/docs/security/trust-profile.md): Schelling honesty
+  holds conditional on an honest stake majority.
 - **Party-agnostic Arbitrable interface.** Integrate with two CPI calls:
   `create_dispute()` → `get_ruling()`. The Accord never learns your domain.
 - **Permissionless Subaccords.** Specialized Juror pools (automotive,
@@ -30,15 +40,17 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 - **Per-Subaccord staking token.** Each pool picks the SPL token Jurors stake
   (USDC by default). Stake is the anti-sybil mechanism _and_ the
   coherence-slashing substrate.
-- **Verifiable sortition.** Stake-weighted Juror draw over a bonded
-  Merkle-Sum-Tree snapshot, seeded by committed VRF — manipulation-resistant and
-  fraud-proofable on-chain (ADR-0008/0009).
+- **Verifiable sortition.** Stake-weighted Juror draw over a **live on-chain
+  stake accumulator** (a Merkle-Sum Tree maintained on every `stake`/`unstake`),
+  seeded by a committed VRF. The root is canonical by construction — no posted
+  root, no bond, no challenge window — so the draw is manipulation-resistant by
+  mechanism, not by fraud-proof (ADR-0012; supersedes ADR-0003/0008/0009).
 - **Commit-reveal + exponential appeals.** Secret votes prevent vote-copying so
   the Schelling Point forms independently; each appeal doubles the panel + 1
-  (3 → 7 → 15 → 31), making bribery prohibitively expensive.
+  (3 → 7 → 15 → 31), making bribery more expensive (deterred, not impossible —
+  see the security-value ceiling).
 
-> [!IMPORTANT]
-> **Project status.** The on-chain program (`programs/accord`) implements the
+> [!IMPORTANT] > **Project status.** The on-chain program (`programs/accord`) implements the
 > full v1 instruction set with a LiteSVM unit-test per instruction. The
 > TypeScript SDK (`packages/sdk`) and the jest/ Surfpool integration suite
 > (`tests/`) are scaffolded and under active development (Codama codegen —
@@ -93,8 +105,7 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 - **Solana CLI** + **Anchor** — installed automatically by `make prep` (below)
 - **Poetry** (only for the docs site) — `curl -sSL https://install.python-poetry.dev | python3 -`
 
-> [!TIP]
-> `make prep` installs Solana `3.1.10` (via `solana-install`) and Anchor
+> [!TIP] > `make prep` installs Solana `3.1.10` (via `solana-install`) and Anchor
 > `1.0.2` (via `avm`) for you — you do not need to pin them manually.
 
 ## Getting Started
@@ -186,10 +197,10 @@ See [Testing](#testing) for the two-harness philosophy.
 ├── apps/
 │   └── docs/                   # MkDocs Material docs site (domain TBD)
 │       ├── docs/
-│       │   ├── adr/            # Architecture Decision Records (0001–0010)
+│       │   ├── adr/            # Architecture Decision Records (0001–0012)
 │       │   ├── integration/    # Arbitrable integration guide
 │       │   ├── reference/      # Accounts, instructions, state machine, errors
-│       │   └── security/       # Fraud proofs, sortition/VRF, circuit breaker
+│       │   └── security/       # Accumulator trust, sortition/VRF, circuit breaker
 │       └── mkdocs.yml
 ├── formal_verification/        # Lean / qedgen harness
 ├── CONTEXT.md                  # Domain language (ubiquitous-language glossary)
@@ -215,14 +226,12 @@ The dispute lifecycle is a state machine advanced by **permissionless cranks**
 ```mermaid
 stateDiagram-v2
     [*] --> Created: create_dispute (Arbitrable CPI)
-    Created --> SnapshotPosted: post_snapshot (bonded root)
-    SnapshotPosted --> Drawable: finalize_snapshot (challenge window passes)
-    Drawable --> Drawn: draw (VRF-seeded sortition)
+    Created --> Drawn: request_vrf → commit_vrf_callback (freezes root) → draw_seat × N
     Drawn --> Committed: commit (hash(vote, salt, juror))
     Committed --> Revealed: reveal ({vote, salt})
     Revealed --> RoundResolved: finalize_round (tally)
     RoundResolved --> Final: finalize_dispute (no appeal / max reached)
-    RoundResolved --> Drawn: appeal → new round (2N+1 jurors)
+    RoundResolved --> Drawn: appeal → new round (2N+1 jurors, same frozen root)
     Final --> [*]: get_ruling (lazy read by Arbitrable)
 ```
 
@@ -234,36 +243,43 @@ Every account stores its canonical `bump` so handlers reuse the same PDA
 without re-deriving. Large accounts (`Round`) are `#[zero_copy]` (`AccountLoader`)
 to fit BPF's stack.
 
-| Account         | Seeds                               | Purpose                                                            |
-| --------------- | ----------------------------------- | ------------------------------------------------------------------ |
-| `Subaccord`     | `["subaccord", creator, risk_type]` | A specialized Juror pool: staking token, windows, alpha, authority |
-| `JurorStake`    | `["stake", subaccord, juror]`       | A Juror's staked capital + `active_draws` lock count               |
-| `Dispute`       | `["dispute", filer, nonce]`         | A case: options, evidence hash, state, `final_ruling`              |
-| `Round`         | `["round", dispute, round_idx]`     | Per-round jurors, commits, reveals, result (zero-copy)             |
-| `Snapshot`      | `["snapshot", dispute, round_idx]`  | Bonded Merkle-Sum-Tree root over the Juror set                     |
-| `AppealBond`    | `["bond", dispute, round_idx]`      | Custody record for one appeal bond                                 |
-| `PendingUpdate` | `["update", subaccord, nonce]`      | Timelocked Subaccord parameter update (48h)                        |
-| `PauseState`    | `["pause"]`                         | Singleton program-level circuit breaker                            |
-| token vaults    | Subaccord-PDA-owned SPL accounts    | Stake pool + fee pool                                              |
+| Account         | Seeds                               | Purpose                                                                                                                                                      |
+| --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Subaccord`     | `["subaccord", creator, risk_type]` | A specialized Juror pool: staking token, windows, alpha, authority. Holds the **stake accumulator root** (`root_hash`, `total_stake`, `next_index`, `depth`) |
+| `JurorStake`    | `["stake", subaccord, juror]`       | A Juror's staked capital + `active_draws` lock count + `tree_index` (leaf position, assigned at first stake)                                                 |
+| `Dispute`       | `["dispute", filer, nonce]`         | A case: options, evidence hash, state, `final_ruling`, `committed_vrf`, `frozen_root` (set at VRF-commit)                                                    |
+| `Round`         | `["round", dispute, round_idx]`     | Per-round jurors, commits, reveals, result (zero-copy)                                                                                                       |
+| `AppealBond`    | `["bond", dispute, round_idx]`      | Custody record for one appeal bond                                                                                                                           |
+| `PendingUpdate` | `["update", subaccord, nonce]`      | Timelocked Subaccord parameter update (48h)                                                                                                                  |
+| `PauseState`    | `["pause"]`                         | Singleton program-level circuit breaker                                                                                                                      |
+| token vaults    | Subaccord-PDA-owned SPL accounts    | Stake pool + fee pool                                                                                                                                        |
 
 ### Draw & Verifiable Sortition
 
-The draw is the security-critical path (ADR-0003, 0008, 0009):
+The draw is the security-critical path (ADR-0012; supersedes ADR-0003/0008/0009):
 
-1. **Snapshot.** An off-chain indexer posts a Merkle-Sum-Tree root over the
-   Subaccord's Juror set + cumulative stakes, bonded at `1 × max-appeal-fee`.
-   `anchor_slot` freezes the Juror set at post time so the draw is provably fair.
-2. **Challenge window (1 day).** Anyone can `challenge_snapshot` with a fraud
-   proof (duplicate leaf, wrong stake, omission, unsorted tree). A proven fraud
-   voids the root and pays the poster's bond to the challenger; a false
-   challenge pays the challenger's bond to the poster.
-3. **VRF.** `request_vrf` asks the VRF oracle for randomness; the oracle's
-   identity-signed `commit_vrf_callback` lands the result. Only the VRF program
-   can call the callback.
-4. **Draw.** A permissionless cranker submits the drawn Jurors' membership
-   proofs. The program verifies each proof against the finalized root, checks
-   the sortition criterion (`cum_before ≤ r_i < cum_after`), enforces the
-   inflation guard (`JurorStake.amount ≥ leaf.stake`), and enforces distinctness.
+1. **Live stake accumulator.** The Subaccord's Juror set + stake weights are kept
+   as an on-chain Merkle-Sum Tree **root** (`root_hash`, `total_stake`,
+   `next_index`, `depth`), maintained incrementally on every `stake`/`unstake`.
+   The caller supplies the juror's leaf path; the chain verifies it against the
+   stored root, reads the **live** `JurorStake.amount`, applies the verified vault
+   delta, and recomputes the root (O(log N)). The full tree lives off-chain
+   (indexers) but any auditor can rebuild the root from `JurorStake` via
+   `getProgramAccounts` and check it on-chain. The root is canonical by
+   construction — there is no posted root to withhold or fabricate.
+2. **VRF + frozen root.** `request_vrf` asks the VRF oracle for randomness; the
+   oracle's identity-signed `commit_vrf_callback` lands the result **and** freezes
+   `dispute.frozen_root = subaccord.root`. Freezing when randomness becomes known
+   (not at filing) keeps capital fully live until the draw and closes the
+   manipulation window. One VRF + one frozen root serve the whole dispute; appeals
+   draw a larger panel from the same fixed pool.
+3. **Per-seat draw.** A permissionless cranker submits each seat's membership
+   proof in its own `draw_seat` tx (the 1232-byte packet can't hold N proofs). The
+   program verifies each proof against `frozen_root`, checks the sortition
+   criterion (`prefix ≤ r_i < prefix + stake`, prefix derived from authenticated
+   sibling sums), enforces the inflation guard (`JurorStake.amount ≥ leaf.stake`),
+   and samples without replacement. No `draw_attempt` grind, no collision liveness
+   stall.
 
 ### Economics
 
@@ -411,8 +427,7 @@ Every feature/instruction follows **RED → GREEN → REFACTOR**. The failing te
 ships first; no exceptions. A milestone is `completed` only when all its leaf
 tests are green.
 
-> [!IMPORTANT]
-> **The `no-entrypoint` feature quirk.** The program's `entrypoint!` symbol
+> [!IMPORTANT] > **The `no-entrypoint` feature quirk.** The program's `entrypoint!` symbol
 > collides with a builtin when the crate is statically linked into the test
 > binary. Rust tests therefore build `accord` with `--features no-entrypoint`
 > (types only). The `.so` — built separately via `cargo build-sbf` /
@@ -568,6 +583,8 @@ pre-commit install
 
 - **Docs site:** [docs (domain TBD)](https://example.com/TBD) — Quickstart,
   Integration Guide, Protocol Reference, Security, ADRs
+- **[Trust Profile](apps/docs/docs/security/trust-profile.md)** — who holds
+  power, what's trusted, the security-value ceiling
 - **`CONTEXT.md`** — domain language / ubiquitous-language glossary
 - **`PROJECT.md`** — project rationale (the "why")
 - **`BRAND.md`** — brand model
@@ -581,7 +598,7 @@ pre-commit install
   - [0002](https://example.com/TBD/adr/0002) Per-Subaccord staking token, no
     Accord token in v1
   - [0003](https://example.com/TBD/adr/0003) Draw — Merkle snapshot,
-    off-chain sortition, distinct Jurors
+    off-chain sortition, distinct Jurors _(partially superseded by 0012)_
   - [0004](https://example.com/TBD/adr/0004) Party-agnostic; appeal is
     permissionless
   - [0005](https://example.com/TBD/adr/0005) Subaccord authority — pubkey,
@@ -591,11 +608,15 @@ pre-commit install
   - [0007](https://example.com/TBD/adr/0007) Upgrade authority — Squads
     multisig, then freeze
   - [0008](https://example.com/TBD/adr/0008) Snapshot trust hardening —
-    anchor-slot, fraud predicates, sortition
+    anchor-slot, fraud predicates, sortition _(partially superseded by 0012)_
   - [0009](https://example.com/TBD/adr/0009) Stake-weighted verifiable
-    sortition — MST, committed VRF
+    sortition — MST, committed VRF _(partially superseded by 0012)_
   - [0010](https://example.com/TBD/adr/0010) SDK — Codama codegen + Solana Kit
     facade
+  - [0011](apps/docs/docs/adr/0011-evidence-operator-daemon-offchain-service.md) Evidence Operator Daemon —
+    off-chain decrypt-re-encryption service
+  - [0012](apps/docs/docs/adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) On-chain stake
+    accumulator replaces the optimistic snapshot (current draw mechanism)
 
 ---
 

@@ -77,12 +77,9 @@ test("EnvKeyring: rejects a seed that decodes to the wrong length", () => {
   expect(() => EnvKeyring.fromEnv(tooLong)).toThrow(/32-byte/);
 });
 
-test("EnvKeyring: empty keyring has size 0 and resolves nothing", async () => {
-  const kr = EnvKeyring.fromEnv("");
-  expect(kr.size).toBe(0);
-  expect(
-    await kr.forOperator(ed25519.getPublicKey(crypto.getRandomValues(new Uint8Array(32)))),
-  ).toBeNull();
+test("EnvKeyring: empty keyring is rejected (REVIEW #14 — zero keys = misconfig)", async () => {
+  expect(() => EnvKeyring.fromEnv("")).toThrow(/at least one/);
+  expect(() => EnvKeyring.fromEnv(",,,")).toThrow(/at least one/);
 });
 
 // --- config ----------------------------------------------------------------
@@ -99,8 +96,8 @@ const FULL_ENV: Record<string, string> = {
 test("config: parses a full valid env", () => {
   const cfg = loadConfig(FULL_ENV);
   expect(cfg.rpcUrl).toBe("https://rpc.example");
-  expect(cfg.programId).toBe(FULL_ENV.EVIDENCE_PROGRAM_ID);
-  expect(cfg.keyring).toBe(FULL_ENV.EVIDENCE_KEYRING);
+  expect(cfg.programId).toBe(FULL_ENV.EVIDENCE_PROGRAM_ID!);
+  expect(cfg.keyring).toBe(FULL_ENV.EVIDENCE_KEYRING!);
   expect(cfg.s3.bucket).toBe("evidence");
   expect(cfg.s3.forcePathStyle).toBe(false);
   expect(cfg.port).toBe(443);

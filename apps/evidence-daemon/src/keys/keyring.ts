@@ -49,6 +49,9 @@ export class EnvKeyring implements Keyring {
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
+    if (secrets.length === 0) {
+      throw new Error("EVIDENCE_KEYRING must contain at least one non-empty base58 Ed25519 secret");
+    }
     for (const entry of secrets) {
       const seed = bs58.decode(entry); // throws on invalid base58
       if (seed.length !== 32) {

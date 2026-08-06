@@ -1,11 +1,11 @@
 ---
 # accord-hh61
 title: Pause must not consume appeal deadlines — split pause scope (CONCEPT-REVIEW Ugly 2)
-status: todo
+status: completed
 type: task
 priority: high
 created_at: 2026-08-05T15:25:46Z
-updated_at: 2026-08-05T15:26:11Z
+updated_at: 2026-08-05T16:40:00Z
 parent: accord-ukqg
 ---
 
@@ -43,4 +43,45 @@ cleaner and matches the "contain new exposure" intent of ADR-0007.
 ## References
 
 CONCEPT-REVIEW §Ugly 2; ADR-0007; `lib.rs:86-135`, `lib.rs:1187-1200`,
-`lib.rs:1374-1401`; bean veridao-63v3. Amends ADR-0007.
+`lib.rs:1374-1401`; bean veridao-63v3. Amends ADR-0007 (via new ADR-0013, per
+the repo's immutable-ADR convention).
+
+## Summary of Changes
+
+**Code (`programs/accord/src/lib.rs`):**
+
+- Removed `require!(!pause_state.paused, ProgramPaused)` from `appeal`. Only
+  `create_dispute` and `stake` remain pausable (new exposure). `finalize_dispute`
+  already had no pause gate; it stays that way. `unstake` was already never
+  paused — the split makes that the rule for the whole adjudication path.
+- Updated the circuit-breaker module comment + the `appeal` doc comment to state
+  the split scope and the principle "pausing must not select an adjudicative
+  outcome."
+- `pause_state` is retained in the `Appeal` accounts struct for IDL/SDK
+  stability but is no longer consulted; flagged with a `ponytail:` comment for
+  removal in a coordinated IDL revision (pair with `accord-r6ti`).
+
+**Tests (`programs/accord/tests/appeal_litesvm.rs`):**
+
+- `appeal_succeeds_while_paused` — pauses mid-dispute inside the appeal window,
+  asserts `appeal` succeeds (would revert before this change ⇒ RED→GREEN).
+- `finalize_dispute_proceeds_while_paused` — pauses after the appeal window
+  closes, asserts `finalize_dispute` lands the dispute in `Final`.
+- The "create_dispute + stake still revert while paused" criterion is already
+  covered by `create_dispute_litesvm.rs` and `stake_litesvm.rs` (unchanged).
+- Fixed one stale pre-existing assertion in `flip_returns_bond_to_appellant`
+  (`final_ruling, Some(1)` → `final_ruling, 1`) to unblock compilation after
+  `final_ruling` became `u8`. Note: the same `final_ruling` Option→u8 migration
+  leaves stale `None`/`Some(0)` assertions in `create_dispute_litesvm.rs` and
+  `voting_litesvm.rs` — those belong to `accord-r6ti` (settlement, which owns
+  the type change and its unset-sentinel decision) and are out of scope here.
+
+**Docs:**
+
+- New ADR-0013 (Accepted) documents the split-scope decision + the rejected
+  freeze-the-clock alternative. Added to the ADR index. ADR-0007 is left
+  immutable per `apps/docs/docs/adr/index.md`; ADR-0013 amends it.
+
+**Verification:** `appeal_litesvm` (10 tests) + `pause_litesvm` (4 tests) GREEN
+via `cargo test --features no-entrypoint`. All acceptance criteria met; the
+censors-appeal scenario is no longer reachable.

@@ -21,6 +21,7 @@
  *   - JurorStake struct + seeds: programs/accord/src/state.rs (60-70)
  */
 import type { Address, Instruction } from "@solana/kit";
+import type { MSTNode } from "./mst.js";
 
 /** JurorStake PDA seed prefix (state.rs: SEED_JUROR_STAKE = b"stake"). */
 const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
@@ -103,9 +104,8 @@ export async function findJurorStakePda(
   subaccord: Address,
   juror: Address,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } = await import(
-    "@solana/kit"
-  );
+  const { getAddressEncoder, getProgramDerivedAddress } =
+    await import("@solana/kit");
   const enc = getAddressEncoder();
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -134,51 +134,108 @@ export interface StakingAccounts {
 /**
  * Seam to the Codama-generated Kit client + JurorStake fetcher. Foundation
  * wires the concrete adapter; staking.ts stays orchestration-only.
+ *
+ * ADR-0012: `stake`/`unstake` take a client-supplied accumulator `path`
+ * (sibling hash + sum per level). The chain verifies it against the stored
+ * root and recomputes a new canonical root — O(log N). A wrong path reverts;
+ * build it via `proofFor(tree, jurorIndex)` from `./mst.js`.
  */
 export interface AccordStakingClient {
   buildStake(input: {
     programId: Address;
     accounts: StakingAccounts;
     amount: bigint;
+    path: MSTNode[];
   }): Instruction;
-  buildUnstake(input: {
+  buildRequestWithdraw(input: {
     programId: Address;
     accounts: StakingAccounts;
     amount: bigint;
+    path: MSTNode[];
+  }): Instruction;
+  buildWithdraw(input: {
+    programId: Address;
+    accounts: StakingAccounts;
+  }): Instruction;
+  buildReconcileStake(input: {
+    programId: Address;
+    accounts: StakingAccounts;
+    path: MSTNode[];
   }): Instruction;
   /** Fetch the decoded JurorStake fields the guard needs. */
   fetchJurorStake(jurorStake: Address): Promise<JurorStakeView | null>;
 }
 
-/** Build `stake` (lib.rs:206). SPL-transfers `amount` into the vault. */
+/** Build `stake` (lib.rs). SPL-transfers `amount` into the vault. */
 export function stake(
   client: AccordStakingClient,
   programId: Address,
   accounts: StakingAccounts,
   amount: bigint,
+  path: MSTNode[],
 ): Instruction {
   assertValidAmount(amount);
-  return client.buildStake({ programId, accounts, amount });
+  // An empty `path` is the canonical proof for a depth-0 Subaccord (single
+  // leaf = root). The on-chain verifier authenticates the path against the
+  // stored root + depth; do not reject it here (REVIEW #13).
+  return client.buildStake({ programId, accounts, amount, path });
 }
 
 /**
- * Build `unstake` (lib.rs:270). Pre-checks the live `JurorStake` via the seam
- * fetcher and rejects BEFORE building the tx if `active_draws > 0` (or amount
- * is invalid / exceeds balance) — matches the on-chain `StakeLocked` revert.
- *
- * Pass the fetched `JurorStakeView` to avoid an extra fetch, or omit it to let
- * the facade fetch by PDA.
+ * Build `request_withdraw` (lib.rs:346) — phase 1 of the two-phase withdraw
+ * (REVIEW #5). Ledger-only: subtracts `amount` from `JurorStake.amount`, banks
+ * it in `pending_withdrawal`, and recomputes the accumulator root. No tokens
+ * move; no `active_draws` gate (the lock is enforced at `withdraw`). Allowed
+ * while paused. `path` is the juror's accumulator proof (ADR-0012).
  */
-export async function unstake(
+export function requestWithdraw(
   client: AccordStakingClient,
   programId: Address,
   accounts: StakingAccounts,
   amount: bigint,
-  stakeView?: JurorStakeView,
-): Promise<Instruction> {
+  path: MSTNode[],
+): Instruction {
   assertValidAmount(amount);
-  const view = stakeView ?? (await client.fetchJurorStake(accounts.jurorStake));
-  if (!view) throw new Error(`JurorStakeNotFound: ${accounts.jurorStake}`);
-  assertCanUnstake(view, amount);
-  return client.buildUnstake({ programId, accounts, amount });
+  // Empty `path` is valid for depth-0 Subaccords (REVIEW #13).
+  return client.buildRequestWithdraw({ programId, accounts, amount, path });
+}
+
+/**
+ * Build `withdraw` (lib.rs:407) — phase 2 of the two-phase withdraw. Moves the
+ * banked `pending_withdrawal` from the vault to the juror's ATA. On-chain gates:
+ * `WITHDRAWAL_DELAY` elapsed since `request_withdraw` AND `active_draws == 0`.
+ * No args — reads `pending_withdrawal` from `JurorStake`.
+ */
+export function withdraw(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: StakingAccounts,
+): Instruction {
+  if (
+    !accounts.stakingToken ||
+    !accounts.jurorTokenAccount ||
+    !accounts.vault
+  ) {
+    throw new Error(
+      "InvalidWithdrawAccounts: withdraw requires stakingToken, jurorTokenAccount, vault",
+    );
+  }
+  return client.buildWithdraw({ programId, accounts });
+}
+
+/**
+ * Build `reconcile_stake` (lib.rs:460) — permissionless crank (REVIEW #4) that
+ * folds a juror's `settlement_delta` into their canonical `amount` and updates
+ * the accumulator root via a Merkle proof. After reconcile, the ledger and the
+ * accumulator agree again. No tokens move; any caller may trigger it. `path` is
+ * the juror's accumulator proof (ADR-0012).
+ */
+export function reconcileStake(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: StakingAccounts,
+  path: MSTNode[],
+): Instruction {
+  // Empty `path` is valid for depth-0 Subaccords (REVIEW #13).
+  return client.buildReconcileStake({ programId, accounts, path });
 }

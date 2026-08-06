@@ -16,8 +16,6 @@ import {
   getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -43,166 +41,136 @@ import {
 } from "@solana/kit/program-client-core";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
-export const POST_SNAPSHOT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
-  44, 200, 134, 75, 104, 188, 11, 73,
+export const CANCEL_DISPUTE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  23, 155, 220, 94, 76, 141, 231, 124,
 ]);
 
-export function getPostSnapshotDiscriminatorBytes(): ReadonlyUint8Array {
+export function getCancelDisputeDiscriminatorBytes(): ReadonlyUint8Array {
   return fixEncoderSize(getBytesEncoder(), 8).encode(
-    POST_SNAPSHOT_DISCRIMINATOR,
+    CANCEL_DISPUTE_DISCRIMINATOR,
   );
 }
 
-export type PostSnapshotInstruction<
+export type CancelDisputeInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
-  TAccountPoster extends string | AccountMeta<string> = string,
+  TAccountCaller extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
-  TAccountSnapshot extends string | AccountMeta<string> = string,
   TAccountStakingToken extends string | AccountMeta<string> = string,
-  TAccountPosterTokenAccount extends string | AccountMeta<string> = string,
+  TAccountFilerTokenAccount extends string | AccountMeta<string> = string,
   TAccountVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountPoster extends string
-        ? WritableSignerAccount<TAccountPoster> &
-            AccountSignerMeta<TAccountPoster>
-        : TAccountPoster,
+      TAccountCaller extends string
+        ? WritableSignerAccount<TAccountCaller> &
+            AccountSignerMeta<TAccountCaller>
+        : TAccountCaller,
       TAccountSubaccord extends string
         ? ReadonlyAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
-      TAccountSnapshot extends string
-        ? WritableAccount<TAccountSnapshot>
-        : TAccountSnapshot,
       TAccountStakingToken extends string
         ? ReadonlyAccount<TAccountStakingToken>
         : TAccountStakingToken,
-      TAccountPosterTokenAccount extends string
-        ? WritableAccount<TAccountPosterTokenAccount>
-        : TAccountPosterTokenAccount,
+      TAccountFilerTokenAccount extends string
+        ? WritableAccount<TAccountFilerTokenAccount>
+        : TAccountFilerTokenAccount,
       TAccountVault extends string
         ? WritableAccount<TAccountVault>
         : TAccountVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
-      TAccountSystemProgram extends string
-        ? ReadonlyAccount<TAccountSystemProgram>
-        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type PostSnapshotInstructionData = {
+export type CancelDisputeInstructionData = {
   discriminator: ReadonlyUint8Array;
-  merkleRoot: ReadonlyUint8Array;
-  totalStake: bigint;
 };
 
-export type PostSnapshotInstructionDataArgs = {
-  merkleRoot: ReadonlyUint8Array;
-  totalStake: number | bigint;
-};
+export type CancelDisputeInstructionDataArgs = {};
 
-export function getPostSnapshotInstructionDataEncoder(): FixedSizeEncoder<PostSnapshotInstructionDataArgs> {
+export function getCancelDisputeInstructionDataEncoder(): FixedSizeEncoder<CancelDisputeInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["merkleRoot", fixEncoderSize(getBytesEncoder(), 32)],
-      ["totalStake", getU64Encoder()],
-    ]),
-    (value) => ({ ...value, discriminator: POST_SNAPSHOT_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: CANCEL_DISPUTE_DISCRIMINATOR }),
   );
 }
 
-export function getPostSnapshotInstructionDataDecoder(): FixedSizeDecoder<PostSnapshotInstructionData> {
+export function getCancelDisputeInstructionDataDecoder(): FixedSizeDecoder<CancelDisputeInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["merkleRoot", fixDecoderSize(getBytesDecoder(), 32)],
-    ["totalStake", getU64Decoder()],
   ]);
 }
 
-export function getPostSnapshotInstructionDataCodec(): FixedSizeCodec<
-  PostSnapshotInstructionDataArgs,
-  PostSnapshotInstructionData
+export function getCancelDisputeInstructionDataCodec(): FixedSizeCodec<
+  CancelDisputeInstructionDataArgs,
+  CancelDisputeInstructionData
 > {
   return combineCodec(
-    getPostSnapshotInstructionDataEncoder(),
-    getPostSnapshotInstructionDataDecoder(),
+    getCancelDisputeInstructionDataEncoder(),
+    getCancelDisputeInstructionDataDecoder(),
   );
 }
 
-export type PostSnapshotAsyncInput<
-  TAccountPoster extends string = string,
+export type CancelDisputeAsyncInput<
+  TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountSnapshot extends string = string,
   TAccountStakingToken extends string = string,
-  TAccountPosterTokenAccount extends string = string,
+  TAccountFilerTokenAccount extends string = string,
   TAccountVault extends string = string,
   TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
-  poster: TransactionSigner<TAccountPoster>;
+  /** Any cranker; no authority check (the elapsed timeout is the gate). */
+  caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  snapshot: Address<TAccountSnapshot>;
   stakingToken: Address<TAccountStakingToken>;
-  posterTokenAccount?: Address<TAccountPosterTokenAccount>;
+  /** Refund destination — must be the filer's ATA. */
+  filerTokenAccount: Address<TAccountFilerTokenAccount>;
   vault?: Address<TAccountVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  merkleRoot: PostSnapshotInstructionDataArgs["merkleRoot"];
-  totalStake: PostSnapshotInstructionDataArgs["totalStake"];
 };
 
-export async function getPostSnapshotInstructionAsync<
-  TAccountPoster extends string,
+export async function getCancelDisputeInstructionAsync<
+  TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountSnapshot extends string,
   TAccountStakingToken extends string,
-  TAccountPosterTokenAccount extends string,
+  TAccountFilerTokenAccount extends string,
   TAccountVault extends string,
   TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: PostSnapshotAsyncInput<
-    TAccountPoster,
+  input: CancelDisputeAsyncInput<
+    TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountStakingToken,
-    TAccountPosterTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  PostSnapshotInstruction<
+  CancelDisputeInstruction<
     TProgramAddress,
-    TAccountPoster,
+    TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountStakingToken,
-    TAccountPosterTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >
 > {
   // Program address.
@@ -210,55 +178,23 @@ export async function getPostSnapshotInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    poster: { value: input.poster ?? null, isWritable: true },
+    caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    snapshot: { value: input.snapshot ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
-    posterTokenAccount: {
-      value: input.posterTokenAccount ?? null,
+    filerTokenAccount: {
+      value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
     vault: { value: input.vault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
-  if (!accounts.posterTokenAccount.value) {
-    accounts.posterTokenAccount.value = await getProgramDerivedAddress({
-      programAddress:
-        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
-      seeds: [
-        getAddressEncoder().encode(
-          getAddressFromResolvedInstructionAccount(
-            "poster",
-            accounts.poster.value,
-          ),
-        ),
-        getBytesEncoder().encode(
-          new Uint8Array([
-            6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235,
-            121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133,
-            126, 255, 0, 169,
-          ]),
-        ),
-        getAddressEncoder().encode(
-          getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
-          ),
-        ),
-      ],
-    });
-  }
   if (!accounts.vault.value) {
     accounts.vault.value = await getProgramDerivedAddress({
       programAddress:
@@ -290,202 +226,167 @@ export async function getPostSnapshotInstructionAsync<
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta("poster", accounts.poster),
+      getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("snapshot", accounts.snapshot),
       getAccountMeta("stakingToken", accounts.stakingToken),
-      getAccountMeta("posterTokenAccount", accounts.posterTokenAccount),
+      getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
       getAccountMeta("vault", accounts.vault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
-      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getPostSnapshotInstructionDataEncoder().encode(
-      args as PostSnapshotInstructionDataArgs,
-    ),
+    data: getCancelDisputeInstructionDataEncoder().encode({}),
     programAddress,
-  } as PostSnapshotInstruction<
+  } as CancelDisputeInstruction<
     TProgramAddress,
-    TAccountPoster,
+    TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountStakingToken,
-    TAccountPosterTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >);
 }
 
-export type PostSnapshotInput<
-  TAccountPoster extends string = string,
+export type CancelDisputeInput<
+  TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountSnapshot extends string = string,
   TAccountStakingToken extends string = string,
-  TAccountPosterTokenAccount extends string = string,
+  TAccountFilerTokenAccount extends string = string,
   TAccountVault extends string = string,
   TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
-  poster: TransactionSigner<TAccountPoster>;
+  /** Any cranker; no authority check (the elapsed timeout is the gate). */
+  caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  snapshot: Address<TAccountSnapshot>;
   stakingToken: Address<TAccountStakingToken>;
-  posterTokenAccount: Address<TAccountPosterTokenAccount>;
+  /** Refund destination — must be the filer's ATA. */
+  filerTokenAccount: Address<TAccountFilerTokenAccount>;
   vault: Address<TAccountVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  merkleRoot: PostSnapshotInstructionDataArgs["merkleRoot"];
-  totalStake: PostSnapshotInstructionDataArgs["totalStake"];
 };
 
-export function getPostSnapshotInstruction<
-  TAccountPoster extends string,
+export function getCancelDisputeInstruction<
+  TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountSnapshot extends string,
   TAccountStakingToken extends string,
-  TAccountPosterTokenAccount extends string,
+  TAccountFilerTokenAccount extends string,
   TAccountVault extends string,
   TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: PostSnapshotInput<
-    TAccountPoster,
+  input: CancelDisputeInput<
+    TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountStakingToken,
-    TAccountPosterTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): PostSnapshotInstruction<
+): CancelDisputeInstruction<
   TProgramAddress,
-  TAccountPoster,
+  TAccountCaller,
   TAccountSubaccord,
   TAccountDispute,
-  TAccountSnapshot,
   TAccountStakingToken,
-  TAccountPosterTokenAccount,
+  TAccountFilerTokenAccount,
   TAccountVault,
-  TAccountTokenProgram,
-  TAccountSystemProgram
+  TAccountTokenProgram
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
-    poster: { value: input.poster ?? null, isWritable: true },
+    caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    snapshot: { value: input.snapshot ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
-    posterTokenAccount: {
-      value: input.posterTokenAccount ?? null,
+    filerTokenAccount: {
+      value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
     vault: { value: input.vault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta("poster", accounts.poster),
+      getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("snapshot", accounts.snapshot),
       getAccountMeta("stakingToken", accounts.stakingToken),
-      getAccountMeta("posterTokenAccount", accounts.posterTokenAccount),
+      getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
       getAccountMeta("vault", accounts.vault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
-      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getPostSnapshotInstructionDataEncoder().encode(
-      args as PostSnapshotInstructionDataArgs,
-    ),
+    data: getCancelDisputeInstructionDataEncoder().encode({}),
     programAddress,
-  } as PostSnapshotInstruction<
+  } as CancelDisputeInstruction<
     TProgramAddress,
-    TAccountPoster,
+    TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountSnapshot,
     TAccountStakingToken,
-    TAccountPosterTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >);
 }
 
-export type ParsedPostSnapshotInstruction<
+export type ParsedCancelDisputeInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    poster: TAccountMetas[0];
+    /** Any cranker; no authority check (the elapsed timeout is the gate). */
+    caller: TAccountMetas[0];
     subaccord: TAccountMetas[1];
     dispute: TAccountMetas[2];
-    snapshot: TAccountMetas[3];
-    stakingToken: TAccountMetas[4];
-    posterTokenAccount: TAccountMetas[5];
-    vault: TAccountMetas[6];
-    tokenProgram: TAccountMetas[7];
-    systemProgram: TAccountMetas[8];
+    stakingToken: TAccountMetas[3];
+    /** Refund destination — must be the filer's ATA. */
+    filerTokenAccount: TAccountMetas[4];
+    vault: TAccountMetas[5];
+    tokenProgram: TAccountMetas[6];
   };
-  data: PostSnapshotInstructionData;
+  data: CancelDisputeInstructionData;
 };
 
-export function parsePostSnapshotInstruction<
+export function parseCancelDisputeInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedPostSnapshotInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+): ParsedCancelDisputeInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 7,
       },
     );
   }
@@ -498,16 +399,14 @@ export function parsePostSnapshotInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
-      poster: getNextAccount(),
+      caller: getNextAccount(),
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
-      snapshot: getNextAccount(),
       stakingToken: getNextAccount(),
-      posterTokenAccount: getNextAccount(),
+      filerTokenAccount: getNextAccount(),
       vault: getNextAccount(),
       tokenProgram: getNextAccount(),
-      systemProgram: getNextAccount(),
     },
-    data: getPostSnapshotInstructionDataDecoder().decode(instruction.data),
+    data: getCancelDisputeInstructionDataDecoder().decode(instruction.data),
   };
 }
