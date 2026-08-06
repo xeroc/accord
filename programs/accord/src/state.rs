@@ -79,6 +79,11 @@ pub struct JurorStake {
     pub bump: u8,
     /// Leaf position in the Subaccord accumulator (assigned at first stake).
     pub tree_index: u32,
+    /// Net slash(-)/reward(+) accumulated from settlements. Written by
+    /// `settle_round_accounts` instead of mutating `amount` — keeps the
+    /// accumulator root canonical. Folded into `amount` by the permissionless
+    /// `reconcile_stake` crank (which updates the root via a Merkle proof).
+    pub settlement_delta: i64,
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**

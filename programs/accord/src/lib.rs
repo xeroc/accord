@@ -342,10 +342,13 @@ pub mod accord {
             ctx.accounts.juror_stake.active_draws == 0,
             AccordError::StakeLocked
         );
-        require!(
-            amount <= ctx.accounts.juror_stake.amount,
-            AccordError::InsufficientBalance
-        );
+        // Effective balance accounts for pending settlement deltas (REVIEW #4).
+        // The accumulator commits to `amount`; `settlement_delta` tracks
+        // slash/reward separately until `reconcile_stake` folds it in.
+        let effective = (ctx.accounts.juror_stake.amount as i64)
+            .saturating_add(ctx.accounts.juror_stake.settlement_delta)
+            .max(0) as u64;
+        require!(amount <= effective, AccordError::InsufficientBalance);
 
         let bump = [ctx.accounts.subaccord.bump];
         let signer_seeds = &[
@@ -403,6 +406,44 @@ pub mod accord {
             juror: juror_key,
             amount,
         });
+        Ok(())
+    }
+
+    /// **Permissionless crank** (REVIEW #4): folds a juror's `settlement_delta`
+    /// into their canonical `amount` and updates the accumulator root via a
+    /// Merkle proof. After reconcile, the ledger and accumulator agree again.
+    ///
+    /// Any caller may trigger this — no tokens move, it's pure ledger + root
+    /// accounting. The cranker supplies the juror's Merkle path (same format as
+    /// `stake`/`unstake`), which authenticates the old leaf against the stored
+    /// root and recomputes a new root for the adjusted amount.
+    pub fn reconcile_stake(ctx: Context<ReconcileStake>, path: Vec<MSTNode>) -> Result<()> {
+        let js = &mut ctx.accounts.juror_stake;
+        let sub = &mut ctx.accounts.subaccord;
+
+        require!(js.settlement_delta != 0, AccordError::InvalidAmount);
+
+        let old_amount = js.amount;
+        let new_amount = (js.amount as i64)
+            .saturating_add(js.settlement_delta)
+            .max(0) as u64;
+
+        let (new_root, new_total) = verify_and_recompute(
+            &js.juror,
+            old_amount,
+            &js.juror,
+            new_amount,
+            js.tree_index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        js.amount = new_amount;
+        js.settlement_delta = 0;
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
         Ok(())
     }
 
@@ -1997,17 +2038,21 @@ fn settle_round_accounts(
         0 // no coherent jurors: pool stays in vault (accepted edge case)
     };
 
-    // --- Second pass: apply slashes + redistributions + decrement draws ---
+    // --- Second pass: apply slashes/rewards to settlement_delta + decrement draws ---
+    // REVIEW #4: do NOT mutate `amount` — the accumulator root commits to it.
+    // Write the net delta instead; `reconcile_stake` folds it into `amount`
+    // later via a Merkle proof.
     const AMOUNT_OFFSET: usize = 8 + 32 + 32; // disc + subaccord + juror
     const ACTIVE_DRAWS_OFFSET: usize = AMOUNT_OFFSET + 8;
+    const SETTLEMENT_DELTA_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4; // draws+bump+tree_index
 
     for i in 0..panel {
         let acct_info = &accounts[i];
         let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
 
-        let (amount, active_draws) = {
+        let (amount, active_draws, existing_delta) = {
             let data = acct_info.try_borrow_data()?;
-            if data.len() < ACTIVE_DRAWS_OFFSET + 4 {
+            if data.len() < SETTLEMENT_DELTA_OFFSET + 8 {
                 return Err(AccordError::InvalidMembershipProof.into());
             }
             let amt =
@@ -2017,20 +2062,25 @@ fn settle_round_accounts(
                     .try_into()
                     .unwrap(),
             );
-            (amt, draws)
+            let delta = i64::from_le_bytes(
+                data[SETTLEMENT_DELTA_OFFSET..SETTLEMENT_DELTA_OFFSET + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            (amt, draws, delta)
         };
 
-        let new_amount = if is_coherent {
-            amount
-                .checked_add(share)
-                .ok_or(AccordError::ArithmeticOverflow)?
+        let net_delta = if is_coherent {
+            share as i64
         } else {
-            amount.checked_sub(slash_per_juror.min(amount)).unwrap_or(0)
+            -(slash_per_juror.min(amount) as i64)
         };
+        let new_delta = existing_delta.saturating_add(net_delta);
         let new_draws = active_draws.saturating_sub(1);
 
         let mut data = acct_info.try_borrow_mut_data()?;
-        data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].copy_from_slice(&new_amount.to_le_bytes());
+        data[SETTLEMENT_DELTA_OFFSET..SETTLEMENT_DELTA_OFFSET + 8]
+            .copy_from_slice(&new_delta.to_le_bytes());
         data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
             .copy_from_slice(&new_draws.to_le_bytes());
     }
@@ -2200,6 +2250,26 @@ pub struct Unstake<'info> {
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
+}
+
+/// Account context for `reconcile_stake` (REVIEW #4). Permissionless — any
+/// caller may trigger. No token accounts needed (pure ledger + root update).
+#[derive(Accounts)]
+pub struct ReconcileStake<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror_stake.juror.as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
 }
 
 /// Account context for `propose_subaccord_update` (veridao-y63e).

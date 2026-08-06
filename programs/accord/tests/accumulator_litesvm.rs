@@ -1943,6 +1943,130 @@ fn cancel_releases_partially_drawn_panel() {
     assert_eq!(d.state, DisputeState::Failed);
 }
 
+// ─── settlement_delta + reconcile tests (REVIEW #4) ─────────────────────────
+
+/// Write `settlement_delta` directly onto a JurorStake (simulates settlement).
+fn inject_settlement_delta(env: &mut AccEnv, juror: &Pubkey, delta: i64) {
+    let js_pda = juror_stake_pda(&env.subaccord, juror);
+    let acc = env.ctx.svm.get_account(&js_pda).unwrap();
+    let mut data = acc.data.clone();
+    const SETTLEMENT_DELTA_OFFSET: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4; // disc+sub+jur+amt+draws+bump+idx
+    data[SETTLEMENT_DELTA_OFFSET..SETTLEMENT_DELTA_OFFSET + 8]
+        .copy_from_slice(&delta.to_le_bytes());
+    env.ctx
+        .svm
+        .set_account(
+            js_pda,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
+#[test]
+fn reconcile_stake_folds_delta_into_amount_and_updates_root() {
+    let mut env = setup_accumulator();
+
+    // Stake one juror at index 0 with 5_000.
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let stake_amt = 5_000u64;
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, stake_amt, path).assert_success();
+
+    let sub_before = read_subaccord(&env);
+    let js_before = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js_before.amount, stake_amt);
+    assert_eq!(js_before.settlement_delta, 0);
+
+    // Simulate a settlement slash of 500.
+    inject_settlement_delta(&mut env, &juror.pubkey(), -500);
+
+    // Root must be UNCHANGED (accumulator canonical — REVIEW #4 fix).
+    let sub_after_inject = read_subaccord(&env);
+    assert_eq!(
+        sub_after_inject.root_hash, sub_before.root_hash,
+        "root must not change on settlement_delta write"
+    );
+    assert_eq!(
+        sub_after_inject.total_stake, sub_before.total_stake,
+        "total_stake must not change on settlement_delta write"
+    );
+
+    // Compute the Merkle path for the juror's current leaf (amount=5000).
+    let leaves = vec![(juror.pubkey(), stake_amt)];
+    let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+
+    // Reconcile: folds -500 into amount → 4500, updates root.
+    let js_pda = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ReconcileStake {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js_pda,
+        })
+        .args(instruction::ReconcileStake { path: proof })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    // Amount folded, delta zeroed.
+    let js_after = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js_after.amount, 4_500, "amount must reflect the delta");
+    assert_eq!(js_after.settlement_delta, 0, "delta must be zeroed");
+
+    // Root updated to match the new leaf.
+    let sub_after = read_subaccord(&env);
+    let (expected_root, expected_total, _) =
+        build_root_and_path(&[(juror.pubkey(), 4_500)], TEST_DEPTH, 0);
+    assert_eq!(sub_after.root_hash, expected_root);
+    assert_eq!(sub_after.total_stake, expected_total);
+    assert_eq!(sub_after.total_stake, 4_500);
+}
+
+#[test]
+fn unstake_respects_settlement_delta() {
+    let mut env = setup_accumulator();
+
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let stake_amt = 5_000u64;
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, stake_amt, path).assert_success();
+
+    // Simulate a slash of 500.
+    inject_settlement_delta(&mut env, &juror.pubkey(), -500);
+
+    // Effective balance = 5000 - 500 = 4500. Unstaking 5000 must fail.
+    let leaves = vec![(juror.pubkey(), stake_amt)];
+    let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let r = do_unstake(&mut env, &juror, 5_000, proof);
+    assert!(
+        !r.is_success(),
+        "unstake over effective balance must fail; logs={:?}",
+        r.logs()
+    );
+
+    // Unstaking 4500 (effective) succeeds.
+    let (_, _, proof2) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let r = do_unstake(&mut env, &juror, 4_500, proof2);
+    r.assert_success();
+
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.amount, 500, "amount reduced by withdrawal");
+    assert_eq!(js.settlement_delta, -500, "delta unchanged by unstake");
+}
+
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
 
 /// Write `committed_vrf` + `frozen_root` + `frozen_total_stake` directly onto
