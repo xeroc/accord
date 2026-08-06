@@ -832,11 +832,8 @@ pub mod accord {
             AccordError::InvalidState
         );
 
-        // Seat must be unfilled.
-        require!(
-            round.jurors[seat as usize] == Pubkey::default(),
-            AccordError::DuplicateJuror
-        );
+        // Seat must be the next sequential unfilled slot (REVIEW #6).
+        require!(seat == round.juror_count, AccordError::InvalidPanelSize);
 
         // --- Deterministic sortition with on-chain collision re-roll (tzo0) ---
         //

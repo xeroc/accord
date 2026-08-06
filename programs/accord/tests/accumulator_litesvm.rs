@@ -953,6 +953,86 @@ fn draw_seat_fills_round_against_frozen_root() {
     }
 }
 
+#[test]
+fn out_of_order_seat_rejected() {
+    let mut env = setup_accumulator();
+
+    // Stake 3 jurors.
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    let stakes = [5_000u64, 3_000, 2_000];
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+    }
+
+    let sub = read_subaccord(&env);
+
+    // Create dispute + freeze VRF.
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+    inject_vrf_freeze(
+        &mut env.ctx,
+        &dispute,
+        [99u8; 32],
+        sub.root_hash,
+        sub.total_stake,
+    );
+
+    let rnd = round_pda(&dispute, 0);
+
+    // Seat 0 first → must succeed (initializes the round).
+    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves);
+    r.assert_success();
+
+    // Seat 2 before seat 1 → must fail (REVIEW #6: sequential only).
+    let r = submit_draw_seat(&mut env, dispute, rnd, 2, 0, 2, &leaves);
+    assert!(
+        !r.is_success(),
+        "out-of-order seat must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // Seat 1 → must succeed (sequential).
+    let r = submit_draw_seat(&mut env, dispute, rnd, 1, 0, 1, &leaves);
+    r.assert_success();
+}
+
 /// **Deterministic collision re-roll** (bean accord-tzo0). A concentrated-stake
 /// fixture (whale + 2 honest jurors) where the whale is selected for seat 0 and
 /// seat 1's r_1(0) also lands on the whale (collision). The chain must accept
