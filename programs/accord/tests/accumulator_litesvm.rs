@@ -957,7 +957,6 @@ fn draw_seat_fills_round_against_frozen_root() {
 fn out_of_order_seat_rejected() {
     let mut env = setup_accumulator();
 
-    // Stake 3 jurors.
     let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
     let stakes = [5_000u64, 3_000, 2_000];
     for (i, &stake) in stakes.iter().enumerate() {
@@ -967,10 +966,9 @@ fn out_of_order_seat_rejected() {
         do_stake(&mut env, &juror, stake, path).assert_success();
         leaves.push((juror.pubkey(), stake));
     }
-
     let sub = read_subaccord(&env);
+    let total = sub.total_stake;
 
-    // Create dispute + freeze VRF.
     let filer = Keypair::new();
     env.ctx
         .svm
@@ -978,8 +976,7 @@ fn out_of_order_seat_rejected() {
         .unwrap();
     let fata = juror_ata(&filer.pubkey(), &env.mint);
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
-    let nonce = 1u64;
-    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let dispute = dispute_pda(&filer.pubkey(), 1u64);
     let ix = env
         .ctx
         .program()
@@ -997,7 +994,7 @@ fn out_of_order_seat_rejected() {
         .args(instruction::CreateDispute {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
-            nonce,
+            nonce: 1,
             fee: 3 * 1_000_000,
         })
         .instruction()
@@ -1006,30 +1003,66 @@ fn out_of_order_seat_rejected() {
         .execute_instruction(ix, &[&filer])
         .unwrap()
         .assert_success();
-    inject_vrf_freeze(
-        &mut env.ctx,
-        &dispute,
-        [99u8; 32],
-        sub.root_hash,
-        sub.total_stake,
-    );
 
+    // Brute-force VRF where all 3 seats select distinct leaves.
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut a = 0u64;
+        for (_, s) in &leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let vrf = {
+        let mut c = [0u8; 32];
+        loop {
+            c[0] = c[0].wrapping_add(1);
+            if c[0] == 0 {
+                c[1] = c[1].wrapping_add(1);
+            }
+            let seed = hashv(&[&c, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+            let seats: Vec<usize> = (0..3u32)
+                .map(|seat| {
+                    let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+                    let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+                    let mut idx = 0;
+                    for (i, (_, s)) in leaves.iter().enumerate() {
+                        if ri >= prefixes[i] && ri - prefixes[i] < *s {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    idx
+                })
+                .collect();
+            if seats.iter().collect::<std::collections::HashSet<_>>().len() == 3 {
+                break c;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
     let rnd = round_pda(&dispute, 0);
+    let resolve = |seat: u32| -> usize {
+        let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+        let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+        (0..leaves.len())
+            .find(|&i| ri >= prefixes[i] && ri - prefixes[i] < leaves[i].1)
+            .unwrap()
+    };
 
-    // Seat 0 first → must succeed (initializes the round).
-    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves);
+    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, resolve(0), &leaves);
     r.assert_success();
 
-    // Seat 2 before seat 1 → must fail (REVIEW #6: sequential only).
-    let r = submit_draw_seat(&mut env, dispute, rnd, 2, 0, 2, &leaves);
+    let r = submit_draw_seat(&mut env, dispute, rnd, 2, 0, resolve(2), &leaves);
     assert!(
         !r.is_success(),
         "out-of-order seat must be rejected; logs={:?}",
         r.logs()
     );
 
-    // Seat 1 → must succeed (sequential).
-    let r = submit_draw_seat(&mut env, dispute, rnd, 1, 0, 1, &leaves);
+    let r = submit_draw_seat(&mut env, dispute, rnd, 1, 0, resolve(1), &leaves);
     r.assert_success();
 }
 
@@ -2260,6 +2293,773 @@ fn request_withdraw_blocked_by_slash_reserve() {
     r.assert_success();
 }
 
+// ─── commit/reveal/finalize/settle lifecycle (REVIEW #11) ────────────────────
+
+#[test]
+fn commit_reveal_finalize_settle_single_round() {
+    let mut env = setup_accumulator();
+
+    let stakes = [5_000u64, 3_000, 2_000];
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    let round_idx = 0u32;
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut a = 0u64;
+        for (_, s) in &leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let vrf = {
+        let mut c = [0u8; 32];
+        loop {
+            c[0] = c[0].wrapping_add(1);
+            if c[0] == 0 {
+                c[1] = c[1].wrapping_add(1);
+            }
+            let seed = hashv(&[&c, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+            let seats: Vec<usize> = (0..3u32)
+                .map(|seat| {
+                    let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+                    let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+                    let mut idx = 0;
+                    for (i, (_, s)) in leaves.iter().enumerate() {
+                        if ri >= prefixes[i] && ri - prefixes[i] < *s {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    idx
+                })
+                .collect();
+            if seats.iter().collect::<std::collections::HashSet<_>>().len() == 3 {
+                break c;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let mut drawn: Vec<(u32, usize)> = Vec::new();
+    for seat in 0..3u32 {
+        let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+        let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+        let mut f = None;
+        for (i, &(_, st)) in leaves.iter().enumerate() {
+            if ri >= prefixes[i] && ri - prefixes[i] < st {
+                f = Some(i);
+                break;
+            }
+        }
+        drawn.push((seat, f.unwrap()));
+    }
+
+    let rnd = round_pda(&dispute, round_idx);
+    for &(seat, leaf_idx) in &drawn {
+        submit_draw_seat(&mut env, dispute, rnd, seat, 0, leaf_idx, &leaves).assert_success();
+    }
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.state, DisputeState::Drawn);
+
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let (review_end, commit_end, reveal_end) =
+        (round.review_end, round.commit_end, round.reveal_end);
+    drop(round_acc);
+
+    // Commit phase.
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+    let vote: u8 = 0;
+    let salt0 = [1u8; 32];
+    let salt1 = [2u8; 32];
+    let comm0 = hashv(&[&[vote], &salt0, jurors[drawn[0].1].pubkey().as_ref()]).to_bytes();
+    let comm1 = hashv(&[&[vote], &salt1, jurors[drawn[1].1].pubkey().as_ref()]).to_bytes();
+    for (idx, comm) in [(drawn[0].1, comm0), (drawn[1].1, comm1)] {
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Commit {
+                juror: jurors[idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Commit { commitment: comm })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    // Reveal phase.
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, commit_end - now + 1);
+    for (idx, salt) in [(drawn[0].1, salt0), (drawn[1].1, salt1)] {
+        let jata = juror_ata(&jurors[idx].pubkey(), &env.mint);
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Reveal {
+                juror: jurors[idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+                staking_token: env.mint,
+                juror_token_account: jata,
+                vault: vault_ata(&env.subaccord, &env.mint),
+                token_program: TOKEN_PROGRAM_ID,
+            })
+            .args(instruction::Reveal { vote, salt })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    // Finalize round.
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, reveal_end - now + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeRound {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeRound {})
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.state, DisputeState::RoundResolved);
+
+    // Finalize dispute after appeal window.
+    warp_seconds(&mut env, accord::constants::APPEAL_WINDOW_SECS + 1);
+    let js_pdhas: Vec<Pubkey> = drawn
+        .iter()
+        .map(|&(_, li)| juror_stake_pda(&env.subaccord, &leaves[li].0))
+        .collect();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeDispute {})
+        .instruction()
+        .unwrap();
+    let ix_meta = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut a = ix.accounts;
+            for k in &js_pdhas {
+                a.push(solana_program::instruction::AccountMeta {
+                    pubkey: *k,
+                    is_signer: false,
+                    is_writable: true,
+                });
+            }
+            a
+        },
+        data: ix.data,
+    };
+    env.ctx
+        .execute_instruction(ix_meta, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    // Verify final state + settlement.
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.state, DisputeState::Final);
+    assert_eq!(d.final_ruling, 0u8);
+    for &(seat, leaf_idx) in &drawn {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        assert_eq!(js.active_draws, 0, "seat {seat} active_draws");
+        assert_eq!(js.slash_reserve, 0, "seat {seat} slash_reserve");
+        let expected = if seat < 2 { 500_050i64 } else { -100i64 };
+        assert_eq!(js.settlement_delta, expected, "seat {seat} delta");
+    }
+}
+
+// ─── pause circuit breaker (REVIEW #11) ──────────────────────────────────────
+
+#[test]
+fn pause_blocks_stake_and_create_dispute() {
+    let mut env = setup_accumulator();
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, 5_000, path).assert_success();
+
+    let pda = pause_pda();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Pause {
+            authority: env.creator.pubkey(),
+            pause_state: pda,
+        })
+        .args(instruction::Pause {})
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    let juror2 = Keypair::new();
+    arm_juror(&mut env, &juror2, 10_000);
+    let lv = vec![(juror.pubkey(), 5_000)];
+    let (_, _, path2) = build_root_and_path(&lv, TEST_DEPTH, 1);
+    let r = do_stake(&mut env, &juror2, 5_000, path2);
+    assert!(
+        !r.is_success(),
+        "stake while paused must fail; logs={:?}",
+        r.logs()
+    );
+
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let dispute = dispute_pda(&filer.pubkey(), 1u64);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce: 1,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&filer]).unwrap();
+    assert!(
+        !r.is_success(),
+        "create_dispute while paused must fail; logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn unpause_after_timelock_restores_stake() {
+    let mut env = setup_accumulator();
+    let pda = pause_pda();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Pause {
+            authority: env.creator.pubkey(),
+            pause_state: pda,
+        })
+        .args(instruction::Pause {})
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ProposeUnpause {
+            authority: env.creator.pubkey(),
+            pause_state: pda,
+        })
+        .args(instruction::ProposeUnpause {})
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    let slot = env.ctx.svm.get_sysvar::<Clock>().slot;
+    env.ctx
+        .svm
+        .warp_to_slot(slot + accord::constants::UNPAUSE_TIMELOCK_SLOTS + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ExecuteUnpause {
+            caller: env.creator.pubkey(),
+            pause_state: pda,
+        })
+        .args(instruction::ExecuteUnpause {})
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, 5_000, path).assert_success();
+}
+
+// ─── settlement + slash_reserve lifecycle (REVIEW #11) ──────────────────────
+
+#[test]
+fn settle_round_releases_active_draws_and_slash_reserve() {
+    let mut env = setup_accumulator();
+    let stakes = [5_000u64, 3_000, 2_000];
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let dispute = dispute_pda(&filer.pubkey(), 1u64);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce: 1,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut a = 0u64;
+        for (_, s) in &leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let vrf = {
+        let mut c = [0u8; 32];
+        loop {
+            c[0] = c[0].wrapping_add(1);
+            if c[0] == 0 {
+                c[1] = c[1].wrapping_add(1);
+            }
+            let seed = hashv(&[&c, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+            let seats: Vec<usize> = (0..3u32)
+                .map(|seat| {
+                    let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+                    let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+                    let mut idx = 0;
+                    for (i, (_, s)) in leaves.iter().enumerate() {
+                        if ri >= prefixes[i] && ri - prefixes[i] < *s {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    idx
+                })
+                .collect();
+            if seats.iter().collect::<std::collections::HashSet<_>>().len() == 3 {
+                break c;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+    let mut drawn: Vec<(u32, usize)> = Vec::new();
+    for seat in 0..3u32 {
+        let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+        let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+        let mut f = None;
+        for (i, &(_, st)) in leaves.iter().enumerate() {
+            if ri >= prefixes[i] && ri - prefixes[i] < st {
+                f = Some(i);
+                break;
+            }
+        }
+        drawn.push((seat, f.unwrap()));
+    }
+    let rnd = round_pda(&dispute, 0);
+    for &(seat, leaf_idx) in &drawn {
+        submit_draw_seat(&mut env, dispute, rnd, seat, 0, leaf_idx, &leaves).assert_success();
+    }
+
+    let slash_per_juror: u64 = 100;
+    for &(seat, leaf_idx) in &drawn {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        assert_eq!(js.active_draws, 1, "seat {seat}");
+        assert_eq!(js.slash_reserve, slash_per_juror, "seat {seat}");
+    }
+
+    // Simulate finalized dispute.
+    {
+        let acc = env.ctx.svm.get_account(&dispute).unwrap();
+        let mut d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+        d.state = DisputeState::Final;
+        d.final_ruling = 0;
+        d.current_round = 1;
+        let mut data = acc.data[..8].to_vec();
+        AnchorSerialize::serialize(&d, &mut data).unwrap();
+        env.ctx
+            .svm
+            .set_account(
+                dispute,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+    // Write round reveals + result.
+    {
+        let acc = env.ctx.svm.get_account(&rnd).unwrap();
+        let mut data = acc.data.clone();
+        data[20..24].copy_from_slice(&3u32.to_le_bytes());
+        data[48] = 0;
+        data[2068] = 0;
+        data[2069] = 0;
+        data[2070] = 1;
+        env.ctx
+            .svm
+            .set_account(
+                rnd,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    let js_pdhas: Vec<Pubkey> = drawn
+        .iter()
+        .map(|&(_, li)| juror_stake_pda(&env.subaccord, &leaves[li].0))
+        .collect();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::SettleRound {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::SettleRound { round_idx: 0u32 })
+        .instruction()
+        .unwrap();
+    let ix_meta = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut a = ix.accounts;
+            for k in &js_pdhas {
+                a.push(solana_program::instruction::AccountMeta {
+                    pubkey: *k,
+                    is_signer: false,
+                    is_writable: true,
+                });
+            }
+            a
+        },
+        data: ix.data,
+    };
+    let r = env
+        .ctx
+        .execute_instruction(ix_meta, &[&env.creator])
+        .unwrap();
+    assert!(
+        r.is_success(),
+        "settle_round must succeed; logs={:?}",
+        r.logs()
+    );
+
+    for &(seat, leaf_idx) in &drawn {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        assert_eq!(js.active_draws, 0, "seat {seat}");
+        assert_eq!(js.slash_reserve, 0, "seat {seat}");
+        if seat < 2 {
+            assert_eq!(js.settlement_delta, 50, "coherent seat {seat}");
+        } else {
+            assert_eq!(js.settlement_delta, -100, "incoherent seat {seat}");
+        }
+    }
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    assert_eq!(round.settled, 1);
+}
+
+#[test]
+fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
+    let mut env = setup_accumulator();
+    // Stake 3 jurors (panel gate). Juror 0 at exactly min_stake.
+    let j0 = Keypair::new();
+    arm_juror(&mut env, &j0, 10_000);
+    let (_, _, p0) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &j0, 1_000, p0).assert_success();
+    let j1 = Keypair::new();
+    arm_juror(&mut env, &j1, 10_000);
+    let (_, _, p1) = build_root_and_path(&[(j0.pubkey(), 1_000)], TEST_DEPTH, 1);
+    do_stake(&mut env, &j1, 5_000, p1).assert_success();
+    let j2 = Keypair::new();
+    arm_juror(&mut env, &j2, 10_000);
+    let (_, _, p2) =
+        build_root_and_path(&[(j0.pubkey(), 1_000), (j1.pubkey(), 5_000)], TEST_DEPTH, 2);
+    do_stake(&mut env, &j2, 5_000, p2).assert_success();
+
+    let sub = read_subaccord(&env);
+    let leaves = vec![
+        (j0.pubkey(), 1_000),
+        (j1.pubkey(), 5_000),
+        (j2.pubkey(), 5_000),
+    ];
+    let total = sub.total_stake;
+
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let dispute = dispute_pda(&filer.pubkey(), 1u64);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce: 1,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    // Brute-force VRF where seat 0 selects juror 0 (leaf 0).
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut a = 0u64;
+        for (_, s) in &leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let vrf = {
+        let mut c = [0u8; 32];
+        loop {
+            c[0] = c[0].wrapping_add(1);
+            if c[0] == 0 {
+                c[1] = c[1].wrapping_add(1);
+            }
+            let seed = hashv(&[&c, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+            let rh = hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+            let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+            if ri >= prefixes[0] && ri - prefixes[0] < leaves[0].1 {
+                break c;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+    let rnd = round_pda(&dispute, 0);
+
+    // free_stake = 1000; required = 1000 + 100 = 1100 → fail.
+    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves);
+    assert!(
+        !r.is_success(),
+        "draw must fail: free stake < min + slash; logs={:?}",
+        r.logs()
+    );
+
+    // Top up juror 0 to 2000.
+    let (_, _, pt) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    do_stake(&mut env, &j0, 1_000, pt).assert_success();
+    let js = read_juror_stake(&env, &env.subaccord, &j0.pubkey());
+    assert_eq!(js.amount, 2_000);
+
+    // Draw should succeed now (2000 >= 1100).
+    // Use a different caller to avoid LiteSVM AlreadyProcessed (same tx hash).
+    let caller2 = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller2.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    {
+        let (juror_pub, stake) = leaves[0];
+        let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+        let js_pda = juror_stake_pda(&env.subaccord, &juror_pub);
+        let membership = accord::state::JurorMembership {
+            leaf: LeafClaim {
+                juror: juror_pub,
+                stake,
+            },
+            proof,
+            index: 0,
+        };
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::DrawSeat {
+                caller: caller2.pubkey(),
+                dispute,
+                round: rnd,
+                system_program: system_program::ID,
+            })
+            .args(instruction::DrawSeat {
+                seat: 0,
+                retries: 0,
+                membership,
+            })
+            .instruction()
+            .unwrap();
+        let ix_meta = solana_program::instruction::Instruction {
+            program_id: ix.program_id,
+            accounts: {
+                let mut a = ix.accounts;
+                a.push(solana_program::instruction::AccountMeta {
+                    pubkey: js_pda,
+                    is_signer: false,
+                    is_writable: true,
+                });
+                a
+            },
+            data: ix.data,
+        };
+        let r = env.ctx.execute_instruction(ix_meta, &[&caller2]).unwrap();
+        assert!(
+            r.is_success(),
+            "draw must succeed after top-up; logs={:?}",
+            r.logs()
+        );
+    }
+    let js = read_juror_stake(&env, &env.subaccord, &j0.pubkey());
+    assert_eq!(js.active_draws, 1);
+    assert_eq!(js.slash_reserve, 100);
+}
+
+// ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
 
 /// Write `committed_vrf` + `frozen_root` + `frozen_total_stake` directly onto
