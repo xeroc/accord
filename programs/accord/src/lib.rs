@@ -144,24 +144,26 @@ pub mod accord {
     /// namespace per `risk_type`. `risk_type` + `evidence_spec` are immutable
     /// identity hashes; every other param routes through propose/execute
     /// (ADR-0005). `authority == Pubkey::default()` => immutable.
-    #[allow(clippy::too_many_arguments)]
     pub fn create_subaccord(
         ctx: Context<CreateSubaccord>,
         risk_type: [u8; 32],
         evidence_spec: [u8; 32],
-        staking_token: Pubkey,
-        min_stake: u64,
-        jurors_per_dispute: u32,
-        alpha_bps: u16,
-        review_window: u64,
-        commit_window: u64,
-        reveal_window: u64,
-        max_appeals: u8,
-        fee_per_juror: u64,
-        authority: Pubkey,
-        evidence_operator: Pubkey,
-        depth: u8,
+        params: CreateSubaccordParams,
     ) -> Result<()> {
+        let CreateSubaccordParams {
+            staking_token,
+            min_stake,
+            jurors_per_dispute,
+            alpha_bps,
+            review_window,
+            commit_window,
+            reveal_window,
+            max_appeals,
+            fee_per_juror,
+            authority,
+            evidence_operator,
+            depth,
+        } = params;
         // Namespace guard: reject the degenerate zero-hash risk_type so the
         // default identity can't be silently squatting a namespace.
         require!(risk_type != [0u8; 32], AccordError::InvalidOptions);

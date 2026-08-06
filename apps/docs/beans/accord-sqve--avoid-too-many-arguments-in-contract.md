@@ -1,11 +1,11 @@
 ---
 # accord-sqve
 title: Avoid too_many_arguments in contract
-status: todo
+status: completed
 type: task
 priority: normal
 created_at: 2026-08-06T22:10:52Z
-updated_at: 2026-08-06T22:12:38Z
+updated_at: 2026-08-06T22:42:36Z
 ---
 
 Avoid too too_many_arguments by using a distinct struct instead:
@@ -69,3 +69,18 @@ That keeps seed derivation dead simple in the `Accounts` macro while still killi
 - make sure to apply this schema to all instructions with too_many_arguments!
 - ensure that you update the IDL, generate the new typescript interface with codama and updat ethe SDK facade
 - ensure the e2e tests/ survive this change! Make the corresponding changes!
+
+## Summary of Changes
+
+Grouped `create_subaccord`'s 12 non-seed args into a `CreateSubaccordParams` struct (bean accord-sqve), keeping `risk_type` + `evidence_spec` positional since `risk_type` drives the Subaccord PDA seed.
+
+- `programs/accord/src/state.rs`: added `CreateSubaccordParams` (12 fields) next to `UpdatePayload`.
+- `programs/accord/src/lib.rs`: `create_subaccord` now takes `(ctx, risk_type, evidence_spec, params: CreateSubaccordParams)`; dropped `#[allow(clippy::too_many_arguments)]`.
+- `programs/accord/tests/accumulator_litesvm.rs`: 2 ix-args call sites wrapped into `params: CreateSubaccordParams { ... }`.
+
+Scope decisions:
+
+- `verify_and_recompute` (lib.rs:1840) is an internal helper, not an instruction — it already carries a `ponytail:` justification for its 8 args and has one caller. Left as-is; the bean targets the instruction wire surface.
+- IDL regenerated via `anchor build`; Codama codegen (`make codegen`) flattens struct-typed instruction args on the wire, so the generated TS instruction types, the SDK facade (`CreateSubaccordArgs`), the adapter (`mapCreateSubaccordArgs`), and every e2e call site are byte-identical — no SDK/test changes required.
+
+Verified: `make test_unit` (39 LiteSVM tests green), `cargo clippy --features no-entrypoint` (no `too_many_arguments`), `@accord/sdk` lint (tsc --noEmit) clean. Pre-existing evidence-daemon prettier + test-tsc Kit-generic failures confirmed unrelated.
