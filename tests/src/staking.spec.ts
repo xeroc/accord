@@ -25,7 +25,8 @@
 import {
   Accord,
   stake,
-  unstake,
+  requestWithdraw,
+  withdraw,
   canUnstake,
   initializePause,
   createSubaccord,
@@ -35,7 +36,6 @@ import {
   proofFor,
   emptyRoot,
   type StakingAccounts,
-  type JurorStakeView,
   type MerkleAccumulator,
   type MSTNode,
 } from "@accord/sdk";
@@ -47,7 +47,7 @@ import {
 } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { setAccountRaw } from "./setup/cheats.js";
+import { setAccountRaw, warpForwardSeconds } from "./setup/cheats.js";
 import {
   createMint,
   setTokenBalance,
@@ -68,6 +68,7 @@ const MIN_STAKE = 1_000n;
 const STAKE_FUND = 10_000n; // juror ATA balance before staking
 const STAKE_AMT = 5_000n;
 const DEPTH = 4;
+const WITHDRAWAL_DELAY_SECS = 3 * 24 * 60 * 60; // constants.rs: PRE_DRAW_CANCEL_TIMEOUT_SECS
 
 /** Derive the canonical ATA for (mint, owner) the way the program does. */
 async function ata(mint: Address, owner: Address): Promise<Address> {
@@ -288,7 +289,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     void index;
   }, 60_000);
 
-  it("happy unstake drains the full stake (amount → 0)", async () => {
+  it("happy withdraw (request → timelock → withdraw) drains the full stake", async () => {
     if (!env.up) return;
     const { juror, jurorStake, jurorAta, accounts, facade } = await armJuror();
 
@@ -300,26 +301,25 @@ describe("e2e: staking (requires Surfpool)", () => {
     let js = await readStake(jurorStake);
     expect(js!.amount).toBe(STAKE_AMT);
 
-    // Full unstake with a fresh path against the current tree.
-    const view: JurorStakeView = {
-      juror: js!.juror,
-      amount: js!.amount,
-      activeDraws: js!.activeDraws,
-    };
+    // Phase 1: requestWithdraw — ledger debit (amount → 0, pending_withdrawal banked).
     const unstakePath = await tree.pathFor(index);
-    const ix = await unstake(
+    const reqIx = await requestWithdraw(
       facade.adapter,
       env.programId,
       accounts,
       STAKE_AMT,
       unstakePath,
-      view,
     );
-    await env.sendIx(ix);
+    await env.sendIx(reqIx);
     await tree.updateLeaf(index, juror.address, 0n);
 
     js = await readStake(jurorStake);
     expect(js!.amount).toBe(0n);
+
+    // Phase 2: warp past WITHDRAWAL_DELAY, then withdraw moves tokens.
+    await warpForwardSeconds(env, WITHDRAWAL_DELAY_SECS);
+    await env.sendIx(withdraw(facade.adapter, env.programId, accounts));
+
     // capital returned to the juror ATA
     expect(await readTokenAmount(env, jurorAta)).toBe(STAKE_FUND);
 
@@ -338,7 +338,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     ).toThrow(/InvalidAmount/);
   }, 60_000);
 
-  it("unstake over balance reverts on-chain (InsufficientBalance)", async () => {
+  it("requestWithdraw over balance reverts on-chain (InsufficientBalance)", async () => {
     if (!env.up) return;
     const { juror, jurorStake, accounts, facade } = await armJuror();
     const stakePath = await tree.pathForNext();
@@ -352,7 +352,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     // `InsufficientBalance` require, but with a VALID path so the path-verify
     // gate passes first.
     const path = await tree.pathFor(index);
-    const ix = facade.adapter.buildUnstake({
+    const ix = facade.adapter.buildRequestWithdraw({
       programId: env.programId,
       accounts,
       amount: STAKE_AMT + 1n,
@@ -364,7 +364,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     expect((await readStake(jurorStake))!.amount).toBe(STAKE_AMT);
   }, 60_000);
 
-  it("unstake while active_draws>0 reverts on-chain (StakeLocked)", async () => {
+  it("withdraw while active_draws>0 reverts on-chain (StakeLocked)", async () => {
     if (!env.up) return;
     const { juror, jurorStake, accounts, facade } = await armJuror();
     const stakePath = await tree.pathForNext();
@@ -372,6 +372,19 @@ describe("e2e: staking (requires Surfpool)", () => {
       stake(facade.adapter, env.programId, accounts, STAKE_AMT, stakePath),
     );
     const index = await tree.setLeaf(juror.address, STAKE_AMT);
+
+    // Phase 1 succeeds even with active_draws > 0 (no gate at requestWithdraw).
+    const reqPath = await tree.pathFor(index);
+    await env.sendIx(
+      requestWithdraw(
+        facade.adapter,
+        env.programId,
+        accounts,
+        STAKE_AMT,
+        reqPath,
+      ),
+    );
+    await tree.updateLeaf(index, juror.address, 0n);
 
     // Simulate the juror being drawn into a live dispute by mutating
     // `active_draws` directly on the JurorStake PDA (the LiteSVM test does the
@@ -388,15 +401,10 @@ describe("e2e: staking (requires Surfpool)", () => {
       owner: env.programId,
     });
 
-    // VALID path + amount ⇒ on-chain StakeLocked require fires (active_draws>0).
-    const path = await tree.pathFor(index);
-    const ix = facade.adapter.buildUnstake({
-      programId: env.programId,
-      accounts,
-      amount: STAKE_AMT,
-      path,
-    });
-    await expect(env.sendIx(ix)).rejects.toThrow();
+    // Phase 2 reverts: active_draws > 0 gate fires at withdraw.
+    await expect(
+      env.sendIx(withdraw(facade.adapter, env.programId, accounts)),
+    ).rejects.toThrow();
   }, 60_000);
 });
 

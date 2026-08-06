@@ -14,7 +14,8 @@ import {
   createSubaccord,
   initializePause,
   stake,
-  unstake,
+  requestWithdraw,
+  withdraw,
   createDispute,
   commit,
   reveal,
@@ -27,7 +28,6 @@ import {
   type LeafClaim,
   type MSTNode,
   type StakingAccounts,
-  type JurorStakeView,
   getSubaccordDecoder,
   getJurorStakeDecoder,
   getDisputeDecoder,
@@ -276,7 +276,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
     expect(new Uint8Array(onChain!.rootHash)).toEqual(tree.rootHash);
   }, 60_000);
 
-  it("unstake reduces the stake and updates the root", async () => {
+  it("requestWithdraw reduces the stake and updates the root", async () => {
     if (!env.up) return;
     const { juror, jurorStakePda, accounts, facade } = await armJuror();
 
@@ -287,20 +287,14 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
     );
     await tree.setLeaf(2, juror.address, STAKE_AMT);
 
-    // Unstake half.
-    const view: JurorStakeView = {
-      juror: juror.address,
-      amount: STAKE_AMT,
-      activeDraws: 0,
-    };
+    // Request withdraw of half (ledger debit — root updates, no token move).
     const unstakePath = await tree.pathFor(2);
-    const unstakeIx = await unstake(
+    const unstakeIx = await requestWithdraw(
       facade.adapter,
       env.programId,
       accounts,
       2_500n,
       unstakePath,
-      view,
     );
     await env.sendIx(unstakeIx);
     await tree.setLeaf(2, juror.address, STAKE_AMT - 2_500n);
