@@ -26,7 +26,6 @@
  *
  * @see ADR-0012
  */
-import type { Address } from "@solana/kit";
 
 // ---------------------------------------------------------------------------
 // Types (byte-oriented; the generated Address-typed variants are used at the
@@ -45,6 +44,15 @@ export interface LeafClaim {
   stake: bigint; // u64
 }
 
+/**
+ * Internal cache of all hash/sum levels. `levels[0]` = leaf hashes,
+ * `levels[d]` = root. Stored so `proofFor` is O(log N) instead of O(N).
+ */
+interface LevelCache {
+  hashes: Uint8Array[][];
+  sums: bigint[][];
+}
+
 /** A built accumulator: leaves + the canonical root. */
 export interface MerkleAccumulator {
   /** Fixed tree depth (bounds the pool at 2^depth). */
@@ -53,7 +61,14 @@ export interface MerkleAccumulator {
   leaves: LeafClaim[];
   rootHash: Uint8Array; // 32 bytes
   rootSum: bigint; // == total stake
+  /** Opaque cache — don't inspect; use {@link proofFor}. */
+  _levels?: LevelCache;
 }
+
+/** Maximum depth the SDK accepts. The on-chain program allows up to 31, but
+ * `buildAccumulator` hashes `2^depth` leaves — impractical beyond 20 in a
+ * browser. Deeper pools should use a dedicated indexer for proofs. */
+export const MAX_SDK_DEPTH = 20;
 
 // ---------------------------------------------------------------------------
 // Hashing — must match solana_program::hash::hashv (SHA-256 over concat).
@@ -114,15 +129,17 @@ export async function emptyRoot(depth: number): Promise<Uint8Array> {
  * the remaining `2^depth` slots with zero leaves. Returns the canonical root
  * the on-chain program would hold after these stakes (the audit property: an
  * off-chain rebuild from `JurorStake` via `getProgramAccounts` reproduces it).
+ *
+ * Caches all intermediate hash levels so {@link proofFor} is O(log N).
  */
 export async function buildAccumulator(
   leaves: LeafClaim[],
   depth: number,
 ): Promise<MerkleAccumulator> {
-  if (!Number.isInteger(depth) || depth < 0 || depth > 31) {
-    throw new Error(`InvalidDepth: expected 0..=31, got ${depth}`);
+  if (!Number.isInteger(depth) || depth < 0 || depth > MAX_SDK_DEPTH) {
+    throw new Error(`InvalidDepth: expected 0..${MAX_SDK_DEPTH}, got ${depth}`);
   }
-  const size = 1 << depth;
+  const size = 2 ** depth;
   if (leaves.length > size) {
     throw new Error(
       `TreeFull: ${leaves.length} leaves exceed 2^depth(${depth})=${size}`,
@@ -134,10 +151,16 @@ export async function buildAccumulator(
       i < leaves.length ? leaves[i]! : { juror: new Uint8Array(32), stake: 0n };
   }
 
-  let hashes: Uint8Array[] = await Promise.all(
-    padded.map((l) => leafHash(l.juror, l.stake)),
+  const levelHashes: Uint8Array[][] = [];
+  const levelSums: bigint[][] = [];
+
+  levelHashes.push(
+    await Promise.all(padded.map((l) => leafHash(l.juror, l.stake))),
   );
-  let sums: bigint[] = padded.map((l) => l.stake);
+  levelSums.push(padded.map((l) => l.stake));
+
+  let hashes = levelHashes[0]!;
+  let sums = levelSums[0]!;
   for (let level = 0; level < depth; level++) {
     const nextH: Uint8Array[] = [];
     const nextS: bigint[] = [];
@@ -147,10 +170,19 @@ export async function buildAccumulator(
       );
       nextS.push(sums[k]! + sums[k + 1]!);
     }
+    levelHashes.push(nextH);
+    levelSums.push(nextS);
     hashes = nextH;
     sums = nextS;
   }
-  return { depth, leaves: padded, rootHash: hashes[0]!, rootSum: sums[0]! };
+
+  return {
+    depth,
+    leaves: padded,
+    rootHash: hashes[0]!,
+    rootSum: sums[0]!,
+    _levels: { hashes: levelHashes, sums: levelSums },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -159,17 +191,38 @@ export async function buildAccumulator(
 
 /**
  * The client-supplied Merkle path for `index` (sibling hash + sum per level,
- * leaf → root). Used by `stake`/`unstake` (verify-and-recompute) and by
- * `draw_seat` (membership + sortition prefix).
+ * leaf → root). Used by `stake`/`requestWithdraw`/`reconcileStake`
+ * (verify-and-recompute) and by `draw_seat` (membership + sortition prefix).
+ *
+ * O(log N) — reads siblings from the cached levels built by
+ * {@link buildAccumulator}. Falls back to O(N) rehash if the cache is absent
+ * (e.g. the accumulator was constructed by hand without `_levels`).
  */
 export async function proofFor(
   tree: MerkleAccumulator,
   index: number,
 ): Promise<MSTNode[]> {
-  const size = 1 << tree.depth;
+  const size = 2 ** tree.depth;
   if (!Number.isInteger(index) || index < 0 || index >= size) {
     throw new Error(`InvalidIndex: expected 0..<${size}, got ${index}`);
   }
+
+  // Fast path: read siblings from cached levels.
+  if (tree._levels) {
+    const path: MSTNode[] = [];
+    let idx = index;
+    for (let level = 0; level < tree.depth; level++) {
+      const sib = idx % 2 === 0 ? idx + 1 : idx - 1;
+      path.push({
+        siblingHash: tree._levels.hashes[level]![sib]!,
+        siblingSum: tree._levels.sums[level]![sib]!,
+      });
+      idx = Math.floor(idx / 2);
+    }
+    return path;
+  }
+
+  // Slow fallback: rebuild all levels (for hand-constructed accumulators).
   let hashes = await Promise.all(
     tree.leaves.map((l) => leafHash(l.juror, l.stake)),
   );
@@ -246,14 +299,4 @@ function eq(a: Uint8Array, b: Uint8Array): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
   return diff === 0;
-}
-
-/** Convenience: the 32-byte Address of a juror leaf → Uint8Array for hashing. */
-export function addressToBytes(_addr: Address): Uint8Array {
-  // Kit Address is a branded string; base58 decoding is the caller's job. This
-  // stub is kept off the hot path — the byte-oriented LeafClaim is the public
-  // crypto surface; adapter.ts maps Address ↔ bytes at the instruction seam.
-  throw new Error(
-    "addressToBytes: decode the Address to 32 bytes before calling",
-  );
 }
