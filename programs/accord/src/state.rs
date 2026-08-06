@@ -303,6 +303,27 @@ pub enum DisputeState {
     Failed,        // liveness-escape terminal (cancel_dispute)
 }
 
+/// Grouped args for `create_subaccord`'s non-seed fields (bean accord-sqve).
+/// `risk_type` / `evidence_spec` stay positional in the instruction signature
+/// since `risk_type` drives the Subaccord PDA seed; everything else lands here
+/// so the instruction avoids the `too_many_arguments` smell and the IDL exposes
+/// a single named object instead of 14 positional scalars.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
+pub struct CreateSubaccordParams {
+    pub staking_token: Pubkey,
+    pub min_stake: u64,
+    pub jurors_per_dispute: u32,
+    pub alpha_bps: u16,
+    pub review_window: u64,
+    pub commit_window: u64,
+    pub reveal_window: u64,
+    pub max_appeals: u8,
+    pub fee_per_juror: u64,
+    pub authority: Pubkey,
+    pub evidence_operator: Pubkey,
+    pub depth: u8,
+}
+
 /// Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are
 /// immutable and intentionally absent (ADR-0005).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]

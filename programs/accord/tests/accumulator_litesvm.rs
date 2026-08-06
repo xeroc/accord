@@ -19,7 +19,9 @@ use accord::constants::{
     PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD,
     WITHDRAWAL_DELAY,
 };
-use accord::state::{Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord};
+use accord::state::{
+    CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord,
+};
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
@@ -256,18 +258,20 @@ fn setup_accumulator() -> AccEnv {
         .args(instruction::CreateSubaccord {
             risk_type,
             evidence_spec: [0u8; 32],
-            staking_token: mint,
-            min_stake: 1_000,
-            jurors_per_dispute: 3,
-            alpha_bps: 1_000,
-            review_window: 60,
-            commit_window: 60,
-            reveal_window: 60,
-            max_appeals: 3,
-            fee_per_juror: 1_000_000,
-            authority: creator.pubkey(),
-            evidence_operator: creator.pubkey(),
-            depth: TEST_DEPTH,
+            params: CreateSubaccordParams {
+                staking_token: mint,
+                min_stake: 1_000,
+                jurors_per_dispute: 3,
+                alpha_bps: 1_000,
+                review_window: 60,
+                commit_window: 60,
+                reveal_window: 60,
+                max_appeals: 3,
+                fee_per_juror: 1_000_000,
+                authority: creator.pubkey(),
+                evidence_operator: creator.pubkey(),
+                depth: TEST_DEPTH,
+            },
         })
         .instruction()
         .unwrap();
@@ -1385,18 +1389,20 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
         .args(instruction::CreateSubaccord {
             risk_type: risk_type_b,
             evidence_spec: [0u8; 32],
-            staking_token: env.mint,
-            min_stake: 1_000,
-            jurors_per_dispute: 3,
-            alpha_bps: 1_000,
-            review_window: 60,
-            commit_window: 60,
-            reveal_window: 60,
-            max_appeals: 3,
-            fee_per_juror: 1_000_000,
-            authority: env.creator.pubkey(),
-            evidence_operator: env.creator.pubkey(),
-            depth: TEST_DEPTH,
+            params: CreateSubaccordParams {
+                staking_token: env.mint,
+                min_stake: 1_000,
+                jurors_per_dispute: 3,
+                alpha_bps: 1_000,
+                review_window: 60,
+                commit_window: 60,
+                reveal_window: 60,
+                max_appeals: 3,
+                fee_per_juror: 1_000_000,
+                authority: env.creator.pubkey(),
+                evidence_operator: env.creator.pubkey(),
+                depth: TEST_DEPTH,
+            },
         })
         .instruction()
         .unwrap();
