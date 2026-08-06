@@ -147,10 +147,19 @@ export interface AccordStakingClient {
     amount: bigint;
     path: MSTNode[];
   }): Instruction;
-  buildUnstake(input: {
+  buildRequestWithdraw(input: {
     programId: Address;
     accounts: StakingAccounts;
     amount: bigint;
+    path: MSTNode[];
+  }): Instruction;
+  buildWithdraw(input: {
+    programId: Address;
+    accounts: StakingAccounts;
+  }): Instruction;
+  buildReconcileStake(input: {
+    programId: Address;
+    accounts: StakingAccounts;
     path: MSTNode[];
   }): Instruction;
   /** Fetch the decoded JurorStake fields the guard needs. */
@@ -172,28 +181,66 @@ export function stake(
 }
 
 /**
- * Build `unstake` (lib.rs). Pre-checks the live `JurorStake` via the seam
- * fetcher and rejects BEFORE building the tx if `active_draws > 0` (or amount
- * is invalid / exceeds balance) — matches the on-chain `StakeLocked` revert.
- *
- * Pass the fetched `JurorStakeView` to avoid an extra fetch, or omit it to let
- * the facade fetch by PDA. `path` is the juror's accumulator proof (ADR-0012).
+ * Build `request_withdraw` (lib.rs:346) — phase 1 of the two-phase withdraw
+ * (REVIEW #5). Ledger-only: subtracts `amount` from `JurorStake.amount`, banks
+ * it in `pending_withdrawal`, and recomputes the accumulator root. No tokens
+ * move; no `active_draws` gate (the lock is enforced at `withdraw`). Allowed
+ * while paused. `path` is the juror's accumulator proof (ADR-0012).
  */
-export async function unstake(
+export function requestWithdraw(
   client: AccordStakingClient,
   programId: Address,
   accounts: StakingAccounts,
   amount: bigint,
   path: MSTNode[],
-  stakeView?: JurorStakeView,
-): Promise<Instruction> {
+): Instruction {
   assertValidAmount(amount);
   if (path.length === 0)
     throw new Error(
-      "InvalidPath: unstake requires a non-empty accumulator path",
+      "InvalidPath: requestWithdraw requires a non-empty accumulator path",
     );
-  const view = stakeView ?? (await client.fetchJurorStake(accounts.jurorStake));
-  if (!view) throw new Error(`JurorStakeNotFound: ${accounts.jurorStake}`);
-  assertCanUnstake(view, amount);
-  return client.buildUnstake({ programId, accounts, amount, path });
+  return client.buildRequestWithdraw({ programId, accounts, amount, path });
+}
+
+/**
+ * Build `withdraw` (lib.rs:407) — phase 2 of the two-phase withdraw. Moves the
+ * banked `pending_withdrawal` from the vault to the juror's ATA. On-chain gates:
+ * `WITHDRAWAL_DELAY` elapsed since `request_withdraw` AND `active_draws == 0`.
+ * No args — reads `pending_withdrawal` from `JurorStake`.
+ */
+export function withdraw(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: StakingAccounts,
+): Instruction {
+  if (
+    !accounts.stakingToken ||
+    !accounts.jurorTokenAccount ||
+    !accounts.vault
+  ) {
+    throw new Error(
+      "InvalidWithdrawAccounts: withdraw requires stakingToken, jurorTokenAccount, vault",
+    );
+  }
+  return client.buildWithdraw({ programId, accounts });
+}
+
+/**
+ * Build `reconcile_stake` (lib.rs:460) — permissionless crank (REVIEW #4) that
+ * folds a juror's `settlement_delta` into their canonical `amount` and updates
+ * the accumulator root via a Merkle proof. After reconcile, the ledger and the
+ * accumulator agree again. No tokens move; any caller may trigger it. `path` is
+ * the juror's accumulator proof (ADR-0012).
+ */
+export function reconcileStake(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: StakingAccounts,
+  path: MSTNode[],
+): Instruction {
+  if (path.length === 0)
+    throw new Error(
+      "InvalidPath: reconcileStake requires a non-empty accumulator path",
+    );
+  return client.buildReconcileStake({ programId, accounts, path });
 }

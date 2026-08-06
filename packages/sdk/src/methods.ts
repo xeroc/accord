@@ -33,10 +33,17 @@ import {
 import type { MSTNode } from "./methods/mst.js";
 import {
   stake as pureStake,
-  unstake as pureUnstake,
-  type JurorStakeView,
+  requestWithdraw as pureRequestWithdraw,
+  withdraw as pureWithdraw,
+  reconcileStake as pureReconcileStake,
   type StakingAccounts,
 } from "./methods/staking.js";
+import {
+  settleRound as pureSettleRound,
+  cancelDispute as pureCancelDispute,
+  type CancelDisputeAccounts,
+  type SettleRoundAccounts,
+} from "./methods/settlement.js";
 import {
   awaitCommittedVrf as pureAwaitCommittedVrf,
   drawSeat as pureDrawSeat,
@@ -102,12 +109,24 @@ export interface AccordMethods {
     amount: bigint,
     path: MSTNode[],
   ): Instruction;
-  unstake(
+  requestWithdraw(
     accounts: StakingAccounts,
     amount: bigint,
     path: MSTNode[],
-    stakeView?: JurorStakeView,
-  ): Promise<Instruction>;
+  ): Instruction;
+  withdraw(accounts: StakingAccounts): Instruction;
+  reconcileStake(accounts: StakingAccounts, path: MSTNode[]): Instruction;
+
+  // settlement (per-round crank + dispute cancellation)
+  settleRound(
+    accounts: SettleRoundAccounts,
+    roundIdx: number,
+    remainingAccounts: Address[],
+  ): Instruction;
+  cancelDispute(
+    accounts: CancelDisputeAccounts,
+    remainingAccounts: Address[],
+  ): Instruction;
 
   // vrf + per-seat draw (ADR-0009/0012)
   requestVrf(accounts: VrfDrawAccounts, extras: RequestVrfExtras): Instruction;
@@ -194,8 +213,23 @@ export function createAccordMethods(
     // staking
     stake: (accounts, amount, path) =>
       pureStake(adapter, programId, accounts, amount, path),
-    unstake: (accounts, amount, path, stakeView) =>
-      pureUnstake(adapter, programId, accounts, amount, path, stakeView),
+    requestWithdraw: (accounts, amount, path) =>
+      pureRequestWithdraw(adapter, programId, accounts, amount, path),
+    withdraw: (accounts) => pureWithdraw(adapter, programId, accounts),
+    reconcileStake: (accounts, path) =>
+      pureReconcileStake(adapter, programId, accounts, path),
+
+    // settlement
+    settleRound: (accounts, roundIdx, remainingAccounts) =>
+      pureSettleRound(
+        adapter,
+        programId,
+        accounts,
+        roundIdx,
+        remainingAccounts,
+      ),
+    cancelDispute: (accounts, remainingAccounts) =>
+      pureCancelDispute(adapter, programId, accounts, remainingAccounts),
 
     // vrf + per-seat draw
     requestVrf: (accounts, extras) =>

@@ -16,98 +16,104 @@ import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 /** Unauthorized: Signer is not the Subaccord authority. */
 export const ACCORD_ERROR__UNAUTHORIZED = 0x1770; // 6000
+/** SubaccordMismatch: Dispute does not belong to this Subaccord (cross-pool substitution rejected). */
+export const ACCORD_ERROR__SUBACCORD_MISMATCH = 0x1771; // 6001
 /** ImmutableSubaccord: Subaccord is immutable (authority == default). */
-export const ACCORD_ERROR__IMMUTABLE_SUBACCORD = 0x1771; // 6001
+export const ACCORD_ERROR__IMMUTABLE_SUBACCORD = 0x1772; // 6002
 /** TimelockNotElapsed: Timelock has not elapsed yet. */
-export const ACCORD_ERROR__TIMELOCK_NOT_ELAPSED = 0x1772; // 6002
+export const ACCORD_ERROR__TIMELOCK_NOT_ELAPSED = 0x1773; // 6003
 /** NoPendingUpdate: No pending update to execute. */
-export const ACCORD_ERROR__NO_PENDING_UPDATE = 0x1773; // 6003
+export const ACCORD_ERROR__NO_PENDING_UPDATE = 0x1774; // 6004
 /** NotPauseAuthority: Signer is not the pause authority. */
-export const ACCORD_ERROR__NOT_PAUSE_AUTHORITY = 0x1774; // 6004
+export const ACCORD_ERROR__NOT_PAUSE_AUTHORITY = 0x1775; // 6005
 /** AlreadyPaused: Program is already paused. */
-export const ACCORD_ERROR__ALREADY_PAUSED = 0x1775; // 6005
+export const ACCORD_ERROR__ALREADY_PAUSED = 0x1776; // 6006
 /** NotPaused: Program is not paused. */
-export const ACCORD_ERROR__NOT_PAUSED = 0x1776; // 6006
+export const ACCORD_ERROR__NOT_PAUSED = 0x1777; // 6007
 /** NoPendingUnpause: No pending unpause to execute. */
-export const ACCORD_ERROR__NO_PENDING_UNPAUSE = 0x1777; // 6007
+export const ACCORD_ERROR__NO_PENDING_UNPAUSE = 0x1778; // 6008
 /** UnpauseTimelockNotElapsed: Unpause timelock has not elapsed yet. */
-export const ACCORD_ERROR__UNPAUSE_TIMELOCK_NOT_ELAPSED = 0x1778; // 6008
+export const ACCORD_ERROR__UNPAUSE_TIMELOCK_NOT_ELAPSED = 0x1779; // 6009
 /** ProgramPaused: Program is paused; this instruction is halted. */
-export const ACCORD_ERROR__PROGRAM_PAUSED = 0x1779; // 6009
+export const ACCORD_ERROR__PROGRAM_PAUSED = 0x177a; // 6010
 /** InsufficientStake: Staked amount is below the Subaccord minimum. */
-export const ACCORD_ERROR__INSUFFICIENT_STAKE = 0x177a; // 6010
+export const ACCORD_ERROR__INSUFFICIENT_STAKE = 0x177b; // 6011
 /** StakeLocked: Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle). */
-export const ACCORD_ERROR__STAKE_LOCKED = 0x177b; // 6011
+export const ACCORD_ERROR__STAKE_LOCKED = 0x177c; // 6012
 /** InvalidAmount: Amount must be greater than zero. */
-export const ACCORD_ERROR__INVALID_AMOUNT = 0x177c; // 6012
+export const ACCORD_ERROR__INVALID_AMOUNT = 0x177d; // 6013
+/** WithdrawalTooEarly: Withdrawal timelock has not elapsed yet. */
+export const ACCORD_ERROR__WITHDRAWAL_TOO_EARLY = 0x177e; // 6014
+/** NoPendingWithdrawal: No pending withdrawal to execute. */
+export const ACCORD_ERROR__NO_PENDING_WITHDRAWAL = 0x177f; // 6015
 /** InsufficientBalance: Withdrawal exceeds the Juror's staked balance. */
-export const ACCORD_ERROR__INSUFFICIENT_BALANCE = 0x177d; // 6013
+export const ACCORD_ERROR__INSUFFICIENT_BALANCE = 0x1780; // 6016
 /** InsufficientJurors: Subaccord has fewer active distinct stakers than the required panel size. */
-export const ACCORD_ERROR__INSUFFICIENT_JURORS = 0x177e; // 6014
+export const ACCORD_ERROR__INSUFFICIENT_JURORS = 0x1781; // 6017
 /** InvalidOptions: Dispute options are invalid (need 2..=MAX_OPTIONS). */
-export const ACCORD_ERROR__INVALID_OPTIONS = 0x177f; // 6015
+export const ACCORD_ERROR__INVALID_OPTIONS = 0x1782; // 6018
 /** InvalidState: Dispute is not in the required state for this instruction. */
-export const ACCORD_ERROR__INVALID_STATE = 0x1780; // 6016
+export const ACCORD_ERROR__INVALID_STATE = 0x1783; // 6019
 /** FeeMismatch: Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror). */
-export const ACCORD_ERROR__FEE_MISMATCH = 0x1781; // 6017
+export const ACCORD_ERROR__FEE_MISMATCH = 0x1784; // 6020
 /** InvalidMerklePath: Accumulator Merkle path does not authenticate against the stored root. */
-export const ACCORD_ERROR__INVALID_MERKLE_PATH = 0x1782; // 6018
+export const ACCORD_ERROR__INVALID_MERKLE_PATH = 0x1785; // 6021
 /** TreeFull: Accumulator tree is full (no free leaf within the configured depth). */
-export const ACCORD_ERROR__TREE_FULL = 0x1783; // 6019
+export const ACCORD_ERROR__TREE_FULL = 0x1786; // 6022
 /** DuplicateJuror: Draw selected a duplicate Juror. */
-export const ACCORD_ERROR__DUPLICATE_JUROR = 0x1784; // 6020
+export const ACCORD_ERROR__DUPLICATE_JUROR = 0x1787; // 6023
 /** InvalidMembershipProof: Juror Merkle membership/weight proof is invalid. */
-export const ACCORD_ERROR__INVALID_MEMBERSHIP_PROOF = 0x1785; // 6021
+export const ACCORD_ERROR__INVALID_MEMBERSHIP_PROOF = 0x1788; // 6024
 /** InvalidPanelSize: Number of juror memberships does not match the required panel size. */
-export const ACCORD_ERROR__INVALID_PANEL_SIZE = 0x1786; // 6022
+export const ACCORD_ERROR__INVALID_PANEL_SIZE = 0x1789; // 6025
 /** InflatedStake: Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012). */
-export const ACCORD_ERROR__INFLATED_STAKE = 0x1787; // 6023
+export const ACCORD_ERROR__INFLATED_STAKE = 0x178a; // 6026
 /** SortitionMismatch: Submitted membership does not match the VRF-derived sortition selection (ADR-0009). */
-export const ACCORD_ERROR__SORTITION_MISMATCH = 0x1788; // 6024
+export const ACCORD_ERROR__SORTITION_MISMATCH = 0x178b; // 6027
 /** VrfAlreadyCommitted: VRF result already committed for this dispute. */
-export const ACCORD_ERROR__VRF_ALREADY_COMMITTED = 0x1789; // 6025
+export const ACCORD_ERROR__VRF_ALREADY_COMMITTED = 0x178c; // 6028
 /** VrfNotCommitted: No VRF result committed for this dispute; the root is not yet frozen. */
-export const ACCORD_ERROR__VRF_NOT_COMMITTED = 0x178a; // 6026
+export const ACCORD_ERROR__VRF_NOT_COMMITTED = 0x178d; // 6029
 /** CommitAlreadyExists: Juror has already committed. */
-export const ACCORD_ERROR__COMMIT_ALREADY_EXISTS = 0x178b; // 6027
+export const ACCORD_ERROR__COMMIT_ALREADY_EXISTS = 0x178e; // 6030
 /** CommitMissing: No commit to reveal for this Juror. */
-export const ACCORD_ERROR__COMMIT_MISSING = 0x178c; // 6028
+export const ACCORD_ERROR__COMMIT_MISSING = 0x178f; // 6031
 /** RevealMismatch: Reveal does not match the committed hash. */
-export const ACCORD_ERROR__REVEAL_MISMATCH = 0x178d; // 6029
+export const ACCORD_ERROR__REVEAL_MISMATCH = 0x1790; // 6032
 /** CommitWindowClosed: Commit window is closed. */
-export const ACCORD_ERROR__COMMIT_WINDOW_CLOSED = 0x178e; // 6030
+export const ACCORD_ERROR__COMMIT_WINDOW_CLOSED = 0x1791; // 6033
 /** RevealWindowClosed: Reveal window is closed. */
-export const ACCORD_ERROR__REVEAL_WINDOW_CLOSED = 0x178f; // 6031
+export const ACCORD_ERROR__REVEAL_WINDOW_CLOSED = 0x1792; // 6034
 /** NotDrawnJuror: Signer is not a drawn Juror for this round. */
-export const ACCORD_ERROR__NOT_DRAWN_JUROR = 0x1790; // 6032
+export const ACCORD_ERROR__NOT_DRAWN_JUROR = 0x1793; // 6035
 /** InvalidVote: Revealed vote index is out of range. */
-export const ACCORD_ERROR__INVALID_VOTE = 0x1791; // 6033
+export const ACCORD_ERROR__INVALID_VOTE = 0x1794; // 6036
 /** AlreadyRevealed: Juror has already revealed. */
-export const ACCORD_ERROR__ALREADY_REVEALED = 0x1792; // 6034
+export const ACCORD_ERROR__ALREADY_REVEALED = 0x1795; // 6037
 /** AppealWindowOpen: Appeal window has not elapsed yet. */
-export const ACCORD_ERROR__APPEAL_WINDOW_OPEN = 0x1793; // 6035
+export const ACCORD_ERROR__APPEAL_WINDOW_OPEN = 0x1796; // 6038
 /** MaxAppealsReached: Maximum appeals reached for this dispute. */
-export const ACCORD_ERROR__MAX_APPEALS_REACHED = 0x1794; // 6036
+export const ACCORD_ERROR__MAX_APPEALS_REACHED = 0x1797; // 6039
 /** MaxAppealsLimitExceeded: Subaccord max_appeals exceeds the program ceiling. */
-export const ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED = 0x1795; // 6037
+export const ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED = 0x1798; // 6040
 /** AppealWindowClosed: Appeal window has closed; the dispute can only be finalized. */
-export const ACCORD_ERROR__APPEAL_WINDOW_CLOSED = 0x1796; // 6038
+export const ACCORD_ERROR__APPEAL_WINDOW_CLOSED = 0x1799; // 6041
 /** RoundNotFinalizable: Round cannot be finalized yet (window not elapsed). */
-export const ACCORD_ERROR__ROUND_NOT_FINALIZABLE = 0x1797; // 6039
+export const ACCORD_ERROR__ROUND_NOT_FINALIZABLE = 0x179a; // 6042
 /** DisputeNotFinal: Dispute is not in a finalizable state. */
-export const ACCORD_ERROR__DISPUTE_NOT_FINAL = 0x1798; // 6040
+export const ACCORD_ERROR__DISPUTE_NOT_FINAL = 0x179b; // 6043
 /** ArithmeticOverflow: Arithmetic overflow. */
-export const ACCORD_ERROR__ARITHMETIC_OVERFLOW = 0x1799; // 6041
+export const ACCORD_ERROR__ARITHMETIC_OVERFLOW = 0x179c; // 6044
 /** RoundAlreadySettled: Round has already been settled. */
-export const ACCORD_ERROR__ROUND_ALREADY_SETTLED = 0x179a; // 6042
+export const ACCORD_ERROR__ROUND_ALREADY_SETTLED = 0x179d; // 6045
 /** RoundNotSettlable: Round index out of range for settlement (must be < current_round). */
-export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x179b; // 6043
+export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x179e; // 6046
 /** DisputeFailed: Dispute is in terminal Failed state. */
-export const ACCORD_ERROR__DISPUTE_FAILED = 0x179c; // 6044
+export const ACCORD_ERROR__DISPUTE_FAILED = 0x179f; // 6047
 /** CancelTooEarly: Dispute has not exceeded its stage timeout; cancel_dispute is not yet available. */
-export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x179d; // 6045
+export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a0; // 6048
 /** MaxRetriesExceeded: Sortition retries exceeded the on-chain bound; the pool may be too concentrated. */
-export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x179e; // 6046
+export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a1; // 6049
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -140,6 +146,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__MAX_RETRIES_EXCEEDED
   | typeof ACCORD_ERROR__NO_PENDING_UNPAUSE
   | typeof ACCORD_ERROR__NO_PENDING_UPDATE
+  | typeof ACCORD_ERROR__NO_PENDING_WITHDRAWAL
   | typeof ACCORD_ERROR__NOT_DRAWN_JUROR
   | typeof ACCORD_ERROR__NOT_PAUSE_AUTHORITY
   | typeof ACCORD_ERROR__NOT_PAUSED
@@ -151,12 +158,14 @@ export type AccordError =
   | typeof ACCORD_ERROR__ROUND_NOT_SETTLABLE
   | typeof ACCORD_ERROR__SORTITION_MISMATCH
   | typeof ACCORD_ERROR__STAKE_LOCKED
+  | typeof ACCORD_ERROR__SUBACCORD_MISMATCH
   | typeof ACCORD_ERROR__TIMELOCK_NOT_ELAPSED
   | typeof ACCORD_ERROR__TREE_FULL
   | typeof ACCORD_ERROR__UNAUTHORIZED
   | typeof ACCORD_ERROR__UNPAUSE_TIMELOCK_NOT_ELAPSED
   | typeof ACCORD_ERROR__VRF_ALREADY_COMMITTED
-  | typeof ACCORD_ERROR__VRF_NOT_COMMITTED;
+  | typeof ACCORD_ERROR__VRF_NOT_COMMITTED
+  | typeof ACCORD_ERROR__WITHDRAWAL_TOO_EARLY;
 
 let accordErrorMessages: Record<AccordError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
@@ -191,6 +200,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__MAX_RETRIES_EXCEEDED]: `Sortition retries exceeded the on-chain bound; the pool may be too concentrated.`,
     [ACCORD_ERROR__NO_PENDING_UNPAUSE]: `No pending unpause to execute.`,
     [ACCORD_ERROR__NO_PENDING_UPDATE]: `No pending update to execute.`,
+    [ACCORD_ERROR__NO_PENDING_WITHDRAWAL]: `No pending withdrawal to execute.`,
     [ACCORD_ERROR__NOT_DRAWN_JUROR]: `Signer is not a drawn Juror for this round.`,
     [ACCORD_ERROR__NOT_PAUSE_AUTHORITY]: `Signer is not the pause authority.`,
     [ACCORD_ERROR__NOT_PAUSED]: `Program is not paused.`,
@@ -202,12 +212,14 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__ROUND_NOT_SETTLABLE]: `Round index out of range for settlement (must be < current_round).`,
     [ACCORD_ERROR__SORTITION_MISMATCH]: `Submitted membership does not match the VRF-derived sortition selection (ADR-0009).`,
     [ACCORD_ERROR__STAKE_LOCKED]: `Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle).`,
+    [ACCORD_ERROR__SUBACCORD_MISMATCH]: `Dispute does not belong to this Subaccord (cross-pool substitution rejected).`,
     [ACCORD_ERROR__TIMELOCK_NOT_ELAPSED]: `Timelock has not elapsed yet.`,
     [ACCORD_ERROR__TREE_FULL]: `Accumulator tree is full (no free leaf within the configured depth).`,
     [ACCORD_ERROR__UNAUTHORIZED]: `Signer is not the Subaccord authority.`,
     [ACCORD_ERROR__UNPAUSE_TIMELOCK_NOT_ELAPSED]: `Unpause timelock has not elapsed yet.`,
     [ACCORD_ERROR__VRF_ALREADY_COMMITTED]: `VRF result already committed for this dispute.`,
     [ACCORD_ERROR__VRF_NOT_COMMITTED]: `No VRF result committed for this dispute; the root is not yet frozen.`,
+    [ACCORD_ERROR__WITHDRAWAL_TOO_EARLY]: `Withdrawal timelock has not elapsed yet.`,
   };
 }
 

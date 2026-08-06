@@ -11,24 +11,20 @@ import {
   fixDecoderSize,
   fixEncoderSize,
   getAddressEncoder,
-  getArrayDecoder,
-  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
-  getU64Decoder,
-  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type Codec,
-  type Decoder,
-  type Encoder,
+  type FixedSizeCodec,
+  type FixedSizeDecoder,
+  type FixedSizeEncoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -45,22 +41,16 @@ import {
 } from "@solana/kit/program-client-core";
 import { findJurorStakePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
-import {
-  getMSTNodeDecoder,
-  getMSTNodeEncoder,
-  type MSTNode,
-  type MSTNodeArgs,
-} from "../types";
 
-export const UNSTAKE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
-  90, 95, 107, 42, 205, 124, 50, 225,
+export const WITHDRAW_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  183, 18, 70, 156, 148, 109, 161, 34,
 ]);
 
-export function getUnstakeDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(UNSTAKE_DISCRIMINATOR);
+export function getWithdrawDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(WITHDRAW_DISCRIMINATOR);
 }
 
-export type UnstakeInstruction<
+export type WithdrawInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountJuror extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
@@ -70,8 +60,6 @@ export type UnstakeInstruction<
   TAccountVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -82,7 +70,7 @@ export type UnstakeInstruction<
             AccountSignerMeta<TAccountJuror>
         : TAccountJuror,
       TAccountSubaccord extends string
-        ? WritableAccount<TAccountSubaccord>
+        ? ReadonlyAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountJurorStake extends string
         ? WritableAccount<TAccountJurorStake>
@@ -99,54 +87,38 @@ export type UnstakeInstruction<
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
-      TAccountSystemProgram extends string
-        ? ReadonlyAccount<TAccountSystemProgram>
-        : TAccountSystemProgram,
       ...TRemainingAccounts,
     ]
   >;
 
-export type UnstakeInstructionData = {
-  discriminator: ReadonlyUint8Array;
-  amount: bigint;
-  path: Array<MSTNode>;
-};
+export type WithdrawInstructionData = { discriminator: ReadonlyUint8Array };
 
-export type UnstakeInstructionDataArgs = {
-  amount: number | bigint;
-  path: Array<MSTNodeArgs>;
-};
+export type WithdrawInstructionDataArgs = {};
 
-export function getUnstakeInstructionDataEncoder(): Encoder<UnstakeInstructionDataArgs> {
+export function getWithdrawInstructionDataEncoder(): FixedSizeEncoder<WithdrawInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["amount", getU64Encoder()],
-      ["path", getArrayEncoder(getMSTNodeEncoder())],
-    ]),
-    (value) => ({ ...value, discriminator: UNSTAKE_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: WITHDRAW_DISCRIMINATOR }),
   );
 }
 
-export function getUnstakeInstructionDataDecoder(): Decoder<UnstakeInstructionData> {
+export function getWithdrawInstructionDataDecoder(): FixedSizeDecoder<WithdrawInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["amount", getU64Decoder()],
-    ["path", getArrayDecoder(getMSTNodeDecoder())],
   ]);
 }
 
-export function getUnstakeInstructionDataCodec(): Codec<
-  UnstakeInstructionDataArgs,
-  UnstakeInstructionData
+export function getWithdrawInstructionDataCodec(): FixedSizeCodec<
+  WithdrawInstructionDataArgs,
+  WithdrawInstructionData
 > {
   return combineCodec(
-    getUnstakeInstructionDataEncoder(),
-    getUnstakeInstructionDataDecoder(),
+    getWithdrawInstructionDataEncoder(),
+    getWithdrawInstructionDataDecoder(),
   );
 }
 
-export type UnstakeAsyncInput<
+export type WithdrawAsyncInput<
   TAccountJuror extends string = string,
   TAccountSubaccord extends string = string,
   TAccountJurorStake extends string = string,
@@ -154,22 +126,17 @@ export type UnstakeAsyncInput<
   TAccountJurorTokenAccount extends string = string,
   TAccountVault extends string = string,
   TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
   juror: TransactionSigner<TAccountJuror>;
   subaccord: Address<TAccountSubaccord>;
   jurorStake?: Address<TAccountJurorStake>;
   stakingToken: Address<TAccountStakingToken>;
   jurorTokenAccount?: Address<TAccountJurorTokenAccount>;
-  /** Subaccord PDA's vault ATA; program PDA-signs transfers out of it. */
   vault?: Address<TAccountVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  amount: UnstakeInstructionDataArgs["amount"];
-  path: UnstakeInstructionDataArgs["path"];
 };
 
-export async function getUnstakeInstructionAsync<
+export async function getWithdrawInstructionAsync<
   TAccountJuror extends string,
   TAccountSubaccord extends string,
   TAccountJurorStake extends string,
@@ -177,22 +144,20 @@ export async function getUnstakeInstructionAsync<
   TAccountJurorTokenAccount extends string,
   TAccountVault extends string,
   TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: UnstakeAsyncInput<
+  input: WithdrawAsyncInput<
     TAccountJuror,
     TAccountSubaccord,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  UnstakeInstruction<
+  WithdrawInstruction<
     TProgramAddress,
     TAccountJuror,
     TAccountSubaccord,
@@ -200,8 +165,7 @@ export async function getUnstakeInstructionAsync<
     TAccountStakingToken,
     TAccountJurorTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >
 > {
   // Program address.
@@ -210,7 +174,7 @@ export async function getUnstakeInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: true },
+    subaccord: { value: input.subaccord ?? null, isWritable: false },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
     jurorTokenAccount: {
@@ -219,15 +183,11 @@ export async function getUnstakeInstructionAsync<
     },
     vault: { value: input.vault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
-
-  // Original args.
-  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.jurorStake.value) {
@@ -300,10 +260,6 @@ export async function getUnstakeInstructionAsync<
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
@@ -315,13 +271,10 @@ export async function getUnstakeInstructionAsync<
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
       getAccountMeta("vault", accounts.vault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
-      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getUnstakeInstructionDataEncoder().encode(
-      args as UnstakeInstructionDataArgs,
-    ),
+    data: getWithdrawInstructionDataEncoder().encode({}),
     programAddress,
-  } as UnstakeInstruction<
+  } as WithdrawInstruction<
     TProgramAddress,
     TAccountJuror,
     TAccountSubaccord,
@@ -329,12 +282,11 @@ export async function getUnstakeInstructionAsync<
     TAccountStakingToken,
     TAccountJurorTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >);
 }
 
-export type UnstakeInput<
+export type WithdrawInput<
   TAccountJuror extends string = string,
   TAccountSubaccord extends string = string,
   TAccountJurorStake extends string = string,
@@ -342,22 +294,17 @@ export type UnstakeInput<
   TAccountJurorTokenAccount extends string = string,
   TAccountVault extends string = string,
   TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
 > = {
   juror: TransactionSigner<TAccountJuror>;
   subaccord: Address<TAccountSubaccord>;
   jurorStake: Address<TAccountJurorStake>;
   stakingToken: Address<TAccountStakingToken>;
   jurorTokenAccount: Address<TAccountJurorTokenAccount>;
-  /** Subaccord PDA's vault ATA; program PDA-signs transfers out of it. */
   vault: Address<TAccountVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
-  amount: UnstakeInstructionDataArgs["amount"];
-  path: UnstakeInstructionDataArgs["path"];
 };
 
-export function getUnstakeInstruction<
+export function getWithdrawInstruction<
   TAccountJuror extends string,
   TAccountSubaccord extends string,
   TAccountJurorStake extends string,
@@ -365,21 +312,19 @@ export function getUnstakeInstruction<
   TAccountJurorTokenAccount extends string,
   TAccountVault extends string,
   TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: UnstakeInput<
+  input: WithdrawInput<
     TAccountJuror,
     TAccountSubaccord,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): UnstakeInstruction<
+): WithdrawInstruction<
   TProgramAddress,
   TAccountJuror,
   TAccountSubaccord,
@@ -387,8 +332,7 @@ export function getUnstakeInstruction<
   TAccountStakingToken,
   TAccountJurorTokenAccount,
   TAccountVault,
-  TAccountTokenProgram,
-  TAccountSystemProgram
+  TAccountTokenProgram
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -396,7 +340,7 @@ export function getUnstakeInstruction<
   // Original accounts.
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: true },
+    subaccord: { value: input.subaccord ?? null, isWritable: false },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
     jurorTokenAccount: {
@@ -405,24 +349,16 @@ export function getUnstakeInstruction<
     },
     vault: { value: input.vault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
-  }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value =
-      "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
@@ -435,13 +371,10 @@ export function getUnstakeInstruction<
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
       getAccountMeta("vault", accounts.vault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
-      getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getUnstakeInstructionDataEncoder().encode(
-      args as UnstakeInstructionDataArgs,
-    ),
+    data: getWithdrawInstructionDataEncoder().encode({}),
     programAddress,
-  } as UnstakeInstruction<
+  } as WithdrawInstruction<
     TProgramAddress,
     TAccountJuror,
     TAccountSubaccord,
@@ -449,12 +382,11 @@ export function getUnstakeInstruction<
     TAccountStakingToken,
     TAccountJurorTokenAccount,
     TAccountVault,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountTokenProgram
   >);
 }
 
-export type ParsedUnstakeInstruction<
+export type ParsedWithdrawInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
@@ -465,28 +397,26 @@ export type ParsedUnstakeInstruction<
     jurorStake: TAccountMetas[2];
     stakingToken: TAccountMetas[3];
     jurorTokenAccount: TAccountMetas[4];
-    /** Subaccord PDA's vault ATA; program PDA-signs transfers out of it. */
     vault: TAccountMetas[5];
     tokenProgram: TAccountMetas[6];
-    systemProgram: TAccountMetas[7];
   };
-  data: UnstakeInstructionData;
+  data: WithdrawInstructionData;
 };
 
-export function parseUnstakeInstruction<
+export function parseWithdrawInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedUnstakeInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 8) {
+): ParsedWithdrawInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 8,
+        expectedAccountMetas: 7,
       },
     );
   }
@@ -506,8 +436,7 @@ export function parseUnstakeInstruction<
       jurorTokenAccount: getNextAccount(),
       vault: getNextAccount(),
       tokenProgram: getNextAccount(),
-      systemProgram: getNextAccount(),
     },
-    data: getUnstakeInstructionDataDecoder().decode(instruction.data),
+    data: getWithdrawInstructionDataDecoder().decode(instruction.data),
   };
 }

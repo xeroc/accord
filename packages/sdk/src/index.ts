@@ -71,7 +71,8 @@ export * from "./methods/voting.js";
 
 // Stake accumulator (ADR-0012): subtree-sum MST builder + proofs — the
 // byte-exact reference the on-chain verifier matches. Used by `stake`/
-// `unstake` (path) and `draw_seat` (membership + sortition prefix).
+// `requestWithdraw`/`reconcileStake` (path) and `draw_seat` (membership +
+// sortition prefix).
 export {
   type MerkleAccumulator,
   type MSTNode,
@@ -92,9 +93,14 @@ export * from "./methods/lifecycle.js";
 // (ADR-0009 §2 + ADR-0012, bean veridao-j7tx).
 export * from "./methods/vrf.js";
 
-// Juror capital stake / unstake (path-verified) + the active_draws typed guard
-// (ADR-0003/0007/0012, bean veridao-o8ki).
+// Juror capital stake / two-phase withdraw (requestWithdraw + withdraw) +
+// reconcileStake crank + the active_draws typed guard (ADR-0003/0007/0012,
+// REVIEW #4/#5, bean veridao-o8ki).
 export * from "./methods/staking.js";
+
+// Per-round settlement crank + dispute cancellation (settleRound / cancelDispute,
+// ADR-0010, bean accord-dedf).
+export * from "./methods/settlement.js";
 
 // Dispute appeal + bond refund + appeal-ladder math (ADR-0004, ADR-0010,
 // bean veridao-yny6).

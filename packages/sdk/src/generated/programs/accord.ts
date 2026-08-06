@@ -75,11 +75,13 @@ import {
   getPauseInstructionAsync,
   getProposeSubaccordUpdateInstructionAsync,
   getProposeUnpauseInstructionAsync,
+  getReconcileStakeInstruction,
   getRequestVrfInstructionAsync,
+  getRequestWithdrawInstructionAsync,
   getRevealInstructionAsync,
   getSettleRoundInstructionAsync,
   getStakeInstructionAsync,
-  getUnstakeInstructionAsync,
+  getWithdrawInstructionAsync,
   parseAppealInstruction,
   parseCancelDisputeInstruction,
   parseClaimAppealRefundInstruction,
@@ -98,11 +100,13 @@ import {
   parsePauseInstruction,
   parseProposeSubaccordUpdateInstruction,
   parseProposeUnpauseInstruction,
+  parseReconcileStakeInstruction,
   parseRequestVrfInstruction,
+  parseRequestWithdrawInstruction,
   parseRevealInstruction,
   parseSettleRoundInstruction,
   parseStakeInstruction,
-  parseUnstakeInstruction,
+  parseWithdrawInstruction,
   type AppealAsyncInput,
   type CancelDisputeAsyncInput,
   type ClaimAppealRefundAsyncInput,
@@ -136,19 +140,23 @@ import {
   type ParsedPauseInstruction,
   type ParsedProposeSubaccordUpdateInstruction,
   type ParsedProposeUnpauseInstruction,
+  type ParsedReconcileStakeInstruction,
   type ParsedRequestVrfInstruction,
+  type ParsedRequestWithdrawInstruction,
   type ParsedRevealInstruction,
   type ParsedSettleRoundInstruction,
   type ParsedStakeInstruction,
-  type ParsedUnstakeInstruction,
+  type ParsedWithdrawInstruction,
   type PauseAsyncInput,
   type ProposeSubaccordUpdateAsyncInput,
   type ProposeUnpauseAsyncInput,
+  type ReconcileStakeInput,
   type RequestVrfAsyncInput,
+  type RequestWithdrawAsyncInput,
   type RevealAsyncInput,
   type SettleRoundAsyncInput,
   type StakeAsyncInput,
-  type UnstakeAsyncInput,
+  type WithdrawAsyncInput,
 } from "../instructions";
 import {
   findAppealBondPda,
@@ -280,11 +288,13 @@ export enum AccordInstruction {
   Pause,
   ProposeSubaccordUpdate,
   ProposeUnpause,
+  ReconcileStake,
   RequestVrf,
+  RequestWithdraw,
   Reveal,
   SettleRound,
   Stake,
-  Unstake,
+  Withdraw,
 }
 
 export function identifyAccordInstruction(
@@ -493,12 +503,34 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([40, 103, 128, 85, 211, 11, 34, 80]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.ReconcileStake;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([5, 87, 79, 152, 164, 176, 190, 226]),
       ),
       0,
     )
   ) {
     return AccordInstruction.RequestVrf;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([137, 95, 187, 96, 250, 138, 31, 182]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.RequestWithdraw;
   }
   if (
     containsBytes(
@@ -537,12 +569,12 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([90, 95, 107, 42, 205, 124, 50, 225]),
+        new Uint8Array([183, 18, 70, 156, 148, 109, 161, 34]),
       ),
       0,
     )
   ) {
-    return AccordInstruction.Unstake;
+    return AccordInstruction.Withdraw;
   }
   throw new SolanaError(
     SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION,
@@ -608,8 +640,14 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.ProposeUnpause;
     } & ParsedProposeUnpauseInstruction<TProgram>)
   | ({
+      instructionType: AccordInstruction.ReconcileStake;
+    } & ParsedReconcileStakeInstruction<TProgram>)
+  | ({
       instructionType: AccordInstruction.RequestVrf;
     } & ParsedRequestVrfInstruction<TProgram>)
+  | ({
+      instructionType: AccordInstruction.RequestWithdraw;
+    } & ParsedRequestWithdrawInstruction<TProgram>)
   | ({
       instructionType: AccordInstruction.Reveal;
     } & ParsedRevealInstruction<TProgram>)
@@ -620,8 +658,8 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.Stake;
     } & ParsedStakeInstruction<TProgram>)
   | ({
-      instructionType: AccordInstruction.Unstake;
-    } & ParsedUnstakeInstruction<TProgram>);
+      instructionType: AccordInstruction.Withdraw;
+    } & ParsedWithdrawInstruction<TProgram>);
 
 export function parseAccordInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
@@ -754,11 +792,25 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseProposeUnpauseInstruction(instruction),
       };
     }
+    case AccordInstruction.ReconcileStake: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.ReconcileStake,
+        ...parseReconcileStakeInstruction(instruction),
+      };
+    }
     case AccordInstruction.RequestVrf: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: AccordInstruction.RequestVrf,
         ...parseRequestVrfInstruction(instruction),
+      };
+    }
+    case AccordInstruction.RequestWithdraw: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.RequestWithdraw,
+        ...parseRequestWithdrawInstruction(instruction),
       };
     }
     case AccordInstruction.Reveal: {
@@ -782,11 +834,11 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseStakeInstruction(instruction),
       };
     }
-    case AccordInstruction.Unstake: {
+    case AccordInstruction.Withdraw: {
       assertIsInstructionWithAccounts(instruction);
       return {
-        instructionType: AccordInstruction.Unstake,
-        ...parseUnstakeInstruction(instruction),
+        instructionType: AccordInstruction.Withdraw,
+        ...parseWithdrawInstruction(instruction),
       };
     }
     default:
@@ -890,9 +942,17 @@ export type AccordPluginInstructions = {
     input: ProposeUnpauseAsyncInput,
   ) => ReturnType<typeof getProposeUnpauseInstructionAsync> &
     SelfPlanAndSendFunctions;
+  reconcileStake: (
+    input: ReconcileStakeInput,
+  ) => ReturnType<typeof getReconcileStakeInstruction> &
+    SelfPlanAndSendFunctions;
   requestVrf: (
     input: RequestVrfAsyncInput,
   ) => ReturnType<typeof getRequestVrfInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  requestWithdraw: (
+    input: RequestWithdrawAsyncInput,
+  ) => ReturnType<typeof getRequestWithdrawInstructionAsync> &
     SelfPlanAndSendFunctions;
   reveal: (
     input: RevealAsyncInput,
@@ -904,9 +964,10 @@ export type AccordPluginInstructions = {
   stake: (
     input: StakeAsyncInput,
   ) => ReturnType<typeof getStakeInstructionAsync> & SelfPlanAndSendFunctions;
-  unstake: (
-    input: UnstakeAsyncInput,
-  ) => ReturnType<typeof getUnstakeInstructionAsync> & SelfPlanAndSendFunctions;
+  withdraw: (
+    input: WithdrawAsyncInput,
+  ) => ReturnType<typeof getWithdrawInstructionAsync> &
+    SelfPlanAndSendFunctions;
 };
 
 export type AccordPluginPdas = {
@@ -916,8 +977,8 @@ export type AccordPluginPdas = {
   subaccord: typeof findSubaccordPda;
   pendingUpdate: typeof findPendingUpdatePda;
   programIdentity: typeof findProgramIdentityPda;
-  round: typeof findRoundPda;
   jurorStake: typeof findJurorStakePda;
+  round: typeof findRoundPda;
 };
 
 export type AccordPluginRequirements = ClientWithRpc<
@@ -1020,10 +1081,20 @@ export function accordProgram() {
               client,
               getProposeUnpauseInstructionAsync(input),
             ),
+          reconcileStake: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getReconcileStakeInstruction(input),
+            ),
           requestVrf: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getRequestVrfInstructionAsync(input),
+            ),
+          requestWithdraw: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRequestWithdrawInstructionAsync(input),
             ),
           reveal: (input) =>
             addSelfPlanAndSendFunctions(
@@ -1040,10 +1111,10 @@ export function accordProgram() {
               client,
               getStakeInstructionAsync(input),
             ),
-          unstake: (input) =>
+          withdraw: (input) =>
             addSelfPlanAndSendFunctions(
               client,
-              getUnstakeInstructionAsync(input),
+              getWithdrawInstructionAsync(input),
             ),
         },
         pdas: {
@@ -1053,8 +1124,8 @@ export function accordProgram() {
           subaccord: findSubaccordPda,
           pendingUpdate: findPendingUpdatePda,
           programIdentity: findProgramIdentityPda,
-          round: findRoundPda,
           jurorStake: findJurorStakePda,
+          round: findRoundPda,
         },
         identifyAccount: identifyAccordAccount,
         identifyInstruction: identifyAccordInstruction,

@@ -42,7 +42,11 @@ import { getPauseInstruction } from "./generated/instructions/pause.js";
 import { getProposeUnpauseInstruction } from "./generated/instructions/proposeUnpause.js";
 import { getExecuteUnpauseInstruction } from "./generated/instructions/executeUnpause.js";
 import { getStakeInstruction } from "./generated/instructions/stake.js";
-import { getUnstakeInstruction } from "./generated/instructions/unstake.js";
+import { getRequestWithdrawInstruction } from "./generated/instructions/requestWithdraw.js";
+import { getWithdrawInstruction } from "./generated/instructions/withdraw.js";
+import { getReconcileStakeInstruction } from "./generated/instructions/reconcileStake.js";
+import { getSettleRoundInstruction } from "./generated/instructions/settleRound.js";
+import { getCancelDisputeInstruction } from "./generated/instructions/cancelDispute.js";
 import { getRequestVrfInstruction } from "./generated/instructions/requestVrf.js";
 import { getDrawSeatInstruction } from "./generated/instructions/drawSeat.js";
 import { getCommitInstruction } from "./generated/instructions/commit.js";
@@ -72,6 +76,11 @@ import type {
   JurorStakeView,
   StakingAccounts,
 } from "./methods/staking.js";
+import type {
+  AccordSettlementClient,
+  CancelDisputeAccounts,
+  SettleRoundAccounts,
+} from "./methods/settlement.js";
 import type { MSTNode } from "./methods/mst.js";
 import type { AccordVotingClient, VotingAccounts } from "./methods/voting.js";
 import type {
@@ -82,9 +91,11 @@ import type {
 
 /** Union of every seam the adapter implements. */
 export interface AccordAdapter
-  extends AccordDisputeClient,
+  extends
+    AccordDisputeClient,
     AccordLifecycleClient,
     AccordStakingClient,
+    AccordSettlementClient,
     AccordVrfClient,
     AccordVotingClient,
     AccordAppealClient {}
@@ -216,16 +227,43 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         { programAddress: input.programId },
       );
     },
-    buildUnstake(input) {
-      return getUnstakeInstruction(
+    buildRequestWithdraw(input) {
+      return getRequestWithdrawInstruction(
         {
           juror: accord.signer,
           subaccord: input.accounts.subaccord,
           jurorStake: input.accounts.jurorStake,
-          stakingToken: input.accounts.stakingToken,
-          jurorTokenAccount: input.accounts.jurorTokenAccount,
-          vault: input.accounts.vault,
           amount: input.amount,
+          path: mapPath(input.path),
+        },
+        { programAddress: input.programId },
+      );
+    },
+    buildWithdraw(input) {
+      const a = input.accounts;
+      if (!a.stakingToken || !a.jurorTokenAccount || !a.vault) {
+        throw new Error(
+          "InvalidWithdrawAccounts: withdraw requires stakingToken, jurorTokenAccount, vault",
+        );
+      }
+      return getWithdrawInstruction(
+        {
+          juror: accord.signer,
+          subaccord: a.subaccord,
+          jurorStake: a.jurorStake,
+          stakingToken: a.stakingToken,
+          jurorTokenAccount: a.jurorTokenAccount,
+          vault: a.vault,
+        },
+        { programAddress: input.programId },
+      );
+    },
+    buildReconcileStake(input) {
+      return getReconcileStakeInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          jurorStake: input.accounts.jurorStake,
           path: mapPath(input.path),
         },
         { programAddress: input.programId },
@@ -240,6 +278,35 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         amount: m.data.amount,
         activeDraws: m.data.activeDraws,
       };
+    },
+
+    // ── settlement (per-round crank + dispute cancellation) ───────────────
+    buildSettleRound(input) {
+      const ix = getSettleRoundInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          dispute: input.accounts.dispute,
+          round: input.accounts.round,
+          roundIdx: input.roundIdx,
+        },
+        { programAddress: input.programId },
+      );
+      return appendRemaining(ix, input.remainingAccounts);
+    },
+    buildCancelDispute(input) {
+      const ix = getCancelDisputeInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          dispute: input.accounts.dispute,
+          stakingToken: input.accounts.stakingToken,
+          filerTokenAccount: input.accounts.filerTokenAccount,
+          vault: input.accounts.vault,
+        },
+        { programAddress: input.programId },
+      );
+      return appendRemaining(ix, input.remainingAccounts);
     },
 
     // ── VRF + per-seat draw (ADR-0009/0012) ────────────────────────────────
