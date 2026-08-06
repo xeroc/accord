@@ -46,7 +46,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe");
+declare_id!("8PbsAnwxCUPWQHnUx8e7iH2guFiyxso4EJkxP8hF2fS7");
 
 #[program]
 pub mod accord {
@@ -675,13 +675,24 @@ pub mod accord {
     /// `dispute.frozen_root`, reconstructs the cumulative-from-left prefix from
     /// the authenticated sibling sums, enforces the sortition criterion
     /// (`prefix ≤ r_i < prefix + stake`, where `r_i` is deterministically
-    /// derived from the frozen VRF + seat index), the inflation guard
-    /// (`JurorStake.amount ≥ leaf.stake`), and distinctness vs already-drawn
-    /// seats. Deterministic collision re-rülle is computed client-side to match
-    /// (no `draw_attempt` grind — CONCEPT-REVIEW Ugly 1+7 / bean accord-tzo0).
+    /// derived from the frozen VRF + seat index + retry counter), the inflation
+    /// guard (`JurorStake.amount ≥ leaf.stake`), and distinctness vs already-drawn
+    /// seats.
+    ///
+    /// **Deterministic collision re-roll** (bean accord-tzo0): the cranker
+    /// supplies `retries` — how many times the deterministic `r_i` landed on an
+    /// already-drawn juror before hitting the submitted leaf. The chain verifies
+    /// every prior retry (0..retries) genuinely collided with a drawn seat's
+    /// range (stored in `round.seat_prefix`/`seat_stake`), eliminating caller
+    /// choice. One seed → exactly one valid panel; no `draw_attempt` grind.
     /// When the last seat lands, the round windows open and the dispute
     /// transitions to `Drawn`.
-    pub fn draw_seat(ctx: Context<DrawSeat>, seat: u32, membership: JurorMembership) -> Result<()> {
+    pub fn draw_seat(
+        ctx: Context<DrawSeat>,
+        seat: u32,
+        retries: u32,
+        membership: JurorMembership,
+    ) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
             dispute.state == DisputeState::Created,
@@ -713,28 +724,8 @@ pub mod accord {
             dispute.frozen_total_stake,
         )?;
 
-        // Sortition: r_i is deterministic from the frozen VRF + seat index.
-        let vrf_seed = {
-            use solana_program::hash::hashv;
-            hashv(&[
-                &committed_vrf,
-                dispute.key().as_ref(),
-                &round_idx.to_le_bytes(),
-            ])
-            .to_bytes()
-        };
-        let r_hash = {
-            use solana_program::hash::hashv;
-            hashv(&[&vrf_seed, &seat.to_le_bytes()]).to_bytes()
-        };
-        let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap_or([0u8; 8]))
-            % dispute.frozen_total_stake;
-        require!(r_i >= prefix, AccordError::SortitionMismatch);
-        require!(r_i - prefix < leaf.stake, AccordError::SortitionMismatch);
-
         // Load the round (init_if_needed — persists across the N seat txs).
-        // `load_init` writes the discriminator; on the 2nd..Nth draw_seat the
-        // account already exists, so write the disc only if absent then load_mut.
+        // Loaded BEFORE sortition: the collision check reads prior seats' ranges.
         let dispute_key = dispute.key();
         {
             let info = ctx.accounts.round.to_account_info();
@@ -760,14 +751,68 @@ pub mod accord {
             AccordError::InvalidState
         );
 
-        // Seat must be unfilled; juror must be distinct from already-drawn seats.
+        // Seat must be unfilled.
         require!(
             round.jurors[seat as usize] == Pubkey::default(),
             AccordError::DuplicateJuror
         );
+
+        // --- Deterministic sortition with on-chain collision re-roll (tzo0) ---
+        //
+        // r_i(retry) = u64_le(sha256(vrf_seed ‖ seat ‖ retry)[0..8]) % total
+        // For retry < retries: r_i MUST land inside an already-drawn seat's range
+        //   (a genuine collision — the cranker cannot skip a non-colliding retry
+        //   to cherry-pick a preferred juror at a later retry).
+        // For retry == retries: r_i MUST select the submitted leaf.
+        require!(
+            retries <= MAX_SORTITION_RETRIES,
+            AccordError::MaxRetriesExceeded
+        );
+
+        let vrf_seed = {
+            use solana_program::hash::hashv;
+            hashv(&[
+                &committed_vrf,
+                dispute_key.as_ref(),
+                &round_idx.to_le_bytes(),
+            ])
+            .to_bytes()
+        };
+
+        for retry in 0..=retries {
+            let r_i = {
+                use solana_program::hash::hashv;
+                let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &retry.to_le_bytes()]).to_bytes();
+                u64::from_le_bytes(rh[0..8].try_into().unwrap_or([0u8; 8]))
+                    % dispute.frozen_total_stake
+            };
+            if retry < retries {
+                // Prior retry: must collide with an already-drawn seat's range.
+                let mut collided = false;
+                for j in 0..(seat as usize) {
+                    let p = round.seat_prefix[j];
+                    let s = round.seat_stake[j];
+                    if s > 0 && r_i >= p && r_i - p < s {
+                        collided = true;
+                        break;
+                    }
+                }
+                require!(collided, AccordError::SortitionMismatch);
+            } else {
+                // Terminal retry: r_i must select the submitted leaf.
+                require!(r_i >= prefix, AccordError::SortitionMismatch);
+                require!(r_i - prefix < leaf.stake, AccordError::SortitionMismatch);
+            }
+        }
+
+        // Juror must be distinct from already-drawn seats.
         for j in 0..(panel as usize) {
             require!(round.jurors[j] != leaf.juror, AccordError::DuplicateJuror);
         }
+
+        // Store the drawn seat's range for future collision checks.
+        round.seat_prefix[seat as usize] = prefix;
+        round.seat_stake[seat as usize] = leaf.stake;
 
         // Inflation guard via remaining_accounts[0] (the drawn juror's stake).
         require!(
@@ -2586,9 +2631,9 @@ mod accumulator_tests {
 
     #[test]
     fn sortition_prefix_brackets_vrf_seat() {
-        // For every seat value, the deterministic r_i must fall into exactly one
-        // leaf's [prefix, prefix+stake) range — proving sortition is total and
-        // non-overlapping for the reconstructed prefixes.
+        // For every seat value (at retry 0), the deterministic r_i must fall
+        // into exactly one leaf's [prefix, prefix+stake) range — proving
+        // sortition is total and non-overlapping for the reconstructed prefixes.
         let leaves = vec![(pk(1), 1_000), (pk(2), 3_000), (pk(3), 500), (pk(4), 2_000)];
         let depth = 4u8;
         let (root, total, _) = build_root_and_path(&leaves, depth, 0);
@@ -2600,7 +2645,13 @@ mod accumulator_tests {
                 .to_bytes();
 
         for seat in 0..4u32 {
-            let r = solana_program::hash::hashv(&[&vrf_seed, &seat.to_le_bytes()]).to_bytes();
+            let retry = 0u32;
+            let r = solana_program::hash::hashv(&[
+                &vrf_seed,
+                &seat.to_le_bytes(),
+                &retry.to_le_bytes(),
+            ])
+            .to_bytes();
             let r_i = u64::from_le_bytes(r[0..8].try_into().unwrap()) % total;
             let mut found = false;
             let mut running = 0u64;

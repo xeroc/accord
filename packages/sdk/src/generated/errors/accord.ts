@@ -106,6 +106,8 @@ export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x179b; // 6043
 export const ACCORD_ERROR__DISPUTE_FAILED = 0x179c; // 6044
 /** CancelTooEarly: Dispute has not exceeded its stage timeout; cancel_dispute is not yet available. */
 export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x179d; // 6045
+/** MaxRetriesExceeded: Sortition retries exceeded the on-chain bound; the pool may be too concentrated. */
+export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x179e; // 6046
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -135,6 +137,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__INVALID_VOTE
   | typeof ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED
   | typeof ACCORD_ERROR__MAX_APPEALS_REACHED
+  | typeof ACCORD_ERROR__MAX_RETRIES_EXCEEDED
   | typeof ACCORD_ERROR__NO_PENDING_UNPAUSE
   | typeof ACCORD_ERROR__NO_PENDING_UPDATE
   | typeof ACCORD_ERROR__NOT_DRAWN_JUROR
@@ -185,6 +188,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__INVALID_VOTE]: `Revealed vote index is out of range.`,
     [ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED]: `Subaccord max_appeals exceeds the program ceiling.`,
     [ACCORD_ERROR__MAX_APPEALS_REACHED]: `Maximum appeals reached for this dispute.`,
+    [ACCORD_ERROR__MAX_RETRIES_EXCEEDED]: `Sortition retries exceeded the on-chain bound; the pool may be too concentrated.`,
     [ACCORD_ERROR__NO_PENDING_UNPAUSE]: `No pending unpause to execute.`,
     [ACCORD_ERROR__NO_PENDING_UPDATE]: `No pending update to execute.`,
     [ACCORD_ERROR__NOT_DRAWN_JUROR]: `Signer is not a drawn Juror for this round.`,

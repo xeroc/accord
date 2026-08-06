@@ -65,8 +65,9 @@ export type DrawSeatInstruction<
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
-  TAccountSystemProgram extends string | AccountMeta<string> =
-    "11111111111111111111111111111111",
+  TAccountSystemProgram extends
+    | string
+    | AccountMeta<string> = "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -92,6 +93,7 @@ export type DrawSeatInstruction<
 export type DrawSeatInstructionData = {
   discriminator: ReadonlyUint8Array;
   seat: number;
+  retries: number;
   leaf: LeafClaim;
   proof: Array<MSTNode>;
   index: number;
@@ -99,6 +101,7 @@ export type DrawSeatInstructionData = {
 
 export type DrawSeatInstructionDataArgs = {
   seat: number;
+  retries: number;
   leaf: LeafClaimArgs;
   proof: Array<MSTNodeArgs>;
   index: number;
@@ -109,6 +112,7 @@ export function getDrawSeatInstructionDataEncoder(): Encoder<DrawSeatInstruction
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["seat", getU32Encoder()],
+      ["retries", getU32Encoder()],
       ["leaf", getLeafClaimEncoder()],
       ["proof", getArrayEncoder(getMSTNodeEncoder())],
       ["index", getU32Encoder()],
@@ -121,6 +125,7 @@ export function getDrawSeatInstructionDataDecoder(): Decoder<DrawSeatInstruction
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["seat", getU32Decoder()],
+    ["retries", getU32Decoder()],
     ["leaf", getLeafClaimDecoder()],
     ["proof", getArrayDecoder(getMSTNodeDecoder())],
     ["index", getU32Decoder()],
@@ -148,6 +153,7 @@ export type DrawSeatInput<
   round: Address<TAccountRound>;
   systemProgram?: Address<TAccountSystemProgram>;
   seat: DrawSeatInstructionDataArgs["seat"];
+  retries: DrawSeatInstructionDataArgs["retries"];
   leaf: DrawSeatInstructionDataArgs["leaf"];
   proof: DrawSeatInstructionDataArgs["proof"];
   index: DrawSeatInstructionDataArgs["index"];

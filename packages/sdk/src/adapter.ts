@@ -82,8 +82,7 @@ import type {
 
 /** Union of every seam the adapter implements. */
 export interface AccordAdapter
-  extends
-    AccordDisputeClient,
+  extends AccordDisputeClient,
     AccordLifecycleClient,
     AccordStakingClient,
     AccordVrfClient,
@@ -263,6 +262,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           dispute: input.accounts.dispute,
           round: input.roundPda,
           seat: input.seat,
+          retries: input.retries,
           leaf: mapLeaf(input.leaf),
           proof: mapPath(input.proof),
           index: input.index,

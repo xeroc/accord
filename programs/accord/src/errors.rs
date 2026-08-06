@@ -124,4 +124,8 @@ pub enum AccordError {
     DisputeFailed,
     #[msg("Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.")]
     CancelTooEarly,
+
+    // --- draw (bean accord-tzo0) ---
+    #[msg("Sortition retries exceeded the on-chain bound; the pool may be too concentrated.")]
+    MaxRetriesExceeded,
 }

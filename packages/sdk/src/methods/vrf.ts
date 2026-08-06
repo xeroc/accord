@@ -85,8 +85,12 @@ export async function vrfSeed(
 }
 
 /**
- * Derive the sortition point for a single seat:
- * `r_i = u64_le(sha256(vrf_seed ‖ seat_le4)[0..8]) % frozen_total_stake`.
+ * Derive the sortition point for a single seat at a given retry:
+ * `r_i = u64_le(sha256(vrf_seed ‖ seat_le4 ‖ retry_le4)[0..8]) % frozen_total_stake`.
+ * `retry` defaults to 0 (the common case — no collision). The on-chain
+ * `draw_seat` includes the same retry counter in its sortition hash and verifies
+ * that every prior retry (0..retries) genuinely collided with an already-drawn
+ * juror (bean accord-tzo0).
  */
 export async function seatSlot(
   committedVrf: Uint8Array,
@@ -94,20 +98,24 @@ export async function seatSlot(
   roundIdx: number,
   seat: number,
   frozenTotalStake: bigint,
+  retry: number = 0,
 ): Promise<bigint> {
   if (frozenTotalStake <= 0n) throw new Error("InvalidTotalStake: must be > 0");
   if (!Number.isInteger(seat) || seat < 0 || seat > 0xffffffff)
     throw new Error(`InvalidSeat: expected u32, got ${seat}`);
+  if (!Number.isInteger(retry) || retry < 0)
+    throw new Error(
+      `InvalidRetry: expected non-negative integer, got ${retry}`,
+    );
   const seed = await vrfSeed(committedVrf, disputeBytes, roundIdx);
-  const rHash = await sha256(seed, le4(seat));
+  const rHash = await sha256(seed, le4(seat), le4(retry));
   return leU64At(rHash, 0) % frozenTotalStake;
 }
 
 /**
  * Find the leaf in `tree` whose sortition range `[prefix, prefix+stake)`
  * contains `slot`, and return it with its index + proof. Returns `null` if the
- * slot lands in a zero-stake gap (no eligible leaf) — the caller then applies
- * the deterministic collision re-rülle (bean accord-tzo0).
+ * slot lands in a zero-stake gap (no eligible leaf).
  */
 export async function findLeafForSlot(
   tree: MerkleAccumulator,
@@ -123,6 +131,59 @@ export async function findLeafForSlot(
     running += leaf.stake;
   }
   return null;
+}
+
+/**
+ * Resolve a single seat using the deterministic collision re-roll algorithm
+ * (bean accord-tzo0). Iterates `retry = 0, 1, 2, …` computing
+ * `r_i = sha256(seed ‖ seat ‖ retry) % total_stake`; the first retry whose
+ * selected leaf is NOT in `alreadyDrawn` is the terminal. Returns the leaf,
+ * proof, and the `retries` count the cranker must submit to `draw_seat`.
+ *
+ * The on-chain verifier independently confirms every prior retry collided — so
+ * there is exactly one valid (leaf, retries) pair per seat. No caller choice.
+ */
+export async function resolveSeat(
+  committedVrf: Uint8Array,
+  disputeBytes: Uint8Array,
+  roundIdx: number,
+  seat: number,
+  tree: MerkleAccumulator,
+  alreadyDrawn: Uint8Array[],
+  maxRetries: number = 1024,
+): Promise<{
+  leaf: LeafClaim;
+  index: number;
+  proof: MSTNode[];
+  retries: number;
+}> {
+  const total = tree.rootSum;
+  if (total <= 0n) throw new Error("InvalidTotalStake: must be > 0");
+  const drawnHex = new Set(alreadyDrawn.map((j) => hex(j)));
+  for (let retry = 0; retry <= maxRetries; retry++) {
+    const slot = await seatSlot(
+      committedVrf,
+      disputeBytes,
+      roundIdx,
+      seat,
+      total,
+      retry,
+    );
+    const found = await findLeafForSlot(tree, slot);
+    if (found && !drawnHex.has(hex(found.leaf.juror))) {
+      return { ...found, retries: retry };
+    }
+    // else: collision (already drawn) or zero-stake gap → re-roll
+  }
+  throw new Error(
+    `MaxRetriesExceeded: seat ${seat} could not resolve in ${maxRetries} retries`,
+  );
+}
+
+function hex(b: Uint8Array): string {
+  let s = "";
+  for (const x of b) s += x.toString(16).padStart(2, "0");
+  return s;
 }
 
 /** Verify a seat's membership reconstructs to the frozen root (client-side precheck). */
@@ -164,13 +225,16 @@ export interface RequestVrfExtras {
 
 /**
  * One seat's resolved membership: the leaf `(juror, stake)` at `index` plus its
- * accumulator proof, and the juror's `JurorStake` PDA (remaining_accounts[0]).
+ * accumulator proof, the juror's `JurorStake` PDA (remaining_accounts[0]), and
+ * the deterministic collision re-roll count (bean accord-tzo0).
  */
 export interface SeatMembership {
   leaf: LeafClaim;
   index: number;
   proof: MSTNode[];
   jurorStake: Address;
+  /** Number of sortition retries (collisions) before this leaf was selected. */
+  retries: number;
 }
 
 /**
@@ -189,6 +253,8 @@ export interface AccordVrfClient {
     /** Round PDA — `init_if_needed` by draw_seat (`["round", dispute, current_round]`). */
     roundPda: Address;
     seat: number;
+    /** Sortition collision re-roll count (bean accord-tzo0). */
+    retries: number;
     leaf: LeafClaim;
     proof: MSTNode[];
     index: number;
@@ -234,8 +300,9 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Build `draw_seat` for one seat (lib.rs). Pass the pre-resolved `seat` +
- * membership (from {@link findLeafForSlot}) and the juror's `JurorStake` PDA.
- * The round is `init_if_needed` on-chain and persists across the N seat txs.
+ * membership (from {@link resolveSeat}) and the juror's `JurorStake` PDA. The
+ * round is `init_if_needed` on-chain and persists across the N seat txs.
+ * `membership.retries` carries the deterministic collision re-roll count.
  */
 export function drawSeat(
   client: AccordVrfClient,
@@ -250,6 +317,7 @@ export function drawSeat(
     accounts,
     roundPda,
     seat,
+    retries: membership.retries,
     leaf: membership.leaf,
     proof: membership.proof,
     index: membership.index,

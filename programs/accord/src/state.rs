@@ -192,7 +192,15 @@ pub struct Round {
     /// processes it; 1 after. Idempotency guard against double-settlement.
     /// (`u8` not `bool` — `bool` is not `Pod`.)
     pub settled: u8,
-    pub _pad1: [u8; 4], // total = multiple of 8 (max alignment = i64)
+    pub _pad1: [u8; 4], // align seat_prefix to 8
+    /// Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
+    /// when the seat lands; later seats read these to verify that every prior
+    /// sortition retry genuinely collided with an already-drawn juror —
+    /// eliminating caller choice (no draw_attempt grind).
+    pub seat_prefix: [u64; MAX_JURORS],
+    /// Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
+    /// range `[prefix, prefix+stake)` used for deterministic collision checks.
+    pub seat_stake: [u64; MAX_JURORS], // total = multiple of 8
 }
 
 /// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per

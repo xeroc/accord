@@ -813,7 +813,9 @@ fn draw_seat_fills_round_against_frozen_root() {
         p
     };
 
-    // Find a VRF byte where all 3 seats map to distinct leaf indices.
+    // Find a VRF byte where all 3 seats map to distinct leaf indices at retry=0
+    // (no collision — the common case). The hash now includes the retry counter
+    // (bean accord-tzo0): r_i = u64_le(sha256(seed ‖ seat ‖ retry)[..8]) % total.
     let vrf = {
         let mut candidate = [0u8; 32];
         loop {
@@ -824,7 +826,7 @@ fn draw_seat_fills_round_against_frozen_root() {
             let seed = hashv(&[&candidate, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
             let seats: Vec<usize> = (0..3u32)
                 .map(|seat| {
-                    let rh = hashv(&[&seed, &seat.to_le_bytes()]).to_bytes();
+                    let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
                     let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
                     let mut idx = 0;
                     for (i, (_, s)) in leaves.iter().enumerate() {
@@ -844,12 +846,12 @@ fn draw_seat_fills_round_against_frozen_root() {
 
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
 
-    // Resolve which juror wins each seat.
+    // Resolve which juror wins each seat (retry=0, no collision).
     let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
     let mut drawn: Vec<(u32, usize)> = Vec::new();
 
     for seat in 0..3u32 {
-        let r_hash = hashv(&[&vrf_seed, &seat.to_le_bytes()]).to_bytes();
+        let r_hash = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
         let r_i = u64::from_le_bytes(r_hash[0..8].try_into().unwrap()) % total;
         let mut found = None;
         for (i, &(_, stake)) in leaves.iter().enumerate() {
@@ -861,7 +863,7 @@ fn draw_seat_fills_round_against_frozen_root() {
         drawn.push((seat, found.expect("r_i lands on a leaf")));
     }
 
-    // Submit draw_seat for each resolved seat.
+    // Submit draw_seat for each resolved seat (retries=0 — no collision).
     for &(seat, leaf_idx) in &drawn {
         let (juror_pub, stake) = leaves[leaf_idx];
         let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, leaf_idx as u32);
@@ -886,7 +888,11 @@ fn draw_seat_fills_round_against_frozen_root() {
                 round: round_pda,
                 system_program: system_program::ID,
             })
-            .args(instruction::DrawSeat { seat, membership })
+            .args(instruction::DrawSeat {
+                seat,
+                retries: 0,
+                membership,
+            })
             .instruction()
             .unwrap();
 
@@ -926,6 +932,279 @@ fn draw_seat_fills_round_against_frozen_root() {
         let js = read_juror_stake(&env, &env.subaccord, &juror_pub);
         assert_eq!(js.active_draws, 1, "active_draws for juror at seat {seat}");
     }
+}
+
+/// **Deterministic collision re-roll** (bean accord-tzo0). A concentrated-stake
+/// fixture (whale + 2 honest jurors) where the whale is selected for seat 0 and
+/// seat 1's r_1(0) also lands on the whale (collision). The chain must accept
+/// the re-rolled seat 1 at retries=1 (r_1(1) selects a different juror), and
+/// reject a fabricated retries claim (retries=1 when retry=0 didn't collide).
+#[test]
+fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
+    let mut env = setup_accumulator();
+
+    // Whale (9000) + two honest jurors (1500 each). Total = 12_000.
+    // Whale is 75% — concentrated enough that collisions are likely.
+    let stakes = [9_000u64, 1_500, 1_500];
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 20_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+
+    // Create + freeze a dispute.
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let fee = 3 * 1_000_000u64;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            staking_token: env.mint,
+            filer_token_account: fata,
+            vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    let round_idx = 0u32;
+
+    // Prefixes: whale [0, 9000), j1 [9000, 9500), j2 [9500, 10000).
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut acc = 0u64;
+        for (_, s) in &leaves {
+            p.push(acc);
+            acc += s;
+        }
+        p
+    };
+
+    // Brute-force a VRF where:
+    //   seat 0 @ retry 0 → whale (leaf 0)
+    //   seat 1 @ retry 0 → whale (collision with seat 0)
+    //   seat 1 @ retry 1 → either j1 or j2 (non-whale)
+    //   seat 2 → any remaining juror (retry 0 is fine, or with retries)
+    // The whale's 90% stake makes seat-1@retry-0 landing on the whale very likely.
+    let vrf = {
+        let mut candidate = [0u8; 32];
+        loop {
+            candidate[0] = candidate[0].wrapping_add(1);
+            if candidate[0] == 0 {
+                candidate[1] = candidate[1].wrapping_add(1);
+            }
+            let seed = hashv(&[&candidate, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+
+            // seat 0 @ retry 0 must land on whale.
+            let r0 = u64::from_le_bytes(
+                hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes()[0..8]
+                    .try_into()
+                    .unwrap(),
+            ) % total;
+            if !(r0 >= prefixes[0] && r0 - prefixes[0] < stakes[0]) {
+                continue;
+            }
+
+            // seat 1 @ retry 0 must ALSO land on whale (collision).
+            let r1_0 = u64::from_le_bytes(
+                hashv(&[&seed, &1u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes()[0..8]
+                    .try_into()
+                    .unwrap(),
+            ) % total;
+            if !(r1_0 >= prefixes[0] && r1_0 - prefixes[0] < stakes[0]) {
+                continue;
+            }
+
+            // seat 1 @ retry 1 must land on a NON-whale juror.
+            let r1_1 = u64::from_le_bytes(
+                hashv(&[&seed, &1u32.to_le_bytes(), &1u32.to_le_bytes()]).to_bytes()[0..8]
+                    .try_into()
+                    .unwrap(),
+            ) % total;
+            let s1_1_is_whale = r1_1 >= prefixes[0] && r1_1 - prefixes[0] < stakes[0];
+            if s1_1_is_whale {
+                continue;
+            }
+
+            break candidate;
+        }
+    };
+
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let round_pda = round_pda(&dispute, round_idx);
+
+    // Helper: resolve which leaf a (seat, retry) maps to.
+    let leaf_for = |r_i: u64| -> usize {
+        for (i, &(_, stake)) in leaves.iter().enumerate() {
+            if r_i >= prefixes[i] && r_i - prefixes[i] < stake {
+                return i;
+            }
+        }
+        unreachable!("r_i always lands on a leaf");
+    };
+
+    // --- Seat 0: whale, retries=0 ---
+    let r0 = u64::from_le_bytes(
+        hashv(&[&vrf_seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes()[0..8]
+            .try_into()
+            .unwrap(),
+    ) % total;
+    let seat0_leaf = leaf_for(r0);
+    assert_eq!(seat0_leaf, 0, "seat 0 selects the whale");
+
+    submit_draw_seat(
+        &mut env, dispute, round_pda, 0, // seat
+        0, // retries
+        seat0_leaf, &leaves,
+    )
+    .assert_success();
+
+    // --- Seat 1: collides at retry 0 (whale already drawn), resolves at retry 1 ---
+    let r1_0 = u64::from_le_bytes(
+        hashv(&[&vrf_seed, &1u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes()[0..8]
+            .try_into()
+            .unwrap(),
+    ) % total;
+    let r1_0_leaf = leaf_for(r1_0);
+    assert_eq!(r1_0_leaf, 0, "seat 1 retry 0 collides with the whale");
+
+    let r1_1 = u64::from_le_bytes(
+        hashv(&[&vrf_seed, &1u32.to_le_bytes(), &1u32.to_le_bytes()]).to_bytes()[0..8]
+            .try_into()
+            .unwrap(),
+    ) % total;
+    let seat1_leaf = leaf_for(r1_1);
+    assert_ne!(seat1_leaf, 0, "seat 1 retry 1 selects a non-whale");
+
+    submit_draw_seat(
+        &mut env, dispute, round_pda, 1, // seat
+        1, // retries — retry 0 collided with whale (seat 0)
+        seat1_leaf, &leaves,
+    )
+    .assert_success();
+
+    // --- FABRICATION: submitting seat 2 with retries=1 when retry 0 did NOT
+    // collide must REJECT. We need seat 2 retry 0 to land on a fresh (non-drawn)
+    // juror, then claim retries=1 with a different leaf. ---
+    let r2_0 = u64::from_le_bytes(
+        hashv(&[&vrf_seed, &2u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes()[0..8]
+            .try_into()
+            .unwrap(),
+    ) % total;
+    let r2_0_leaf = leaf_for(r2_0);
+
+    // If r2_0 lands on the remaining juror (not drawn), claiming retries=1 with
+    // a DIFFERENT leaf is a fabrication. But first we need to find what r2_1
+    // maps to and submit THAT leaf with retries=1 — the chain should reject
+    // because retry 0 didn't collide.
+    if r2_0_leaf != 0 && r2_0_leaf != seat1_leaf {
+        // r2_0 lands on a fresh juror. Find r2_1's leaf (different from r2_0).
+        let r2_1 = u64::from_le_bytes(
+            hashv(&[&vrf_seed, &2u32.to_le_bytes(), &1u32.to_le_bytes()]).to_bytes()[0..8]
+                .try_into()
+                .unwrap(),
+        ) % total;
+        let r2_1_leaf = leaf_for(r2_1);
+
+        // Only test if r2_1 maps to a different leaf than r2_0 (otherwise both
+        // retries land on the same juror and the test is moot).
+        if r2_1_leaf != r2_0_leaf {
+            let result = submit_draw_seat(
+                &mut env, dispute, round_pda, 2,         // seat
+                1,         // CLAIMED retries — but retry 0 didn't collide!
+                r2_1_leaf, // submitting the retry-1 leaf
+                &leaves,
+            );
+            assert!(
+                !result.is_success(),
+                "fabricated retries=1 must reject when retry 0 didn't collide; logs={:?}",
+                result.logs()
+            );
+
+            // Now submit correctly (retry 0 selects r2_0_leaf, retries=0).
+            submit_draw_seat(&mut env, dispute, round_pda, 2, 0, r2_0_leaf, &leaves)
+                .assert_success();
+        } else {
+            // r2_0 and r2_1 land on the same leaf — just submit at retries=0.
+            submit_draw_seat(&mut env, dispute, round_pda, 2, 0, r2_0_leaf, &leaves)
+                .assert_success();
+        }
+    } else {
+        // r2_0 lands on the whale or seat1 juror (collision). Find the
+        // correct retries and submit.
+        let mut final_retry = 0u32;
+        let mut final_leaf = r2_0_leaf;
+        for retry in 0..1024u32 {
+            let ri = u64::from_le_bytes(
+                hashv(&[&vrf_seed, &2u32.to_le_bytes(), &retry.to_le_bytes()]).to_bytes()[0..8]
+                    .try_into()
+                    .unwrap(),
+            ) % total;
+            let leaf_idx = leaf_for(ri);
+            let is_drawn = leaf_idx == 0 || leaf_idx == seat1_leaf;
+            if !is_drawn {
+                final_retry = retry;
+                final_leaf = leaf_idx;
+                break;
+            }
+        }
+        submit_draw_seat(
+            &mut env,
+            dispute,
+            round_pda,
+            2,
+            final_retry,
+            final_leaf,
+            &leaves,
+        )
+        .assert_success();
+    }
+
+    // The dispute must be Drawn with 3 distinct jurors.
+    let acc = env.ctx.svm.get_account(&dispute).unwrap();
+    let d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+    assert_eq!(d.state, DisputeState::Drawn);
+
+    let round_acc = env.ctx.svm.get_account(&round_pda).unwrap();
+    // zero_copy: discriminator (8 bytes) then the Pod struct.
+    let round_data = &round_acc.data[8..];
+    let round: &accord::state::Round = bytemuck::from_bytes(round_data);
+    assert_eq!(round.juror_count, 3);
+    let distinct: std::collections::HashSet<_> = round.jurors[..3].iter().collect();
+    assert_eq!(distinct.len(), 3, "all 3 jurors must be distinct");
 }
 
 #[test]
@@ -987,4 +1266,64 @@ fn inject_vrf_freeze(
             },
         )
         .unwrap();
+}
+
+/// Submit a `draw_seat` instruction for the given seat/leaf and return the
+/// raw TransactionResult (caller asserts success/failure). Appends the juror's
+/// `JurorStake` PDA as `remaining_accounts[0]`.
+fn submit_draw_seat(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    round_pda: Pubkey,
+    seat: u32,
+    retries: u32,
+    leaf_idx: usize,
+    leaves: &[(Pubkey, u64)],
+) -> TransactionResult {
+    let (juror_pub, stake) = leaves[leaf_idx];
+    let (_, _, proof) = build_root_and_path(leaves, TEST_DEPTH, leaf_idx as u32);
+    let js_pda = juror_stake_pda(&env.subaccord, &juror_pub);
+
+    let membership = accord::state::JurorMembership {
+        leaf: LeafClaim {
+            juror: juror_pub,
+            stake,
+        },
+        proof,
+        index: leaf_idx as u32,
+    };
+
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::DrawSeat {
+            caller: env.creator.pubkey(),
+            dispute,
+            round: round_pda,
+            system_program: system_program::ID,
+        })
+        .args(instruction::DrawSeat {
+            seat,
+            retries,
+            membership,
+        })
+        .instruction()
+        .unwrap();
+
+    let ix_with_meta = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut accts = ix.accounts;
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: js_pda,
+                is_signer: false,
+                is_writable: true,
+            });
+            accts
+        },
+        data: ix.data,
+    };
+    env.ctx
+        .execute_instruction(ix_with_meta, &[&env.creator])
+        .unwrap()
 }

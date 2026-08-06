@@ -27,6 +27,8 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
+  getU64Decoder,
+  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -81,6 +83,10 @@ export type Round = {
    */
   settled: number;
   pad1: ReadonlyUint8Array;
+  /** Cumulative-from-left prefix per drawn seat (bean accord-tzo0). */
+  seatPrefix: Array<bigint>;
+  /** Leaf stake per drawn seat (range = [prefix, prefix+stake)). */
+  seatStake: Array<bigint>;
 };
 
 export type RoundArgs = {
@@ -112,9 +118,9 @@ export type RoundArgs = {
    */
   settled: number;
   pad1: ReadonlyUint8Array;
+  seatPrefix: Array<number | bigint>;
+  seatStake: Array<number | bigint>;
 };
-
-/** Gets the encoder for {@link RoundArgs} account data. */
 export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
   return transformEncoder(
     getStructEncoder([
@@ -138,6 +144,8 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["reveals", fixEncoderSize(getBytesEncoder(), 31)],
       ["settled", getU8Encoder()],
       ["pad1", fixEncoderSize(getBytesEncoder(), 4)],
+      ["seatPrefix", getArrayEncoder(getU64Encoder(), { size: 31 })],
+      ["seatStake", getArrayEncoder(getU64Encoder(), { size: 31 })],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -166,6 +174,8 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["reveals", fixDecoderSize(getBytesDecoder(), 31)],
     ["settled", getU8Decoder()],
     ["pad1", fixDecoderSize(getBytesDecoder(), 4)],
+    ["seatPrefix", getArrayDecoder(getU64Decoder(), { size: 31 })],
+    ["seatStake", getArrayDecoder(getU64Decoder(), { size: 31 })],
   ]);
 }
 
@@ -228,5 +238,5 @@ export async function fetchAllMaybeRound(
 }
 
 export function getRoundSize(): number {
-  return 2104;
+  return 2600;
 }

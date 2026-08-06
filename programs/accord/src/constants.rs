@@ -68,3 +68,10 @@ pub const DEFAULT_REVIEW_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
 pub const DEFAULT_COMMIT_WINDOW_SECS: u64 = 2 * 24 * 60 * 60;
 pub const DEFAULT_REVEAL_WINDOW_SECS: u64 = 2 * 24 * 60 * 60;
 pub const DEFAULT_MAX_APPEALS: u8 = 3;
+
+/// Maximum sortition retries per seat in `draw_seat` (bean accord-tzo0). The
+/// deterministic collision re-roll increments this counter until the selected
+/// leaf is not an already-drawn juror. 1024 is generous: with ≥ N eligible
+/// jurors the expected retries per seat is < 1; even a 99 %-whale pool rarely
+/// exceeds a few hundred. Crankers raise the CU limit for degenerate cases.
+pub const MAX_SORTITION_RETRIES: u32 = 1024;

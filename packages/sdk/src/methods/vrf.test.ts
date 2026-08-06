@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { buildAccumulator, proofFor } from "../../dist/methods/mst.js";
 import {
   findLeafForSlot,
+  resolveSeat,
   seatSlot,
   vrfSeed,
   verifySeat,
@@ -40,7 +41,7 @@ test("vrfSeed: deterministic + round/dispute-bound (no draw_attempt)", async () 
   );
 });
 
-test("seatSlot: deterministic, in [0, frozen_total_stake), per-seat", async () => {
+test("seatSlot: deterministic, in [0, frozen_total_stake), per-seat + per-retry", async () => {
   const total = 1_000_000n;
   const r0 = await seatSlot(VRF, DISPUTE, 0, 0, total);
   const r1 = await seatSlot(VRF, DISPUTE, 0, 1, total);
@@ -49,6 +50,9 @@ test("seatSlot: deterministic, in [0, frozen_total_stake), per-seat", async () =
   assert.notDeepEqual([r0], [r1], "different seats => different slots");
   // determinism
   assert.deepEqual(r0, await seatSlot(VRF, DISPUTE, 0, 0, total));
+  // retry changes the slot
+  const r0r1 = await seatSlot(VRF, DISPUTE, 0, 0, total, 1);
+  assert.notDeepEqual([r0], [r0r1], "different retries => different slots");
   await assert.rejects(
     () => seatSlot(VRF, DISPUTE, 0, 0, 0n),
     /InvalidTotalStake/,

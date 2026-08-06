@@ -268,6 +268,13 @@ export const AccordErrors = {
     "CancelTooEarly",
     "Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.",
   ),
+
+  // --- draw (bean accord-tzo0) ---
+  MaxRetriesExceeded: err(
+    BASE + 46,
+    "MaxRetriesExceeded",
+    "Sortition retries exceeded the on-chain bound; the pool may be too concentrated.",
+  ),
 } as const;
 
 export type AccordErrorName = keyof typeof AccordErrors;
