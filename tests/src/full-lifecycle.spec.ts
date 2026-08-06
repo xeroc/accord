@@ -33,10 +33,12 @@ import {
   type JurorCtx,
 } from "./draw-harness.js";
 
-/** DisputeState numeric tags (generated/types/disputeState.ts). */
-const DRAWN = 2;
-const ROUND_RESOLVED = 6;
-const FINAL = 7;
+/** DisputeState numeric tags (state.rs — ADR-0012 dropped SnapshotPosted, so
+ * the tags shifted: Created=0, Drawn=1, Review=2, Commit=3, Reveal=4,
+ * RoundResolved=5, Final=6, Closed=7, Failed=8). */
+const DRAWN = 1;
+const ROUND_RESOLVED = 5;
+const FINAL = 6;
 
 describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
   let env: TestEnv;
@@ -116,6 +118,9 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
           subaccord: fx.subaccord,
           dispute: armed.dispute,
           round: roundPda,
+          stakingToken: fx.mint,
+          jurorTokenAccount: drawnJurors[i]!.jurorAta,
+          vault: fx.vault,
         },
         { vote: votes[i]!, salt: salts[i]! },
       );

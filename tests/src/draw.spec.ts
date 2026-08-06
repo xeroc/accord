@@ -31,7 +31,7 @@ import {
 } from "./draw-harness.js";
 
 /** DisputeState numeric tags. */
-const DRAWN = 2;
+const DRAWN = 1; // ADR-0012: DisputeState::Drawn shifted to 1 (SnapshotPosted removed)
 
 describe("e2e: draw_seat (accumulator + deterministic sortition) — requires Surfpool port 8905", () => {
   let fx: DrawFixture;

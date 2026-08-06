@@ -162,7 +162,7 @@ import {
 } from "../pdas";
 
 export const ACCORD_PROGRAM_ADDRESS =
-  "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe" as Address<"RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe">;
+  "9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b" as Address<"9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b">;
 
 export enum AccordAccount {
   AppealBond,
@@ -551,7 +551,7 @@ export function identifyAccordInstruction(
 }
 
 export type ParsedAccordInstruction<
-  TProgram extends string = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe",
+  TProgram extends string = "9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b",
 > =
   | ({
       instructionType: AccordInstruction.Appeal;

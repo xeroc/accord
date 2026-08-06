@@ -8,7 +8,7 @@ skip-lint = false
 accord = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe"
 
 [programs.localnet]
-accord = "8PbsAnwxCUPWQHnUx8e7iH2guFiyxso4EJkxP8hF2fS7"
+accord = "9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b"
 
 [provider]
 cluster = "localnet"

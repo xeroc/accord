@@ -83,9 +83,17 @@ export type Round = {
    */
   settled: number;
   pad1: ReadonlyUint8Array;
-  /** Cumulative-from-left prefix per drawn seat (bean accord-tzo0). */
+  /**
+   * Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
+   * when the seat lands; later seats read these to verify that every prior
+   * sortition retry genuinely collided with an already-drawn juror —
+   * eliminating caller choice (no draw_attempt grind).
+   */
   seatPrefix: Array<bigint>;
-  /** Leaf stake per drawn seat (range = [prefix, prefix+stake)). */
+  /**
+   * Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
+   * range `[prefix, prefix+stake)` used for deterministic collision checks.
+   */
   seatStake: Array<bigint>;
 };
 
@@ -118,9 +126,21 @@ export type RoundArgs = {
    */
   settled: number;
   pad1: ReadonlyUint8Array;
+  /**
+   * Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
+   * when the seat lands; later seats read these to verify that every prior
+   * sortition retry genuinely collided with an already-drawn juror —
+   * eliminating caller choice (no draw_attempt grind).
+   */
   seatPrefix: Array<number | bigint>;
+  /**
+   * Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
+   * range `[prefix, prefix+stake)` used for deterministic collision checks.
+   */
   seatStake: Array<number | bigint>;
 };
+
+/** Gets the encoder for {@link RoundArgs} account data. */
 export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
   return transformEncoder(
     getStructEncoder([

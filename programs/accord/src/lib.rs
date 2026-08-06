@@ -46,7 +46,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("8PbsAnwxCUPWQHnUx8e7iH2guFiyxso4EJkxP8hF2fS7");
+declare_id!("9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b");
 
 #[program]
 pub mod accord {

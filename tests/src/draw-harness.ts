@@ -49,7 +49,7 @@ import {
 } from "./setup/tokens.js";
 
 import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
-import { warpForwardSeconds } from "./setup/cheats.js";
+import { warpForwardSeconds, readClock } from "./setup/cheats.js";
 import { injectCommittedVrf } from "./setup/vrf.js";
 import { fetchDecoded } from "./setup/assertions.js";
 
@@ -146,7 +146,10 @@ class TreeTracker {
 // ---------------------------------------------------------------------------
 
 export async function warpTo(env: TestEnv, targetSec: bigint): Promise<void> {
-  const now = BigInt(Math.floor(Date.now() / 1000));
+  // Read the ON-CHAIN clock — Surfpool's clock is not wall time, so deriving
+  // the delta from Date.now() would no-op the warp and close every commit/
+  // reveal window. See appeal.spec's local warpTo for the same pattern.
+  const now = (await readClock(env)).unixTimestamp;
   const delta = BigInt(targetSec) - now + 1n;
   if (delta > 0n) await warpForwardSeconds(env, delta);
 }
@@ -158,6 +161,8 @@ export async function warpTo(env: TestEnv, targetSec: bigint): Promise<void> {
 export interface JurorCtx {
   signer: KeyPairSigner;
   stakePda: Address;
+  /** Juror's staking-token ATA — reveal pays the participation fee here. */
+  jurorAta: Address;
   accord: Accord;
 }
 
@@ -264,7 +269,7 @@ export async function armSubaccordAndJurors(
     await env.sendIx(stakeIx);
     await tree.setLeaf(i, signer.address, STAKE_AMOUNT);
 
-    jurors.push({ signer, stakePda, accord: jurorAccord });
+    jurors.push({ signer, stakePda, jurorAta, accord: jurorAccord });
     jurorPdaByHex.set(toHex(addressBytes(signer.address)), stakePda);
   }
 
@@ -421,6 +426,8 @@ export async function submitDraw(
 
 export interface RoundView {
   jurorCount: number;
+  commitCount: number;
+  revealCount: number;
   jurors: Address[];
   result: number;
   reviewEnd: bigint;
@@ -436,6 +443,8 @@ export async function readRound(
   if (!d) return null;
   return {
     jurorCount: d.jurorCount,
+    commitCount: d.commitCount,
+    revealCount: d.revealCount,
     jurors: [...d.jurors].slice(0, d.jurorCount) as Address[],
     result: d.result,
     reviewEnd: d.reviewEnd,

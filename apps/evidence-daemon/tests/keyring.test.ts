@@ -99,8 +99,8 @@ const FULL_ENV: Record<string, string> = {
 test("config: parses a full valid env", () => {
   const cfg = loadConfig(FULL_ENV);
   expect(cfg.rpcUrl).toBe("https://rpc.example");
-  expect(cfg.programId).toBe(FULL_ENV.EVIDENCE_PROGRAM_ID);
-  expect(cfg.keyring).toBe(FULL_ENV.EVIDENCE_KEYRING);
+  expect(cfg.programId).toBe(FULL_ENV.EVIDENCE_PROGRAM_ID!);
+  expect(cfg.keyring).toBe(FULL_ENV.EVIDENCE_KEYRING!);
   expect(cfg.s3.bucket).toBe("evidence");
   expect(cfg.s3.forcePathStyle).toBe(false);
   expect(cfg.port).toBe(443);

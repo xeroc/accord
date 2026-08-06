@@ -31,7 +31,7 @@ import {
 // --- Program identity -------------------------------------------------------
 
 export const ACCORD_PROGRAM_ID =
-  "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe" as Address<"RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe">;
+  "9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b" as Address<"9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b">;
 
 // --- Re-exported generated PDA helpers (5/7) ---------------------------------
 

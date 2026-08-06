@@ -112,7 +112,8 @@ test("AES-GCM rejects a tampered ciphertext (auth tag)", async () => {
   const key = rnd32();
   const blob = await aesGcmEncrypt(key, enc.encode("sealed"));
   const tampered = blob.slice();
-  tampered[tampered.length - 1] ^= 0x01;
+  const last = tampered.length - 1;
+  tampered[last] = (tampered[last] ?? 0) ^ 0x01;
   await expect(aesGcmDecrypt(key, tampered)).rejects.toThrow();
 });
 
