@@ -1,11 +1,11 @@
 ---
 # accord-qycb
 title: Config accepts comma-only EVIDENCE_KEYRING (zero-key daemon)
-status: todo
+status: completed
 type: bug
 priority: high
 created_at: 2026-08-06T20:29:10Z
-updated_at: 2026-08-06T20:29:10Z
+updated_at: 2026-08-06T22:55:57Z
 parent: accord-djso
 ---
 
@@ -49,3 +49,15 @@ Add to `tests/keyring.test.ts`.
 - REVIEW.md item 14
 - `apps/evidence-daemon/src/config.ts:35-41`
 - `apps/evidence-daemon/src/keys/keyring.ts:46-62`
+
+## Summary of Changes
+
+The fix already lived in `EnvKeyring.fromEnv` (throws when no non-empty entries
+remain after comma-split + filter), but was **inert** — `main.ts` never
+constructed the keyring, so `loadConfig`'s weak `keyring.trim().length === 0`
+check let `EVIDENCE_KEYRING=",,,"` through and the daemon booted into a
+silently-404s-everything state.
+
+Now active end-to-end: accord-tzmm calls `EnvKeyring.fromEnv(cfg.keyring)` at
+boot, so a zero-key keyring throws at startup. Verified by cold-boot smoke —
+`EVIDENCE_KEYRING=",,,"` → exit 1, process never listens.

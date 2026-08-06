@@ -83,9 +83,7 @@ export class S3Store implements EvidenceStore {
     // plaintext). Last-writer-wins on the metastable race.
     let exists = false;
     try {
-      const head = await this.client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
       const existingB64 = head.Metadata?.[META_HASH];
       if (existingB64 === undefined) {
         // Object present without our metadata — not one of ours. Refuse.
@@ -130,10 +128,7 @@ export class S3Store implements EvidenceStore {
     );
   }
 
-  async get(
-    subaccord: Address,
-    dispute: Address,
-  ): Promise<EvidenceBundle | null> {
+  async get(subaccord: Address, dispute: Address): Promise<EvidenceBundle | null> {
     try {
       const res = await this.client.send(
         new GetObjectCommand({

@@ -85,10 +85,7 @@ export async function readSubaccord(
  * holds the address (the SDK `Dispute` data shape omits it); pass it back into
  * {@link readRound} unchanged.
  */
-export async function readDispute(
-  accord: Accord,
-  dispute: Address,
-): Promise<DisputeView | null> {
+export async function readDispute(accord: Accord, dispute: Address): Promise<DisputeView | null> {
   const m = await fetchDisputeMaybe(accord, dispute);
   if (!m.exists) return null;
   return {

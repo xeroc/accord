@@ -48,11 +48,7 @@ export class EvidenceConflictError extends Error {
   /** Hash already stored at the key (32 bytes, or empty if metadata absent). */
   readonly existingHash: Uint8Array;
 
-  constructor(b: {
-    subaccord: Address;
-    dispute: Address;
-    existingHash: Uint8Array;
-  }) {
+  constructor(b: { subaccord: Address; dispute: Address; existingHash: Uint8Array }) {
     super(
       `evidence conflict for ${b.subaccord}/${b.dispute}: a different plaintext_hash is already stored`,
     );

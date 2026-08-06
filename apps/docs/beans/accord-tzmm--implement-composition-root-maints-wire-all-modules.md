@@ -1,20 +1,20 @@
 ---
 # accord-tzmm
 title: Implement composition root main.ts (wire all modules)
-status: todo
+status: completed
 type: task
 priority: high
 created_at: 2026-08-06T20:29:45Z
-updated_at: 2026-08-06T20:29:45Z
+updated_at: 2026-08-06T22:55:57Z
 parent: accord-s3ow
 blocking:
-  - accord-xh6n
+    - accord-xh6n
 blocked_by:
-  - accord-h1v2
-  - accord-udiu
-  - accord-r9km
-  - accord-4swo
-  - accord-dyf0
+    - accord-h1v2
+    - accord-udiu
+    - accord-r9km
+    - accord-4swo
+    - accord-dyf0
 ---
 
 ---
@@ -75,3 +75,24 @@ Notes:
 Blocks e2e (accord-xh6n) — you can't e2e a daemon that doesn't start.
 
 See milestone accord-yjno HANDOFF §1 (happy path) for the end-to-end flow this wires.
+
+## Summary of Changes
+
+Rewired `src/main.ts` from stub handlers to the real modules, plus a new
+`src/wire.ts` composition layer (the single place HTTP `ServerDeps` meets the
+pure `ingest`/`deliver` pipeline + real modules):
+
+- `loadConfig` (full env) + `EnvKeyring.fromEnv` at boot → activates accord-qycb.
+- `S3Client` + `S3Store`, `Accord` RPC client (read-only noop signer), and real
+  `/healthz` pings: `HeadBucket` + RPC `getHealth` (was a constant-`false` stub).
+- `createServerDeps()` bridges the impedance: base58↔`Address` codec, the two
+  `EvidenceBundle` shapes (store camelCase vs pipeline snake_case), the
+  `EnvKeyring`→secret-seed keyring adapter, and a real async ECIES→`DeliveryCrypto`
+  adapter.
+- Prerequisite interface changes: `deliver.ts` `DeliveryCrypto` port made **async**
+  (real Web-Crypto is async); `handlers.ts` `IngestResult` !ok widened to
+  `400 | 404 | 409` (ingest's "dispute not found" had no carrier).
+
+Verified: `tsc` clean; 145/145 tests (138 original + 7 new `wire.test.ts` ECIES
+round-trip); `eslint` clean; cold-boot smoke — boots with `operators:1`,
+`/healthz` → 503 on unreachable deps, zero-key keyring → exit 1 (never listens).

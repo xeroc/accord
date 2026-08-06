@@ -43,10 +43,7 @@ export interface DisputeView {
 /** Storage port — the real `S3Store` (bean accord-xrdc) satisfies this. */
 export interface IngestStore {
   exists(subaccord: Uint8Array, dispute: Uint8Array): Promise<boolean>;
-  get(
-    subaccord: Uint8Array,
-    dispute: Uint8Array,
-  ): Promise<EvidenceBundle | null>;
+  get(subaccord: Uint8Array, dispute: Uint8Array): Promise<EvidenceBundle | null>;
   put(bundle: EvidenceBundle): Promise<void>;
 }
 
@@ -94,10 +91,7 @@ export async function ingest(
   if (!isPubkey(subaccord) || !isPubkey(dispute)) {
     return { status: 400, reason: "invalid path pubkey" };
   }
-  if (
-    !bytesEqual(bundle.subaccord, subaccord) ||
-    !bytesEqual(bundle.dispute, dispute)
-  ) {
+  if (!bytesEqual(bundle.subaccord, subaccord) || !bytesEqual(bundle.dispute, dispute)) {
     return { status: 400, reason: "path/bundle subaccord|dispute mismatch" };
   }
   if (!isPubkey(bundle.subaccord) || !isPubkey(bundle.dispute)) {

@@ -1,14 +1,14 @@
 ---
 # accord-dydv
-title: "Resolve HTTP framework: add Hono dep or use Bun.serve"
-status: todo
+title: 'Resolve HTTP framework: add Hono dep or use Bun.serve'
+status: completed
 type: task
 priority: high
 created_at: 2026-08-06T20:29:33Z
-updated_at: 2026-08-06T20:29:33Z
+updated_at: 2026-08-06T22:55:57Z
 parent: accord-s3ow
 blocking:
-  - accord-dyf0
+    - accord-dyf0
 ---
 
 ---
@@ -46,3 +46,10 @@ Plus: per-IP rate limit, TLS, optional `X-Account-Key` (accounting only).
 - [ ] Unblocks accord-dyf0.
 
 This is a pre-implementation gate, not a full server build — that's accord-dyf0.
+
+## Audit (marked completed)
+
+Resolved: `hono` added to `package.json`; `server/app.ts` uses `Hono`;
+`main.ts` serves via `Bun.serve({ fetch: app.fetch })`. SPEC §Module layout
+already reads "Bun + Hono", matching the chosen direction (Hono router + native
+Bun.serve). No code changes this session — status set to completed after audit.

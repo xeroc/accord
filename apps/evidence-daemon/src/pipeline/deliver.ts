@@ -50,12 +50,17 @@ export interface Keyring {
 }
 
 export interface DeliveryCrypto {
-  sha256(data: Uint8Array): Uint8Array;
-  unwrap(bundle: EvidenceBundle, operatorSecret: Uint8Array): { plaintext: Uint8Array } | null;
+  // Async: real primitives are Web-Crypto (SHA-256, AES-GCM, X25519). The pure
+  // pipeline `await`s each; unit tests inject async stubs.
+  sha256(data: Uint8Array): Promise<Uint8Array>;
+  unwrap(
+    bundle: EvidenceBundle,
+    operatorSecret: Uint8Array,
+  ): Promise<{ plaintext: Uint8Array } | null>;
   reencryptToJuror(
     watermarked: Uint8Array,
     jurorPubkey: Uint8Array,
-  ): { out: Uint8Array; operator_ephem_pub: Uint8Array };
+  ): Promise<{ out: Uint8Array; operator_ephem_pub: Uint8Array }>;
 }
 
 export interface DeliverDeps {
@@ -102,7 +107,7 @@ export async function deliver(
     return { status: 404, reason: "juror not drawn for this dispute" };
   }
 
-  const unwrapped = deps.crypto.unwrap(bundle, operatorSk);
+  const unwrapped = await deps.crypto.unwrap(bundle, operatorSk);
   if (unwrapped === null)
     return {
       status: 409,
@@ -110,7 +115,7 @@ export async function deliver(
     };
   const plaintext = unwrapped.plaintext;
 
-  if (!bytesEqual(deps.crypto.sha256(plaintext), dv.evidence_hash)) {
+  if (!bytesEqual(await deps.crypto.sha256(plaintext), dv.evidence_hash)) {
     return {
       status: 409,
       reason: "integrity gate failed (sha256 != evidence_hash)",
@@ -118,7 +123,7 @@ export async function deliver(
   }
 
   const watermarked = wm.apply(plaintext, juror);
-  const { out, operator_ephem_pub } = deps.crypto.reencryptToJuror(watermarked, juror);
+  const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
 
   return { status: 200, out, operator_ephem_pub };
 }

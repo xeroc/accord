@@ -1,11 +1,11 @@
 ---
 # accord-3jwq
-title: "Fix Dockerfile: install deps, non-root user, HEALTHCHECK"
-status: todo
+title: 'Fix Dockerfile: install deps, non-root user, HEALTHCHECK'
+status: completed
 type: task
 priority: high
 created_at: 2026-08-06T20:29:21Z
-updated_at: 2026-08-06T20:29:21Z
+updated_at: 2026-08-06T22:55:57Z
 parent: accord-s3ow
 ---
 
@@ -60,3 +60,11 @@ docker build -t evidence-daemon:test apps/evidence-daemon
 Depends on: main.ts actually wiring the server (so the container has something to run).
 
 See milestone accord-yjno HANDOFF §2 (data contract) for the env var list.
+
+## Audit (marked completed)
+
+Verified already-implemented against the bean's "Fix": multi-stage build with
+`bun install --production`, `USER bun`, `HEALTHCHECK` probing `/healthz`,
+`EXPOSE 8080`/`ENV EVIDENCE_PORT`. One documented deviation (no
+`--frozen-lockfile`: no lockfile committed for this package yet). No code
+changes this session — status set to completed after audit.

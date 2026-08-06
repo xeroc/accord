@@ -33,9 +33,5 @@ test("NoOpWatermark round-trips empty plaintext", () => {
 test("NoOpWatermark satisfies the Watermark trait", () => {
   const w: Watermark = NoOpWatermark;
   const pt = new Uint8Array([9, 9, 9]);
-  assert.deepEqual(
-    w.apply(pt, JUROR_A),
-    pt,
-    "trait-typed reference still identity",
-  );
+  assert.deepEqual(w.apply(pt, JUROR_A), pt, "trait-typed reference still identity");
 });

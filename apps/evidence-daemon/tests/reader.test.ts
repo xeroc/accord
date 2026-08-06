@@ -27,22 +27,17 @@ import {
 const SYS: Address = address("11111111111111111111111111111112");
 const TOK: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const RENT: Address = address("SysvarRent111111111111111111111111111111111");
-const OPERATOR: Address = address(
-  "Accord1111111111111111111111111111111111111",
-);
+const OPERATOR: Address = address("Accord1111111111111111111111111111111111111");
 const ZERO_PUBKEY: Address = address("11111111111111111111111111111111");
 
 /** Build a minimal `Accord` stub returning controlled maybe-accounts. */
 function stubAccord(accounts: {
-  subaccord?:
-    { exists: true; data: Record<string, unknown> } | { exists: false };
+  subaccord?: { exists: true; data: Record<string, unknown> } | { exists: false };
   dispute?: { exists: true; data: Record<string, unknown> } | { exists: false };
   round?: { exists: true; data: Record<string, unknown> } | { exists: false };
 }): Accord {
-  const mk =
-    (m: { exists: true; data: unknown } | { exists: false } | undefined) =>
-    async () =>
-      m ?? { exists: false };
+  const mk = (m: { exists: true; data: unknown } | { exists: false } | undefined) => async () =>
+    m ?? { exists: false };
   return {
     client: {
       accord: {

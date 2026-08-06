@@ -20,15 +20,10 @@ export interface HealthChecks {
 
 const DEFAULT_TIMEOUT_MS = 2_000;
 
-async function withTimeout<T>(
-  p: Promise<T>,
-  ms: number,
-): Promise<T | "timeout"> {
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | "timeout"> {
   return Promise.race([
     p,
-    new Promise<"timeout">((resolve) =>
-      setTimeout(() => resolve("timeout"), ms),
-    ),
+    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms)),
   ]);
 }
 
@@ -52,9 +47,7 @@ export function createHealthProbe(checks: HealthChecks): HealthProbe {
       reach("storage", checks.storage, ms),
       reach("rpc", checks.rpc, ms),
     ]);
-    const problems = [storageErr, rpcErr].filter(
-      (x): x is string => x !== null,
-    );
+    const problems = [storageErr, rpcErr].filter((x): x is string => x !== null);
     if (problems.length === 0) return { ok: true };
     return { ok: false, detail: problems.join("; ") };
   };
