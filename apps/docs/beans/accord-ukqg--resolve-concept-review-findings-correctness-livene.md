@@ -1,11 +1,11 @@
 ---
 # accord-ukqg
 title: Resolve CONCEPT-REVIEW findings — correctness, liveness, positioning
-status: in-progress
+status: completed
 type: milestone
 priority: critical
 created_at: 2026-08-05T15:25:44Z
-updated_at: 2026-08-05T16:20:23Z
+updated_at: 2026-08-06T04:26:27Z
 ---
 
 Resolve the actionable findings from `CONCEPT-REVIEW.md`. The review's "good" needs
