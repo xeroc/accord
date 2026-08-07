@@ -121,6 +121,12 @@ async function readJurorAmount(env: TestEnv, pda: Address): Promise<bigint> {
   return d.amount;
 }
 
+async function readJurorSettlementDelta(env: TestEnv, pda: Address): Promise<bigint> {
+  const d = await fetchDecoded(env, pda, getJurorStakeDecoder());
+  if (!d) throw new Error(`juror_stake missing: ${pda}`);
+  return d.settlementDelta;
+}
+
 async function tokenAmount(env: TestEnv, ata: Address): Promise<bigint> {
   const res = await env.rpc.getTokenAccountBalance(ata).send();
   return BigInt(res.value.amount);
@@ -499,7 +505,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     const cost = appealCost(JURORS_PER_DISPUTE, 0, FEE_PER_JUROR)!;
     expect(cost.panel).toBe(3);
     expect(cost.total).toBe(6n * FEE_PER_JUROR);
-    expect((await readAppealBond(env, appealBond)).amount).toBe(cost.bond);
+    expect((await readAppealBond(env, appealBond)).amount).toBe(cost.total);
     expect(appellantBefore - (await tokenAmount(env, w.payerAta))).toBe(
       cost.total,
     );
@@ -533,7 +539,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(dFinal.finalRuling).toBe(1);
 
     // Flipped bond survives finalization for claim_appeal_refund.
-    expect((await readAppealBond(env, appealBond)).amount).toBe(cost.bond);
+    expect((await readAppealBond(env, appealBond)).amount).toBe(cost.total);
 
     // --- claim refund: vault → appellant ATA (full bond) ---
     const beforeClaim = await tokenAmount(env, w.payerAta);
@@ -599,9 +605,9 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     const coherentPdas = [r1.jurorStakes[0]!, r1.jurorStakes[1]!];
     const incoherentPda = r1.jurorStakes[2]!;
     const coherentBefore = await Promise.all(
-      coherentPdas.map((p) => readJurorAmount(env, p)),
+      coherentPdas.map((p) => readJurorSettlementDelta(env, p)),
     );
-    const incoherentBefore = await readJurorAmount(env, incoherentPda);
+    const incoherentBefore = await readJurorSettlementDelta(env, incoherentPda);
 
     await warpTo(env, r1d.revealEnd + APPEAL_WINDOW_SECS + 1n);
     await env.sendIx(
@@ -622,25 +628,28 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
     expect(dFinal.finalRuling).toBe(0);
 
-    // Coherence redistribution (ADR-0004): the round fee + the incoherent
-    // juror's slash form the coherent pool, split equally among the coherent
-    // jurors. (The forfeited AppealBond is zeroed but NOT folded into this
-    // pool — it stays custodied in the vault.) Verified empirically against
-    // the deployed program: share = (slash + panel·fee) / 2.
-    //   pool   = 1·100 (slash) + 3·fee (round fee) = 3_000_100
-    //   share  = pool / 2 coherent = 1_500_050
+    // Coherence redistribution (ADR-0004, REVIEW #4): `finalize_dispute` credits
+    // coherent jurors (and debits incoherent ones) via `settlement_delta` — NOT
+    // `amount`, because the accumulator root commits to `amount`; `reconcile_stake`
+    // folds the delta into `amount` later via a Merkle proof. The pool =
+    // slash_total + non-revealer fees + the forfeited (no-flip) appeal bond,
+    // split equally among coherent jurors. All 3 revealed ⇒ non-revealer fee = 0.
+    //   slash   = 1·100 (one incoherent juror; α·min_stake)
+    //   forfeit = bond portion = total − fee = 6·fee − 3·fee = 3·fee (= 3_000_000)
+    //   pool    = 100 + 3_000_000 = 3_000_100
+    //   share   = pool / 2 coherent = 1_500_050
     const SLASH_PER_JUROR = 100n;
-    const pool = SLASH_PER_JUROR + 3n * FEE_PER_JUROR;
+    const pool = SLASH_PER_JUROR + 3n * FEE_PER_JUROR; // slash + forfeited bond (== 3·fee)
     const share = pool / 2n;
     expect(
-      (await readJurorAmount(env, coherentPdas[0]!)) - coherentBefore[0]!,
+      (await readJurorSettlementDelta(env, coherentPdas[0]!)) - coherentBefore[0]!,
     ).toBe(share);
     expect(
-      (await readJurorAmount(env, coherentPdas[1]!)) - coherentBefore[1]!,
+      (await readJurorSettlementDelta(env, coherentPdas[1]!)) - coherentBefore[1]!,
     ).toBe(share);
-    expect(incoherentBefore - (await readJurorAmount(env, incoherentPda))).toBe(
-      SLASH_PER_JUROR,
-    );
+    expect(
+      incoherentBefore - (await readJurorSettlementDelta(env, incoherentPda)),
+    ).toBe(SLASH_PER_JUROR);
 
     // No-flip ⇒ finalize_dispute folds the bond into the coherent pool (zeroed).
     expect((await readAppealBond(env, appealBond)).amount).toBe(0n);
