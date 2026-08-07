@@ -153,6 +153,12 @@ pub struct Dispute {
     /// (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
     /// sentinels for `reveals`/`result`.
     pub final_ruling: u8,
+    /// Unix timestamp stamped at the single `Final` transition
+    /// (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
+    /// for downstream consumers (e.g. the Betline primitive's bettor reveal
+    /// window, which must open exactly when the dispute finalizes). `0` is a
+    /// safe sentinel: real Unix time is never 0 for on-chain disputes.
+    pub finalized_at: i64,
     /// Total fee deposited by the filer (N * fee_per_juror at creation; appeals
     /// add to the round's pool). Drives the redistribution economics.
     pub fee_paid: u64,

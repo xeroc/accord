@@ -543,6 +543,10 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     const dFinal = await readDispute(env, w.dispute);
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
     expect(dFinal.finalRuling).toBe(1);
+    // finalizedAt stamped at the Final transition (Betline reveal-window
+    // anchor); 0 before Final, now > 0 and cannot precede filing.
+    expect(dFinal.finalizedAt).toBeGreaterThan(0n);
+    expect(dFinal.finalizedAt >= dFinal.filedAt).toBe(true);
 
     // Flipped bond survives finalization for claim_appeal_refund.
     expect((await readAppealBond(env, appealBond)).amount).toBe(cost.total);

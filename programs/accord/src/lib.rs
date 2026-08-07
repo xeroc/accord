@@ -774,6 +774,7 @@ pub mod accord {
         d.state = DisputeState::Created;
         d.current_round = 0;
         d.final_ruling = u8::MAX;
+        d.finalized_at = 0;
         d.fee_paid = fee;
         // Ugly 4: record the filing timestamp so cancel_dispute has a pre-draw
         // anchor (snapshot/VRF liveness backstop).
@@ -1412,6 +1413,7 @@ pub mod accord {
         round.settled = 1;
 
         dispute.final_ruling = final_ruling;
+        dispute.finalized_at = now;
         dispute.state = DisputeState::Final;
 
         emit!(RulingFinalized {

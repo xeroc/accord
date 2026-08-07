@@ -2575,6 +2575,13 @@ fn commit_reveal_finalize_settle_single_round() {
         .unwrap();
     assert_eq!(d.state, DisputeState::Final);
     assert_eq!(d.final_ruling, 0u8);
+    // finalized_at stamped at the Final transition (Betline reveal-window
+    // anchor); 0 before Final, now > 0 and cannot precede filing.
+    assert!(d.finalized_at > 0, "finalized_at must be stamped at Final");
+    assert!(
+        d.finalized_at >= d.filed_at,
+        "finalized_at cannot precede filed_at"
+    );
     for &(seat, leaf_idx) in &drawn {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
         assert_eq!(js.active_draws, 0, "seat {seat} active_draws");

@@ -93,6 +93,14 @@ export type Dispute = {
    */
   finalRuling: number;
   /**
+   * Unix timestamp stamped at the single `Final` transition
+   * (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
+   * for downstream consumers (e.g. the Betline primitive's bettor reveal
+   * window, which must open exactly when the dispute finalizes). `0` is a
+   * safe sentinel: real Unix time is never 0 for on-chain disputes.
+   */
+  finalizedAt: bigint;
+  /**
    * Total fee deposited by the filer (N * fee_per_juror at creation; appeals
    * add to the round's pool). Drives the redistribution economics.
    */
@@ -150,6 +158,14 @@ export type DisputeArgs = {
    */
   finalRuling: number;
   /**
+   * Unix timestamp stamped at the single `Final` transition
+   * (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
+   * for downstream consumers (e.g. the Betline primitive's bettor reveal
+   * window, which must open exactly when the dispute finalizes). `0` is a
+   * safe sentinel: real Unix time is never 0 for on-chain disputes.
+   */
+  finalizedAt: number | bigint;
+  /**
    * Total fee deposited by the filer (N * fee_per_juror at creation; appeals
    * add to the round's pool). Drives the redistribution economics.
    */
@@ -200,6 +216,7 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
       ["currentRound", getU32Encoder()],
       ["terms", getCaseTermsEncoder()],
       ["finalRuling", getU8Encoder()],
+      ["finalizedAt", getI64Encoder()],
       ["feePaid", getU64Encoder()],
       ["committedVrf", getOptionEncoder(fixEncoderSize(getBytesEncoder(), 32))],
       ["frozenRoot", fixEncoderSize(getBytesEncoder(), 32)],
@@ -228,6 +245,7 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["currentRound", getU32Decoder()],
     ["terms", getCaseTermsDecoder()],
     ["finalRuling", getU8Decoder()],
+    ["finalizedAt", getI64Decoder()],
     ["feePaid", getU64Decoder()],
     ["committedVrf", getOptionDecoder(fixDecoderSize(getBytesDecoder(), 32))],
     ["frozenRoot", fixDecoderSize(getBytesDecoder(), 32)],
