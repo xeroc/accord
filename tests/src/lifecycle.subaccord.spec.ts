@@ -24,7 +24,11 @@ describe("e2e: lifecycle.subaccord (requires Surfpool: `make run_surfpool`)", ()
     if (!env.up) return; // offline CI lane — see AGENTS.md "green rule"
     // stakingToken isn't validated at creation (only at stake time), so the
     // payer address suffices as a placeholder here.
-    const args = defaultSubaccordArgs(env.payer.address, env.payer.address);
+    const args = defaultSubaccordArgs(
+      env.payer.address,
+      env.payer.address,
+      env.payer.address,
+    );
     const { instruction, subaccord } = await createSubaccord(
       env.accord.adapter,
       env.programId,

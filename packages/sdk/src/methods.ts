@@ -150,7 +150,10 @@ export interface AccordMethods {
     args: VoteArgs,
   ): Promise<{ instruction: Instruction; commitment: Uint8Array }>;
   reveal(accounts: VotingAccounts, args: VoteArgs): Instruction;
-  finalizeRound(accounts: VotingAccounts): Instruction;
+  finalizeRound(
+    accounts: VotingAccounts,
+    remainingAccounts?: Address[],
+  ): Instruction;
   finalizeDispute(
     accounts: VotingAccounts,
     remainingAccounts: Address[],
@@ -246,8 +249,8 @@ export function createAccordMethods(
     // voting
     commit: (accounts, args) => pureCommit(adapter, programId, accounts, args),
     reveal: (accounts, args) => pureReveal(adapter, programId, accounts, args),
-    finalizeRound: (accounts) =>
-      pureFinalizeRound(adapter, programId, accounts),
+    finalizeRound: (accounts, remainingAccounts = []) =>
+      pureFinalizeRound(adapter, programId, accounts, remainingAccounts),
     finalizeDispute: (accounts, remainingAccounts) =>
       pureFinalizeDispute(adapter, programId, accounts, remainingAccounts),
 

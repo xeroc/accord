@@ -389,7 +389,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       );
     },
     buildFinalizeRound(input) {
-      return getFinalizeRoundInstruction(
+      const ix = getFinalizeRoundInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,
@@ -398,6 +398,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         },
         { programAddress: input.programId },
       );
+      return appendRemaining(ix, input.remainingAccounts ?? []);
     },
     buildFinalizeDispute(input) {
       const ix = getFinalizeDisputeInstruction(

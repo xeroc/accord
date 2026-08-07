@@ -46,7 +46,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b");
+declare_id!("ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc");
 
 // ===========================================================================
 // Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
@@ -1281,11 +1281,11 @@ pub mod accord {
         let sub_key = ctx.accounts.subaccord.key();
         let fee_per_juror = dispute.terms.fee_per_juror;
         let panel = round.juror_count as usize;
-        require!(
-            ctx.remaining_accounts.len() == panel,
-            AccordError::InvalidPanelSize
-        );
         if fee_per_juror > 0 {
+            require!(
+                ctx.remaining_accounts.len() == panel,
+                AccordError::InvalidPanelSize
+            );
             // CU-opt field access — see `crate::layout`.
             const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
             for i in 0..panel {

@@ -25,7 +25,7 @@ export async function findDisputePda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b" as Address<"9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b">,
+    programAddress = "ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc" as Address<"ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
