@@ -1,11 +1,11 @@
 ---
 # accord-rbvh
 title: 'Test: finalize implements cross-round-final settlement (agree-with-final-round) — Ugly 5 / accord-r6ti'
-status: todo
+status: draft
 type: task
 priority: normal
 created_at: 2026-08-06T02:13:34Z
-updated_at: 2026-08-06T03:48:41Z
+updated_at: 2026-08-07T02:35:56Z
 parent: accord-ukqg
 blocked_by:
     - accord-r6ti

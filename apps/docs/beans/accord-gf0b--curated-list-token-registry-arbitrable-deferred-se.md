@@ -1,11 +1,11 @@
 ---
 # accord-gf0b
-title: Curated-list / token-registry Arbitrable (DEFERRED — see CURATED-LIST.md)
-status: draft
+title: Accord Canon — curated-list/registry Arbitrable (speccing)
+status: in-progress
 type: epic
 priority: deferred
 created_at: 2026-08-06T03:47:45Z
-updated_at: 2026-08-06T03:47:45Z
+updated_at: 2026-08-07T03:07:37Z
 ---
 
 ## Status: DEFERRED — separate grilling / speccing / planning session
@@ -28,3 +28,5 @@ naming · build-it-ourselves vs enable-third-party · registry state machine · 
 ## Authority
 
 `./CURATED-LIST.md` · beachhead research (`local://beachhead-curated-lists-nft.md`) · Kleros blog audit (`agent://KlerosProducts`, `agent://KlerosGTM`, `agent://KlerosLessons`)
+
+Name locked (2026-08-07): Accord Canon. Code: npm @useaccord/canon, crate accord-canon, in-repo programs/canon/. Naming finalists + rationale: agent://NamingAgent. Registry availability all-clear: @useaccord/canon + accord-canon free; no Accord-Canon prior-art. Grilling/speccing session IN PROGRESS.
