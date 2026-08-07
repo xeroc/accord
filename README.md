@@ -550,7 +550,7 @@ and standard build essentials (`build-essential` / Xcode CLT).
 ## Contributing
 
 1. **Read first:** `CONTEXT.md` (domain language) → this README →
-   `apps/docs/docs/adr/` (the _why_ behind every locked decision).
+   `apps/docs/adr/` (the _why_ behind every locked decision).
 2. **TDD only.** Write the failing test first, then implement to pass.
 3. **Lint is law.** Run `make lint` (and the relevant test) before committing.
    Pre-commit hooks (`fmt`, `cargo-check`, `markdownlint`, `gitleaks`,
@@ -592,7 +592,7 @@ pre-commit install
   economics, edge cases)
 - **`programs/accord/security-checklist.md`** — security audit authority
   (findings cite `file:line`)
-- **ADRs** (`apps/docs/docs/adr/`):
+- **ADRs** (`apps/docs/adr/`):
   - [0001](https://example.com/TBD/adr/0001) Schelling-point Accord replaces
     hired-judge committee
   - [0002](https://example.com/TBD/adr/0002) Per-Subaccord staking token, no
@@ -613,9 +613,9 @@ pre-commit install
     sortition — MST, committed VRF _(partially superseded by 0012)_
   - [0010](https://example.com/TBD/adr/0010) SDK — Codama codegen + Solana Kit
     facade
-  - [0011](apps/docs/docs/adr/0011-evidence-operator-daemon-offchain-service.md) Evidence Operator Daemon —
+  - [0011](apps/docs/adr/accord/0011-evidence-operator-daemon-offchain-service.md) Evidence Operator Daemon —
     off-chain decrypt-re-encryption service
-  - [0012](apps/docs/docs/adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) On-chain stake
+  - [0012](apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) On-chain stake
     accumulator replaces the optimistic snapshot (current draw mechanism)
 
 ---

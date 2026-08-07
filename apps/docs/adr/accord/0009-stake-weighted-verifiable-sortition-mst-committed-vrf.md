@@ -295,7 +295,7 @@ THEMSELVES changed stake — their choice, their consequence.
 
 ## Residual trust assumptions
 
-Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../security/trust-profile.md)):
+Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../../docs/security/trust-profile.md)):
 
 - **Randomness availability is provider-dependent.** The draw requires the
   magicblock VRF oracle to land `commit_vrf_callback`. A down, stalled, or

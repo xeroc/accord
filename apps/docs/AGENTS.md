@@ -66,9 +66,10 @@ domain bound in the project's "Custom domains".
 
 ## Conventions
 
-- **ADRs are read-only here** — they're authored in the ADR format (see
-  `docs/adr/0001` for the template) and moved here via `git mv`. Don't edit
-  ADRs in place; create a new superseding ADR instead.
+- **ADRs are repo-only** — they live at `apps/docs/adr/` (Accord: `accord/`,
+  Canon: `canon/`), outside this docs directory, and are **not** served by the
+  MkDocs site. They're immutable once deployed; don't edit in place — create a
+  new superseding ADR instead. See `apps/docs/adr/index.md`.
 - **Code examples** use TypeScript (SDK) and Rust (CPI). Anchor IDL types are
   the canonical reference.
 - **Cross-references** to `PROJECT.md`, `CONTEXT.md`, and `SPEC.md` use relative

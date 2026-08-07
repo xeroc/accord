@@ -26,7 +26,7 @@ packages/
 tests/              @accord/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
 apps/docs/          MkDocs documentation site (developer-facing)
-apps/docs/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
+apps/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
 CONTEXT.md          Accord domain language (glossary)
 PROJECT.md          Accord rationale
 Cargo.toml          Rust workspace
@@ -38,7 +38,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ```
 
 > **Reading order for new agents:** `CONTEXT.md` (domain language) → `AGENTS.md`
-> (this file — build/test, conventions, gotchas) → `apps/docs/docs/adr/` (the _why_ behind
+> (this file — build/test, conventions, gotchas) → `apps/docs/adr/` (the _why_ behind
 > every locked architectural decision). ADRs are authority on rationale; code is
 > authority on current state.
 
@@ -194,7 +194,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/docs/adr/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0013` (evidence data format), `0014` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`).
 
 ## Build Order
 

@@ -1,4 +1,4 @@
-# ADR-0014: Multi-round settlement against the final ruling
+# ADR-0018: Multi-round settlement against the final ruling
 
 ## Status
 

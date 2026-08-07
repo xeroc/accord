@@ -14,7 +14,7 @@ The Accord program's BPF upgrade authority is a Squads multisig for v1. Once the
 
 ## Residual trust assumptions
 
-Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../security/trust-profile.md)):
+Stated plainly (CONCEPT-REVIEW §Ugly 8; see the [Trust Profile](../../docs/security/trust-profile.md)):
 
 - **Multisig members are trusted with capital-bearing code for the entire
   multisig phase.** A quorum compromise — or a routine but buggy upgrade — can

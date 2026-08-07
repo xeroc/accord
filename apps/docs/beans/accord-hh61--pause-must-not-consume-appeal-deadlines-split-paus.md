@@ -43,7 +43,7 @@ cleaner and matches the "contain new exposure" intent of ADR-0007.
 ## References
 
 CONCEPT-REVIEW §Ugly 2; ADR-0007; `lib.rs:86-135`, `lib.rs:1187-1200`,
-`lib.rs:1374-1401`; bean veridao-63v3. Amends ADR-0007 (via new ADR-0013, per
+`lib.rs:1374-1401`; bean veridao-63v3. Amends ADR-0007 (via new ADR-0016, per
 the repo's immutable-ADR convention).
 
 ## Summary of Changes
@@ -78,9 +78,9 @@ the repo's immutable-ADR convention).
 
 **Docs:**
 
-- New ADR-0013 (Accepted) documents the split-scope decision + the rejected
+- New ADR-0016 (Accepted) documents the split-scope decision + the rejected
   freeze-the-clock alternative. Added to the ADR index. ADR-0007 is left
-  immutable per `apps/docs/docs/adr/index.md`; ADR-0013 amends it.
+  immutable per `apps/docs/docs/adr/index.md`; ADR-0016 amends it.
 
 **Verification:** `appeal_litesvm` (10 tests) + `pause_litesvm` (4 tests) GREEN
 via `cargo test --features no-entrypoint`. All acceptance criteria met; the

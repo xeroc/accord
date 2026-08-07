@@ -106,7 +106,7 @@ Juror decrypts, verifies cleartext vs on-chain evidence_hash
 
 ## Out of scope (v2+)
 
-Accord token · dynamic params · non-Plurality aggregation (IRV / median — ADR-0014) · stake-weighted Subaccord self-governance (ADR-0005 alt) · Arcium encrypted vote-tally (Juror vote privacy) · any on-chain evidence crypto beyond the trusted-operator hash model · validity proof (SNARK) that the accumulator root was built correctly (ADR-0012 future).
+Accord token · dynamic params · non-Plurality aggregation (IRV / median — ADR-0019) · stake-weighted Subaccord self-governance (ADR-0005 alt) · Arcium encrypted vote-tally (Juror vote privacy) · any on-chain evidence crypto beyond the trusted-operator hash model · validity proof (SNARK) that the accumulator root was built correctly (ADR-0012 future).
 
 ## References
 

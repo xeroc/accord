@@ -65,21 +65,6 @@ nav:
       - Snapshot Fraud Proofs: security/fraud-proofs.md
       - Sortition & VRF: security/sortition-vrf.md
       - Circuit Breaker: security/circuit-breaker.md
-  - Architecture:
-      - adr/index.md
-      - "0001 Schelling over hired judges": adr/0001-schelling-accord-replaces-hired-judges.md
-      - "0002 Per-Subaccord staking token": adr/0002-per-subaccord-staking-token-no-accord-token-v1.md
-      - "0003 Draw — Merkle Snapshot, distinct VRF": adr/0003-accord-draw-merkle-snapshot-distinct-vrf.md
-      - "0004 Party-agnostic, permissionless appeal": adr/0004-accord-party-agnostic-permissionless-appeal.md
-      - "0005 Subaccord authority + 48h timelock": adr/0005-subaccord-authority-pubkey-timelock.md
-      - "0006 Evidence — on-chain hash, trusted operator": adr/0006-evidence-onchain-hash-trusted-re-encryption-operator.md
-      - "0007 Upgrade authority — multisig then freeze": adr/0007-upgrade-authority-multisig-then-freeze.md
-      - "0008 Snapshot trust hardening": adr/0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md
-      - "0009 Stake-weighted verifiable sortition": adr/0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md
-      - "0010 SDK — Codama + Kit + facade": adr/0010-sdk-codama-solana-kit-facade.md
-      - "0011 Evidence Operator Daemon": adr/0011-evidence-operator-daemon-offchain-service.md
-      - "0012 On-chain stake accumulator": adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md
-      - "0013 Evidence data format": adr/0013-evidence-data-format-manifest-yaml.md
   - SDK: sdk.md
 
 plugins:

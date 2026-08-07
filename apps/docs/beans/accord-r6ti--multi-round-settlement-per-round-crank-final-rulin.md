@@ -101,11 +101,11 @@ the frozen-case-terms task (settle_round reads frozen α / min_stake / fee_per_j
 
 ### Docs
 
-- **ADR-0014**: multi-round settlement against the final ruling.
+- **ADR-0018**: multi-round settlement against the final ruling.
 
 ### ADR
 
-ADR-0014 documents the model, rationale, and consequences.
+ADR-0018 documents the model, rationale, and consequences.
 
 ### Verification
 
