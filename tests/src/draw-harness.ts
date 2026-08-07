@@ -63,7 +63,7 @@ export const COMMITTED_VRF = new Uint8Array(32).fill(42);
 export const STAKE_AMOUNT = 5_000n;
 /** Fee per juror. */
 export const FEE_PER_JUROR = 1_000_000n;
-/** Panel size for round 0 with jurors_per_dispute=3. */
+/** Panel size for round 0 with initial_num_jurors=3. */
 export const PANEL_SIZE = 3;
 /** Distinct jurors staked per dispute. */
 export const N_JURORS = 3;
@@ -217,7 +217,7 @@ export async function armSubaccordAndJurors(
 
   const args = defaultSubaccordArgs(mint, env.payer.address, {
     minStake: 1_000n,
-    jurorsPerDispute: N_JURORS,
+    initialNumJurors: N_JURORS,
     feePerJuror: FEE_PER_JUROR,
     maxAppeals: 3,
     reviewWindow: 604_800n,

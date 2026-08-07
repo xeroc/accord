@@ -20,7 +20,8 @@ use accord::constants::{
     WITHDRAWAL_DELAY,
 };
 use accord::state::{
-    CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord,
+    Aggregation, CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode,
+    Subaccord,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
@@ -261,12 +262,13 @@ fn setup_accumulator() -> AccEnv {
             params: CreateSubaccordParams {
                 staking_token: mint,
                 min_stake: 1_000,
-                jurors_per_dispute: 3,
+                initial_num_jurors: 3,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
                 max_appeals: 3,
+                aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 authority: creator.pubkey(),
                 evidence_operator: creator.pubkey(),
@@ -702,7 +704,7 @@ fn commit_vrf_callback_freezes_live_root() {
 
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64; // jurors_per_dispute * fee_per_juror
+    let fee = 3 * 1_000_000u64; // initial_num_jurors * fee_per_juror
 
     let ix = env
         .ctx
@@ -1392,12 +1394,13 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
             params: CreateSubaccordParams {
                 staking_token: env.mint,
                 min_stake: 1_000,
-                jurors_per_dispute: 3,
+                initial_num_jurors: 3,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
                 max_appeals: 3,
+                aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 authority: env.creator.pubkey(),
                 evidence_operator: env.creator.pubkey(),
@@ -3191,4 +3194,140 @@ fn submit_draw_seat(
     env.ctx
         .execute_instruction(ix_with_meta, &[&env.creator])
         .unwrap()
+}
+
+// ─── ADR-0019 dispute-kit: aggregation enum + initial_num_jurors validation ──
+//
+// `create_subaccord` must (a) store `aggregation` (v1 = Plurality), (b) reject
+// an even `initial_num_jurors` (tie avoidance; `2N+1` preserves oddness), and
+// (c) reject combos whose appeal ladder
+// `(initial+1)·2^max_appeals − 1` exceeds MAX_JURORS (=31). The default ladder
+// 3 → 7 → 15 → 31 (initial=3, max_appeals=3) is the acceptance boundary.
+
+/// Build a fresh SVM + funded creator and attempt `create_subaccord` with the
+/// given dispute-kit params. Returns `(result, subaccord_pda)` so callers can
+/// assert success/failure and read the account back. A fresh creator keypair
+/// per call keeps the Subaccord PDA unique.
+fn try_create_subaccord(
+    initial_num_jurors: u32,
+    max_appeals: u8,
+    aggregation: Aggregation,
+) -> (TransactionResult, Pubkey) {
+    let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
+    let creator = Keypair::new();
+    ctx.svm
+        .airdrop(&creator.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    // Non-zero risk_type (namespace-squat guard); distinct from setup_accumulator.
+    let risk_type = {
+        let mut rt = [0u8; 32];
+        rt[0] = 0x7F;
+        rt
+    };
+    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let mint = Pubkey::new_unique(); // create_subaccord stores but does not validate the mint
+    let ix = ctx
+        .program()
+        .accounts(accounts::CreateSubaccord {
+            creator: creator.pubkey(),
+            subaccord: sub,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateSubaccord {
+            risk_type,
+            evidence_spec: [0u8; 32],
+            params: CreateSubaccordParams {
+                staking_token: mint,
+                min_stake: 1_000,
+                initial_num_jurors,
+                alpha_bps: 1_000,
+                review_window: 60,
+                commit_window: 60,
+                reveal_window: 60,
+                max_appeals,
+                aggregation,
+                fee_per_juror: 1_000_000,
+                authority: creator.pubkey(),
+                evidence_operator: creator.pubkey(),
+                depth: TEST_DEPTH,
+            },
+        })
+        .instruction()
+        .unwrap();
+    let result = ctx.execute_instruction(ix, &[&creator]).unwrap();
+    (result, sub)
+}
+
+#[test]
+fn create_subaccord_defaults_aggregation_plurality() {
+    // The standard v1 seed (initial=3, max_appeals=3) is the ladder acceptance
+    // boundary (3 → 7 → 15 → 31). setup_accumulator creates with exactly those
+    // default params; the stored aggregation must be Plurality and the seed 3.
+    let env = setup_accumulator();
+    let stored = read_subaccord(&env);
+    assert_eq!(stored.initial_num_jurors, 3);
+    assert_eq!(stored.aggregation, Aggregation::Plurality);
+}
+
+#[test]
+fn create_subaccord_stores_aggregation_and_seed() {
+    // A larger odd seed with fewer appeals: initial=7, max_appeals=2 ⇒ 31 (OK).
+    let (result, _sub) = try_create_subaccord(7, 2, Aggregation::Plurality);
+    assert!(
+        result.is_success(),
+        "initial=7/max_appeals=2 ladder (→31) must be accepted; logs={:?}",
+        result.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_rejects_even_initial_num_jurors() {
+    // 4 is even ⇒ tie risk; the `2N+1` rule would still produce odd panels but
+    // round 0 itself could tie. Rejected at intake.
+    let (result, _sub) = try_create_subaccord(4, 2, Aggregation::Plurality);
+    assert!(
+        !result.is_success(),
+        "even initial_num_jurors must be rejected; logs={:?}",
+        result.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_rejects_zero_initial_num_jurors() {
+    // 0 is even (and degenerate) ⇒ rejected by the oddness gate.
+    let (result, _sub) = try_create_subaccord(0, 0, Aggregation::Plurality);
+    assert!(
+        !result.is_success(),
+        "zero initial_num_jurors must be rejected; logs={:?}",
+        result.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_rejects_ladder_exceeding_max_jurors() {
+    // initial=5, max_appeals=3 ⇒ (5+1)·8 − 1 = 47 > 31 ⇒ rejected.
+    let (result, _sub) = try_create_subaccord(5, 3, Aggregation::Plurality);
+    assert!(
+        !result.is_success(),
+        "ladder 5 → 47 > MAX_JURORS must be rejected; logs={:?}",
+        result.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_accepts_ladder_boundary() {
+    // initial=1, max_appeals=3 ⇒ (1+1)·8 − 1 = 15 ≤ 31 ⇒ OK (smallest odd seed).
+    let (result, _sub) = try_create_subaccord(1, 3, Aggregation::Plurality);
+    assert!(
+        result.is_success(),
+        "ladder 1 → 15 ≤ MAX_JURORS must be accepted; logs={:?}",
+        result.logs()
+    );
+    // initial=31, max_appeals=0 ⇒ (31+1)·1 − 1 = 31 ≤ 31 ⇒ OK (largest seed, no appeals).
+    let (result2, _sub2) = try_create_subaccord(31, 0, Aggregation::Plurality);
+    assert!(
+        result2.is_success(),
+        "initial=31/max_appeals=0 (→31) must be accepted; logs={:?}",
+        result2.logs()
+    );
 }

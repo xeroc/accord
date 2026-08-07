@@ -72,12 +72,12 @@ export interface AppealCost {
  * `total = fee_new + bond`). Returns `null` if the panel math overflows.
  */
 export function appealCost(
-  jurorsPerDispute: number,
+  initialNumJurors: number,
   currentRound: number,
   feePerJuror: bigint,
 ): AppealCost | null {
   const newRound = currentRound + 1;
-  const panel = panelSizeForRound(jurorsPerDispute, newRound);
+  const panel = panelSizeForRound(initialNumJurors, newRound);
   if (panel === null) return null;
   const fee = BigInt(panel) * feePerJuror;
   const bond = fee;

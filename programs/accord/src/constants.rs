@@ -69,7 +69,7 @@ pub const SEED_PAUSE: &[u8] = b"pause";
 // --- v1 default economics (per-Subaccord configurable; these are the
 //     milestone defaults table) ----------------------------------------------
 
-pub const DEFAULT_JURORS_PER_DISPUTE: u32 = 3;
+pub const DEFAULT_INITIAL_NUM_JURORS: u32 = 3;
 /// Default alpha (slash factor) in basis points: 10%.
 pub const DEFAULT_ALPHA_BPS: u16 = 1_000;
 pub const DEFAULT_REVIEW_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;

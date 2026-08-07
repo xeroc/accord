@@ -28,7 +28,7 @@ export const DEFAULT_TREE_DEPTH = 20;
 
 // --- v1 default economics (per-Subaccord; AGENTS.md "v1 Defaults") ---
 
-export const DEFAULT_JURORS_PER_DISPUTE = 3;
+export const DEFAULT_INITIAL_NUM_JURORS = 3;
 export const DEFAULT_ALPHA_BPS = 1_000; // 10%
 export const DEFAULT_REVIEW_WINDOW_SECS = 604_800n; // 7 days
 export const DEFAULT_COMMIT_WINDOW_SECS = 172_800n; // 2 days
@@ -40,12 +40,12 @@ export const DEFAULT_FEE_PER_JUROR = 0n; // set per-Subaccord
 // --- Panel ladder: N_{k+1} = 2·N_k + 1, closed form (J+1)·2^k − 1, capped at MAX_JURORS ---
 
 export function panelSizeForRound(
-  jurorsPerDispute: number,
+  initialNumJurors: number,
   roundIdx: number,
 ): number | null {
   if (
-    !Number.isInteger(jurorsPerDispute) ||
-    jurorsPerDispute < 0 ||
+    !Number.isInteger(initialNumJurors) ||
+    initialNumJurors < 0 ||
     !Number.isInteger(roundIdx) ||
     roundIdx < 0 ||
     roundIdx >= 31
@@ -53,15 +53,15 @@ export function panelSizeForRound(
     return null;
   }
   const factor = 1 << roundIdx;
-  const panel = (jurorsPerDispute + 1) * factor - 1;
+  const panel = (initialNumJurors + 1) * factor - 1;
   if (!Number.isSafeInteger(panel) || panel < 0) return null;
   return Math.min(panel, MAX_JURORS);
 }
 
 export function maxAppealPanelSize(
-  jurorsPerDispute: number,
+  initialNumJurors: number,
   maxAppeals: number,
 ): number {
   const factor = 1 << maxAppeals;
-  return Math.min((jurorsPerDispute + 1) * factor - 1, MAX_JURORS);
+  return Math.min((initialNumJurors + 1) * factor - 1, MAX_JURORS);
 }

@@ -54,7 +54,7 @@ pub enum AccordError {
     InvalidOptions,
     #[msg("Dispute is not in the required state for this instruction.")]
     InvalidState,
-    #[msg("Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror).")]
+    #[msg("Tendered fee does not match the required dispute fee (initial_num_jurors * fee_per_juror).")]
     FeeMismatch,
 
     // --- accumulator (ADR-0012) ---
@@ -108,6 +108,10 @@ pub enum AccordError {
     MaxAppealsReached,
     #[msg("Subaccord max_appeals exceeds the program ceiling.")]
     MaxAppealsLimitExceeded,
+    #[msg("initial_num_jurors must be odd (tie avoidance; 2N+1 preserves oddness).")]
+    InitialNumJurorsNotOdd,
+    #[msg("The appeal ladder (initial_num_jurors -> 2N+1 -> ...) exceeds MAX_JURORS; reduce the seed or max_appeals.")]
+    PanelLadderExceedsMax,
     #[msg("Appeal window has closed; the dispute can only be finalized.")]
     AppealWindowClosed,
 

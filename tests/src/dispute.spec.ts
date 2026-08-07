@@ -8,7 +8,7 @@
 //  - too-few options     : on-chain InvalidOptions revert (bypass facade guard)
 //  - fee mismatch        : on-chain FeeMismatch revert (extra faithful case)
 //
-// Arming: a Subaccord needs `staker_count >= jurors_per_dispute` distinct
+// Arming: a Subaccord needs `staker_count >= initial_num_jurors` distinct
 // staked Jurors before `create_dispute` passes its coarse intake gate. Each
 // juror stakes from its own `new Accord({ endpoint, signer: jurorKp })` facade
 // (the adapter pins `juror = accord.signer`); the filer reuses `env.accord`
@@ -53,9 +53,9 @@ const ATA_PROGRAM_ID =
 const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 const SEED_DISPUTE = new Uint8Array([100, 105, 115, 112, 117, 116, 101]); // "dispute"
 
-const JURORS_PER_DISPUTE = 3;
+const INITIAL_NUM_JURORS = 3;
 const FEE_PER_JUROR = 1_000_000n;
-const REQUIRED_FEE = requiredFee(JURORS_PER_DISPUTE, FEE_PER_JUROR)!; // 3_000_000
+const REQUIRED_FEE = requiredFee(INITIAL_NUM_JURORS, FEE_PER_JUROR)!; // 3_000_000
 // DisputeState::Created is the first variant of the numeric enum (state.rs) = 0.
 const STATE_CREATED = 0;
 
@@ -119,7 +119,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
   let env: TestEnv;
   let mint!: Address;
   let pauseState!: Address;
-  // A fully-armed Subaccord (≥ jurors_per_dispute stakers) + its vault.
+  // A fully-armed Subaccord (≥ initial_num_jurors stakers) + its vault.
   let mainSub!: Address;
   let mainVault!: Address;
   let filerAta!: Address;
@@ -143,8 +143,8 @@ describe("e2e: dispute (requires Surfpool)", () => {
     // 2) Staking / fee-currency mint.
     mint = (await createMint(env, 6)).mint;
 
-    // 3) Main Subaccord over `mint`, armed with `jurors_per_dispute` stakers.
-    const armed = await createArmedSubaccord(JURORS_PER_DISPUTE);
+    // 3) Main Subaccord over `mint`, armed with `initial_num_jurors` stakers.
+    const armed = await createArmedSubaccord(INITIAL_NUM_JURORS);
     mainSub = armed.subaccord;
     mainVault = armed.vault;
 
@@ -162,7 +162,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
     const args = defaultSubaccordArgs(mint, env.payer.address, {
       feePerJuror: FEE_PER_JUROR,
       minStake: 1_000n,
-      jurorsPerDispute: JURORS_PER_DISPUTE,
+      initialNumJurors: INITIAL_NUM_JURORS,
     });
     const sub = await createSubaccord(
       env.accord.adapter,
@@ -271,8 +271,8 @@ describe("e2e: dispute (requires Surfpool)", () => {
 
   it("insufficient stakers reverts on-chain (InsufficientJurors)", async () => {
     if (!env.up) return;
-    // A separate Subaccord with only jurors_per_dispute − 1 stakers.
-    const thin = await createArmedSubaccord(JURORS_PER_DISPUTE - 1);
+    // A separate Subaccord with only initial_num_jurors − 1 stakers.
+    const thin = await createArmedSubaccord(INITIAL_NUM_JURORS - 1);
     const nonce = nextNonce();
     const args: CreateDisputeArgs = {
       options: [randomBytes32(), randomBytes32()],

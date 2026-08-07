@@ -18,6 +18,12 @@ export {
 } from "./generated/types/disputeState.js";
 
 export {
+  Aggregation,
+  type AggregationArgs,
+  getAggregationCodec,
+} from "./generated/types/aggregation.js";
+
+export {
   type UpdatePayload,
   getUpdatePayloadCodec,
 } from "./generated/types/updatePayload.js";

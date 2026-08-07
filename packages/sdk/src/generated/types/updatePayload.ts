@@ -38,7 +38,7 @@ import {
  */
 export type UpdatePayload =
   | { __kind: "MinStake"; fields: readonly [bigint] }
-  | { __kind: "JurorsPerDispute"; fields: readonly [number] }
+  | { __kind: "InitialNumJurors"; fields: readonly [number] }
   | { __kind: "AlphaBps"; fields: readonly [number] }
   | { __kind: "ReviewWindow"; fields: readonly [bigint] }
   | { __kind: "CommitWindow"; fields: readonly [bigint] }
@@ -50,7 +50,7 @@ export type UpdatePayload =
 
 export type UpdatePayloadArgs =
   | { __kind: "MinStake"; fields: readonly [number | bigint] }
-  | { __kind: "JurorsPerDispute"; fields: readonly [number] }
+  | { __kind: "InitialNumJurors"; fields: readonly [number] }
   | { __kind: "AlphaBps"; fields: readonly [number] }
   | { __kind: "ReviewWindow"; fields: readonly [number | bigint] }
   | { __kind: "CommitWindow"; fields: readonly [number | bigint] }
@@ -67,7 +67,7 @@ export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
       getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
     ],
     [
-      "JurorsPerDispute",
+      "InitialNumJurors",
       getStructEncoder([["fields", getTupleEncoder([getU32Encoder()])]]),
     ],
     [
@@ -112,7 +112,7 @@ export function getUpdatePayloadDecoder(): Decoder<UpdatePayload> {
       getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
     ],
     [
-      "JurorsPerDispute",
+      "InitialNumJurors",
       getStructDecoder([["fields", getTupleDecoder([getU32Decoder()])]]),
     ],
     [
@@ -167,16 +167,16 @@ export function updatePayload(
   >["fields"],
 ): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "MinStake">;
 export function updatePayload(
-  kind: "JurorsPerDispute",
+  kind: "InitialNumJurors",
   data: GetDiscriminatedUnionVariantContent<
     UpdatePayloadArgs,
     "__kind",
-    "JurorsPerDispute"
+    "InitialNumJurors"
   >["fields"],
 ): GetDiscriminatedUnionVariant<
   UpdatePayloadArgs,
   "__kind",
-  "JurorsPerDispute"
+  "InitialNumJurors"
 >;
 export function updatePayload(
   kind: "AlphaBps",
