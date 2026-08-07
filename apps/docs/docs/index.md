@@ -45,7 +45,7 @@ Your Program (Arbitrable)
 1. **A Subaccord** — a specialized juror pool with its own staking token, min
    stake, and fee schedule. Use an existing one or create your own
    (permissionless).
-2. **Capital** — the filer pays `jurors_per_dispute × fee_per_juror` per round.
+2. **Capital** — the filer pays `INITIAL_NUM_JURORS × fee_per_juror` (= `3 × fee_per_juror`) per round.
    Appeals cost exponentially more.
 3. **The SDK** — `@accord/sdk` for TypeScript, or raw Anchor IDL for any
    language.

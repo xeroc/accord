@@ -19,7 +19,7 @@ let dispute = accord::create_dispute(
     vec![option_a_hash, option_b_hash], // 2+ option hashes
     evidence_hash,                       // commitment to the evidence
     nonce,                               // caller-chosen, for PDA uniqueness
-    fee,                                 // jurors_per_dispute * fee_per_juror
+    fee,                                 // INITIAL_NUM_JURORS (3) * fee_per_juror
 )?;
 
 // 2. Read the ruling (lazy — call whenever, after finalization)
