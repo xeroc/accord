@@ -21,7 +21,7 @@ use accord::constants::{
 };
 use accord::state::{
     Aggregation, CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode,
-    Subaccord,
+    ShortfallPolicy, Subaccord,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
@@ -270,6 +270,9 @@ fn setup_accumulator() -> AccEnv {
                 max_appeals: 3,
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
+                reveal_threshold_bps: 6_666,
+                shortfall_policy: ShortfallPolicy::Redraw,
+                max_draw_attempts: 3,
                 authority: creator.pubkey(),
                 evidence_operator: creator.pubkey(),
                 depth: TEST_DEPTH,
@@ -850,7 +853,13 @@ fn draw_seat_fills_round_against_frozen_root() {
             if candidate[0] == 0 {
                 candidate[1] = candidate[1].wrapping_add(1);
             }
-            let seed = hashv(&[&candidate, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &candidate,
+                dispute.as_ref(),
+                &round_idx.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
             let seats: Vec<usize> = (0..3u32)
                 .map(|seat| {
                     let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -874,7 +883,13 @@ fn draw_seat_fills_round_against_frozen_root() {
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
 
     // Resolve which juror wins each seat (retry=0, no collision).
-    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let vrf_seed = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
     let mut drawn: Vec<(u32, usize)> = Vec::new();
 
     for seat in 0..3u32 {
@@ -1030,7 +1045,13 @@ fn out_of_order_seat_rejected() {
             if c[0] == 0 {
                 c[1] = c[1].wrapping_add(1);
             }
-            let seed = hashv(&[&c, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &c,
+                dispute.as_ref(),
+                &0u32.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
             let seats: Vec<usize> = (0..3u32)
                 .map(|seat| {
                     let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -1051,7 +1072,13 @@ fn out_of_order_seat_rejected() {
         }
     };
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
-    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+    let vrf_seed = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &0u32.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
     let rnd = round_pda(&dispute, 0);
     let resolve = |seat: u32| -> usize {
         let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -1166,7 +1193,13 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
             if candidate[0] == 0 {
                 candidate[1] = candidate[1].wrapping_add(1);
             }
-            let seed = hashv(&[&candidate, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &candidate,
+                dispute.as_ref(),
+                &round_idx.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
 
             // seat 0 @ retry 0 must land on whale.
             let r0 = u64::from_le_bytes(
@@ -1205,7 +1238,13 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
 
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
 
-    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let vrf_seed = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
     let round_pda = round_pda(&dispute, round_idx);
 
     // Helper: resolve which leaf a (seat, retry) maps to.
@@ -1406,6 +1445,9 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
                 max_appeals: 3,
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
+                reveal_threshold_bps: 6_666,
+                shortfall_policy: ShortfallPolicy::Redraw,
+                max_draw_attempts: 3,
                 authority: env.creator.pubkey(),
                 evidence_operator: env.creator.pubkey(),
                 depth: TEST_DEPTH,
@@ -2010,7 +2052,13 @@ fn cancel_releases_partially_drawn_panel() {
             if candidate[0] == 0 {
                 candidate[1] = candidate[1].wrapping_add(1);
             }
-            let seed = hashv(&[&candidate, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &candidate,
+                dispute.as_ref(),
+                &round_idx.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
             let rh = hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
             let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
             if ri >= prefixes[0] && ri - prefixes[0] < leaves[0].1 {
@@ -2413,7 +2461,13 @@ fn commit_reveal_finalize_settle_single_round() {
             if c[0] == 0 {
                 c[1] = c[1].wrapping_add(1);
             }
-            let seed = hashv(&[&c, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &c,
+                dispute.as_ref(),
+                &round_idx.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
             let seats: Vec<usize> = (0..3u32)
                 .map(|seat| {
                     let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -2435,7 +2489,13 @@ fn commit_reveal_finalize_settle_single_round() {
     };
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
 
-    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &round_idx.to_le_bytes()]).to_bytes();
+    let vrf_seed = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &round_idx.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
     let mut drawn: Vec<(u32, usize)> = Vec::new();
     for seat in 0..3u32 {
         let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -2817,7 +2877,13 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
             if c[0] == 0 {
                 c[1] = c[1].wrapping_add(1);
             }
-            let seed = hashv(&[&c, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &c,
+                dispute.as_ref(),
+                &0u32.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
             let seats: Vec<usize> = (0..3u32)
                 .map(|seat| {
                     let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -2838,7 +2904,13 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
         }
     };
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
-    let vrf_seed = hashv(&[&vrf, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+    let vrf_seed = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &0u32.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
     let mut drawn: Vec<(u32, usize)> = Vec::new();
     for seat in 0..3u32 {
         let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
@@ -3046,7 +3118,13 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
             if c[0] == 0 {
                 c[1] = c[1].wrapping_add(1);
             }
-            let seed = hashv(&[&c, dispute.as_ref(), &0u32.to_le_bytes()]).to_bytes();
+            let seed = hashv(&[
+                &c,
+                dispute.as_ref(),
+                &0u32.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
             let rh = hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
             let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
             if ri >= prefixes[0] && ri - prefixes[0] < leaves[0].1 {
@@ -3274,6 +3352,9 @@ fn try_create_subaccord(max_appeals: u8, aggregation: Aggregation) -> Transactio
                 max_appeals,
                 aggregation,
                 fee_per_juror: 1_000_000,
+                reveal_threshold_bps: 6_666,
+                shortfall_policy: ShortfallPolicy::Redraw,
+                max_draw_attempts: 3,
                 authority: creator.pubkey(),
                 evidence_operator: creator.pubkey(),
                 depth: TEST_DEPTH,
