@@ -73,14 +73,15 @@
 
 ## Appeals / finalization ([ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md))
 
-| Code                      | Message                                                      | Raised by          |
-| ------------------------- | ------------------------------------------------------------ | ------------------ |
-| `AppealWindowOpen`        | Appeal window has not elapsed yet.                           | `finalize_dispute` |
-| `MaxAppealsReached`       | Maximum appeals reached for this dispute.                    | `appeal`           |
-| `MaxAppealsLimitExceeded` | Subaccord max_appeals exceeds the program ceiling.           | `create_subaccord` |
-| `AppealWindowClosed`      | Appeal window has closed; the dispute can only be finalized. | `appeal`           |
-| `RoundNotFinalizable`     | Round cannot be finalized yet (window not elapsed).          | `finalize_round`   |
-| `DisputeNotFinal`         | Dispute is not in a finalizable state.                       | (reserved)         |
+| Code                      | Message                                                                  | Raised by          |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------ |
+| `AppealWindowOpen`        | Appeal window has not elapsed yet.                                       | `finalize_dispute` |
+| `MaxAppealsReached`       | Maximum appeals reached for this dispute.                                | `appeal`           |
+| `MaxAppealsLimitExceeded` | Subaccord max_appeals exceeds the program ceiling.                       | `create_subaccord` |
+| `AppealWindowClosed`      | Appeal window has closed; the dispute can only be finalized.             | `appeal`           |
+| `AppealWindowTooShort`    | Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS). | `create_subaccord` |
+| `RoundNotFinalizable`     | Round cannot be finalized yet (window not elapsed).                      | `finalize_round`   |
+| `DisputeNotFinal`         | Dispute is not in a finalizable state.                                   | (reserved)         |
 
 ## Arithmetic
 

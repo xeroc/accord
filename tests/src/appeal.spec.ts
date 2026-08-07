@@ -43,7 +43,7 @@ import {
   getDisputeDecoder,
   getJurorStakeDecoder,
   getRoundDecoder,
-  APPEAL_WINDOW_SECS,
+  DEFAULT_APPEAL_WINDOW_SECS,
   type MerkleAccumulator,
   type SeatMembership,
 } from "@useaccord/sdk";
@@ -525,7 +525,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(r1d.result).toBe(1);
 
     // --- warp past the appeal window + finalize the dispute ---
-    await warpTo(env, r1d.revealEnd + APPEAL_WINDOW_SECS + 1n);
+    await warpTo(env, r1d.revealEnd + DEFAULT_APPEAL_WINDOW_SECS + 1n);
     await env.sendIx(
       finalizeDispute(
         env.accord.adapter,
@@ -622,7 +622,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
       incoherentPdas.map((p) => readJurorSettlementDelta(env, p)),
     );
 
-    await warpTo(env, r1d.revealEnd + APPEAL_WINDOW_SECS + 1n);
+    await warpTo(env, r1d.revealEnd + DEFAULT_APPEAL_WINDOW_SECS + 1n);
     await env.sendIx(
       finalizeDispute(
         env.accord.adapter,
@@ -701,7 +701,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     });
     // Warp past reveal_end + APPEAL_WINDOW ⇒ AppealWindowClosed.
     const r0d = await readRound(env, w.round0);
-    await warpTo(env, r0d.revealEnd + APPEAL_WINDOW_SECS + 1n);
+    await warpTo(env, r0d.revealEnd + DEFAULT_APPEAL_WINDOW_SECS + 1n);
 
     const [appealBond] = await findAppealBondPda({
       dispute: w.dispute,

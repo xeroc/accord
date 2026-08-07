@@ -216,7 +216,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@useaccord/sdk/evidence`).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0022` (per-Subaccord appeal window), `0015` (evidence crypto → `@useaccord/sdk/evidence`).
 
 ## Build Order
 
@@ -232,6 +232,7 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` 
 | Review window        | 7 days                | Jurors assess evidence                |
 | Commit window        | 2 days                | `hash(vote, salt)`                    |
 | Reveal window        | 2 days                | `{vote, salt}`                        |
+| Appeal window        | 3 days                | Per-Subaccord (ADR-0022); floor 1h (`MIN_APPEAL_WINDOW_SECS`) |
 | Alpha (slash factor) | 10%                   | Incoherent juror stake lost           |
 | Min juror stake      | 1,000 (staking_token) | Draw eligibility; per-Subaccord token |
 | Max appeals          | 3                     | 3 → 7 → 15 → 31 jurors                |

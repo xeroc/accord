@@ -11,3 +11,4 @@ The Accord has no concept of disputing "parties." `create_dispute` accepts one f
 - Kleros's default-judgment and bond-to-winner mechanics move off-Accord — they become the Arbitrable's responsibility. The Accord adjudicates the question; the Arbitrable manages the consequences.
 - A forfeited appeal bond (the appeal fails to flip the prior Ruling) goes to the Coherent Jurors of the final round, since the Accord knows no "winning party."
 - Griefing-by-appeal is bounded: max 3 appeals + exponential cost + bond forfeiture.
+- The appeal window is per-Subaccord since ADR-0022 (was the global `APPEAL_WINDOW_SECS`); the appeal right itself is unchanged.

@@ -27,6 +27,7 @@
 import type { Address, Instruction } from "@solana/kit";
 import {
   MAX_APPEALS,
+  MIN_APPEAL_WINDOW_SECS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "../constants.js";
@@ -34,6 +35,7 @@ import type { Aggregation, UpdatePayload } from "../types.js";
 
 export {
   MAX_APPEALS,
+  MIN_APPEAL_WINDOW_SECS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "../constants.js";
@@ -74,6 +76,9 @@ export interface CreateSubaccordArgs {
   reviewWindow: bigint; // seconds
   commitWindow: bigint; // seconds
   revealWindow: bigint; // seconds
+  /** Appeal window after a round resolves before finality (ADR-0022). Per-
+   *  Subaccord, frozen onto `CaseTerms` at filing. ≥ {@link MIN_APPEAL_WINDOW_SECS}. */
+  appealWindow: bigint; // seconds
   /** ≤ {@link MAX_APPEALS}; the sole per-Subaccord panel-shape knob. The
    *  round-1 size is the fixed {@link INITIAL_NUM_JURORS} (3); each appeal
    *  doubles+1 (3 → 7 → 15 → 31 at max_appeals = 3). */
@@ -147,6 +152,16 @@ export function assertValidMaxAppeals(maxAppeals: number): void {
   ) {
     throw new Error(
       `MaxAppealsLimitExceeded: expected 0..${MAX_APPEALS}, got ${maxAppeals}`,
+    );
+  }
+}
+
+/** Validate `appeal_window ≥ MIN_APPEAL_WINDOW_SECS` (lib.rs, ADR-0022). A pool
+ * that wants no appeals sets `max_appeals == 0`; a 0 window is rejected. */
+export function assertValidAppealWindow(appealWindow: bigint): void {
+  if (appealWindow < MIN_APPEAL_WINDOW_SECS) {
+    throw new Error(
+      `AppealWindowTooShort: expected >= ${MIN_APPEAL_WINDOW_SECS}, got ${appealWindow}`,
     );
   }
 }
@@ -282,6 +297,7 @@ export async function createSubaccord(
   if (args.evidenceSpec.length !== 32)
     throw new Error("InvalidEvidenceSpec: expected 32 bytes");
   assertValidMaxAppeals(args.maxAppeals);
+  assertValidAppealWindow(args.appealWindow);
   const { address, bump } = await findSubaccordPda(
     programId,
     creator,

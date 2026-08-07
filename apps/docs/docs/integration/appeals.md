@@ -2,15 +2,17 @@
 
 Permissionless escalation to a larger panel. Anyone may appeal a resolved round within the appeal window.
 
+> The appeal window is **per-Subaccord** (`dispute.terms.appeal_window`, frozen at filing; default 3 days, floor 1 hour — [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)). Set `max_appeals == 0` to disable appeals entirely.
+
 ## `appeal()`
 
-| Gate                                    | Error                |
-| --------------------------------------- | -------------------- |
-| `!pause_state.paused`                   | `ProgramPaused`      |
-| `state == RoundResolved`                | `InvalidState`       |
-| `current_round < max_appeals`           | `MaxAppealsReached`  |
-| `now < reveal_end + APPEAL_WINDOW_SECS` | `AppealWindowClosed` |
-| `subaccord.staker_count ≥ new_panel`    | `InsufficientJurors` |
+| Gate                                     | Error                |
+| ---------------------------------------- | -------------------- |
+| `!pause_state.paused`                    | `ProgramPaused`      |
+| `state == RoundResolved`                 | `InvalidState`       |
+| `current_round < max_appeals`            | `MaxAppealsReached`  |
+| `now < reveal_end + terms.appeal_window` | `AppealWindowClosed` |
+| `subaccord.staker_count ≥ new_panel`     | `InsufficientJurors` |
 
 ## Panel ladder
 

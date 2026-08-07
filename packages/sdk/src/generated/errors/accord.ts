@@ -100,28 +100,31 @@ export const ACCORD_ERROR__MAX_APPEALS_REACHED = 0x1798; // 6040
 export const ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED = 0x1799; // 6041
 /** AppealWindowClosed: Appeal window has closed; the dispute can only be finalized. */
 export const ACCORD_ERROR__APPEAL_WINDOW_CLOSED = 0x179a; // 6042
+/** AppealWindowTooShort: Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS). */
+export const ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT = 0x179b; // 6043
 /** RoundNotFinalizable: Round cannot be finalized yet (window not elapsed). */
-export const ACCORD_ERROR__ROUND_NOT_FINALIZABLE = 0x179b; // 6043
+export const ACCORD_ERROR__ROUND_NOT_FINALIZABLE = 0x179c; // 6044
 /** DisputeNotFinal: Dispute is not in a finalizable state. */
-export const ACCORD_ERROR__DISPUTE_NOT_FINAL = 0x179c; // 6044
+export const ACCORD_ERROR__DISPUTE_NOT_FINAL = 0x179d; // 6045
 /** ArithmeticOverflow: Arithmetic overflow. */
-export const ACCORD_ERROR__ARITHMETIC_OVERFLOW = 0x179d; // 6045
+export const ACCORD_ERROR__ARITHMETIC_OVERFLOW = 0x179e; // 6046
 /** RoundAlreadySettled: Round has already been settled. */
-export const ACCORD_ERROR__ROUND_ALREADY_SETTLED = 0x179e; // 6046
+export const ACCORD_ERROR__ROUND_ALREADY_SETTLED = 0x179f; // 6047
 /** RoundNotSettlable: Round index out of range for settlement (must be < current_round). */
-export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x179f; // 6047
+export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x17a0; // 6048
 /** DisputeFailed: Dispute is in terminal Failed state. */
-export const ACCORD_ERROR__DISPUTE_FAILED = 0x17a0; // 6048
+export const ACCORD_ERROR__DISPUTE_FAILED = 0x17a1; // 6049
 /** CancelTooEarly: Dispute has not exceeded its stage timeout; cancel_dispute is not yet available. */
-export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a1; // 6049
+export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a2; // 6050
 /** MaxRetriesExceeded: Sortition retries exceeded the on-chain bound; the pool may be too concentrated. */
-export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a2; // 6050
+export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a3; // 6051
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
   | typeof ACCORD_ERROR__ALREADY_REVEALED
   | typeof ACCORD_ERROR__APPEAL_WINDOW_CLOSED
   | typeof ACCORD_ERROR__APPEAL_WINDOW_OPEN
+  | typeof ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT
   | typeof ACCORD_ERROR__ARITHMETIC_OVERFLOW
   | typeof ACCORD_ERROR__CANCEL_TOO_EARLY
   | typeof ACCORD_ERROR__COMMIT_ALREADY_EXISTS
@@ -177,6 +180,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__ALREADY_REVEALED]: `Juror has already revealed.`,
     [ACCORD_ERROR__APPEAL_WINDOW_CLOSED]: `Appeal window has closed; the dispute can only be finalized.`,
     [ACCORD_ERROR__APPEAL_WINDOW_OPEN]: `Appeal window has not elapsed yet.`,
+    [ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT]: `Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS).`,
     [ACCORD_ERROR__ARITHMETIC_OVERFLOW]: `Arithmetic overflow.`,
     [ACCORD_ERROR__CANCEL_TOO_EARLY]: `Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.`,
     [ACCORD_ERROR__COMMIT_ALREADY_EXISTS]: `Juror has already committed.`,

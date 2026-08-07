@@ -36,6 +36,9 @@ pub struct Subaccord {
     pub review_window: u64, // seconds
     pub commit_window: u64, // seconds
     pub reveal_window: u64, // seconds
+    /// Appeal window after a round resolves before the dispute goes final
+    /// (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
+    pub appeal_window: u64, // seconds
     pub max_appeals: u8,
     /// Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`.
     pub aggregation: Aggregation,
@@ -126,6 +129,8 @@ pub struct CaseTerms {
     pub review_window: u64,
     pub commit_window: u64,
     pub reveal_window: u64,
+    /// Appeal window (ADR-0022). Per-Subaccord, frozen at filing.
+    pub appeal_window: u64,
     pub max_appeals: u8,
     pub aggregation: Aggregation,
 }
@@ -334,6 +339,7 @@ pub struct CreateSubaccordParams {
     pub review_window: u64,
     pub commit_window: u64,
     pub reveal_window: u64,
+    pub appeal_window: u64,
     pub max_appeals: u8,
     pub aggregation: Aggregation,
     pub fee_per_juror: u64,
@@ -351,6 +357,7 @@ pub enum UpdatePayload {
     ReviewWindow(u64),
     CommitWindow(u64),
     RevealWindow(u64),
+    AppealWindow(u64),
     MaxAppeals(u8),
     FeePerJuror(u64),
     Authority(Pubkey),

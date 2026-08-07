@@ -266,6 +266,7 @@ fn setup_accumulator() -> AccEnv {
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
+                appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
                 max_appeals: 3,
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
@@ -1397,6 +1398,7 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
+                appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
                 max_appeals: 3,
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
@@ -2533,7 +2535,7 @@ fn commit_reveal_finalize_settle_single_round() {
     assert_eq!(d.state, DisputeState::RoundResolved);
 
     // Finalize dispute after appeal window.
-    warp_seconds(&mut env, accord::constants::APPEAL_WINDOW_SECS + 1);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
     let js_pdhas: Vec<Pubkey> = drawn
         .iter()
         .map(|&(_, li)| juror_stake_pda(&env.subaccord, &leaves[li].0))
@@ -3212,7 +3214,11 @@ fn submit_draw_seat(
 /// given `max_appeals` + `aggregation`. Returns the tx result so callers can
 /// assert success/failure. A fresh creator keypair per call keeps the Subaccord
 /// PDA unique.
-fn try_create_subaccord(max_appeals: u8, aggregation: Aggregation) -> TransactionResult {
+fn try_create_subaccord(
+    max_appeals: u8,
+    aggregation: Aggregation,
+    appeal_window: u64,
+) -> TransactionResult {
     let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
     let creator = Keypair::new();
     ctx.svm
@@ -3243,6 +3249,7 @@ fn try_create_subaccord(max_appeals: u8, aggregation: Aggregation) -> Transactio
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
+                appeal_window,
                 max_appeals,
                 aggregation,
                 fee_per_juror: 1_000_000,
@@ -3282,7 +3289,11 @@ fn create_dispute_freezes_aggregation_onto_terms() {
 fn create_subaccord_rejects_max_appeals_above_ceiling() {
     // max_appeals > MAX_APPEALS (3) is the only remaining panel-shape gate now
     // that the round-1 size is fixed at 3 (ladder 3→7→15→31 always fits 31).
-    let r = try_create_subaccord(4, Aggregation::Plurality);
+    let r = try_create_subaccord(
+        4,
+        Aggregation::Plurality,
+        accord::constants::MIN_APPEAL_WINDOW_SECS,
+    );
     assert!(
         !r.is_success(),
         "max_appeals=4 > MAX_APPEALS must be rejected; logs={:?}",
@@ -3294,11 +3305,65 @@ fn create_subaccord_rejects_max_appeals_above_ceiling() {
 fn create_subaccord_accepts_max_appeals_ladder() {
     // Each max_appeals value 0..=3 yields a distinct, valid appeal ladder.
     for ma in 0u8..=3 {
-        let r = try_create_subaccord(ma, Aggregation::Plurality);
+        let r = try_create_subaccord(
+            ma,
+            Aggregation::Plurality,
+            accord::constants::MIN_APPEAL_WINDOW_SECS,
+        );
         assert!(
             r.is_success(),
             "max_appeals={ma} must be accepted; logs={:?}",
             r.logs()
         );
     }
+}
+
+#[test]
+fn create_subaccord_stores_appeal_window() {
+    // ADR-0022: appeal_window is a per-Subaccord field persisted at creation.
+    // setup_accumulator uses MIN_APPEAL_WINDOW_SECS; the stored copy must match.
+    let env = setup_accumulator();
+    let stored = read_subaccord(&env);
+    assert_eq!(
+        stored.appeal_window,
+        accord::constants::MIN_APPEAL_WINDOW_SECS
+    );
+}
+
+#[test]
+fn create_dispute_freezes_appeal_window_onto_terms() {
+    // ADR-0022 + Ugly-6: the appeal window is frozen at filing onto `terms`, so
+    // finalize_dispute / appeal / cancel_dispute read `dispute.terms.appeal_window`
+    // (never live `sub.appeal_window`). setup_accumulator's Subaccord sets the
+    // floor; the frozen copy must read the same.
+    let mut env = setup_accumulator();
+    let (dispute, _filer) = create_dispute_under_a(&mut env);
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(
+        d.terms.appeal_window,
+        accord::constants::MIN_APPEAL_WINDOW_SECS
+    );
+}
+
+#[test]
+fn create_subaccord_rejects_appeal_window_below_floor() {
+    // ADR-0022: appeal_window < MIN_APPEAL_WINDOW_SECS is rejected. A pool that
+    // wants no appeals sets `max_appeals == 0` (the explicit knob), not a 0 window.
+    let r = try_create_subaccord(3, Aggregation::Plurality, 0);
+    assert!(
+        !r.is_success(),
+        "appeal_window=0 < MIN_APPEAL_WINDOW_SECS must be rejected; logs={:?}",
+        r.logs()
+    );
+    let r = try_create_subaccord(
+        3,
+        Aggregation::Plurality,
+        accord::constants::MIN_APPEAL_WINDOW_SECS - 1,
+    );
+    assert!(
+        !r.is_success(),
+        "appeal_window below floor must be rejected; logs={:?}",
+        r.logs()
+    );
 }

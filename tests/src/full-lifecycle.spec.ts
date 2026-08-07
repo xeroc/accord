@@ -9,7 +9,7 @@
 // Asserts the final ruling equals the revealed-vote plurality. Each juror signs
 // its own commit/reveal via a per-juror Accord facade.
 import {
-  APPEAL_WINDOW_SECS,
+  DEFAULT_APPEAL_WINDOW_SECS,
   commit,
   finalizeDispute,
   finalizeRound,
@@ -142,7 +142,7 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
 
     // --- no appeal: warp the 3-day appeal window, then finalize_dispute ---
     round = await readRound(env, roundPda);
-    await warpTo(env, round!.revealEnd + APPEAL_WINDOW_SECS);
+    await warpTo(env, round!.revealEnd + DEFAULT_APPEAL_WINDOW_SECS);
     await env.sendIx(
       finalizeDispute(
         env.accord.adapter,

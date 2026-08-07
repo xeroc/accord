@@ -37,6 +37,7 @@ status banner is annotated.
 | [0019](0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)     | Subaccord dispute-kit — aggregation enum; round-1 panel fixed at `INITIAL_NUM_JURORS` (=3)          | Accepted             |
 | [0020](0020-two-mint-two-vault-stake-token-fee-token.md)                      | Two-mint/two-vault economics — `stake_token` (collateral) + `fee_token` (compensation)              | Accepted             |
 | [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md)                   | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx`                         | Accepted             |
+| [0022](0022-per-subaccord-configurable-appeal-window.md)                      | Per-Subaccord configurable appeal window                                                            | Accepted             |
 
 ### Supersession map
 
@@ -69,7 +70,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0022**).
+1. Number = next sequential (currently **0023**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

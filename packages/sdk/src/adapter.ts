@@ -451,6 +451,7 @@ function mapCreateSubaccordArgs(
     reviewWindow: args.reviewWindow,
     commitWindow: args.commitWindow,
     revealWindow: args.revealWindow,
+    appealWindow: args.appealWindow,
     maxAppeals: args.maxAppeals,
     aggregation: args.aggregation,
     feePerJuror: args.feePerJuror,

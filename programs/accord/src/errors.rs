@@ -110,6 +110,8 @@ pub enum AccordError {
     MaxAppealsLimitExceeded,
     #[msg("Appeal window has closed; the dispute can only be finalized.")]
     AppealWindowClosed,
+    #[msg("Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS).")]
+    AppealWindowTooShort,
 
     // --- finalization ---
     #[msg("Round cannot be finalized yet (window not elapsed).")]

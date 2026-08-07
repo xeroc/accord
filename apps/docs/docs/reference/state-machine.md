@@ -18,23 +18,23 @@ stateDiagram-v2
     note right of Closed: defined, no handler writes it yet
 ```
 
-| From                      | To              | Trigger                                                                       | Window / gate                                                                                      |
-| ------------------------- | --------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| —                         | `Created`       | [`create_dispute`](instructions.md)                                           | `!paused`; `fee == jurors_per_dispute·fee_per_juror`; `staker_count >= jurors_per_dispute`         |
-| `Created`                 | `Drawn`         | [`commit_vrf_callback`](instructions.md) + [`draw_seat`](instructions.md) × N | `committed_vrf` + `frozen_root` set; `prefix ≤ r_i < prefix + stake` per seat                      |
-| `Drawn`                   | `Commit`        | [`commit`](instructions.md)                                                   | first commit; `review_end ≤ now < commit_end`                                                      |
-| `Drawn`/`Commit`/`Reveal` | `RoundResolved` | [`finalize_round`](instructions.md)                                           | `now ≥ reveal_end`                                                                                 |
-| `Commit`                  | `Reveal`        | [`reveal`](instructions.md)                                                   | first reveal; `commit_end ≤ now < reveal_end`                                                      |
-| `RoundResolved`           | `Created`       | [`appeal`](instructions.md)                                                   | `current_round < max_appeals`; `now < reveal_end + APPEAL_WINDOW_SECS`; `staker_count ≥ new_panel` |
-| `RoundResolved`           | `Final`         | [`finalize_dispute`](instructions.md)                                         | `now ≥ reveal_end + APPEAL_WINDOW_SECS`                                                            |
-| `Final`                   | (gate)          | [`claim_appeal_refund`](instructions.md)                                      | `appeal_bond.amount > 0`; flips only                                                               |
+| From                      | To              | Trigger                                                                       | Window / gate                                                                                       |
+| ------------------------- | --------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| —                         | `Created`       | [`create_dispute`](instructions.md)                                           | `!paused`; `fee == jurors_per_dispute·fee_per_juror`; `staker_count >= jurors_per_dispute`          |
+| `Created`                 | `Drawn`         | [`commit_vrf_callback`](instructions.md) + [`draw_seat`](instructions.md) × N | `committed_vrf` + `frozen_root` set; `prefix ≤ r_i < prefix + stake` per seat                       |
+| `Drawn`                   | `Commit`        | [`commit`](instructions.md)                                                   | first commit; `review_end ≤ now < commit_end`                                                       |
+| `Drawn`/`Commit`/`Reveal` | `RoundResolved` | [`finalize_round`](instructions.md)                                           | `now ≥ reveal_end`                                                                                  |
+| `Commit`                  | `Reveal`        | [`reveal`](instructions.md)                                                   | first reveal; `commit_end ≤ now < reveal_end`                                                       |
+| `RoundResolved`           | `Created`       | [`appeal`](instructions.md)                                                   | `current_round < max_appeals`; `now < reveal_end + terms.appeal_window`; `staker_count ≥ new_panel` |
+| `RoundResolved`           | `Final`         | [`finalize_dispute`](instructions.md)                                         | `now ≥ reveal_end + terms.appeal_window`                                                            |
+| `Final`                   | (gate)          | [`claim_appeal_refund`](instructions.md)                                      | `appeal_bond.amount > 0`; flips only                                                                |
 
 Round window timeline (set at `draw`):
 
 ```
 draw_time ──review_window──► review_end
             ──commit_window──► commit_end
-            ──reveal_window──► reveal_end ──APPEAL_WINDOW_SECS──► appeal_deadline
+            ──reveal_window──► reveal_end ──terms.appeal_window──► appeal_deadline
 ```
 
 Panel ladder (closed form `(J+1)·2^k − 1`, capped at `MAX_JURORS`):
@@ -46,4 +46,4 @@ Panel ladder (closed form `(J+1)·2^k − 1`, capped at `MAX_JURORS`):
 | 2         | 15          |
 | 3         | 31          |
 
-Odd counts make ties impossible. See [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).
+Odd counts make ties impossible. The appeal window is per-Subaccord (`terms.appeal_window`, [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)). See [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).

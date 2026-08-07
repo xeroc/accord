@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  APPEAL_WINDOW_SECS,
+  DEFAULT_APPEAL_WINDOW_SECS,
   MAX_JURORS,
   appealBondSeeds,
   appealCost,
@@ -62,7 +62,7 @@ test("appealBondSeeds: [b'bond', dispute[32], round_idx_le4]", () => {
   assert.throws(() => appealBondSeeds(new Uint8Array(31), 0), /InvalidDispute/);
 });
 
-test("constants: MAX_JURORS + APPEAL_WINDOW_SECS (constants.rs)", () => {
+test("constants: MAX_JURORS + DEFAULT_APPEAL_WINDOW_SECS (constants.rs)", () => {
   assert.equal(MAX_JURORS, 31);
-  assert.equal(APPEAL_WINDOW_SECS, 259_200n); // 3 days in seconds
+  assert.equal(DEFAULT_APPEAL_WINDOW_SECS, 259_200n); // 3 days in seconds
 });
