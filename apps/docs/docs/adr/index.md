@@ -24,6 +24,7 @@ that references the old one.
 | [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)   | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed |
 | [0013](0013-evidence-data-format-manifest-yaml.md) | Evidence data format — manifest.yaml Merkle root, salted option labels | Accepted |
 | [0014](0014-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md) | Subaccord dispute-kit — aggregation enum; rename jurors_per_dispute → initial_num_jurors | Accepted |
+| [0015](0015-evidence-crypto-protocol-in-sdk.md) | Evidence crypto protocol lives in @accord/sdk — shared by claimant, operator, juror (amends ADR-0011) | Accepted |
 
 ## How to read them
 
