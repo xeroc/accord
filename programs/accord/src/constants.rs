@@ -69,7 +69,10 @@ pub const SEED_PAUSE: &[u8] = b"pause";
 // --- v1 default economics (per-Subaccord configurable; these are the
 //     milestone defaults table) ----------------------------------------------
 
-pub const DEFAULT_INITIAL_NUM_JURORS: u32 = 3;
+/// Round-1 juror panel size (ADR-0019). Fixed protocol constant — not
+/// per-Subaccord configurable. The appeal ladder grows it via `2N+1`:
+/// 3 → 7 → 15 → 31 (the last exactly fills `MAX_JURORS` at `max_appeals = 3`).
+pub const INITIAL_NUM_JURORS: u32 = 3;
 /// Default alpha (slash factor) in basis points: 10%.
 pub const DEFAULT_ALPHA_BPS: u16 = 1_000;
 pub const DEFAULT_REVIEW_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;

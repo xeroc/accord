@@ -181,7 +181,7 @@ correct (counter must floor at 0). Slash is
 ### 3.2 Multiply before divide — ✅
 
 Slash: `(alpha_bps * min_stake) / 10_000` (`lib.rs:1028-1031`) — mul before
-div. Fee: `initial_num_jurors * fee_per_juror` (`lib.rs:416-418`). Share:
+div. Fee: `INITIAL_NUM_JURORS * fee_per_juror` (`lib.rs:416-418`). Share:
 `pool / coherent_count` (`lib.rs:1116`) — single division, correct.
 
 ### 3.3 Price slippage — N/A
@@ -372,14 +372,14 @@ allowlist at `create_subaccord` (§23).
 ## 18. Input validation — protocol-level — ⚠️
 
 `create_subaccord` validates `risk_type != [0;32]` (`lib.rs:161`),
-`max_appeals <= MAX_APPEALS` (`lib.rs:164-167`), and — per ADR-0019 —
-`initial_num_jurors` (odd; appeal ladder `(initial+1)·2^max_appeals − 1 ≤
-MAX_JURORS`, `lib.rs`). It still performs **no** bounds checks on `min_stake`,
-`alpha_bps` (could exceed 10_000 → slash > min_stake), `fee_per_juror`, or the
-`*_window` fields. Per §29.2 / §29.3, permissionless creation parameters that
-affect protocol behavior should be bounded. Recommend: `alpha_bps <= 10_000`,
-windows in `[MIN_WINDOW, MAX_WINDOW]`. Low blast radius (per-Subaccord) but each
-misconfigured Subaccord can trap user funds.
+`max_appeals <= MAX_APPEALS` (`lib.rs:164-167`), and — per ADR-0019 — fixes the
+round-1 panel at the constant `INITIAL_NUM_JURORS` (=3), so the ladder
+3 → 7 → 15 → 31 always fits `MAX_JURORS`. It still performs **no** bounds checks
+on `min_stake`, `alpha_bps` (could exceed 10_000 → slash > min_stake),
+`fee_per_juror`, or the `*_window` fields. Per §29.2 / §29.3, permissionless
+creation parameters that affect protocol behavior should be bounded. Recommend:
+`alpha_bps <= 10_000`, windows in `[MIN_WINDOW, MAX_WINDOW]`. Low blast radius
+(per-Subaccord) but each misconfigured Subaccord can trap user funds.
 
 ---
 
@@ -477,12 +477,12 @@ No AMM. The single "slippage"-adjacent guard is the exact-fee match
 ## 29. Permissionless init & user-controlled params — ⚠️ (see §18)
 
 `create_subaccord` is permissionless and front-running-safe (PDA namespaced by
-`[creator, risk_type]`, `lib.rs:1479` — no shared namespace capture). Creator-
-controlled params are bounded for the panel config (ADR-0019: `initial_num_jurors`
-odd + ladder `≤ MAX_JURORS`) but `alpha_bps = 10_001` is still accepted (§18).
-Per §29.2 / §29.3, finish the creation-time bounds. `propose/execute_subaccord_update`
-likewise applies `UpdatePayload` values with no re-validation (`lib.rs:374-385`) —
-a timelocked
+`[creator, risk_type]`, `lib.rs:1479` — no shared namespace capture). The round-1
+panel is the fixed `INITIAL_NUM_JURORS` (=3, ADR-0019) — not creator-settable —
+and `max_appeals` is bounded `≤ MAX_APPEALS`; but `alpha_bps = 10_001` is still
+accepted (§18). Per §29.2 / §29.3, finish the creation-time bounds.
+`propose/execute_subaccord_update` likewise applies `UpdatePayload` values with
+no re-validation (`lib.rs:374-385`) — a timelocked
 update to `alpha_bps = 99_999` would apply. Recommend validating in **both**
 `propose_subaccord_update` and `execute_subaccord_update` (§29.3: "validate in
 every write path").

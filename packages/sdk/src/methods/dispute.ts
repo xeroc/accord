@@ -50,7 +50,7 @@ export interface CreateDisputeArgs {
   evidenceHash: Uint8Array;
   /** Filer-chosen nonce → private dispute namespace. Dispute PDA = `["dispute", filer, nonce]`. */
   nonce: bigint;
-  /** Total fee = `initial_num_jurors * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
+  /** Total fee = `INITIAL_NUM_JURORS * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
   fee: bigint;
 }
 
@@ -105,17 +105,14 @@ export interface AccordDisputeClient {
 }
 
 /**
- * Compute the required `create_dispute` fee for a panel of `initialNumJurors`
- * at `feePerJuror` each. Mirrors lib.rs (`initial_num_jurors as
- * u64).checked_mul(fee_per_juror)`). Returns `null` on u64 overflow rather
- * than throwing — callers surface a typed error.
+ * Compute the required `create_dispute` round-1 fee. The panel is the fixed
+ * `INITIAL_NUM_JURORS` (=3), so the fee is `3 · fee_per_juror`. Mirrors lib.rs
+ * (`INITIAL_NUM_JURORS as u64).checked_mul(fee_per_juror)`). Returns `null`
+ * on u64 overflow rather than throwing — callers surface a typed error.
  */
-export function requiredFee(
-  initialNumJurors: number,
-  feePerJuror: bigint,
-): bigint | null {
-  if (!Number.isInteger(initialNumJurors) || initialNumJurors < 0) return null;
-  const product = BigInt(initialNumJurors) * feePerJuror;
+export function requiredFee(feePerJuror: bigint): bigint | null {
+  if (feePerJuror < 0n) return null;
+  const product = BigInt(3) * feePerJuror;
   if (product < 0n || product > U64_MAX) return null;
   return product;
 }

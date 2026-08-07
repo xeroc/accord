@@ -63,11 +63,6 @@ export type Subaccord = {
   stakingToken: Address;
   minStake: bigint;
   /**
-   * Round-1 juror seed (ADR-0019). Appeals grow the panel via the existing
-   * `2N+1` rule, so the final panel is `(initial_num_jurors+1)·2^k − 1`.
-   */
-  initialNumJurors: number;
-  /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
    * `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
    */
@@ -121,11 +116,6 @@ export type SubaccordArgs = {
   creator: Address;
   stakingToken: Address;
   minStake: number | bigint;
-  /**
-   * Round-1 juror seed (ADR-0019). Appeals grow the panel via the existing
-   * `2N+1` rule, so the final panel is `(initial_num_jurors+1)·2^k − 1`.
-   */
-  initialNumJurors: number;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
    * `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
@@ -184,7 +174,6 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["creator", getAddressEncoder()],
       ["stakingToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
-      ["initialNumJurors", getU32Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
@@ -214,7 +203,6 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["creator", getAddressDecoder()],
     ["stakingToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
-    ["initialNumJurors", getU32Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
@@ -294,5 +282,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 298;
+  return 294;
 }

@@ -403,7 +403,6 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
         evidenceSpec: crypto.getRandomValues(new Uint8Array(32)),
         stakingToken,
         minStake: MIN_STAKE,
-        initialNumJurors: 3,
         alphaBps: 1_000,
         reviewWindow: 604_800n,
         commitWindow: 172_800n,

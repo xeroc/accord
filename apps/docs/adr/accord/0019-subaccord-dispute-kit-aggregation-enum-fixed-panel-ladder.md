@@ -1,20 +1,23 @@
-# Subaccord dispute-kit — aggregation as explicit enum; rename jurors_per_dispute → initial_num_jurors
+# Subaccord dispute-kit — aggregation as explicit enum; round-1 panel fixed at 3
 
 A Subaccord's mechanism configuration **is** the "dispute kit": the tuple of draw
 rule, aggregation rule, incentive split, and appeal mode. v1 ships **one** kit.
-This ADR locks two changes to the `Subaccord` account so the kit is *config*, not
-hardcoded Core logic, and the panel field name says what it means:
+This ADR locks two decisions about the `Subaccord` account so the kit is _config_
+where it matters and _constant_ where configurability was illusory:
 
 1. **Add an explicit `aggregation: Aggregation` enum field** (v1 single variant
    `Plurality`). Aggregation stops being implicit Core logic and becomes a
    per-Subaccord config value. Future variants — `RankedChoice` (IRV) for
    ranked-option disputes (bean `accord-ayqq`) and `Median` for numeric outcomes —
    ship as new enum variants **without touching Core** or any existing dispute.
-2. **Rename `jurors_per_dispute` → `initial_num_jurors`** (kept configurable). The
-   old name read as a fixed total jury size; the new name communicates that this is
-   the **round-1 seed** and that appeals grow the panel via the existing `2N+1`
-   rule. A Subaccord may set a larger starting panel for higher-stakes disputes, at
-   the cost of fewer appeal rounds that fit under `MAX_JURORS`.
+2. **Fix the round-1 panel size at the constant `INITIAL_NUM_JURORS` (=3)** — drop
+   the per-Subaccord field entirely. An earlier draft of this ADR proposed renaming
+   `jurors_per_dispute → initial_num_jurors` and keeping it configurable; that was
+   rejected in review because, at the default `max_appeals = 3`, the ladder
+   constraint `(J+1)·2^3 − 1 ≤ MAX_JURORS` pins `J ∈ {1, 3}`. Two options is not
+   configurability — it is a footgun with extra validation. The sole per-Subaccord
+   panel-shape knob is `max_appeals` (0..=3 ⇒ distinct ladders 3 / 3→7 / 3→7→15 /
+   3→7→15→31), which is real config.
 
 Commit-reveal stays **structural** (always on; no per-Subaccord toggle) —
 reaffirmed, not changed.
@@ -33,34 +36,35 @@ reaffirmed, not changed.
   aggregation, incentive, appeal per court).** Rejected for v1 — premature
   abstraction before a third variant exists.
 
-**Panel-size field.**
+**Round-1 panel size.**
 
-- **Drop the field entirely; hardcode round-1 = 3.** *Considered and rejected in
-  this session* — removes per-Subaccord flexibility that Kleros courts have, and
-  blocks Subaccords that want a larger starting panel for high-stakes disputes.
-- **Keep configurable; rename to `initial_num_jurors` (chosen).** Preserves
-  flexibility; the name removes the "fixed total" ambiguity and makes appeal
-  growth explicit.
-- **Keep the name `jurors_per_dispute`.** Rejected — ambiguous (reads as the whole
-  jury, not the seed).
+- **Rename `jurors_per_dispute → initial_num_jurors`, keep configurable (earlier
+  draft).** Rejected — at `max_appeals = 3` the ladder constraint leaves only
+  `J ∈ {1, 3}`; the "configurability" is illusory and adds an oddness + ladder
+  validation surface (errors, SDK helper, tests) for no real value.
+- **Drop the field entirely; hardcode round-1 = 3 as `INITIAL_NUM_JURORS`
+  (chosen).** `max_appeals` becomes the single panel-shape knob. Removes the
+  validation surface, the `UpdatePayload` variant, and the `CaseTerms` field; the
+  ladder `3 → 7 → 15 → 31` always fits `MAX_JURORS` (=31) by construction.
+- **Keep the field configurable AND raise `MAX_JURORS`.** Rejected — bigger
+  `Round` accounts (rent per dispute) to enable a knob nobody needs in v1.
 
 ## Consequences
 
-- `Subaccord` renames `jurors_per_dispute` → `initial_num_jurors` (same `u32`) and
-  gains `aggregation` (1 byte). Net +1 byte.
-- **`create_subaccord` validation (load-bearing):**
-  - `initial_num_jurors` must be **odd** (tie avoidance; `2N+1` preserves oddness).
-  - The ladder `initial_num_jurors → 2N+1 → …` (one doubling per appeal, up to
-    `max_appeals`) must keep the final panel ≤ `MAX_JURORS` (=31):
-    `initial_num_jurors · 2^max_appeals + (2^max_appeals − 1) ≤ MAX_JURORS`. With
-    the standard `max_appeals = 3` this pins `initial_num_jurors ≤ 3` (→ 31); a
-    larger seed requires fewer appeals (e.g. `initial = 7, max_appeals = 2` → 31).
-    Reject the combo otherwise.
-- The tunable Subaccord economics are now: `min_stake`, `alpha_bps`,
-  `fee_per_juror`, `max_appeals`, **and** `initial_num_jurors`. A Subaccord trades
-  round-1 accuracy (and cost) against appeal depth. Parameterization stays a
-  *static, design-time* author tool — no oracle, no live tuning; "dynamic params"
-  remains out-of-scope v2+ per the SPEC.
+- `Subaccord` gains `aggregation` (1 byte) and **loses** `jurors_per_dispute`
+  (−4 bytes). `CaseTerms` and `CreateSubaccordParams` likewise drop the count.
+  `UpdatePayload` loses its `JurorsPerDispute`/`InitialNumJurors` variant — the
+  count is no longer mutable (it is a constant).
+- **`create_subaccord` panel validation collapses** to the pre-existing
+  `max_appeals ≤ MAX_APPEALS`; the oddness + ladder-≤-`MAX_JURORS` checks are gone
+  (3 always fits). The tunable Subaccord economics are now: `min_stake`,
+  `alpha_bps`, `fee_per_juror`, and `max_appeals`. A Subaccord trades appeal depth
+  (and cost) against finality speed. Parameterization stays a _static, design-time_
+  author tool — no oracle, no live tuning; "dynamic params" remains out-of-scope
+  v2+ per the SPEC.
+- `MAX_APPEALS = 3` is locked to `MAX_JURORS = 31` given round-1 = 3
+  (`3·2³ + 7 = 31` exactly fills the `Round` account arrays). Raising the appeal
+  ceiling requires bigger `Round` accounts — a v2 concern.
 - Adding `RankedChoice`/`Median` later = new `Aggregation` variants + matching
   commit/reveal/tally logic + SDK support + an extended evidence-format option
   encoding (a future `accord-evidence/v2` schema, see `EVIDENCE-FORMAT.md` §9). No
@@ -73,9 +77,11 @@ reaffirmed, not changed.
 
 ## Implementation
 
-Tracked in the dispute-kit feature bean: add the `Aggregation` enum + field, rename
-`jurors_per_dispute` → `initial_num_jurors`, add the `create_subaccord` validation
-(odd + ladder-≤-`MAX_JURORS`), default `initial_num_jurors = 3`, update
-`create_subaccord` + SDK + SPEC + `EVIDENCE-FORMAT.md` cross-reference, and LiteSVM
-tests (aggregation defaults to `Plurality`; `initial_num_jurors` odd + ladder
-validation; appeal growth `2N+1` from the seed).
+Tracked in the dispute-kit feature bean (`accord-8m2a`): add the `Aggregation`
+enum + field, drop `jurors_per_dispute` from `Subaccord`/`CaseTerms`/
+`CreateSubaccordParams`/`UpdatePayload`, introduce the `INITIAL_NUM_JURORS = 3`
+constant, simplify `create_subaccord` to the `max_appeals`-only validation, make
+`panel_size_for_round(round_idx)` single-arg over the fixed ladder, update the SDK
+
+- SPEC + security-checklist, and LiteSVM tests (aggregation stored as `Plurality`;
+  `max_appeals` ceiling rejection; each `max_appeals` 0..=3 accepted).

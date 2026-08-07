@@ -27,7 +27,6 @@
 import type { Address, Instruction } from "@solana/kit";
 import {
   MAX_APPEALS,
-  MAX_JURORS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "../constants.js";
@@ -70,15 +69,14 @@ export interface CreateSubaccordArgs {
   /** SPL mint juror capital is staked in (ADR-0002). */
   stakingToken: Address;
   minStake: bigint;
-  /** Round-1 juror seed (ADR-0019). Must be odd; the appeal ladder
-   *  `(initial+1)·2^max_appeals − 1` must fit under {@link MAX_JURORS}. */
-  initialNumJurors: number; // u32
   /** Slash factor in bps (10% = 1000). */
   alphaBps: number; // u16
   reviewWindow: bigint; // seconds
   commitWindow: bigint; // seconds
   revealWindow: bigint; // seconds
-  /** ≤ {@link MAX_APPEALS}; bounded by the program's appeal-bond array. */
+  /** ≤ {@link MAX_APPEALS}; the sole per-Subaccord panel-shape knob. The
+   *  round-1 size is the fixed {@link INITIAL_NUM_JURORS} (3); each appeal
+   *  doubles+1 (3 → 7 → 15 → 31 at max_appeals = 3). */
   maxAppeals: number; // u8
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: Aggregation;
@@ -139,7 +137,8 @@ export function pauseSeeds(): Uint8Array[] {
   return [SEED_PAUSE];
 }
 
-/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs:168). */
+/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs). The round-1 panel is the
+ * fixed `INITIAL_NUM_JURORS` (=3), so this is the only panel-shape gate. */
 export function assertValidMaxAppeals(maxAppeals: number): void {
   if (
     !Number.isInteger(maxAppeals) ||
@@ -148,36 +147,6 @@ export function assertValidMaxAppeals(maxAppeals: number): void {
   ) {
     throw new Error(
       `MaxAppealsLimitExceeded: expected 0..${MAX_APPEALS}, got ${maxAppeals}`,
-    );
-  }
-}
-
-/**
- * Validate the ADR-0019 dispute-kit panel config: `initialNumJurors` must be
- * odd (tie avoidance; `2N+1` preserves oddness up the appeal ladder), and the
- * full ladder `(initial+1)·2^max_appeals − 1` must fit under `MAX_JURORS` so
- * every configured appeal round can seat its panel (e.g. initial=5 with
- * max_appeals=3 ⇒ 47 > 31 is rejected). Mirrors `create_subaccord` on-chain.
- */
-export function assertValidPanelConfig(
-  initialNumJurors: number,
-  maxAppeals: number,
-): void {
-  if (
-    !Number.isInteger(initialNumJurors) ||
-    initialNumJurors < 1 ||
-    initialNumJurors % 2 === 0
-  ) {
-    throw new Error(
-      `InitialNumJurorsNotOdd: expected a positive odd integer, got ${initialNumJurors}`,
-    );
-  }
-  assertValidMaxAppeals(maxAppeals);
-  const factor = 1 << maxAppeals;
-  const topPanel = (initialNumJurors + 1) * factor - 1;
-  if (topPanel > MAX_JURORS) {
-    throw new Error(
-      `PanelLadderExceedsMax: ladder top panel ${topPanel} > MAX_JURORS ${MAX_JURORS}; reduce initialNumJurors or maxAppeals`,
     );
   }
 }
@@ -313,7 +282,6 @@ export async function createSubaccord(
   if (args.evidenceSpec.length !== 32)
     throw new Error("InvalidEvidenceSpec: expected 32 bytes");
   assertValidMaxAppeals(args.maxAppeals);
-  assertValidPanelConfig(args.initialNumJurors, args.maxAppeals);
   const { address, bump } = await findSubaccordPda(
     programId,
     creator,

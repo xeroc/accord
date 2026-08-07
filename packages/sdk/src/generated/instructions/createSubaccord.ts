@@ -18,8 +18,6 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
-  getU32Decoder,
-  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -97,7 +95,6 @@ export type CreateSubaccordInstructionData = {
   evidenceSpec: ReadonlyUint8Array;
   stakingToken: Address;
   minStake: bigint;
-  initialNumJurors: number;
   alphaBps: number;
   reviewWindow: bigint;
   commitWindow: bigint;
@@ -115,7 +112,6 @@ export type CreateSubaccordInstructionDataArgs = {
   evidenceSpec: ReadonlyUint8Array;
   stakingToken: Address;
   minStake: number | bigint;
-  initialNumJurors: number;
   alphaBps: number;
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
@@ -136,7 +132,6 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["stakingToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
-      ["initialNumJurors", getU32Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
@@ -159,7 +154,6 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["stakingToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
-    ["initialNumJurors", getU32Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
@@ -195,7 +189,6 @@ export type CreateSubaccordAsyncInput<
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
-  initialNumJurors: CreateSubaccordInstructionDataArgs["initialNumJurors"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
   commitWindow: CreateSubaccordInstructionDataArgs["commitWindow"];
@@ -291,7 +284,6 @@ export type CreateSubaccordInput<
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
-  initialNumJurors: CreateSubaccordInstructionDataArgs["initialNumJurors"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
   commitWindow: CreateSubaccordInstructionDataArgs["commitWindow"];

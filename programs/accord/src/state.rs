@@ -28,9 +28,6 @@ pub struct Subaccord {
     pub creator: Pubkey,
     pub staking_token: Pubkey, // SPL mint juror capital is staked in (ADR-0002)
     pub min_stake: u64,        // draw eligibility threshold, in `staking_token`
-    /// Round-1 juror seed (ADR-0019). Appeals grow the panel via the existing
-    /// `2N+1` rule, so the final panel is `(initial_num_jurors+1)·2^k − 1`.
-    pub initial_num_jurors: u32,
     /// Slash factor in basis points (10% = 1000). Incoherent Juror loses
     /// `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
     pub alpha_bps: u16,
@@ -124,7 +121,6 @@ pub struct CaseTerms {
     pub alpha_bps: u16,
     pub min_stake: u64,
     pub fee_per_juror: u64,
-    pub initial_num_jurors: u32,
     pub review_window: u64,
     pub commit_window: u64,
     pub reveal_window: u64,
@@ -325,7 +321,6 @@ pub enum DisputeState {
 pub struct CreateSubaccordParams {
     pub staking_token: Pubkey,
     pub min_stake: u64,
-    pub initial_num_jurors: u32,
     pub alpha_bps: u16,
     pub review_window: u64,
     pub commit_window: u64,
@@ -343,7 +338,6 @@ pub struct CreateSubaccordParams {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub enum UpdatePayload {
     MinStake(u64),
-    InitialNumJurors(u32),
     AlphaBps(u16),
     ReviewWindow(u64),
     CommitWindow(u64),

@@ -262,7 +262,6 @@ fn setup_accumulator() -> AccEnv {
             params: CreateSubaccordParams {
                 staking_token: mint,
                 min_stake: 1_000,
-                initial_num_jurors: 3,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
@@ -1394,7 +1393,6 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
             params: CreateSubaccordParams {
                 staking_token: env.mint,
                 min_stake: 1_000,
-                initial_num_jurors: 3,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
@@ -3196,23 +3194,18 @@ fn submit_draw_seat(
         .unwrap()
 }
 
-// ─── ADR-0019 dispute-kit: aggregation enum + initial_num_jurors validation ──
+// ─── ADR-0019 dispute-kit: aggregation enum stored on Subaccord ──
 //
-// `create_subaccord` must (a) store `aggregation` (v1 = Plurality), (b) reject
-// an even `initial_num_jurors` (tie avoidance; `2N+1` preserves oddness), and
-// (c) reject combos whose appeal ladder
-// `(initial+1)·2^max_appeals − 1` exceeds MAX_JURORS (=31). The default ladder
-// 3 → 7 → 15 → 31 (initial=3, max_appeals=3) is the acceptance boundary.
+// The round-1 panel size is the fixed `INITIAL_NUM_JURORS` (=3); the only
+// per-Subaccord panel-shape knob is `max_appeals` (0..=3 ⇒ ladders 3 / 3→7 /
+// 3→7→15 / 3→7→15→31). `aggregation` (v1 = `Plurality`) is stored verbatim —
+// the forward-compat hook for future IRV/Median variants.
 
 /// Build a fresh SVM + funded creator and attempt `create_subaccord` with the
-/// given dispute-kit params. Returns `(result, subaccord_pda)` so callers can
-/// assert success/failure and read the account back. A fresh creator keypair
-/// per call keeps the Subaccord PDA unique.
-fn try_create_subaccord(
-    initial_num_jurors: u32,
-    max_appeals: u8,
-    aggregation: Aggregation,
-) -> (TransactionResult, Pubkey) {
+/// given `max_appeals` + `aggregation`. Returns the tx result so callers can
+/// assert success/failure. A fresh creator keypair per call keeps the Subaccord
+/// PDA unique.
+fn try_create_subaccord(max_appeals: u8, aggregation: Aggregation) -> TransactionResult {
     let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
     let creator = Keypair::new();
     ctx.svm
@@ -3239,7 +3232,6 @@ fn try_create_subaccord(
             params: CreateSubaccordParams {
                 staking_token: mint,
                 min_stake: 1_000,
-                initial_num_jurors,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
@@ -3254,80 +3246,39 @@ fn try_create_subaccord(
         })
         .instruction()
         .unwrap();
-    let result = ctx.execute_instruction(ix, &[&creator]).unwrap();
-    (result, sub)
+    ctx.execute_instruction(ix, &[&creator]).unwrap()
 }
 
 #[test]
-fn create_subaccord_defaults_aggregation_plurality() {
-    // The standard v1 seed (initial=3, max_appeals=3) is the ladder acceptance
-    // boundary (3 → 7 → 15 → 31). setup_accumulator creates with exactly those
-    // default params; the stored aggregation must be Plurality and the seed 3.
+fn create_subaccord_stores_aggregation_plurality() {
+    // setup_accumulator creates with the v1 defaults; the stored aggregation
+    // must be Plurality (the tally-rule hook, ADR-0019).
     let env = setup_accumulator();
     let stored = read_subaccord(&env);
-    assert_eq!(stored.initial_num_jurors, 3);
     assert_eq!(stored.aggregation, Aggregation::Plurality);
 }
 
 #[test]
-fn create_subaccord_stores_aggregation_and_seed() {
-    // A larger odd seed with fewer appeals: initial=7, max_appeals=2 ⇒ 31 (OK).
-    let (result, _sub) = try_create_subaccord(7, 2, Aggregation::Plurality);
+fn create_subaccord_rejects_max_appeals_above_ceiling() {
+    // max_appeals > MAX_APPEALS (3) is the only remaining panel-shape gate now
+    // that the round-1 size is fixed at 3 (ladder 3→7→15→31 always fits 31).
+    let r = try_create_subaccord(4, Aggregation::Plurality);
     assert!(
-        result.is_success(),
-        "initial=7/max_appeals=2 ladder (→31) must be accepted; logs={:?}",
-        result.logs()
+        !r.is_success(),
+        "max_appeals=4 > MAX_APPEALS must be rejected; logs={:?}",
+        r.logs()
     );
 }
 
 #[test]
-fn create_subaccord_rejects_even_initial_num_jurors() {
-    // 4 is even ⇒ tie risk; the `2N+1` rule would still produce odd panels but
-    // round 0 itself could tie. Rejected at intake.
-    let (result, _sub) = try_create_subaccord(4, 2, Aggregation::Plurality);
-    assert!(
-        !result.is_success(),
-        "even initial_num_jurors must be rejected; logs={:?}",
-        result.logs()
-    );
-}
-
-#[test]
-fn create_subaccord_rejects_zero_initial_num_jurors() {
-    // 0 is even (and degenerate) ⇒ rejected by the oddness gate.
-    let (result, _sub) = try_create_subaccord(0, 0, Aggregation::Plurality);
-    assert!(
-        !result.is_success(),
-        "zero initial_num_jurors must be rejected; logs={:?}",
-        result.logs()
-    );
-}
-
-#[test]
-fn create_subaccord_rejects_ladder_exceeding_max_jurors() {
-    // initial=5, max_appeals=3 ⇒ (5+1)·8 − 1 = 47 > 31 ⇒ rejected.
-    let (result, _sub) = try_create_subaccord(5, 3, Aggregation::Plurality);
-    assert!(
-        !result.is_success(),
-        "ladder 5 → 47 > MAX_JURORS must be rejected; logs={:?}",
-        result.logs()
-    );
-}
-
-#[test]
-fn create_subaccord_accepts_ladder_boundary() {
-    // initial=1, max_appeals=3 ⇒ (1+1)·8 − 1 = 15 ≤ 31 ⇒ OK (smallest odd seed).
-    let (result, _sub) = try_create_subaccord(1, 3, Aggregation::Plurality);
-    assert!(
-        result.is_success(),
-        "ladder 1 → 15 ≤ MAX_JURORS must be accepted; logs={:?}",
-        result.logs()
-    );
-    // initial=31, max_appeals=0 ⇒ (31+1)·1 − 1 = 31 ≤ 31 ⇒ OK (largest seed, no appeals).
-    let (result2, _sub2) = try_create_subaccord(31, 0, Aggregation::Plurality);
-    assert!(
-        result2.is_success(),
-        "initial=31/max_appeals=0 (→31) must be accepted; logs={:?}",
-        result2.logs()
-    );
+fn create_subaccord_accepts_max_appeals_ladder() {
+    // Each max_appeals value 0..=3 yields a distinct, valid appeal ladder.
+    for ma in 0u8..=3 {
+        let r = try_create_subaccord(ma, Aggregation::Plurality);
+        assert!(
+            r.is_success(),
+            "max_appeals={ma} must be accepted; logs={:?}",
+            r.logs()
+        );
+    }
 }

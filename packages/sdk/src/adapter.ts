@@ -447,7 +447,6 @@ function mapCreateSubaccordArgs(
     evidenceSpec: args.evidenceSpec,
     stakingToken: args.stakingToken,
     minStake: args.minStake,
-    initialNumJurors: args.initialNumJurors,
     alphaBps: args.alphaBps,
     reviewWindow: args.reviewWindow,
     commitWindow: args.commitWindow,

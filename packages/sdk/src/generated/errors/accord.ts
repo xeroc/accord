@@ -56,7 +56,7 @@ export const ACCORD_ERROR__INSUFFICIENT_JURORS = 0x1782; // 6018
 export const ACCORD_ERROR__INVALID_OPTIONS = 0x1783; // 6019
 /** InvalidState: Dispute is not in the required state for this instruction. */
 export const ACCORD_ERROR__INVALID_STATE = 0x1784; // 6020
-/** FeeMismatch: Tendered fee does not match the required dispute fee (initial_num_jurors * fee_per_juror). */
+/** FeeMismatch: Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror). */
 export const ACCORD_ERROR__FEE_MISMATCH = 0x1785; // 6021
 /** InvalidMerklePath: Accumulator Merkle path does not authenticate against the stored root. */
 export const ACCORD_ERROR__INVALID_MERKLE_PATH = 0x1786; // 6022
@@ -98,28 +98,24 @@ export const ACCORD_ERROR__APPEAL_WINDOW_OPEN = 0x1797; // 6039
 export const ACCORD_ERROR__MAX_APPEALS_REACHED = 0x1798; // 6040
 /** MaxAppealsLimitExceeded: Subaccord max_appeals exceeds the program ceiling. */
 export const ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED = 0x1799; // 6041
-/** InitialNumJurorsNotOdd: initial_num_jurors must be odd (tie avoidance; 2N+1 preserves oddness). */
-export const ACCORD_ERROR__INITIAL_NUM_JURORS_NOT_ODD = 0x179a; // 6042
-/** PanelLadderExceedsMax: The appeal ladder (initial_num_jurors -> 2N+1 -> ...) exceeds MAX_JURORS; reduce the seed or max_appeals. */
-export const ACCORD_ERROR__PANEL_LADDER_EXCEEDS_MAX = 0x179b; // 6043
 /** AppealWindowClosed: Appeal window has closed; the dispute can only be finalized. */
-export const ACCORD_ERROR__APPEAL_WINDOW_CLOSED = 0x179c; // 6044
+export const ACCORD_ERROR__APPEAL_WINDOW_CLOSED = 0x179a; // 6042
 /** RoundNotFinalizable: Round cannot be finalized yet (window not elapsed). */
-export const ACCORD_ERROR__ROUND_NOT_FINALIZABLE = 0x179d; // 6045
+export const ACCORD_ERROR__ROUND_NOT_FINALIZABLE = 0x179b; // 6043
 /** DisputeNotFinal: Dispute is not in a finalizable state. */
-export const ACCORD_ERROR__DISPUTE_NOT_FINAL = 0x179e; // 6046
+export const ACCORD_ERROR__DISPUTE_NOT_FINAL = 0x179c; // 6044
 /** ArithmeticOverflow: Arithmetic overflow. */
-export const ACCORD_ERROR__ARITHMETIC_OVERFLOW = 0x179f; // 6047
+export const ACCORD_ERROR__ARITHMETIC_OVERFLOW = 0x179d; // 6045
 /** RoundAlreadySettled: Round has already been settled. */
-export const ACCORD_ERROR__ROUND_ALREADY_SETTLED = 0x17a0; // 6048
+export const ACCORD_ERROR__ROUND_ALREADY_SETTLED = 0x179e; // 6046
 /** RoundNotSettlable: Round index out of range for settlement (must be < current_round). */
-export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x17a1; // 6049
+export const ACCORD_ERROR__ROUND_NOT_SETTLABLE = 0x179f; // 6047
 /** DisputeFailed: Dispute is in terminal Failed state. */
-export const ACCORD_ERROR__DISPUTE_FAILED = 0x17a2; // 6050
+export const ACCORD_ERROR__DISPUTE_FAILED = 0x17a0; // 6048
 /** CancelTooEarly: Dispute has not exceeded its stage timeout; cancel_dispute is not yet available. */
-export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a3; // 6051
+export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a1; // 6049
 /** MaxRetriesExceeded: Sortition retries exceeded the on-chain bound; the pool may be too concentrated. */
-export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a4; // 6052
+export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a2; // 6050
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -137,7 +133,6 @@ export type AccordError =
   | typeof ACCORD_ERROR__FEE_MISMATCH
   | typeof ACCORD_ERROR__IMMUTABLE_SUBACCORD
   | typeof ACCORD_ERROR__INFLATED_STAKE
-  | typeof ACCORD_ERROR__INITIAL_NUM_JURORS_NOT_ODD
   | typeof ACCORD_ERROR__INSUFFICIENT_BALANCE
   | typeof ACCORD_ERROR__INSUFFICIENT_JURORS
   | typeof ACCORD_ERROR__INSUFFICIENT_STAKE
@@ -157,7 +152,6 @@ export type AccordError =
   | typeof ACCORD_ERROR__NOT_DRAWN_JUROR
   | typeof ACCORD_ERROR__NOT_PAUSE_AUTHORITY
   | typeof ACCORD_ERROR__NOT_PAUSED
-  | typeof ACCORD_ERROR__PANEL_LADDER_EXCEEDS_MAX
   | typeof ACCORD_ERROR__PENDING_SETTLEMENT
   | typeof ACCORD_ERROR__PROGRAM_PAUSED
   | typeof ACCORD_ERROR__REVEAL_MISMATCH
@@ -191,10 +185,9 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__DISPUTE_FAILED]: `Dispute is in terminal Failed state.`,
     [ACCORD_ERROR__DISPUTE_NOT_FINAL]: `Dispute is not in a finalizable state.`,
     [ACCORD_ERROR__DUPLICATE_JUROR]: `Draw selected a duplicate Juror.`,
-    [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required dispute fee (initial_num_jurors * fee_per_juror).`,
+    [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).`,
     [ACCORD_ERROR__IMMUTABLE_SUBACCORD]: `Subaccord is immutable (authority == default).`,
     [ACCORD_ERROR__INFLATED_STAKE]: `Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012).`,
-    [ACCORD_ERROR__INITIAL_NUM_JURORS_NOT_ODD]: `initial_num_jurors must be odd (tie avoidance; 2N+1 preserves oddness).`,
     [ACCORD_ERROR__INSUFFICIENT_BALANCE]: `Withdrawal exceeds the Juror's free stake (amount - slash_reserve).`,
     [ACCORD_ERROR__INSUFFICIENT_JURORS]: `Subaccord has fewer active distinct stakers than the required panel size.`,
     [ACCORD_ERROR__INSUFFICIENT_STAKE]: `Staked amount is below the Subaccord minimum.`,
@@ -214,7 +207,6 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__NOT_DRAWN_JUROR]: `Signer is not a drawn Juror for this round.`,
     [ACCORD_ERROR__NOT_PAUSE_AUTHORITY]: `Signer is not the pause authority.`,
     [ACCORD_ERROR__NOT_PAUSED]: `Program is not paused.`,
-    [ACCORD_ERROR__PANEL_LADDER_EXCEEDS_MAX]: `The appeal ladder (initial_num_jurors -> 2N+1 -> ...) exceeds MAX_JURORS; reduce the seed or max_appeals.`,
     [ACCORD_ERROR__PENDING_SETTLEMENT]: `Settle pending reward/slash first: call reconcile_stake before request_withdraw.`,
     [ACCORD_ERROR__PROGRAM_PAUSED]: `Program is paused; this instruction is halted.`,
     [ACCORD_ERROR__REVEAL_MISMATCH]: `Reveal does not match the committed hash.`,

@@ -30,7 +30,6 @@ export function defaultSubaccordArgs(
     evidenceSpec: randomBytes32(),
     stakingToken,
     minStake: 1_000n,
-    initialNumJurors: 3,
     alphaBps: 1_000, // 10%
     reviewWindow: 604_800n, // 7 days
     commitWindow: 172_800n, // 2 days
