@@ -16,10 +16,12 @@ import {
 } from "@solana/kit";
 
 /**
- * Per-Subaccord dispute-kit aggregation rule (ADR-0019). v1 ships a single
- * variant; future variants (`RankedChoice`/IRV, `Median`) ship as new enum
- * entries without touching Core or existing disputes. The tally path
- * dispatches off this field — plurality today, additive later.
+ * Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
+ * variants (`RankedChoice`/IRV, `Median`) ship as new enum entries. The rule
+ * is frozen onto `CaseTerms` at filing time and `finalize_round` tallies off
+ * it (`match dispute.terms.aggregation`) — plurality today. The match carries
+ * no wildcard arm, so adding a variant is a compile error until its tally arm
+ * lands — the extension seam is real and machine-checked, not aspirational.
  */
 export enum Aggregation {
   Plurality,

@@ -81,6 +81,28 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - Use PDAs consistently; derive via helper fns in the SDK (`packages/sdk/src/pda.ts`).
 - Prefer `init`/`init_if_needed` with `seeds` + `bump` over manual PDA writes.
 
+## Documentation
+
+- **Docs match reality, always.** Code comments, doc-comments, `SPEC.md`,
+  `security-checklist.md`, ADRs, and bean scope/summary sections must describe
+  the code as it _is_ — not as it was planned, renamed-away, or "will be." A
+  doc that narrates behavior the code doesn't have (e.g. "the tally dispatches
+  off X" when it doesn't, or a struct field listed in an account table that no
+  longer exists) is a bug: fix the doc or fix the code in the same change,
+  never leave them diverged.
+- **Forward-looking comments must be true today.** "Future variants ship as…"
+  is allowed only if the described seam already exists in code (field present,
+  dispatch wired). Otherwise mark it `// TODO` / "not yet implemented" or omit
+  it — aspirational prose rots into lies silently.
+- **Renames/drops are doc changes too.** When you rename or remove a field,
+  instruction, or error, grep the whole docs surface (`SPEC.md`,
+  `security-checklist.md`, `apps/docs/`, `README.md`, beans, ADRs) and update
+  every reference in the same change. The MkDocs site (`apps/docs/docs/`) and
+  `README.md` are part of this surface — stale names there are reality-mismatches.
+- **When behavior and docs disagree, trust the code — then reconcile.** Don't
+  bend a test to match a stale doc; don't rewrite a doc to match a bug. Decide
+  which is correct, fix the wrong one, update the other.
+
 ## Testing Instructions
 
 - **Two harnesses, complementary** (decision veridao-8ys4):

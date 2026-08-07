@@ -20,6 +20,12 @@ import {
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
+import {
+  getAggregationDecoder,
+  getAggregationEncoder,
+  type Aggregation,
+  type AggregationArgs,
+} from ".";
 
 /**
  * Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -39,6 +45,7 @@ export type CaseTerms = {
   commitWindow: bigint;
   revealWindow: bigint;
   maxAppeals: number;
+  aggregation: Aggregation;
 };
 
 export type CaseTermsArgs = {
@@ -49,6 +56,7 @@ export type CaseTermsArgs = {
   commitWindow: number | bigint;
   revealWindow: number | bigint;
   maxAppeals: number;
+  aggregation: AggregationArgs;
 };
 
 export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
@@ -60,6 +68,7 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["commitWindow", getU64Encoder()],
     ["revealWindow", getU64Encoder()],
     ["maxAppeals", getU8Encoder()],
+    ["aggregation", getAggregationEncoder()],
   ]);
 }
 
@@ -72,6 +81,7 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["aggregation", getAggregationDecoder()],
   ]);
 }
 

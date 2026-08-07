@@ -8,10 +8,12 @@
 use crate::constants::{MAX_JURORS, MAX_OPTIONS};
 use anchor_lang::prelude::*;
 
-/// Per-Subaccord dispute-kit aggregation rule (ADR-0019). v1 ships a single
-/// variant; future variants (`RankedChoice`/IRV, `Median`) ship as new enum
-/// entries without touching Core or existing disputes. The tally path
-/// dispatches off this field — plurality today, additive later.
+/// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
+/// variants (`RankedChoice`/IRV, `Median`) ship as new enum entries. The rule
+/// is frozen onto `CaseTerms` at filing time and `finalize_round` tallies off
+/// it (`match dispute.terms.aggregation`) — plurality today. The match carries
+/// no wildcard arm, so adding a variant is a compile error until its tally arm
+/// lands — the extension seam is real and machine-checked, not aspirational.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum Aggregation {
     Plurality,
@@ -125,6 +127,7 @@ pub struct CaseTerms {
     pub commit_window: u64,
     pub reveal_window: u64,
     pub max_appeals: u8,
+    pub aggregation: Aggregation,
 }
 
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the

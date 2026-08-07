@@ -3266,6 +3266,19 @@ fn create_subaccord_stores_aggregation_plurality() {
 }
 
 #[test]
+fn create_dispute_freezes_aggregation_onto_terms() {
+    // ADR-0019: the dispute's aggregation rule is frozen at filing time onto
+    // `terms` (Ugly-6), so finalize_round can dispatch off it without reading
+    // live `subaccord`. v1 = Plurality. setup_accumulator's Subaccord is
+    // created Plurality, so the frozen copy must read Plurality too.
+    let mut env = setup_accumulator();
+    let (dispute, _filer) = create_dispute_under_a(&mut env);
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.terms.aggregation, Aggregation::Plurality);
+}
+
+#[test]
 fn create_subaccord_rejects_max_appeals_above_ceiling() {
     // max_appeals > MAX_APPEALS (3) is the only remaining panel-shape gate now
     // that the round-1 size is fixed at 3 (ladder 3→7→15→31 always fits 31).

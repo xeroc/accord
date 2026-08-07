@@ -52,7 +52,11 @@ reaffirmed, not changed.
 ## Consequences
 
 - `Subaccord` gains `aggregation` (1 byte) and **loses** `jurors_per_dispute`
-  (−4 bytes). `CaseTerms` and `CreateSubaccordParams` likewise drop the count.
+  (−4 bytes). `CaseTerms` and `CreateSubaccordParams` likewise drop the count;
+  `CaseTerms` **gains** `aggregation` (1 byte) so the rule is frozen at filing
+  (Ugly-6, bean `accord-4e7p`) and `finalize_round` tallies off
+  `dispute.terms.aggregation` — an explicit `match` with no wildcard arm, so a
+  future variant is a compile error until its tally arm lands.
   `UpdatePayload` loses its `JurorsPerDispute`/`InitialNumJurors` variant — the
   count is no longer mutable (it is a constant).
 - **`create_subaccord` panel validation collapses** to the pre-existing
