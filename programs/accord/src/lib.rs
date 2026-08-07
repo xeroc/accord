@@ -463,25 +463,27 @@ pub mod accord {
         Ok(())
     }
 
-    /// Withdraw staked capital from a Subaccord. PDA-signed SPL transfer from
-    /// the Subaccord PDA's vault ATA to the Juror's ATA. Reverts while the
-    /// Juror is drawn into any live dispute (`active_draws > 0`, ADR-0003) and
-    /// caps the withdrawal at the Juror's exact staked balance.
+    /// **Phase 1 of two-phase withdraw** (REVIEW #5): declares intent to
+    /// withdraw `amount` tokens. Ledger-only — no SPL transfer (that is
+    /// `withdraw`'s job). Updates the accumulator root immediately (juror's
+    /// sortition weight drops right away), reduces `JurorStake.amount`, and
+    /// banks the tokens in `pending_withdrawal` until `withdraw` executes.
     ///
     /// ADR-0012: the caller supplies the juror's accumulator Merkle `path`; the
     /// chain verifies it against the stored root and recomputes a new root for
     /// the reduced leaf stake. A full unstake zeros the leaf's selection weight
     /// but retains its `tree_index` (re-stake is a local update).
     ///
-    /// Allowed while the program is paused (ADR-0007 lists only
-    /// create_dispute / stake / appeal as halted — capital is never trapped).
-    /// **Phase 1 of two-phase withdraw** (REVIEW #5): declares intent to
-    /// withdraw `amount` tokens. Updates the accumulator root immediately
-    /// (juror's sortition weight drops right away), reduces `JurorStake.amount`,
-    /// and locks the tokens in the vault until `withdraw` executes.
+    /// **Precondition (DRY with `reconcile_stake`):** `settlement_delta` must be
+    /// zero. Pending reward/slash is folded into `amount` by the permissionless
+    /// `reconcile_stake` crank — call it first. Without this invariant a pending
+    /// reward inflated `free_stake` past what `amount` could honor, so the
+    /// subtraction underflowed. Withdraw only operates on a canonical ledger.
     ///
-    /// Cannot withdraw more than the free stake (`amount - slash_reserve`).
-    /// Allowed while the program is paused (capital is never trapped).
+    /// Gates: `amount ≤ amount − slash_reserve` (free stake; the reserve covers
+    /// in-flight draw slashes). No `active_draws` gate here — that lock is
+    /// enforced at `withdraw`. Allowed while the program is paused (ADR-0007:
+    /// only create_dispute / stake are halted — capital is never trapped).
     pub fn request_withdraw(
         ctx: Context<RequestWithdraw>,
         amount: u64,
@@ -493,12 +495,14 @@ pub mod accord {
         let js = &mut ctx.accounts.juror_stake;
         let sub = &mut ctx.accounts.subaccord;
 
-        // Cannot withdraw more than free stake: effective balance (accounting
-        // for settled slashes/rewards) minus pending slash reserve.
-        let effective = (js.amount as i64)
-            .saturating_add(js.settlement_delta)
-            .max(0) as u64;
-        let free_stake = effective.saturating_sub(js.slash_reserve);
+        // DRY with reconcile_stake: the ledger must be canonical (no pending
+        // reward/slash) before we touch `amount`. `reconcile_stake` folds the
+        // delta first; withdraw only ever reads the canonical `amount`.
+        require!(js.settlement_delta == 0, AccordError::PendingSettlement);
+
+        // Cannot withdraw more than the free stake: raw amount minus the slash
+        // reserve held against in-flight draws.
+        let free_stake = js.amount.saturating_sub(js.slash_reserve);
         require!(amount <= free_stake, AccordError::InsufficientBalance);
 
         let old_stake = js.amount;

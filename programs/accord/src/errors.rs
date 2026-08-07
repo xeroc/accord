@@ -42,8 +42,10 @@ pub enum AccordError {
     WithdrawalTooEarly,
     #[msg("No pending withdrawal to execute.")]
     NoPendingWithdrawal,
-    #[msg("Withdrawal exceeds the Juror's staked balance.")]
+    #[msg("Withdrawal exceeds the Juror's free stake (amount - slash_reserve).")]
     InsufficientBalance,
+    #[msg("Settle pending reward/slash first: call reconcile_stake before request_withdraw.")]
+    PendingSettlement,
 
     // --- dispute intake ---
     #[msg("Subaccord has fewer active distinct stakers than the required panel size.")]

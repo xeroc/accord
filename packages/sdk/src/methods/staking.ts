@@ -182,11 +182,15 @@ export function stake(
 }
 
 /**
- * Build `request_withdraw` (lib.rs:346) — phase 1 of the two-phase withdraw
+ * Build `request_withdraw` (lib.rs) — phase 1 of the two-phase withdraw
  * (REVIEW #5). Ledger-only: subtracts `amount` from `JurorStake.amount`, banks
  * it in `pending_withdrawal`, and recomputes the accumulator root. No tokens
  * move; no `active_draws` gate (the lock is enforced at `withdraw`). Allowed
  * while paused. `path` is the juror's accumulator proof (ADR-0012).
+ *
+ * Precondition: `settlementDelta == 0` — call `reconcileStake` first when the
+ * juror has a pending reward/slash. DRY with `reconcileStake` (the delta fold
+ * lives in one place); withdraw only ever reads the canonical `amount`.
  */
 export function requestWithdraw(
   client: AccordStakingClient,

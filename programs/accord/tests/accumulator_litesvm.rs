@@ -2170,7 +2170,7 @@ fn reconcile_stake_folds_delta_into_amount_and_updates_root() {
 }
 
 #[test]
-fn unstake_respects_settlement_delta() {
+fn request_withdraw_requires_settlement_delta_zero() {
     let mut env = setup_accumulator();
 
     let juror = Keypair::new();
@@ -2179,30 +2179,61 @@ fn unstake_respects_settlement_delta() {
     let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
     do_stake(&mut env, &juror, stake_amt, path).assert_success();
 
-    // Simulate a slash of 500.
+    // Simulate a pending slash of 500 (settlement written, not yet folded).
     inject_settlement_delta(&mut env, &juror.pubkey(), -500);
 
-    // Effective balance = 5000 - 500 = 4500. Unstaking 5000 must fail.
+    // request_withdraw MUST reject a non-canonical ledger — the caller
+    // reconciles first. DRY: `reconcile_stake` owns the delta fold. The full
+    // pre-slash amount (5000) is refused while the delta is outstanding:
+    // PendingSettlement fires before the balance check would even apply.
     let leaves = vec![(juror.pubkey(), stake_amt)];
     let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
     let r = do_request_withdraw(&mut env, &juror, 5_000, proof);
     assert!(
         !r.is_success(),
-        "unstake over effective balance must fail; logs={:?}",
+        "request_withdraw with pending settlement_delta must fail; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        format!("{:?}", r.logs()).contains("PendingSettlement"),
+        "must fail with PendingSettlement; logs={:?}",
         r.logs()
     );
 
-    // Unstaking 4500 (effective) succeeds.
-    let (_, _, proof2) = build_root_and_path(&leaves, TEST_DEPTH, 0);
-    let r = do_request_withdraw(&mut env, &juror, 4_500, proof2);
-    r.assert_success();
+    // Reconcile folds -500 into amount (5000 -> 4500), zeroes the delta.
+    let js_pda = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let (_, _, reconcile_proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ReconcileStake {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js_pda,
+        })
+        .args(instruction::ReconcileStake {
+            path: reconcile_proof,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
 
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js.amount, 500, "amount reduced by withdrawal");
-    assert_eq!(
-        js.settlement_delta, -500,
-        "delta unchanged by request_withdraw"
-    );
+    assert_eq!(js.amount, 4_500, "reconcile folded the slash into amount");
+    assert_eq!(js.settlement_delta, 0, "delta cleared by reconcile");
+
+    // Ledger now canonical: request_withdraw of the full free stake (4500, no
+    // slash reserve) succeeds.
+    let leaves_after = vec![(juror.pubkey(), 4_500)];
+    let (_, _, proof2) = build_root_and_path(&leaves_after, TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &juror, 4_500, proof2).assert_success();
+
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.amount, 0, "amount reduced by withdrawal");
+    assert_eq!(js.settlement_delta, 0, "delta still zero");
 }
 
 // ─── two-phase withdraw + slash_reserve tests (REVIEW #5) ────────────────────
