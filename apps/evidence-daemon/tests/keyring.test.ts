@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { ed25519 } from "@noble/curves/ed25519";
+import { ed25519PublicKeyFromSeed } from "@accord/sdk/evidence";
 import bs58 from "bs58";
 import { EnvKeyring } from "../src/keys/keyring";
 import { loadConfig } from "../src/config";
@@ -8,7 +8,7 @@ const b58 = (b: Uint8Array): string => bs58.encode(b);
 
 test("EnvKeyring: one valid seed resolves via its derived pubkey", async () => {
   const seed = crypto.getRandomValues(new Uint8Array(32));
-  const pub = ed25519.getPublicKey(seed);
+  const pub = ed25519PublicKeyFromSeed(seed);
   const kr = EnvKeyring.fromEnv(b58(seed));
   expect(kr.size).toBe(1);
   const kp = await kr.forOperator(pub);
@@ -24,7 +24,7 @@ test("EnvKeyring: comma-separated list with whitespace parses all entries", asyn
   const kr = EnvKeyring.fromEnv(`${b58(s1)} , ${b58(s2)},\t${b58(s3)}`);
   expect(kr.size).toBe(3);
   for (const seed of [s1, s2, s3]) {
-    expect(await kr.forOperator(ed25519.getPublicKey(seed))).not.toBeNull();
+    expect(await kr.forOperator(ed25519PublicKeyFromSeed(seed))).not.toBeNull();
   }
 });
 
@@ -37,7 +37,7 @@ test("EnvKeyring: empty entries are ignored (trailing comma / blanks)", () => {
 test("EnvKeyring: unknown pubkey resolves to null", async () => {
   const seed = crypto.getRandomValues(new Uint8Array(32));
   const kr = EnvKeyring.fromEnv(b58(seed));
-  const other = ed25519.getPublicKey(crypto.getRandomValues(new Uint8Array(32)));
+  const other = ed25519PublicKeyFromSeed(crypto.getRandomValues(new Uint8Array(32)));
   expect(await kr.forOperator(other)).toBeNull();
 });
 
@@ -50,8 +50,8 @@ test("EnvKeyring: non-32-byte operator input resolves to null", async () => {
 
 test("EnvKeyring: deterministic — same seed yields same pubkey across instances", async () => {
   const seed = crypto.getRandomValues(new Uint8Array(32));
-  const pubA = await EnvKeyring.fromEnv(b58(seed)).forOperator(ed25519.getPublicKey(seed));
-  const pubB = await EnvKeyring.fromEnv(b58(seed)).forOperator(ed25519.getPublicKey(seed));
+  const pubA = await EnvKeyring.fromEnv(b58(seed)).forOperator(ed25519PublicKeyFromSeed(seed));
+  const pubB = await EnvKeyring.fromEnv(b58(seed)).forOperator(ed25519PublicKeyFromSeed(seed));
   expect(pubA).not.toBeNull();
   expect(pubB).not.toBeNull();
   expect([...pubA!.publicKey]).toEqual([...pubB!.publicKey]);
@@ -59,7 +59,7 @@ test("EnvKeyring: deterministic — same seed yields same pubkey across instance
 
 test("EnvKeyring: fixed all-zero seed anchors to its known pubkey", async () => {
   const zeros = new Uint8Array(32);
-  const pub = ed25519.getPublicKey(zeros);
+  const pub = ed25519PublicKeyFromSeed(zeros);
   expect(b58(pub)).toBe("4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS");
   const kr = EnvKeyring.fromEnv(b58(zeros));
   expect(kr.size).toBe(1);

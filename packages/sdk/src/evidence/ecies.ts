@@ -1,26 +1,34 @@
 /**
- * ECIES: ingest encryption (claimant -> operator) and delivery re-encryption
- * (operator -> juror). Plaintext exists only in memory between decrypt and
- * re-encrypt and is never returned to storage (SPEC §Crypto model, §Encrypted-at-rest).
+ * evidence/ecies.ts — the Accord evidence encryption protocol (ADR-0006).
  *
- * Ingest (claimant builds the bundle):
- *   dek = random 32; ct = AES-GCM(dek, plaintext);
- *   ephem X25519; shared = X25519(ephem, EdToX25519(operator_pub));
- *   k_in = HKDF(shared, "accord-ingest-v1"); wrapped = AES-GCM(k_in, dek);
- *   plaintext_hash = sha256(plaintext)  // == on-chain evidence_hash
+ * One ECIES-style envelope, two roles:
  *
- * Delivery (operator -> juror):
- *   ephem2 X25519; shared = X25519(ephem2, EdToX25519(juror_pub));
- *   k_out = HKDF(shared, "accord-deliver-v1"); out = AES-GCM(k_out, plaintext);
- *   { out, operator_ephem_pub = X25519_pub(ephem2) }
+ *   Ingest (claimant → operator): the claimant encrypts plaintext to the
+ *   operator's Ed25519→X25519 key and posts the bundle; the operator decrypts.
+ *
+ *   Deliver (operator → drawn juror): the operator re-encrypts plaintext to the
+ *   juror's Ed25519→X25519 key; only that juror's key decrypts.
+ *
+ * This is the single byte-exact implementation all three parties import — the
+ * claimant and juror run it off-daemon (they are SDK consumers), so the protocol
+ * cannot drift between participants. Composition only: every primitive
+ * (ECDH, HKDF, AES-GCM, Montgomery conversion) comes from {@link ./crypto} /
+ * {@link ./keys}; the only thing owned here is the construction order and the
+ * HKDF `info` role labels.
+ *
+ * Plaintext exists only ephemerally between decrypt and re-encrypt on the
+ * operator side; nothing persisted is ever plaintext (SPEC §Encrypted-at-rest).
+ *
+ * Authority: apps/evidence-daemon/SPEC.md §Crypto model; ADR-0006.
  */
-import { aesGcmDecrypt, aesGcmEncrypt, constantTimeEqual, hkdfSha256, sha256 } from "./symmetric";
+import { randomBytes } from "@noble/hashes/utils";
+import { aesGcmDecrypt, aesGcmEncrypt, hkdfSha256, sha256 } from "./crypto.js";
 import {
   ed25519SecretToX25519,
   ed25519ToX25519PublicKey,
   newX25519KeyPair,
   x25519SharedSecret,
-} from "../keys/ed25519";
+} from "./keys.js";
 
 /** HKDF `info` labels pin the derivation to its protocol role. */
 export const INGEST_INFO = "accord-ingest-v1";
@@ -49,15 +57,16 @@ export interface JurorBundle {
 }
 
 /**
- * Claimant-side ingest encryption. Produces the bundle posted to
- * `POST /evidence/{subaccord}/{dispute}`. The daemon uses this only for
- * round-trips / test vectors; claimants run it off-daemon.
+ * Claimant-side ingest encryption. Produces the bundle posted to the operator.
+ * Claimants run this off-daemon; the operator never calls it in production (it
+ * is exposed so claimant SDK clients share one implementation, and for
+ * round-trips / test vectors).
  */
 export async function claimantEncrypt(
   plaintext: Uint8Array,
   operatorEd25519Pub: Uint8Array,
 ): Promise<IngestBundle> {
-  const dek = globalThis.crypto.getRandomValues(new Uint8Array(32));
+  const dek = randomBytes(32);
   const ct = await aesGcmEncrypt(dek, plaintext);
 
   const ephem = newX25519KeyPair();
@@ -76,8 +85,8 @@ export async function claimantEncrypt(
 }
 
 /**
- * Operator-side decrypt of a stored bundle -> plaintext (in-memory only).
- * Used by the delivery pipeline; callers MUST run {@link verifyIntegrity} next.
+ * Operator-side decrypt of a stored bundle → plaintext (in-memory only).
+ * Callers MUST run {@link verifyIntegrity} next.
  */
 export async function operatorDecrypt(
   bundle: IngestBundle,
@@ -103,7 +112,7 @@ export async function deliverToJuror(
   return { out, operator_ephem_pub: ephem.publicKey };
 }
 
-/** Juror-side decrypt of a delivered bundle -> plaintext. */
+/** Juror-side decrypt of a delivered bundle → plaintext. */
 export async function jurorDecrypt(
   delivered: JurorBundle,
   jurorEd25519SecretSeed: Uint8Array,
@@ -115,15 +124,22 @@ export async function jurorDecrypt(
 }
 
 /**
- * Mandatory integrity gate (SPEC §3, §Failure modes): `sha256(plaintext)`
- * MUST equal the dispute's on-chain `evidence_hash`. Throws on mismatch — at
- * ingest this rejects a bad upload, at delivery it refuses + alerts.
+ * Mandatory integrity gate (SPEC §3, §Failure modes): `sha256(plaintext)` MUST
+ * equal the dispute's on-chain `evidence_hash`. Both operands are public hashes,
+ * so a plain compare suffices (no constant-time requirement). Throws on mismatch
+ * — at ingest this rejects a bad upload, at delivery it refuses + alerts.
  */
 export async function verifyIntegrity(
   plaintext: Uint8Array,
   evidenceHash: Uint8Array,
 ): Promise<void> {
-  if (!constantTimeEqual(await sha256(plaintext), evidenceHash)) {
+  const h = await sha256(plaintext);
+  if (h.length !== evidenceHash.length) {
     throw new Error("integrity gate failed: sha256(plaintext) != evidence_hash");
+  }
+  for (let i = 0; i < h.length; i++) {
+    if (h[i] !== evidenceHash[i]) {
+      throw new Error("integrity gate failed: sha256(plaintext) != evidence_hash");
+    }
   }
 }

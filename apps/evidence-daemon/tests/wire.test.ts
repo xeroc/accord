@@ -10,12 +10,15 @@
 // It also pins the 404/409 edge contracts the HTTP layer depends on.
 import { test, expect } from "bun:test";
 import { address, type Address } from "@solana/kit";
-import { ed25519 } from "@noble/curves/ed25519";
 import bs58 from "bs58";
 import { DisputeState, type Accord } from "@accord/sdk";
 
-import { claimantEncrypt, jurorDecrypt } from "../src/crypto/ecies";
-import { sha256 } from "../src/crypto/symmetric";
+import {
+  claimantEncrypt,
+  jurorDecrypt,
+  sha256,
+  ed25519PublicKeyFromSeed,
+} from "@accord/sdk/evidence";
 import { EnvKeyring } from "../src/keys/keyring";
 import {
   bytesToBase64,
@@ -26,10 +29,10 @@ import {
 import { createServerDeps } from "../src/wire";
 
 // --- key fixtures: real Ed25519 keys (crypto needs genuine material) -------
-const operatorSeed = ed25519.utils.randomSecretKey();
-const operatorPub = ed25519.getPublicKey(operatorSeed);
-const jurorSeed = ed25519.utils.randomSecretKey();
-const jurorPub = ed25519.getPublicKey(jurorSeed);
+const operatorSeed = crypto.getRandomValues(new Uint8Array(32));
+const operatorPub = ed25519PublicKeyFromSeed(operatorSeed);
+const jurorSeed = crypto.getRandomValues(new Uint8Array(32));
+const jurorPub = ed25519PublicKeyFromSeed(jurorSeed);
 
 // Path addresses (arbitrary valid base58; the system-program id = 32 zero bytes).
 const SUB: Address = address("11111111111111111111111111111111");
@@ -160,7 +163,7 @@ test("wire: re-POST of the same plaintext_hash is idempotent (single object)", a
 test("wire: deliver by a non-drawn juror → 404", async () => {
   const { deps } = await rig();
   await deps.ingest(SUB, DISPUTE, await postBody());
-  const other = ed25519.getPublicKey(ed25519.utils.randomSecretKey());
+  const other = ed25519PublicKeyFromSeed(crypto.getRandomValues(new Uint8Array(32)));
   const res = await deps.deliver(DISPUTE, bs58.encode(other));
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
@@ -199,7 +202,7 @@ test("wire: a different juror's seed cannot decrypt the delivered bundle", async
   await deps.ingest(SUB, DISPUTE, await postBody());
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
   if (!delivered.ok) throw new Error("unreachable");
-  const stranger = ed25519.utils.randomSecretKey();
+  const stranger = crypto.getRandomValues(new Uint8Array(32));
   await expect(
     jurorDecrypt(
       {
