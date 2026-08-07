@@ -26,6 +26,7 @@ import {
   type LeafClaim,
   type MSTNode,
   type SeatMembership,
+  type CreateSubaccordArgs,
   findJurorStakePda,
   findRoundPda,
   findPauseStatePda,
@@ -212,6 +213,7 @@ export async function ensurePause(env: TestEnv): Promise<Address> {
 export async function armSubaccordAndJurors(
   env: TestEnv,
   pauseState: Address,
+  subaccordOverrides: Partial<CreateSubaccordArgs> = {},
 ): Promise<Omit<DrawFixture, "env" | "up">> {
   const { mint } = await createMint(env, 6);
 
@@ -222,6 +224,7 @@ export async function armSubaccordAndJurors(
     reviewWindow: 604_800n,
     commitWindow: 172_800n,
     revealWindow: 172_800n,
+    ...subaccordOverrides,
   });
   const { instruction: createIx, subaccord } = await createSubaccord(
     env.accord.adapter,
