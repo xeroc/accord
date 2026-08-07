@@ -56,9 +56,9 @@ export type CancelDisputeInstruction<
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
-  TAccountStakingToken extends string | AccountMeta<string> = string,
+  TAccountFeeToken extends string | AccountMeta<string> = string,
   TAccountFilerTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountFeeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -76,15 +76,15 @@ export type CancelDisputeInstruction<
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
-      TAccountStakingToken extends string
-        ? ReadonlyAccount<TAccountStakingToken>
-        : TAccountStakingToken,
+      TAccountFeeToken extends string
+        ? ReadonlyAccount<TAccountFeeToken>
+        : TAccountFeeToken,
       TAccountFilerTokenAccount extends string
         ? WritableAccount<TAccountFilerTokenAccount>
         : TAccountFilerTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
+      TAccountFeeVault extends string
+        ? WritableAccount<TAccountFeeVault>
+        : TAccountFeeVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -125,19 +125,19 @@ export type CancelDisputeAsyncInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountFilerTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   /** Any cranker; no authority check (the elapsed timeout is the gate). */
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   /** Refund destination — must be the filer's ATA. */
   filerTokenAccount: Address<TAccountFilerTokenAccount>;
-  vault?: Address<TAccountVault>;
+  feeVault?: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -145,9 +145,9 @@ export async function getCancelDisputeInstructionAsync<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountFilerTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -155,9 +155,9 @@ export async function getCancelDisputeInstructionAsync<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -167,9 +167,9 @@ export async function getCancelDisputeInstructionAsync<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >
 > {
@@ -181,12 +181,12 @@ export async function getCancelDisputeInstructionAsync<
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
       value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -195,8 +195,8 @@ export async function getCancelDisputeInstructionAsync<
   >;
 
   // Resolve default values.
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
+  if (!accounts.feeVault.value) {
+    accounts.feeVault.value = await getProgramDerivedAddress({
       programAddress:
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
       seeds: [
@@ -215,8 +215,8 @@ export async function getCancelDisputeInstructionAsync<
         ),
         getAddressEncoder().encode(
           getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
+            "feeToken",
+            accounts.feeToken.value,
           ),
         ),
       ],
@@ -233,9 +233,9 @@ export async function getCancelDisputeInstructionAsync<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getCancelDisputeInstructionDataEncoder().encode({}),
@@ -245,9 +245,9 @@ export async function getCancelDisputeInstructionAsync<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >);
 }
@@ -256,19 +256,19 @@ export type CancelDisputeInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountFilerTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   /** Any cranker; no authority check (the elapsed timeout is the gate). */
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   /** Refund destination — must be the filer's ATA. */
   filerTokenAccount: Address<TAccountFilerTokenAccount>;
-  vault: Address<TAccountVault>;
+  feeVault: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -276,9 +276,9 @@ export function getCancelDisputeInstruction<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountFilerTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -286,9 +286,9 @@ export function getCancelDisputeInstruction<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -297,9 +297,9 @@ export function getCancelDisputeInstruction<
   TAccountCaller,
   TAccountSubaccord,
   TAccountDispute,
-  TAccountStakingToken,
+  TAccountFeeToken,
   TAccountFilerTokenAccount,
-  TAccountVault,
+  TAccountFeeVault,
   TAccountTokenProgram
 > {
   // Program address.
@@ -310,12 +310,12 @@ export function getCancelDisputeInstruction<
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
       value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -335,9 +335,9 @@ export function getCancelDisputeInstruction<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getCancelDisputeInstructionDataEncoder().encode({}),
@@ -347,9 +347,9 @@ export function getCancelDisputeInstruction<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >);
 }
@@ -364,10 +364,10 @@ export type ParsedCancelDisputeInstruction<
     caller: TAccountMetas[0];
     subaccord: TAccountMetas[1];
     dispute: TAccountMetas[2];
-    stakingToken: TAccountMetas[3];
+    feeToken: TAccountMetas[3];
     /** Refund destination — must be the filer's ATA. */
     filerTokenAccount: TAccountMetas[4];
-    vault: TAccountMetas[5];
+    feeVault: TAccountMetas[5];
     tokenProgram: TAccountMetas[6];
   };
   data: CancelDisputeInstructionData;
@@ -402,9 +402,9 @@ export function parseCancelDisputeInstruction<
       caller: getNextAccount(),
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
-      stakingToken: getNextAccount(),
+      feeToken: getNextAccount(),
       filerTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
+      feeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
     },
     data: getCancelDisputeInstructionDataDecoder().decode(instruction.data),

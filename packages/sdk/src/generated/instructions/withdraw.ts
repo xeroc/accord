@@ -57,7 +57,7 @@ export type WithdrawInstruction<
   TAccountJurorStake extends string | AccountMeta<string> = string,
   TAccountStakingToken extends string | AccountMeta<string> = string,
   TAccountJurorTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountStakeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -81,9 +81,9 @@ export type WithdrawInstruction<
       TAccountJurorTokenAccount extends string
         ? WritableAccount<TAccountJurorTokenAccount>
         : TAccountJurorTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
+      TAccountStakeVault extends string
+        ? WritableAccount<TAccountStakeVault>
+        : TAccountStakeVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -124,7 +124,7 @@ export type WithdrawAsyncInput<
   TAccountJurorStake extends string = string,
   TAccountStakingToken extends string = string,
   TAccountJurorTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountStakeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   juror: TransactionSigner<TAccountJuror>;
@@ -132,7 +132,7 @@ export type WithdrawAsyncInput<
   jurorStake?: Address<TAccountJurorStake>;
   stakingToken: Address<TAccountStakingToken>;
   jurorTokenAccount?: Address<TAccountJurorTokenAccount>;
-  vault?: Address<TAccountVault>;
+  stakeVault?: Address<TAccountStakeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -142,7 +142,7 @@ export async function getWithdrawInstructionAsync<
   TAccountJurorStake extends string,
   TAccountStakingToken extends string,
   TAccountJurorTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountStakeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -152,7 +152,7 @@ export async function getWithdrawInstructionAsync<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -164,7 +164,7 @@ export async function getWithdrawInstructionAsync<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram
   >
 > {
@@ -181,7 +181,7 @@ export async function getWithdrawInstructionAsync<
       value: input.jurorTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    stakeVault: { value: input.stakeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -229,8 +229,8 @@ export async function getWithdrawInstructionAsync<
       ],
     });
   }
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
+  if (!accounts.stakeVault.value) {
+    accounts.stakeVault.value = await getProgramDerivedAddress({
       programAddress:
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
       seeds: [
@@ -269,7 +269,7 @@ export async function getWithdrawInstructionAsync<
       getAccountMeta("jurorStake", accounts.jurorStake),
       getAccountMeta("stakingToken", accounts.stakingToken),
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("stakeVault", accounts.stakeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getWithdrawInstructionDataEncoder().encode({}),
@@ -281,7 +281,7 @@ export async function getWithdrawInstructionAsync<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram
   >);
 }
@@ -292,7 +292,7 @@ export type WithdrawInput<
   TAccountJurorStake extends string = string,
   TAccountStakingToken extends string = string,
   TAccountJurorTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountStakeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   juror: TransactionSigner<TAccountJuror>;
@@ -300,7 +300,7 @@ export type WithdrawInput<
   jurorStake: Address<TAccountJurorStake>;
   stakingToken: Address<TAccountStakingToken>;
   jurorTokenAccount: Address<TAccountJurorTokenAccount>;
-  vault: Address<TAccountVault>;
+  stakeVault: Address<TAccountStakeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
 
@@ -310,7 +310,7 @@ export function getWithdrawInstruction<
   TAccountJurorStake extends string,
   TAccountStakingToken extends string,
   TAccountJurorTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountStakeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -320,7 +320,7 @@ export function getWithdrawInstruction<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -331,7 +331,7 @@ export function getWithdrawInstruction<
   TAccountJurorStake,
   TAccountStakingToken,
   TAccountJurorTokenAccount,
-  TAccountVault,
+  TAccountStakeVault,
   TAccountTokenProgram
 > {
   // Program address.
@@ -347,7 +347,7 @@ export function getWithdrawInstruction<
       value: input.jurorTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    stakeVault: { value: input.stakeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -369,7 +369,7 @@ export function getWithdrawInstruction<
       getAccountMeta("jurorStake", accounts.jurorStake),
       getAccountMeta("stakingToken", accounts.stakingToken),
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("stakeVault", accounts.stakeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getWithdrawInstructionDataEncoder().encode({}),
@@ -381,7 +381,7 @@ export function getWithdrawInstruction<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram
   >);
 }
@@ -397,7 +397,7 @@ export type ParsedWithdrawInstruction<
     jurorStake: TAccountMetas[2];
     stakingToken: TAccountMetas[3];
     jurorTokenAccount: TAccountMetas[4];
-    vault: TAccountMetas[5];
+    stakeVault: TAccountMetas[5];
     tokenProgram: TAccountMetas[6];
   };
   data: WithdrawInstructionData;
@@ -434,7 +434,7 @@ export function parseWithdrawInstruction<
       jurorStake: getNextAccount(),
       stakingToken: getNextAccount(),
       jurorTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
+      stakeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
     },
     data: getWithdrawInstructionDataDecoder().decode(instruction.data),

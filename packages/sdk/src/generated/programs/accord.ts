@@ -78,9 +78,10 @@ import {
   getReconcileStakeInstruction,
   getRequestVrfInstructionAsync,
   getRequestWithdrawInstructionAsync,
-  getRevealInstructionAsync,
+  getRevealInstruction,
   getSettleRoundInstructionAsync,
   getStakeInstructionAsync,
+  getWithdrawFeesInstructionAsync,
   getWithdrawInstructionAsync,
   parseAppealInstruction,
   parseCancelDisputeInstruction,
@@ -106,6 +107,7 @@ import {
   parseRevealInstruction,
   parseSettleRoundInstruction,
   parseStakeInstruction,
+  parseWithdrawFeesInstruction,
   parseWithdrawInstruction,
   type AppealAsyncInput,
   type CancelDisputeAsyncInput,
@@ -146,6 +148,7 @@ import {
   type ParsedRevealInstruction,
   type ParsedSettleRoundInstruction,
   type ParsedStakeInstruction,
+  type ParsedWithdrawFeesInstruction,
   type ParsedWithdrawInstruction,
   type PauseAsyncInput,
   type ProposeSubaccordUpdateAsyncInput,
@@ -153,10 +156,11 @@ import {
   type ReconcileStakeInput,
   type RequestVrfAsyncInput,
   type RequestWithdrawAsyncInput,
-  type RevealAsyncInput,
+  type RevealInput,
   type SettleRoundAsyncInput,
   type StakeAsyncInput,
   type WithdrawAsyncInput,
+  type WithdrawFeesAsyncInput,
 } from "../instructions";
 import {
   findAppealBondPda,
@@ -295,6 +299,7 @@ export enum AccordInstruction {
   SettleRound,
   Stake,
   Withdraw,
+  WithdrawFees,
 }
 
 export function identifyAccordInstruction(
@@ -576,6 +581,17 @@ export function identifyAccordInstruction(
   ) {
     return AccordInstruction.Withdraw;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([198, 212, 171, 109, 144, 215, 174, 89]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.WithdrawFees;
+  }
   throw new SolanaError(
     SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION,
     { instructionData: data, programName: "accord" },
@@ -659,7 +675,10 @@ export type ParsedAccordInstruction<
     } & ParsedStakeInstruction<TProgram>)
   | ({
       instructionType: AccordInstruction.Withdraw;
-    } & ParsedWithdrawInstruction<TProgram>);
+    } & ParsedWithdrawInstruction<TProgram>)
+  | ({
+      instructionType: AccordInstruction.WithdrawFees;
+    } & ParsedWithdrawFeesInstruction<TProgram>);
 
 export function parseAccordInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
@@ -841,6 +860,13 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseWithdrawInstruction(instruction),
       };
     }
+    case AccordInstruction.WithdrawFees: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.WithdrawFees,
+        ...parseWithdrawFeesInstruction(instruction),
+      };
+    }
     default:
       throw new SolanaError(
         SOLANA_ERROR__PROGRAM_CLIENTS__UNRECOGNIZED_INSTRUCTION_TYPE,
@@ -955,8 +981,8 @@ export type AccordPluginInstructions = {
   ) => ReturnType<typeof getRequestWithdrawInstructionAsync> &
     SelfPlanAndSendFunctions;
   reveal: (
-    input: RevealAsyncInput,
-  ) => ReturnType<typeof getRevealInstructionAsync> & SelfPlanAndSendFunctions;
+    input: RevealInput,
+  ) => ReturnType<typeof getRevealInstruction> & SelfPlanAndSendFunctions;
   settleRound: (
     input: SettleRoundAsyncInput,
   ) => ReturnType<typeof getSettleRoundInstructionAsync> &
@@ -967,6 +993,10 @@ export type AccordPluginInstructions = {
   withdraw: (
     input: WithdrawAsyncInput,
   ) => ReturnType<typeof getWithdrawInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  withdrawFees: (
+    input: WithdrawFeesAsyncInput,
+  ) => ReturnType<typeof getWithdrawFeesInstructionAsync> &
     SelfPlanAndSendFunctions;
 };
 
@@ -1097,10 +1127,7 @@ export function accordProgram() {
               getRequestWithdrawInstructionAsync(input),
             ),
           reveal: (input) =>
-            addSelfPlanAndSendFunctions(
-              client,
-              getRevealInstructionAsync(input),
-            ),
+            addSelfPlanAndSendFunctions(client, getRevealInstruction(input)),
           settleRound: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1115,6 +1142,11 @@ export function accordProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getWithdrawInstructionAsync(input),
+            ),
+          withdrawFees: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getWithdrawFeesInstructionAsync(input),
             ),
         },
         pdas: {

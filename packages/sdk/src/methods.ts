@@ -36,7 +36,9 @@ import {
   requestWithdraw as pureRequestWithdraw,
   withdraw as pureWithdraw,
   reconcileStake as pureReconcileStake,
+  withdrawFees as pureWithdrawFees,
   type StakingAccounts,
+  type WithdrawFeesAccounts,
 } from "./methods/staking.js";
 import {
   settleRound as pureSettleRound,
@@ -116,6 +118,7 @@ export interface AccordMethods {
   ): Instruction;
   withdraw(accounts: StakingAccounts): Instruction;
   reconcileStake(accounts: StakingAccounts, path: MSTNode[]): Instruction;
+  withdrawFees(accounts: WithdrawFeesAccounts): Instruction;
 
   // settlement (per-round crank + dispute cancellation)
   settleRound(
@@ -218,6 +221,7 @@ export function createAccordMethods(
     withdraw: (accounts) => pureWithdraw(adapter, programId, accounts),
     reconcileStake: (accounts, path) =>
       pureReconcileStake(adapter, programId, accounts, path),
+    withdrawFees: (accounts) => pureWithdrawFees(adapter, programId, accounts),
 
     // settlement
     settleRound: (accounts, roundIdx, remainingAccounts) =>

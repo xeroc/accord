@@ -66,8 +66,10 @@ export interface CreateSubaccordArgs {
   riskType: Uint8Array; // 32 bytes
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: Uint8Array; // 32 bytes
-  /** SPL mint juror capital is staked in (ADR-0002). */
+  /** SPL mint juror capital is staked in (collateral, ADR-0002/0020). */
   stakingToken: Address;
+  /** Compensation mint — fees + appeal bonds (ADR-0020). Distinct from stakingToken. */
+  feeToken: Address;
   minStake: bigint;
   /** Slash factor in bps (10% = 1000). */
   alphaBps: number; // u16

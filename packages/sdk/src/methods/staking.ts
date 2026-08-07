@@ -31,7 +31,10 @@ const U64_MAX = 0xffffffffffffffffn;
 /** The decoded JurorStake fields the guard + caller need. */
 export interface JurorStakeView {
   juror: Address;
-  amount: bigint;
+  /** Collateral (stake_token, ADR-0020). */
+  staked: bigint;
+  /** Aggregate earned fees (fee_token, ADR-0020). Withdrawable via `withdrawFees`. */
+  feesEarned: bigint;
   /** Disputes this juror is currently drawn into; >0 blocks unstake. */
   activeDraws: number;
 }
@@ -57,7 +60,7 @@ export function canUnstake(
 ): UnstakeGuard {
   if (amount <= 0n) return { ok: false, reason: "InvalidAmount" };
   if (stake.activeDraws > 0) return { ok: false, reason: "StakeLocked" };
-  if (amount > stake.amount)
+  if (amount > stake.staked)
     return { ok: false, reason: "InsufficientBalance" };
   return { ok: true };
 }
@@ -67,7 +70,7 @@ export function assertCanUnstake(stake: JurorStakeView, amount: bigint): void {
   const g = canUnstake(stake, amount);
   if (!g.ok)
     throw new Error(
-      `${g.reason}: cannot unstake ${amount} (amount=${stake.amount}, activeDraws=${stake.activeDraws})`,
+      `${g.reason}: cannot unstake ${amount} (staked=${stake.staked}, activeDraws=${stake.activeDraws})`,
     );
 }
 
@@ -127,8 +130,8 @@ export interface StakingAccounts {
   stakingToken: Address;
   /** Juror's ATA of the staking token (source on stake, dest on unstake). */
   jurorTokenAccount: Address;
-  /** Subaccord PDA's vault ATA (dest on stake, source on unstake). */
-  vault: Address;
+  /** Subaccord PDA's stake_vault ATA (dest on stake, source on unstake). */
+  stakeVault: Address;
 }
 
 /**
@@ -164,6 +167,11 @@ export interface AccordStakingClient {
   }): Instruction;
   /** Fetch the decoded JurorStake fields the guard needs. */
   fetchJurorStake(jurorStake: Address): Promise<JurorStakeView | null>;
+  /** Build `withdraw_fees` (ADR-0020). */
+  buildWithdrawFees(input: {
+    programId: Address;
+    accounts: WithdrawFeesAccounts;
+  }): Instruction;
 }
 
 /** Build `stake` (lib.rs). SPL-transfers `amount` into the vault. */
@@ -218,10 +226,10 @@ export function withdraw(
   if (
     !accounts.stakingToken ||
     !accounts.jurorTokenAccount ||
-    !accounts.vault
+    !accounts.stakeVault
   ) {
     throw new Error(
-      "InvalidWithdrawAccounts: withdraw requires stakingToken, jurorTokenAccount, vault",
+      "InvalidWithdrawAccounts: withdraw requires stakingToken, jurorTokenAccount, stakeVault",
     );
   }
   return client.buildWithdraw({ programId, accounts });
@@ -242,4 +250,29 @@ export function reconcileStake(
 ): Instruction {
   // Empty `path` is valid for depth-0 Subaccords (REVIEW #13).
   return client.buildReconcileStake({ programId, accounts, path });
+}
+
+/** Accounts for `withdraw_fees` (ADR-0020). */
+export interface WithdrawFeesAccounts {
+  juror: Address;
+  subaccord: Address;
+  jurorStake: Address;
+  feeToken: Address;
+  /** Juror's ATA of the fee token (withdraw destination). */
+  jurorFeeTokenAccount: Address;
+  /** Subaccord PDA's fee_vault ATA (withdraw source). */
+  feeVault: Address;
+}
+
+/**
+ * Build `withdraw_fees` (ADR-0020). Per-juror: pulls aggregate `fees_earned`
+ * from the Subaccord's `fee_vault` → the juror's `fee_token` ATA. No
+ * `active_draws` gate, no timelock — earned fees are not at-risk capital.
+ */
+export function withdrawFees(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: WithdrawFeesAccounts,
+): Instruction {
+  return client.buildWithdrawFees({ programId, accounts });
 }
