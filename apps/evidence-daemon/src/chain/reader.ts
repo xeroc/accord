@@ -1,7 +1,7 @@
 /**
  * chain/reader.ts — read-only on-chain views for the Evidence Operator daemon.
  *
- * Thin facade over `@accord/sdk` fetchers. The daemon writes nothing on-chain;
+ * Thin facade over `@useaccord/sdk` fetchers. The daemon writes nothing on-chain;
  * it reads three accounts to gate every request:
  *
  *   - `Subaccord` → `evidence_operator` (resolves the per-Subaccord key) +
@@ -29,7 +29,7 @@ import {
   fetchSubaccordMaybe,
   findRoundPda,
   type Accord,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 
 /** Per-Subaccord fields the daemon consumes to resolve its key + scheme. */
 export interface SubaccordView {

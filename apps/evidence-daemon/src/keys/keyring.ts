@@ -1,10 +1,14 @@
 import bs58 from "bs58";
-import { type Ed25519Keypair, type Keyring, ed25519PublicKeyFromSeed } from "@accord/sdk/evidence";
+import {
+  type Ed25519Keypair,
+  type Keyring,
+  ed25519PublicKeyFromSeed,
+} from "@useaccord/sdk/evidence";
 
 /**
  * Per-Subaccord operator keyring — the daemon's env-backed `Keyring` impl.
  *
- * The `Keyring` contract + `Ed25519Keypair` type live in `@accord/sdk/evidence`
+ * The `Keyring` contract + `Ed25519Keypair` type live in `@useaccord/sdk/evidence`
  * (shared with claimant/juror SDK clients); this module supplies the v1 env
  * source. It reads `EVIDENCE_KEYRING` (comma-separated base58 Ed25519 raw
  * secrets), derives each secret's pubkey via the SDK, and indexes by pubkey for

@@ -4,7 +4,7 @@
 // digest vector computed independently of this module.
 //
 // Excluded from the TypeScript build (tsconfig.json exclude); run via:
-//   pnpm --filter @accord/sdk test
+//   pnpm --filter @useaccord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

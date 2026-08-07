@@ -45,7 +45,7 @@ accord::create_subaccord(
 ```
 
 ```typescript
-import { createSubaccord, findSubaccordPda } from "@accord/sdk";
+import { createSubaccord, findSubaccordPda } from "@useaccord/sdk";
 
 const [subaccord] = await findSubaccordPda(
   accord.PROGRAM_ID,

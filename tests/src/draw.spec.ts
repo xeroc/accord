@@ -1,6 +1,6 @@
 // draw.spec.ts — e2e: per-seat draw with deterministic collision re-roll.
 //
-// Drives @accord/sdk over Surfpool:
+// Drives @useaccord/sdk over Surfpool:
 //   - happy path: resolveDistinctPanel → draw_seat × N → Round carries the
 //     resolved panel + active_draws increments + dispute → Drawn.
 //   - vrfSeed determinism (pure).
@@ -13,7 +13,7 @@
 // injectCommittedVrf (setup/vrf.ts) writes `committed_vrf` + `frozen_root`
 // directly via surfnet_setAccount. Requires Surfpool on port 8905; auto-skips
 // on the offline CI lane (fx.up === false).
-import { vrfSeed } from "@accord/sdk";
+import { vrfSeed } from "@useaccord/sdk";
 
 import {
   armDispute,

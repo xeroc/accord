@@ -1,4 +1,4 @@
-// env.ts — the single place jest specs reach Surfpool + the @accord/sdk facade.
+// env.ts — the single place jest specs reach Surfpool + the @useaccord/sdk facade.
 //
 // Every spec calls `createTestEnv()` in `beforeAll` and gates on `env.up`
 // (offline CI lane). When the validator is reachable, `sendIx` builds, signs,
@@ -10,7 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
-import { ACCORD_PROGRAM_ID, Accord } from "@accord/sdk";
+import { ACCORD_PROGRAM_ID, Accord } from "@useaccord/sdk";
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,

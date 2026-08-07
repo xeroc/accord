@@ -4,7 +4,7 @@
 // vrf.ts imports mst.ts at runtime (`./mst.js`), which Node's direct
 // type-stripper cannot resolve to `.ts` — so this test imports the COMPILED
 // dist output (built first by the `test` script).
-//   pnpm --filter @accord/sdk test
+//   pnpm --filter @useaccord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildAccumulator, proofFor } from "../../dist/methods/mst.js";

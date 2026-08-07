@@ -1,5 +1,5 @@
 /**
- * evidence/index.ts — barrel for the `@accord/sdk/evidence` sub-path export.
+ * evidence/index.ts — barrel for the `@useaccord/sdk/evidence` sub-path export.
  *
  * The Accord evidence encryption protocol + its Ed25519/X25519 key material,
  * shared byte-exact by claimant, operator (the evidence-daemon), and juror.

@@ -48,7 +48,7 @@ accord::claim_appeal_refund(ctx.contexts, round_idx)?;  // round_idx = appealed 
 ```
 
 ```typescript
-import { appeal, claimAppealRefund } from "@accord/sdk";
+import { appeal, claimAppealRefund } from "@useaccord/sdk";
 
 await appeal(accord.adapter, accord.PROGRAM_ID, { dispute });
 // after finalize_dispute:

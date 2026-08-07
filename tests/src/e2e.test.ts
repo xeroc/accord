@@ -261,7 +261,7 @@ const VRF_PROGRAM_IDENTITY = process.env.ACCORD_VRF_PROGRAM_IDENTITY ?? "";
 const OPERATOR_SECRET_B58 = process.env.EVIDENCE_OPERATOR_SECRET ?? "";
 
 describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
-  // Everything from the lazy @solana/kit / @accord/sdk / @solana/spl-token
+  // Everything from the lazy @solana/kit / @useaccord/sdk / @solana/spl-token
   // imports is typed loosely: layer 2 cannot run until its infra exists, and
   // the loose typing mirrors onchain-smoke.spec.ts.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -289,7 +289,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
         "ACCORD_VRF_ORACLE_QUEUE / ACCORD_VRF_PROGRAM_IDENTITY unset";
       return;
     }
-    const sdk = await import("@accord/sdk");
+    const sdk = await import("@useaccord/sdk");
     const kit = await import("@solana/kit");
     const spl = await import("@solana/spl-token");
     const rpc = kit.createSolanaRpc(RPC_URL);

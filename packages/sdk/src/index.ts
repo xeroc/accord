@@ -1,5 +1,5 @@
 /**
- * @accord/sdk — TypeScript SDK for the VeriDAO Accord program on Solana.
+ * @useaccord/sdk — TypeScript SDK for the VeriDAO Accord program on Solana.
  *
  * Public surface:
  *   - `Accord`         — facade class (primary entry point)
@@ -59,7 +59,7 @@ export {
 } from "./errors";
 export * from "./types";
 
-export const SDK_NAME = "@accord/sdk";
+export const SDK_NAME = "@useaccord/sdk";
 export const SDK_VERSION = "0.1.0";
 
 // Arbitrable CPI API — the primary external surface (ADR-0010, bean veridao-50qy).

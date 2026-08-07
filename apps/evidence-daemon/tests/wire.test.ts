@@ -11,14 +11,14 @@
 import { test, expect } from "bun:test";
 import { address, type Address } from "@solana/kit";
 import bs58 from "bs58";
-import { DisputeState, type Accord } from "@accord/sdk";
+import { DisputeState, type Accord } from "@useaccord/sdk";
 
 import {
   claimantEncrypt,
   jurorDecrypt,
   sha256,
   ed25519PublicKeyFromSeed,
-} from "@accord/sdk/evidence";
+} from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "../src/keys/keyring";
 import {
   bytesToBase64,

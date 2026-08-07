@@ -22,8 +22,8 @@ Schelling Point here is **honesty** — Jurors vote truthfully because coherent-
 programs/
   accord/            Accord — Schelling-point arbitration
 packages/
-  sdk/              @accord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @accord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
-tests/              @accord/tests — jest integration suite (runs vs test-validator / Surfpool)
+  sdk/              @useaccord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @useaccord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
+tests/              @useaccord/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
 apps/docs/          MkDocs documentation site (developer-facing)
 apps/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
@@ -116,7 +116,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ### e2e suite — `tests/src` (Surfpool + jest + SDK)
 
 The jest suite in `tests/src/` is the **integration proof**: it drives the real
-program through the `@accord/sdk` facade against a live Surfpool instance.
+program through the `@useaccord/sdk` facade against a live Surfpool instance.
 LiteSVM is the fast inner TDD loop; **e2e is the sign-off**, never skipped for a
 feature that touches the chain.
 
@@ -154,7 +154,7 @@ feature that touches the chain.
     `fetchDecoded(env, pda, getXDecoder())`. **Use `fetchDecoded`**, not the
     facade's `fetchX`/`getRuling`/`fetchJurorStake` — those need a
     `ClientWithRpc` and break over a raw `createSolanaRpc`. Account decoders are
-    re-exported from `@accord/sdk`.
+    re-exported from `@useaccord/sdk`.
   - `setup/fixtures.ts` — `randomBytes32()`, `DEFAULT_PUBKEY`,
     `defaultSubaccordArgs(...)`.
   One spec file per instruction group (`lifecycle.pause.timelock`,
@@ -194,7 +194,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@useaccord/sdk/evidence`).
 
 ## Build Order
 
@@ -252,8 +252,8 @@ in `.beans.yml` (prefix `Accord-`).
 - **Evidence crypto lives in the SDK, not the daemon.** The ECIES / AES-256-GCM
   / HKDF-SHA256 / Ed↔X25519 evidence protocol is a multi-party wire contract
   shared by claimant, operator, and juror — it lives in
-  `@accord/sdk/evidence` (ADR-0015), **not** `apps/evidence-daemon`. The daemon
+  `@useaccord/sdk/evidence` (ADR-0015), **not** `apps/evidence-daemon`. The daemon
   keeps only `EnvKeyring`, S3 storage, the pipeline, and HTTP; it imports the
   protocol from the SDK. Don't reimplement crypto primitives in the daemon or an
-  Arbitrable — import `@accord/sdk/evidence` (backed by `@noble`; nothing
+  Arbitrable — import `@useaccord/sdk/evidence` (backed by `@noble`; nothing
   hand-rolled).

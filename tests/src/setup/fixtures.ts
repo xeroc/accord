@@ -2,7 +2,7 @@
 // Kept free of chain access so they're usable in any lane (incl. offline).
 
 import { address, type Address } from "@solana/kit";
-import { Aggregation, type CreateSubaccordArgs } from "@accord/sdk";
+import { Aggregation, type CreateSubaccordArgs } from "@useaccord/sdk";
 
 /** Solana `Pubkey::default()` (all-ones). Used as `authority` ⇒ immutable Subaccord. */
 export const DEFAULT_PUBKEY: Address = address(

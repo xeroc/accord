@@ -12,7 +12,7 @@
 // the store's `instanceof NotFound` / `instanceof NoSuchKey` branches are
 // exercised against the genuine SDK identity (ESM module singleton).
 //
-// Run: `pnpm --filter @accord/evidence-daemon test` (→ bun test).
+// Run: `pnpm --filter @useaccord/evidence-daemon test` (→ bun test).
 
 import { describe, expect, test } from "bun:test";
 import {

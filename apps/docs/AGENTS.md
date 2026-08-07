@@ -16,7 +16,7 @@ the Arbitrable CPI (`create_dispute` → `get_ruling`).
 - **Security model** — snapshot fraud proofs, sortition enforcement, VRF
   integration, circuit breaker. Enough for an integrator to trust the mechanism
   without reading the source.
-- **SDK reference** — `@accord/sdk` TypeScript types and usage.
+- **SDK reference** — `@useaccord/sdk` TypeScript types and usage.
 - **ADR index** — the architecture decisions, served as browsable pages under
   `docs/adr/`. The ADR files are the **source of truth** for _why_ the protocol
   works the way it does.

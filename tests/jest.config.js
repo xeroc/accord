@@ -1,5 +1,5 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
-// ESM mode: @accord/sdk is an ESM-only package (`"type": "module"`), so jest
+// ESM mode: @useaccord/sdk is an ESM-only package (`"type": "module"`), so jest
 // must run with --experimental-vm-modules and the ts-jest ESM preset. @solana/kit
 // then resolves to its `.mjs` build. See ADR-0010.
 export default {

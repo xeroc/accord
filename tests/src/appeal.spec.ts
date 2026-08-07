@@ -46,7 +46,7 @@ import {
   APPEAL_WINDOW_SECS,
   type MerkleAccumulator,
   type SeatMembership,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import {
   getAddressDecoder,
   getAddressEncoder,

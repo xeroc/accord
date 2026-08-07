@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { ed25519PublicKeyFromSeed } from "@accord/sdk/evidence";
+import { ed25519PublicKeyFromSeed } from "@useaccord/sdk/evidence";
 import bs58 from "bs58";
 import { EnvKeyring } from "../src/keys/keyring";
 import { loadConfig } from "../src/config";

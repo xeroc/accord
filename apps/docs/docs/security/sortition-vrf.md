@@ -71,7 +71,7 @@ The same `committed_vrf` + `frozen_root` serve every seat and every appeal round
 (appeals draw a larger panel from the same fixed pool).
 
 ```typescript
-import { requestVrf, drawSeat, resolveSeat } from "@accord/sdk";
+import { requestVrf, drawSeat, resolveSeat } from "@useaccord/sdk";
 
 await requestVrf(accord.adapter, accord.PROGRAM_ID, { dispute });
 // … commit_vrf_callback lands, dispute.frozen_root set …

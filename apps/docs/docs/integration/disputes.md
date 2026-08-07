@@ -41,7 +41,7 @@ accord::cpi::create_dispute(
 ```
 
 ```typescript
-import { createDispute, findDisputePda } from "@accord/sdk";
+import { createDispute, findDisputePda } from "@useaccord/sdk";
 
 const { instruction, dispute } = await createDispute(
   accord.adapter,

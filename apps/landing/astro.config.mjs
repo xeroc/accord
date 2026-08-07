@@ -1,4 +1,4 @@
-// @accord/landing — static Astro site for useaccord.xyz
+// @useaccord/landing — static Astro site for useaccord.xyz
 // Tailwind v4 via the Vite plugin (CSS-first config in src/styles/global.css).
 // Deployed to GitHub Pages with a custom domain (CNAME in public/), so base stays '/'.
 import { defineConfig } from "astro/config";

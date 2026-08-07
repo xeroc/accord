@@ -1,4 +1,4 @@
-# @accord/landing
+# @useaccord/landing
 
 Static Astro site for **useaccord.xyz** — the Accord landing page.
 
@@ -9,14 +9,14 @@ custom domain (`public/CNAME`).
 
 ```bash
 pnpm install                 # from repo root (workspace)
-pnpm --filter @accord/landing run dev
+pnpm --filter @useaccord/landing run dev
 ```
 
 ## Build
 
 ```bash
-pnpm --filter @accord/landing run build   # → apps/landing/dist
-pnpm --filter @accord/landing run preview # serve the build locally
+pnpm --filter @useaccord/landing run build   # → apps/landing/dist
+pnpm --filter @useaccord/landing run preview # serve the build locally
 ```
 
 ## Waitlist (n8n)

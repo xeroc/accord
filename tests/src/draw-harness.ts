@@ -33,7 +33,7 @@ import {
   getRoundDecoder,
   getJurorStakeDecoder,
   getSubaccordDecoder,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import {
   getAddressDecoder,
   getAddressEncoder,
