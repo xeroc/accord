@@ -136,4 +136,8 @@ pub enum AccordError {
     // --- draw (bean accord-tzo0) ---
     #[msg("Sortition retries exceeded the on-chain bound; the pool may be too concentrated.")]
     MaxRetriesExceeded,
+
+    // --- two-mint economics (ADR-0020) ---
+    #[msg("Juror has no earned fees to withdraw.")]
+    NoFeesEarned,
 }

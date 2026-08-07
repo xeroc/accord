@@ -17,17 +17,21 @@ pub enum Aggregation {
     Plurality,
 }
 
-/// A specialized Juror pool. Permissionless; `staking_token`, windows, `alpha`,
-/// `min_stake`, `fee_per_juror`, `authority`, and `evidence_operator` are mutable
-/// via propose/execute (ADR-0005); `risk_type` and `evidence_spec` are immutable.
+/// A specialized Juror pool. Permissionless; `staking_token`, `fee_token`,
+/// windows, `alpha`, `min_stake`, `fee_per_juror`, `authority`, and
+/// `evidence_operator` are mutable via propose/execute (ADR-0005); `risk_type`
+/// and `evidence_spec` are immutable.
 ///
 /// Seeds: `["subaccord", creator, risk_type]`.
 #[account]
 #[derive(InitSpace)]
 pub struct Subaccord {
     pub creator: Pubkey,
-    pub staking_token: Pubkey, // SPL mint juror capital is staked in (ADR-0002)
-    pub min_stake: u64,        // draw eligibility threshold, in `staking_token`
+    pub staking_token: Pubkey, // SPL mint juror capital is staked in (collateral, ADR-0002/0020)
+    /// Compensation mint — fees + appeal bonds (ADR-0020). Distinct from
+    /// `staking_token` so collateral and compensation are decoupled.
+    pub fee_token: Pubkey,
+    pub min_stake: u64, // draw eligibility threshold, in `staking_token`
     /// Slash factor in basis points (10% = 1000). Incoherent Juror loses
     /// `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
     pub alpha_bps: u16,
@@ -37,7 +41,7 @@ pub struct Subaccord {
     pub max_appeals: u8,
     /// Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`.
     pub aggregation: Aggregation,
-    pub fee_per_juror: u64, // in `staking_token`
+    pub fee_per_juror: u64, // in `fee_token` (ADR-0020)
     /// `Pubkey::default()` => immutable. Otherwise signs propose/execute updates.
     pub authority: Pubkey,
     pub evidence_operator: Pubkey, // ADR-0006 trusted re-encryption service
@@ -45,7 +49,7 @@ pub struct Subaccord {
     pub risk_type: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
-    /// Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+    /// Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
     /// Maintained O(1) by `stake`/`unstake` (0→positive increments,
     /// positive→0 decrements). This is a *coarse* intake gate for
     /// `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
@@ -84,20 +88,21 @@ pub struct Subaccord {
 pub struct JurorStake {
     pub subaccord: Pubkey,
     pub juror: Pubkey,
-    pub amount: u64,
+    /// Collateral (stake_token). Sortition weight + slash exposure.
+    pub staked: u64,
     pub active_draws: u32, // disputes this juror is currently drawn into
     pub bump: u8,
     /// Leaf position in the Subaccord accumulator (assigned at first stake).
     pub tree_index: u32,
-    /// Net slash(-)/reward(+) accumulated from settlements. Written by
-    /// `settle_round_accounts` instead of mutating `amount` — keeps the
-    /// accumulator root canonical. Folded into `amount` by the permissionless
+    /// Net slash(-)/reward(+) accumulated from settlements, in `stake_token`.
+    /// Written by settlement instead of mutating `staked` — keeps the
+    /// accumulator root canonical. Folded into `staked` by the permissionless
     /// `reconcile_stake` crank (which updates the root via a Merkle proof).
-    pub settlement_delta: i64,
+    pub stake_delta: i64,
     /// Pending slash exposure from all active draws. Incremented by
     /// `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
     /// by settlement or cancel. Ensures the juror can always cover every
-    /// concurrent slash. `amount - slash_reserve` is the truly free stake.
+    /// concurrent slash. `staked - slash_reserve` is the truly free stake.
     pub slash_reserve: u64,
     /// Timestamp of `request_withdraw` (0 = no pending request). The
     /// accumulator root is already updated at request time; `withdraw` just
@@ -106,6 +111,11 @@ pub struct JurorStake {
     /// Tokens locked in the vault pending `withdraw`. Set at `request_withdraw`,
     /// consumed at `withdraw`.
     pub pending_withdrawal: u64,
+    /// Aggregate earned fees (`fee_token`, ADR-0020). Credited at
+    /// `finalize_round` + settlement; withdrawn via the ungated
+    /// `withdraw_fees` instruction. No `active_draws` gate (fees are earned,
+    /// not at-risk capital).
+    pub fees_earned: u64,
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -320,6 +330,7 @@ pub enum DisputeState {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub struct CreateSubaccordParams {
     pub staking_token: Pubkey,
+    pub fee_token: Pubkey,
     pub min_stake: u64,
     pub alpha_bps: u16,
     pub review_window: u64,
