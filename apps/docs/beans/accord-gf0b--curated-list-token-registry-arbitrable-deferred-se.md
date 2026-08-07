@@ -1,11 +1,11 @@
 ---
 # accord-gf0b
-title: Accord Canon — curated-list/registry Arbitrable (speccing)
+title: Accord Canon v1 — build milestone
 status: in-progress
-type: epic
+type: milestone
 priority: deferred
 created_at: 2026-08-06T03:47:45Z
-updated_at: 2026-08-07T03:07:37Z
+updated_at: 2026-08-07T22:59:52Z
 ---
 
 ## Status: DEFERRED — separate grilling / speccing / planning session
