@@ -5,8 +5,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MAX_APPEALS,
+  MIN_APPEAL_WINDOW_SECS,
   UNPAUSE_TIMELOCK_SLOTS,
   UPDATE_TIMELOCK_SLOTS,
+  assertValidAppealWindow,
   assertValidMaxAppeals,
   assertValidRiskType,
   canExecuteAt,
@@ -70,6 +72,16 @@ test("assertValidMaxAppeals: 0..=MAX_APPEALS", () => {
   assert.throws(() => assertValidMaxAppeals(MAX_APPEALS + 1), /MaxAppeals/);
   assert.throws(() => assertValidMaxAppeals(-1), /MaxAppeals/);
   assert.throws(() => assertValidMaxAppeals(1.5), /MaxAppeals/);
+});
+
+test("assertValidAppealWindow: >= MIN_APPEAL_WINDOW_SECS (ADR-0022)", () => {
+  assertValidAppealWindow(MIN_APPEAL_WINDOW_SECS);
+  assertValidAppealWindow(MIN_APPEAL_WINDOW_SECS * 100n);
+  assert.throws(() => assertValidAppealWindow(0n), /AppealWindowTooShort/);
+  assert.throws(
+    () => assertValidAppealWindow(MIN_APPEAL_WINDOW_SECS - 1n),
+    /AppealWindowTooShort/,
+  );
 });
 
 test("assertValidRiskType: 32 bytes, non-zero", () => {

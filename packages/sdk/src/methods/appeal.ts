@@ -26,7 +26,7 @@ import { MAX_JURORS, panelSizeForRound } from "../constants.js";
 
 export {
   MAX_JURORS,
-  APPEAL_WINDOW_SECS,
+  DEFAULT_APPEAL_WINDOW_SECS,
   panelSizeForRound,
 } from "../constants.js";
 

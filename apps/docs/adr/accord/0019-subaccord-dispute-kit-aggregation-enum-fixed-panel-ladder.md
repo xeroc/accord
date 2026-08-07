@@ -78,6 +78,9 @@ reaffirmed, not changed.
 - Supersedes nothing. Complements ADR-0003 (draw), ADR-0009 (sortition), ADR-0005
   (mutable params), ADR-0002 (staking token). Does **not** touch the flat-slash /
   1-juror-1-vote model (ADR-0003 consequence).
+- Sibling config field: `appeal_window` (ADR-0022) is the same per-Subaccord,
+  filing-time-frozen shape; the three voting windows + the appeal window are all
+  kit config frozen onto `CaseTerms`.
 
 ## Implementation
 

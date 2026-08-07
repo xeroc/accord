@@ -294,6 +294,7 @@ pub mod accord {
             review_window,
             commit_window,
             reveal_window,
+            appeal_window,
             max_appeals,
             aggregation,
             fee_per_juror,
@@ -315,6 +316,13 @@ pub mod accord {
         // Accumulator depth bounds the pool at 2^depth. Cap at 31 (u32 index
         // headroom + sane rent/depth tradeoff); the common default is 20.
         require!(depth <= 31, AccordError::TreeFull);
+        // ADR-0022: appeal window is per-Subaccord with a non-zero floor. A pool
+        // that wants no appeals sets `max_appeals == 0` (the explicit knob); a 0
+        // window would silently disable the appeal safety valve.
+        require!(
+            appeal_window >= MIN_APPEAL_WINDOW_SECS,
+            AccordError::AppealWindowTooShort
+        );
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
@@ -324,6 +332,7 @@ pub mod accord {
         acc.review_window = review_window;
         acc.commit_window = commit_window;
         acc.reveal_window = reveal_window;
+        acc.appeal_window = appeal_window;
         acc.max_appeals = max_appeals;
         acc.aggregation = aggregation;
         acc.fee_per_juror = fee_per_juror;
@@ -694,6 +703,7 @@ pub mod accord {
             UpdatePayload::ReviewWindow(v) => sub.review_window = *v,
             UpdatePayload::CommitWindow(v) => sub.commit_window = *v,
             UpdatePayload::RevealWindow(v) => sub.reveal_window = *v,
+            UpdatePayload::AppealWindow(v) => sub.appeal_window = *v,
             UpdatePayload::MaxAppeals(v) => sub.max_appeals = *v,
             UpdatePayload::FeePerJuror(v) => sub.fee_per_juror = *v,
             UpdatePayload::Authority(v) => sub.authority = *v,
@@ -789,6 +799,7 @@ pub mod accord {
             review_window: sub.review_window,
             commit_window: sub.commit_window,
             reveal_window: sub.reveal_window,
+            appeal_window: sub.appeal_window,
             max_appeals: sub.max_appeals,
             aggregation: sub.aggregation,
         };
@@ -1332,7 +1343,7 @@ pub mod accord {
         let now = Clock::get()?.unix_timestamp;
         let appeal_deadline = round
             .reveal_end
-            .checked_add(APPEAL_WINDOW_SECS)
+            .checked_add(dispute.terms.appeal_window as i64)
             .ok_or(AccordError::ArithmeticOverflow)?;
         require!(now >= appeal_deadline, AccordError::AppealWindowOpen);
 
@@ -1523,7 +1534,7 @@ pub mod accord {
         let now = Clock::get()?.unix_timestamp;
         let appeal_deadline = round
             .reveal_end
-            .checked_add(APPEAL_WINDOW_SECS)
+            .checked_add(dispute.terms.appeal_window as i64)
             .ok_or(AccordError::ArithmeticOverflow)?;
         require!(now < appeal_deadline, AccordError::AppealWindowClosed);
 
@@ -1677,7 +1688,7 @@ pub mod accord {
     /// - **Pre-draw** (`Created`): cancelable once
     ///   `now > filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` — covers a VRF oracle
     /// - **Post-draw** (`Drawn`/`Commit`/`Reveal`/`RoundResolved`): cancelable
-    ///   once `now > round.reveal_end + APPEAL_WINDOW_SECS +
+    ///   once `now > round.reveal_end + terms.appeal_window +
     ///   POST_DRAW_CANCEL_GRACE_SECS` — covers a round no cranker ever
     ///   finalizes. The current `Round` is `remaining_accounts[0]`; the
     ///   drawn `JurorStake` PDAs follow (`[1..=panel]`).
@@ -1737,7 +1748,7 @@ pub mod accord {
                 let round = loader.load()?;
                 let deadline = round
                     .reveal_end
-                    .checked_add(APPEAL_WINDOW_SECS)
+                    .checked_add(dispute.terms.appeal_window as i64)
                     .and_then(|v| v.checked_add(POST_DRAW_CANCEL_GRACE_SECS))
                     .ok_or(AccordError::ArithmeticOverflow)?;
                 require!(now > deadline, AccordError::CancelTooEarly);

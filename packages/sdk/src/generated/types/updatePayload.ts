@@ -40,6 +40,7 @@ export type UpdatePayload =
   | { __kind: "ReviewWindow"; fields: readonly [bigint] }
   | { __kind: "CommitWindow"; fields: readonly [bigint] }
   | { __kind: "RevealWindow"; fields: readonly [bigint] }
+  | { __kind: "AppealWindow"; fields: readonly [bigint] }
   | { __kind: "MaxAppeals"; fields: readonly [number] }
   | { __kind: "FeePerJuror"; fields: readonly [bigint] }
   | { __kind: "Authority"; fields: readonly [Address] }
@@ -51,6 +52,7 @@ export type UpdatePayloadArgs =
   | { __kind: "ReviewWindow"; fields: readonly [number | bigint] }
   | { __kind: "CommitWindow"; fields: readonly [number | bigint] }
   | { __kind: "RevealWindow"; fields: readonly [number | bigint] }
+  | { __kind: "AppealWindow"; fields: readonly [number | bigint] }
   | { __kind: "MaxAppeals"; fields: readonly [number] }
   | { __kind: "FeePerJuror"; fields: readonly [number | bigint] }
   | { __kind: "Authority"; fields: readonly [Address] }
@@ -76,6 +78,10 @@ export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
     ],
     [
       "RevealWindow",
+      getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
+    ],
+    [
+      "AppealWindow",
       getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
     ],
     [
@@ -117,6 +123,10 @@ export function getUpdatePayloadDecoder(): Decoder<UpdatePayload> {
     ],
     [
       "RevealWindow",
+      getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
+    ],
+    [
+      "AppealWindow",
       getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
     ],
     [
@@ -186,6 +196,14 @@ export function updatePayload(
     "RevealWindow"
   >["fields"],
 ): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "RevealWindow">;
+export function updatePayload(
+  kind: "AppealWindow",
+  data: GetDiscriminatedUnionVariantContent<
+    UpdatePayloadArgs,
+    "__kind",
+    "AppealWindow"
+  >["fields"],
+): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "AppealWindow">;
 export function updatePayload(
   kind: "MaxAppeals",
   data: GetDiscriminatedUnionVariantContent<

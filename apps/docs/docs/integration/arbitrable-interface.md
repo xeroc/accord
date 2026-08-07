@@ -71,4 +71,4 @@ fee_round_0 = INITIAL_NUM_JURORS × fee_per_juror   // round-1 panel = 3 (ADR-00
 fee_round_k = panel_k × fee_per_juror     // appeal rounds; see appeals.md
 ```
 
-TypeScript: see [SDK](../sdk.md). Finality = `APPEAL_WINDOW_SECS` after the last round's `reveal_end` ([state machine](../reference/state-machine.md)). Why two calls: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).
+TypeScript: see [SDK](../sdk.md). Finality = `terms.appeal_window` (per-Subaccord, [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)) after the last round's `reveal_end` ([state machine](../reference/state-machine.md)). Why two calls: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).

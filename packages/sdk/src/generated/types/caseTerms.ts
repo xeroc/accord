@@ -44,6 +44,8 @@ export type CaseTerms = {
   reviewWindow: bigint;
   commitWindow: bigint;
   revealWindow: bigint;
+  /** Appeal window (ADR-0022). Per-Subaccord, frozen at filing. */
+  appealWindow: bigint;
   maxAppeals: number;
   aggregation: Aggregation;
 };
@@ -55,6 +57,8 @@ export type CaseTermsArgs = {
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
   revealWindow: number | bigint;
+  /** Appeal window (ADR-0022). Per-Subaccord, frozen at filing. */
+  appealWindow: number | bigint;
   maxAppeals: number;
   aggregation: AggregationArgs;
 };
@@ -67,6 +71,7 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["reviewWindow", getU64Encoder()],
     ["commitWindow", getU64Encoder()],
     ["revealWindow", getU64Encoder()],
+    ["appealWindow", getU64Encoder()],
     ["maxAppeals", getU8Encoder()],
     ["aggregation", getAggregationEncoder()],
   ]);
@@ -80,6 +85,7 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
+    ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
     ["aggregation", getAggregationDecoder()],
   ]);

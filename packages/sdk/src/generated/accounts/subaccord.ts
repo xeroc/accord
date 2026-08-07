@@ -70,6 +70,11 @@ export type Subaccord = {
   reviewWindow: bigint;
   commitWindow: bigint;
   revealWindow: bigint;
+  /**
+   * Appeal window after a round resolves before the dispute goes final
+   * (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
+   */
+  appealWindow: bigint;
   maxAppeals: number;
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: Aggregation;
@@ -124,6 +129,11 @@ export type SubaccordArgs = {
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
   revealWindow: number | bigint;
+  /**
+   * Appeal window after a round resolves before the dispute goes final
+   * (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
+   */
+  appealWindow: number | bigint;
   maxAppeals: number;
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: AggregationArgs;
@@ -178,6 +188,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
       ["revealWindow", getU64Encoder()],
+      ["appealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
@@ -207,6 +218,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
+    ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
@@ -282,5 +294,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 294;
+  return 302;
 }

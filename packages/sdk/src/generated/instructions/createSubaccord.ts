@@ -99,6 +99,7 @@ export type CreateSubaccordInstructionData = {
   reviewWindow: bigint;
   commitWindow: bigint;
   revealWindow: bigint;
+  appealWindow: bigint;
   maxAppeals: number;
   aggregation: Aggregation;
   feePerJuror: bigint;
@@ -116,6 +117,7 @@ export type CreateSubaccordInstructionDataArgs = {
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
   revealWindow: number | bigint;
+  appealWindow: number | bigint;
   maxAppeals: number;
   aggregation: AggregationArgs;
   feePerJuror: number | bigint;
@@ -136,6 +138,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
       ["revealWindow", getU64Encoder()],
+      ["appealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
@@ -158,6 +161,7 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
+    ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
@@ -193,6 +197,7 @@ export type CreateSubaccordAsyncInput<
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
   commitWindow: CreateSubaccordInstructionDataArgs["commitWindow"];
   revealWindow: CreateSubaccordInstructionDataArgs["revealWindow"];
+  appealWindow: CreateSubaccordInstructionDataArgs["appealWindow"];
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
   aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
@@ -288,6 +293,7 @@ export type CreateSubaccordInput<
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
   commitWindow: CreateSubaccordInstructionDataArgs["commitWindow"];
   revealWindow: CreateSubaccordInstructionDataArgs["revealWindow"];
+  appealWindow: CreateSubaccordInstructionDataArgs["appealWindow"];
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
   aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];

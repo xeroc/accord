@@ -37,10 +37,10 @@ that had no state check (`request_vrf`, `commit_vrf_callback`) gain an explicit
 
 Any cranker may cancel a dispute once its **per-stage timeout** has elapsed:
 
-| Stage                             | States                                       | Deadline                                                                                     |
-| --------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Pre-draw (no draw yet)            | `Created`, `SnapshotPosted`                  | `filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` (3 days)                                           |
-| Post-draw (round never finalizes) | `Drawn`, `Commit`, `Reveal`, `RoundResolved` | `round.reveal_end + APPEAL_WINDOW_SECS + POST_DRAW_CANCEL_GRACE_SECS` (3d appeal + 3d grace) |
+| Stage                             | States                                       | Deadline                                                                                                                   |
+| --------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Pre-draw (no draw yet)            | `Created`, `SnapshotPosted`                  | `filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` (3 days)                                                                         |
+| Post-draw (round never finalizes) | `Drawn`, `Commit`, `Reveal`, `RoundResolved` | `round.reveal_end + terms.appeal_window + POST_DRAW_CANCEL_GRACE_SECS` (per-Subaccord appeal window [ADR-0022] + 3d grace) |
 
 On cancel:
 

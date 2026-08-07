@@ -23,9 +23,17 @@ pub const UPDATE_TIMELOCK_SLOTS: u64 = 432_000;
 /// depth is fixed per-Subaccord at creation and bounds the pool size.
 pub const DEFAULT_TREE_DEPTH: u8 = 20;
 
-/// Appeal window after a round is resolved, before the dispute becomes final
-/// (SPEC state machine: RoundResolved →(appeal window)→ Final). 3 days.
-pub const APPEAL_WINDOW_SECS: i64 = 3 * 24 * 60 * 60;
+/// Default appeal window after a round is resolved, before the dispute becomes
+/// final (SPEC state machine: RoundResolved →(appeal window)→ Final). 3 days.
+/// Per-Subaccord since ADR-0022; this is only the `create_subaccord` default +
+/// the "v1 default" the docs cite — the runtime value is
+/// `dispute.terms.appeal_window` (frozen at filing).
+pub const DEFAULT_APPEAL_WINDOW_SECS: u64 = 3 * 24 * 60 * 60;
+
+/// Floor on the per-Subaccord appeal window (ADR-0022). Rejects 0 so the appeal
+/// safety valve cannot be silently disabled by a forgotten field; a pool that
+/// truly wants no appeals sets `max_appeals == 0` (the explicit knob). 1 hour.
+pub const MIN_APPEAL_WINDOW_SECS: u64 = 3_600;
 
 /// `cancel_dispute` liveness-escape timeouts (CONCEPT-REVIEW Ugly 4).
 ///
@@ -35,7 +43,7 @@ pub const APPEAL_WINDOW_SECS: i64 = 3 * 24 * 60 * 60;
 /// backstop against a dead indexer/oracle.
 pub const PRE_DRAW_CANCEL_TIMEOUT_SECS: i64 = 3 * 24 * 60 * 60;
 
-/// Post-draw grace: seconds after `round.reveal_end + APPEAL_WINDOW_SECS`
+/// Post-draw grace: seconds after `round.reveal_end + terms.appeal_window`
 /// before a stuck drawn round (never finalized) becomes cancelable. 3 days —
 /// long enough for any reasonable cranker to land `finalize_round` +
 /// `finalize_dispute`/`appeal`, short enough that funds are not locked
