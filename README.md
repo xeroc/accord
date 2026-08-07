@@ -455,18 +455,19 @@ tests are green.
 
 ### Deploy the program
 
-The program ID is `RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe`, kept in sync
-across `declare_id!`, `Anchor.toml`, and `target/deploy/accord-keypair.json`
-via `anchor keys sync`.
+The program ID is set in `declare_id!` (`programs/accord/src/lib.rs`) and
+mirrored in `Anchor.toml`. The canonical deploy keypair is provisioned by the
+operator (see AGENTS.md §Gotchas); until then, local builds use
+`--ignore-keys` to skip the keypair check.
 
 ```bash
 # Devnet
 solana config set --url devnet
-anchor build
+anchor build --ignore-keys
 anchor deploy --provider.cluster devnet
 
 # Verify the deployed program
-solana program show RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe
+solana program show <PROGRAM_ID>
 ```
 
 ### Upgrade authority (ADR-0007)
@@ -517,12 +518,18 @@ cargo test --manifest-path programs/accord/Cargo.toml --features no-entrypoint
 
 ### Program ID mismatch / `declare_id!` out of sync
 
+`anchor build` without `--ignore-keys` fails when the gitignored worktree
+keypair doesn't match `declare_id!`. This is expected — the worktree keypair is
+throwaway. Use `--ignore-keys` (all Makefile targets already do):
+
 ```bash
-anchor keys sync
+anchor build --ignore-keys
 ```
 
-This rewrites `declare_id!` and `Anchor.toml [programs.*]` from
-`target/deploy/accord-keypair.json`.
+**Never run `anchor keys sync` without the canonical keypair** — it would
+rewrite `declare_id!` to adopt the random worktree key, desyncing the SDK,
+tests, and Codama client. The canonical keypair is provisioned by the operator
+(see AGENTS.md §Gotchas).
 
 ### `anchor build` IDL generation blocked
 

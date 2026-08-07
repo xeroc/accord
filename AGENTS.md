@@ -266,9 +266,7 @@ in `.beans.yml` (prefix `Accord-`).
 
 ## Gotchas
 
-- **Program ID.** `declare_id!` and `Anchor.toml [programs.*]` are kept in sync
-  with `target/deploy/accord-keypair.json` via `anchor keys sync`. The keypair
-  was provisioned by `solana-keygen`; `anchor build` uses it for the `.so`.
+- **Program ID — `--ignore-keys` mandatory, `anchor keys sync` forbidden with worktree keypairs.** `target/deploy/accord-keypair.json` is gitignored, so every fresh worktree gets a new random keypair on first `anchor build`. That keypair's pubkey is throwaway — the `.so` embeds `crate::ID` from `declare_id!`, not the keypair. ALL `anchor build` invocations MUST pass `--ignore-keys` (all Makefile targets already do). NEVER run `anchor keys sync` without the canonical keypair provisioned — it would rewrite `declare_id!` + `Anchor.toml` to adopt a random worktree key, desyncing the SDK, tests, and Codama client. Anchor.toml has no config-level `ignore-keys` option (verified, anchor 1.0.2); the flag is CLI-only. The canonical keypair + final program ID are provisioned by the operator; until then `declare_id!` stays frozen at its committed value.
 - **Per-Subaccord staking token.** Each Subaccord defines its `staking_token` at
   creation (ADR-0002); USDC is the common default, not hard-coded.
 - **Evidence crypto lives in the SDK, not the daemon.** The ECIES / AES-256-GCM

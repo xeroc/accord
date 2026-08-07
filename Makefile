@@ -7,9 +7,13 @@ SOLANA_VERSION ?= 3.1.10
 ANCHOR_VERSION ?= 1.0.2
 ACCORD_PROGRAM_ID ?= RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe
 
-# `--ignore-keys`: the canonical deploy keypair is provisioned separately
-# (ops concern). Local builds/tests load the .so at the declared address
-# via `run_validator` / `--bpf-program` — no keypair needed. See ADR-0010.
+# `--ignore-keys` is MANDATORY on every `anchor build` (all targets below pass it).
+# Anchor.toml has no config-level option for this — the flag is CLI-only.
+# The deploy keypair (`target/deploy/accord-keypair.json`) is gitignored, so each
+# worktree generates a random one; `--ignore-keys` prevents it from desyncing
+# `declare_id!`. NEVER run `anchor keys sync` without the canonical keypair —
+# it would rewrite `declare_id!` to adopt a random worktree key. See AGENTS.md
+# §Gotchas.
 
 .PHONY: prep build codegen sdk docs test test_unit test_surfpool run_surfpool run_validator lint clean help
 

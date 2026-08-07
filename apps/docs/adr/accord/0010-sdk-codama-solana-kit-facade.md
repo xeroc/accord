@@ -44,7 +44,7 @@ SDK package; new code is written against Kit.
 ### Pipeline
 
 ```
-anchor build
+anchor build --ignore-keys
   └─ target/idl/accord.json          (Anchor IDL, program RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe)
 
 codama  (packages/sdk/codama.json points at the Anchor IDL; auto-converts to Codama IDL)
@@ -102,7 +102,7 @@ Add to `Makefile` (the root orchestrator; no root `package.json` scripts):
 
 ```make
 codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anchor build`)
- anchor build
+ anchor build --ignore-keys
  cd packages/sdk && codama run js
 
 sdk: ## Build the SDK package only

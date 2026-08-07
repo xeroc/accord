@@ -105,7 +105,7 @@ const membership = await resolveSeat(frozenRoot, committedVrf, seatIndex);
 ## Build from source
 
 ```bash
-make codegen   # anchor build -> IDL -> Codama client
+make codegen   # anchor build --ignore-keys -> IDL -> Codama client
 make sdk       # tsc build the SDK package
 make lint      # typecheck
 ```
