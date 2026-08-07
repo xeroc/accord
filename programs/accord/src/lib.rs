@@ -48,6 +48,143 @@ pub use state::*;
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
 declare_id!("9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b");
 
+// ===========================================================================
+// Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
+// ===========================================================================
+//
+// Accounts passed via `remaining_accounts` are raw `AccountInfo`s — they are NOT
+// declared in `#[derive(Accounts)]`, so Anchor neither auto-deserializes them
+// on entry nor auto-serializes them on exit. Every field read or mutation is
+// therefore a manual slice into the raw account data.
+//
+// We write ONLY the changed field(s) — never a full `Account::try_serialize`
+// re-encode — as a **compute-budget optimization** in the hot paths: `draw_seat`
+// (once per seat, up to 31 per round), `cancel_dispute`, and settlement. A full
+// re-serialize costs CU proportional to the whole account; a targeted field
+// write costs CU proportional to the field width. The trade is layout-coupling:
+// these offsets must track the Borsh field order/widths.
+//
+// Compile-time pinning is deliberately limited. A true field-POSITION `const`
+// assert is **impossible** for Borsh-serialized Anchor accounts:
+//   - `core::mem::offset_of!` reflects in-memory layout (the compiler may even
+//     reorder non-`repr(C)` fields, and inserts alignment padding) — NOT the
+//     packed Borsh wire format these offsets slice.
+//   - `BorshSerialize`/per-field layout is not `const fn`, so the layout cannot
+//     be discovered in a `const` context.
+// What we do instead: (a) derive every offset from named field-width consts so
+// the arithmetic is self-evident, and (b) compile-time-assert the highest sliced
+// field still fits inside the account (`<= 8 + INIT_SPACE`, which IS derived
+// from the real struct — catches a struct shrink at compile time). The
+// authoritative tie of these offsets to the actual structs is the run-time test
+// `layout_tests::offsets_match_borsh` (serialize a fixture → check the bytes):
+// a field reorder/resize that drifts these consts fails `cargo test`.
+pub(crate) mod layout {
+    use crate::state::{AppealBond, JurorStake};
+    use anchor_lang::Space;
+
+    const DISC: usize = 8;
+    const PUBKEY: usize = 32;
+
+    // --- JurorStake (state.rs) ---
+    // disc | subaccord | juror | amount | active_draws | bump | tree_index | settlement_delta | slash_reserve | withdraw_requested_at | pending_withdrawal
+    const JS_AMOUNT_W: usize = 8;
+    const JS_ACTIVE_DRAWS_W: usize = 4;
+    const JS_BUMP_W: usize = 1;
+    const JS_TREE_INDEX_W: usize = 4;
+    const JS_SETTLEMENT_DELTA_W: usize = 8;
+    const JS_SLASH_RESERVE_W: usize = 8;
+
+    pub(crate) const JS_AMOUNT_OFF: usize = DISC + PUBKEY + PUBKEY;
+    pub(crate) const JS_ACTIVE_DRAWS_OFF: usize = JS_AMOUNT_OFF + JS_AMOUNT_W;
+    pub(crate) const JS_SETTLEMENT_DELTA_OFF: usize =
+        JS_ACTIVE_DRAWS_OFF + JS_ACTIVE_DRAWS_W + JS_BUMP_W + JS_TREE_INDEX_W;
+    pub(crate) const JS_SLASH_RESERVE_OFF: usize = JS_SETTLEMENT_DELTA_OFF + JS_SETTLEMENT_DELTA_W;
+
+    // --- AppealBond (state.rs) ---
+    // disc | dispute | round_idx | appellant | amount | prior_result | bump
+    const AB_ROUND_IDX_W: usize = 4;
+    const AB_AMOUNT_W: usize = 8;
+    const AB_PRIOR_W: usize = 1;
+
+    pub(crate) const AB_ROUND_IDX_OFF: usize = DISC + PUBKEY;
+    pub(crate) const AB_AMOUNT_OFF: usize = AB_ROUND_IDX_OFF + AB_ROUND_IDX_W + PUBKEY;
+    pub(crate) const AB_PRIOR_OFF: usize = AB_AMOUNT_OFF + AB_AMOUNT_W;
+
+    // Compile-time bounds check (strongest const check available for Borsh
+    // offsets): the highest sliced field must fit inside a serialized account.
+    // Catches a struct shrink; does NOT catch a wrong field — that's
+    // `layout_tests::offsets_match_borsh`.
+    const _: () =
+        assert!(JS_SLASH_RESERVE_OFF + JS_SLASH_RESERVE_W <= DISC + JurorStake::INIT_SPACE);
+    const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*; // JurorStake, AppealBond, Pubkey, layout (crate-root items)
+    use anchor_lang::AccountSerialize;
+
+    /// The manual offset consts in `layout` must land exactly on the
+    /// Borsh-serialized field bytes. This is the only TRUE layout pin (compile-
+    /// time asserts can't verify Borsh field positions — see `layout`). A field
+    /// reorder/resize that drifts the consts fails here.
+    #[test]
+    fn offsets_match_borsh() {
+        // --- JurorStake: distinctive values at every offset we slice ---
+        let js = JurorStake {
+            subaccord: Pubkey::new_from_array([0xA0; 32]),
+            juror: Pubkey::new_from_array([0xA1; 32]),
+            amount: 0x0102_0304_0506_0708,
+            active_draws: 0x090A_0B0C,
+            bump: 0x0D,
+            tree_index: 0x0E0F_1011,
+            settlement_delta: 0x1213_1415_1617_1819,
+            slash_reserve: 0x1A1B_1C1D_1E1F_2021,
+            withdraw_requested_at: 0x2223_2425_2627_2829,
+            pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
+        };
+        let mut buf = Vec::new();
+        js.try_serialize(&mut buf).unwrap();
+        assert_eq!(
+            &buf[layout::JS_AMOUNT_OFF..layout::JS_AMOUNT_OFF + 8],
+            &js.amount.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::JS_ACTIVE_DRAWS_OFF..layout::JS_ACTIVE_DRAWS_OFF + 4],
+            &js.active_draws.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::JS_SETTLEMENT_DELTA_OFF..layout::JS_SETTLEMENT_DELTA_OFF + 8],
+            &js.settlement_delta.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::JS_SLASH_RESERVE_OFF..layout::JS_SLASH_RESERVE_OFF + 8],
+            &js.slash_reserve.to_le_bytes()[..]
+        );
+
+        // --- AppealBond ---
+        let ab = AppealBond {
+            dispute: Pubkey::new_from_array([0xB0; 32]),
+            round_idx: 0x0102_0304,
+            appellant: Pubkey::new_from_array([0xB1; 32]),
+            amount: 0x0506_0708_090A_0B0C,
+            prior_result: 0x0D,
+            bump: 0x0E,
+        };
+        let mut buf = Vec::new();
+        ab.try_serialize(&mut buf).unwrap();
+        assert_eq!(
+            &buf[layout::AB_ROUND_IDX_OFF..layout::AB_ROUND_IDX_OFF + 4],
+            &ab.round_idx.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::AB_AMOUNT_OFF..layout::AB_AMOUNT_OFF + 8],
+            &ab.amount.to_le_bytes()[..]
+        );
+        assert_eq!(buf[layout::AB_PRIOR_OFF], ab.prior_result);
+    }
+}
+
 #[program]
 pub mod accord {
     use super::*;
@@ -942,8 +1079,10 @@ pub mod accord {
             .ok_or(AccordError::ArithmeticOverflow)?;
         {
             let mut data = js_info.try_borrow_mut_data()?;
-            const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8;
-            const SLASH_RESERVE_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4 + 8; // draws+bump+tree_index+settlement_delta
+            // CU-opt field write — see `crate::layout` (raw remaining_accounts
+            // AccountInfo: no Anchor auto-serialize; write only the 2 changed fields).
+            const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
+            const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
             data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                 .copy_from_slice(&new_draws.to_le_bytes());
             data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
@@ -1208,9 +1347,10 @@ pub mod accord {
         // AppealBond layout: disc(8) + dispute(32) + round_idx(4) + appellant(32)
         // => amount @ 76 (u64), prior_result @ 84 (u8).
         let mut forfeited_total: u64 = 0;
-        const BOND_ROUND_IDX_OFFSET: usize = 8 + 32; // disc + dispute
-        const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32;
-        const BOND_PRIOR_OFFSET: usize = BOND_AMOUNT_OFFSET + 8;
+        // AppealBond field access (CU-opt — see `crate::layout`).
+        const BOND_ROUND_IDX_OFFSET: usize = crate::layout::AB_ROUND_IDX_OFF;
+        const BOND_AMOUNT_OFFSET: usize = crate::layout::AB_AMOUNT_OFF;
+        const BOND_PRIOR_OFFSET: usize = crate::layout::AB_PRIOR_OFF;
         for i in 0..appeal_n {
             let expected_pda = Pubkey::find_program_address(
                 &[
@@ -1598,7 +1738,7 @@ pub mod accord {
             };
 
             // Release active_draws for every drawn juror in the current round.
-            const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
+            const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF; // CU-opt — see crate::layout
             require!(
                 1 + juror_count <= ctx.remaining_accounts.len(),
                 AccordError::InvalidPanelSize
@@ -1623,7 +1763,7 @@ pub mod accord {
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                     .copy_from_slice(&new_draws.to_le_bytes());
                 // Release slash reserve for this dispute.
-                const SLASH_RESERVE_OFF: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4 + 8;
+                const SLASH_RESERVE_OFF: usize = crate::layout::JS_SLASH_RESERVE_OFF;
                 if data.len() >= SLASH_RESERVE_OFF + 8 {
                     let reserve = u64::from_le_bytes(
                         data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
@@ -1680,7 +1820,7 @@ pub mod accord {
             if !ctx.remaining_accounts.is_empty()
                 && ctx.remaining_accounts[0].key == &current_round_pda
             {
-                const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8;
+                const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
                 let (juror_count, jurors) = {
                     let loader = AccountLoader::<Round>::try_from(&ctx.remaining_accounts[0])?;
                     let round = loader.load()?;
@@ -1958,7 +2098,7 @@ fn read_bond_amounts<'info>(
     if n == 0 {
         return Ok(0);
     }
-    const BOND_AMOUNT_OFFSET: usize = 8 + 32 + 4 + 32; // disc+dispute+round_idx+appellant
+    const BOND_AMOUNT_OFFSET: usize = crate::layout::AB_AMOUNT_OFF; // CU-opt — see crate::layout
     let mut total: u64 = 0;
     for i in 0..n {
         let expected_pda = Pubkey::find_program_address(
@@ -2010,8 +2150,9 @@ fn release_prior_rounds<'info>(
         return Ok(start);
     }
     let mut idx = start;
-    const ACTIVE_DRAWS_OFFSET: usize = 8 + 32 + 32 + 8; // disc+subaccord+juror+amount
-    const SLASH_RESERVE_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4 + 8; // draws+bump+tree_index+settlement_delta
+    // CU-opt field access — see `crate::layout`.
+    const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
+    const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
     for round_idx in 0..current_round {
         require!(idx < accounts.len(), AccordError::InvalidState);
         let round_info = &accounts[idx];
@@ -2142,10 +2283,11 @@ fn settle_round_accounts(
     // REVIEW #4: do NOT mutate `amount` — the accumulator root commits to it.
     // Write the net delta instead; `reconcile_stake` folds it into `amount`
     // later via a Merkle proof.
-    const AMOUNT_OFFSET: usize = 8 + 32 + 32; // disc + subaccord + juror
-    const ACTIVE_DRAWS_OFFSET: usize = AMOUNT_OFFSET + 8;
-    const SETTLEMENT_DELTA_OFFSET: usize = ACTIVE_DRAWS_OFFSET + 4 + 1 + 4; // draws+bump+tree_index
-    const SLASH_RESERVE_OFFSET: usize = SETTLEMENT_DELTA_OFFSET + 8;
+    // CU-opt field access — see `crate::layout` (REVIEW #4: `amount` never mutated here).
+    const AMOUNT_OFFSET: usize = crate::layout::JS_AMOUNT_OFF;
+    const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
+    const SETTLEMENT_DELTA_OFFSET: usize = crate::layout::JS_SETTLEMENT_DELTA_OFF;
+    const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
 
     for i in 0..panel {
         let acct_info = &accounts[i];
