@@ -83,8 +83,17 @@ instance, not the whole product.
 + **Two stake pools, cleanly separated:** juror stake/slash in Accord
   (`JurorStake`, in `stake_mint`); item deposits in Canon (`CanonItem`, in
   `fee_mint`). Accord is unaware of submitter/challenger.
-+ **Account model:** `CanonList ["canon", creator, risk_type_hash]`,
-  `CanonItem ["canon-item", list, item_hash]`; reuses Accord `Dispute`/`Round`.
++ **Account model:** `CanonList ["canon", creator, risk_type_hash]` (carries
+  `list_program` — the program whose accounts this list curates, immutable),
+  `CanonItem ["canon-item", list, account]` (the curated account, a PDA owned
+  by `list_program`); reuses Accord `Dispute`/`Round`.
++ **Item = any program-owned account (Q15).** Canon curates accounts-by-
+  reference: an item is a PDA owned by the list's `list_program`, which may
+  carry any data (a mint, NFT, text blob, arbitrary program state). Canon
+  verifies `account.owner == list_program` at `submit_item` and is otherwise
+  agnostic to the content (which `list_program` may mutate outside Canon's
+  control — accepted for v1).
+
 + **Capture resistance is not Canon's responsibility** — it inherits Accord's
   VRF-distinct-draw-with-caps. A list's capture surface = creator's token choice
   × Accord's draw caps.

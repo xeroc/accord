@@ -23,8 +23,8 @@ arbitrary registry.
 
 | Account | Seeds | Key fields |
 | --- | --- | --- |
-| `CanonList` | `["canon", creator, risk_type_hash]` | `stake_mint`, `fee_mint`, `subaccord` (the 1:1 backing Accord court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `risk_type` immutable. |
-| `CanonItem` | `["canon-item", list, item_hash]` | `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`. |
+| `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `risk_type`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
+| `CanonItem` | `["canon-item", list, account]` | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`. |
 | token vault | `CanonList`-PDA-owned SPL | deposit pool (`fee_mint`) |
 
 Canon **reuses** Accord's `Dispute`, `Round`, `JurorStake`, and the per-list
@@ -35,8 +35,8 @@ staking.
 
 | # | Instruction | Semantics |
 | --- | --- | --- |
-| 1 | `create_list(stake_mint, fee_mint, list_economics, risk_type)` | permissionless; CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**); inits `CanonList`. `stake_mint` may equal `fee_mint` (single-token). |
-| 2 | `submit_item(list, item_hash, evidence, deposit = submit_deposit)` | locks `submit_deposit` (in `fee_mint`) permanently; item → `Pending`. |
+| 1 | `create_list(stake_mint, fee_mint, list_program, risk_type)` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
+| 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
 | 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
 | 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
 | 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling`. `keep` → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` → `item.accumulated_stake` → challenger (bounty), item → `Removed`. |
@@ -79,6 +79,24 @@ LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdra
   Accord as the filer; consumed by Accord (coherent jurors). Dollar-legible
   throughout (`fee_mint`, default USDC).
 
+## v1 canonical defaults
+
+One set for all Canon lists (no per-tier variation in v1); retunable via the
+Subaccord authority timelock as real dispute/juror data arrives.
+
+| param | v1 value | notes |
+| --- | --- | --- |
+| `initial_num_jurors` | 3 | ADR-0019 default; round-1 panel |
+| `max_appeals` | 3 | 3 → 7 → 15 → 31 ladder |
+| `alpha_bps` | 1000 (10%) | Accord v1 slash default |
+| review / commit / reveal | 7d / 2d / 2d | Accord v1 defaults |
+| `evidence_operator` | canonical Accord/Canon operator | ADR-0006 |
+| `fee_per_juror` | 10 | in `fee_mint`; round-1 ≈ 30 |
+| `submit_deposit` | 500 | in `fee_mint`; base skin (recoverable via withdrawal) |
+| `challenge_pct` | 50% (5000 bps) | challenger stakes half the accumulated stake |
+| `listing_window` | 5 days | watcher time to catch a scam before auto-list |
+| `withdrawal_timelock` | 5 days | final fraud-challenge window (matches listing_window) |
+
 ## Token model
 
 Token-agnostic. The list creator supplies `stake_mint` (juror stake/slash,
@@ -87,6 +105,26 @@ Accord fee). They may be the **same mint** (single-token) or **different**
 (governance-stake + stable-fee). Canon is neutral on the choice; capture
 resistance is inherited from Accord's VRF-distinct-draw-with-caps, not provided
 by Canon.
+
+## Rules & evidence
+
+Each dispute's ruling applies the **list's rules** to the **item's evidence**:
+
+- **Rules (public, list-level, stable).** `CanonList.rules_hash` anchors an
+  off-chain rules doc — the listing criteria (e.g. "canonical mint verified by
+  the project's official account + deployer signature"). Public by nature
+  (transparent criteria ⇒ consistent, auditable rulings); anyone reads and
+  verifies it against the on-chain hash. Passed to Accord as the Subaccord
+  `risk_type`.
+- **Evidence (juror-only, dispute-level).** The per-dispute manifest
+  (`evidence_hash`, `accord-evidence/v1`) carries the `item` reference plus the
+  submitter/challenger claim and proof, re-encrypted for drawn jurors per
+  ADR-0006.
+
+Because Canon is the filer, item → list → `rules_hash` resolution is trivial;
+because the rules are public, the evidence operator needs no extension (it only
+ever re-encrypts the per-dispute evidence). Jurors apply the public rules to the
+juror-only evidence → `keep` / `remove`.
 
 ## Edge cases & defaults
 
