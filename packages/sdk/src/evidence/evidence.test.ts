@@ -1,6 +1,6 @@
 // evidence.test.ts — Accord evidence protocol self-check (ADR-0006).
 //
-// Proves the @accord/sdk/evidence surface is self-consistent and that every
+// Proves the @useaccord/sdk/evidence surface is self-consistent and that every
 // primitive conforms to its standard: SHA-256 (RFC 6234), HKDF-SHA256
 // (RFC 5869 Test Case 1), AES-256-GCM (round-trip + auth), Ed25519<->X25519
 // (ECDH symmetry), and the ECIES ingest/deliver envelopes — including the DoD

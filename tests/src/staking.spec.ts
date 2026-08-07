@@ -38,7 +38,7 @@ import {
   type StakingAccounts,
   type MerkleAccumulator,
   type MSTNode,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import {
   getProgramDerivedAddress,
   getAddressEncoder,

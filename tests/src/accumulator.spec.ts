@@ -32,7 +32,7 @@ import {
   getJurorStakeDecoder,
   getDisputeDecoder,
   requiredFee,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import {
   generateKeyPairSigner,
   getAddressEncoder,

@@ -14,7 +14,7 @@ import {
   finalizeDispute,
   finalizeRound,
   reveal,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import {

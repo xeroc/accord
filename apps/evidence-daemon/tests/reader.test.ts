@@ -1,7 +1,7 @@
 // reader.test.ts — chain/reader.ts under a stubbed RPC.
 //
 // Runs under Bun (the daemon is a Bun app per SPEC.md); Bun resolves the
-// extensionless internal imports of @accord/sdk natively, which lets these
+// extensionless internal imports of @useaccord/sdk natively, which lets these
 // tests load the real reader + SDK fetchers. The SDK fetchers delegate to
 // `accord.client.accord.accounts.<acct>.fetchMaybe`, so a minimal stub on
 // that path yields controlled account data without a validator.
@@ -12,7 +12,7 @@
 // truth; these are its behavioural guarantees.
 import { test, expect } from "bun:test";
 import { address, type Address } from "@solana/kit";
-import { DisputeState, type Accord } from "@accord/sdk";
+import { DisputeState, type Accord } from "@useaccord/sdk";
 import {
   isDeliverable,
   isDrawn,

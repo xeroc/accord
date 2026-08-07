@@ -1,7 +1,7 @@
 /**
  * crypto.test.ts — daemon-level crypto integration (accord-c07y).
  *
- * The pure primitive / round-trip suites moved to `@accord/sdk/evidence` with
+ * The pure primitive / round-trip suites moved to `@useaccord/sdk/evidence` with
  * the protocol (ADR-0006); this file keeps the two daemon-level integration
  * proofs that exercise EnvKeyring ↔ the SDK protocol together:
  *   - the stored operator secret decrypts a bundle encrypted to its pubkey;
@@ -18,7 +18,7 @@ import {
   jurorDecrypt,
   operatorDecrypt,
   verifyIntegrity,
-} from "@accord/sdk/evidence";
+} from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "../src/keys/keyring";
 
 const enc = new TextEncoder();

@@ -5,7 +5,7 @@
 # TLS-terminating load balancer; no session affinity required.
 #
 # ponytail: standalone `bun install --production` — the daemon has no workspace
-# deps yet. When @accord/sdk becomes a workspace dependency, switch this to a
+# deps yet. When @useaccord/sdk becomes a workspace dependency, switch this to a
 # workspace-aware build (copy root pnpm-workspace.yaml + lockfile, install with
 # the workspace filter).
 

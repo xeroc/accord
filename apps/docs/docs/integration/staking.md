@@ -32,7 +32,7 @@ accord::unstake(ctx.contexts, amount, leaf_path)?;
 ```
 
 ```typescript
-import { stake, unstake } from "@accord/sdk";
+import { stake, unstake } from "@useaccord/sdk";
 
 await stake(accord.adapter, accord.PROGRAM_ID, {
   subaccord,

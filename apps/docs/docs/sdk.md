@@ -1,17 +1,17 @@
 # SDK
 
-`@accord/sdk` — TypeScript facade over the Accord. Solana Kit + Codama codegen, no `@coral-xyz/anchor` runtime, no `@solana/web3.js`. Why: [ADR-0010](adr/0010-sdk-codama-solana-kit-facade.md).
+`@useaccord/sdk` — TypeScript facade over the Accord. Solana Kit + Codama codegen, no `@coral-xyz/anchor` runtime, no `@solana/web3.js`. Why: [ADR-0010](adr/0010-sdk-codama-solana-kit-facade.md).
 
 ## Install
 
 ```bash
-pnpm add @accord/sdk @solana/kit
+pnpm add @useaccord/sdk @solana/kit
 ```
 
 ## Initialize
 
 ```typescript
-import { Accord } from "@accord/sdk";
+import { Accord } from "@useaccord/sdk";
 import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { readFileSync } from "node:fs";
 
@@ -28,7 +28,7 @@ const accord = new Accord({
 ## Arbitrable CPI
 
 ```typescript
-import { createDispute, fetchDisputeMaybe } from "@accord/sdk";
+import { createDispute, fetchDisputeMaybe } from "@useaccord/sdk";
 
 // 1. File
 const { instruction, dispute } = await createDispute(
@@ -50,22 +50,22 @@ See [Arbitrable interface](integration/arbitrable-interface.md) and [reading the
 
 ```typescript
 // Subaccord lifecycle + circuit breaker
-import { createSubaccord, initializePause, pause } from "@accord/sdk";
+import { createSubaccord, initializePause, pause } from "@useaccord/sdk";
 
 // Staking
-import { stake, unstake } from "@accord/sdk";
+import { stake, unstake } from "@useaccord/sdk";
 
 // Dispute filing
-import { createDispute } from "@accord/sdk";
+import { createDispute } from "@useaccord/sdk";
 
 // VRF + per-seat draw (ADR-0012 accumulator)
-import { requestVrf, drawSeat, resolveSeat } from "@accord/sdk";
+import { requestVrf, drawSeat, resolveSeat } from "@useaccord/sdk";
 
 // Commit-reveal voting
-import { commit, reveal, commitHash } from "@accord/sdk";
+import { commit, reveal, commitHash } from "@useaccord/sdk";
 
 // Appeals
-import { appeal, claimAppealRefund } from "@accord/sdk";
+import { appeal, claimAppealRefund } from "@useaccord/sdk";
 ```
 
 ## PDA helpers
@@ -76,7 +76,7 @@ import {
   findDisputePda,
   findJurorStakePda,
   findPauseStatePda,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 
 const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, riskType);
 ```
@@ -95,7 +95,7 @@ import {
   buildAccumulator,
   proveMembership,
   resolveSeat,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 
 const commitment = commitHash(vote, salt, jurorPubkey);
 const { root, totalStake } = buildAccumulator(jurors); // {juror, stake}[] — off-chain mirror of the on-chain root

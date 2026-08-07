@@ -10,7 +10,7 @@ importers:
 
   apps/evidence-daemon:
     dependencies:
-      '@accord/sdk':
+      '@useaccord/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
       '@aws-sdk/client-s3':
@@ -115,7 +115,7 @@ importers:
 
   tests:
     dependencies:
-      '@accord/sdk':
+      '@useaccord/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
       '@noble/curves':
