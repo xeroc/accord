@@ -22,6 +22,7 @@ export function randomBytes32(): Uint8Array {
  */
 export function defaultSubaccordArgs(
   stakingToken: Address,
+  feeToken: Address,
   evidenceOperator: Address,
   overrides: Partial<CreateSubaccordArgs> = {},
 ): CreateSubaccordArgs {
@@ -29,6 +30,7 @@ export function defaultSubaccordArgs(
     riskType: randomBytes32(),
     evidenceSpec: randomBytes32(),
     stakingToken,
+    feeToken,
     minStake: 1_000n,
     alphaBps: 1_000, // 10%
     reviewWindow: 604_800n, // 7 days

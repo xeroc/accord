@@ -166,6 +166,7 @@ export interface AccordVotingClient {
   buildFinalizeRound(input: {
     programId: Address;
     accounts: VotingAccounts;
+    remainingAccounts?: Address[];
   }): Instruction;
   buildFinalizeDispute(input: {
     programId: Address;
@@ -240,14 +241,17 @@ export function reveal(
 /**
  * Build the permissionless `finalize_round` crank (lib.rs:1136). After the
  * reveal window elapses, anyone can advance the dispute to `RoundResolved` with
- * the plurality winner written to `round.result`.
+ * the plurality winner written to `round.result`. ADR-0020: credits
+ * `fees_earned` to each revealer — pass the panel's JurorStake PDAs as
+ * `remainingAccounts` when `fee_per_juror > 0`.
  */
 export function finalizeRound(
   client: AccordVotingClient,
   programId: Address,
   accounts: VotingAccounts,
+  remainingAccounts: Address[] = [],
 ): Instruction {
-  return client.buildFinalizeRound({ programId, accounts });
+  return client.buildFinalizeRound({ programId, accounts, remainingAccounts });
 }
 
 /**

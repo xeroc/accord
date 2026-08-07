@@ -215,7 +215,7 @@ export async function armSubaccordAndJurors(
 ): Promise<Omit<DrawFixture, "env" | "up">> {
   const { mint } = await createMint(env, 6);
 
-  const args = defaultSubaccordArgs(mint, env.payer.address, {
+  const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
     minStake: 1_000n,
     feePerJuror: FEE_PER_JUROR,
     maxAppeals: 3,
@@ -260,7 +260,7 @@ export async function armSubaccordAndJurors(
         jurorStake: stakePda,
         stakingToken: mint,
         jurorTokenAccount: jurorAta,
-        vault,
+        stakeVault: vault,
       },
       STAKE_AMOUNT,
       path,
@@ -307,9 +307,9 @@ export async function armDispute(
     {
       filer: env.payer.address,
       subaccord,
-      stakingToken: mint,
+      feeToken: mint,
       filerTokenAccount: filerAta,
-      vault,
+      feeVault: vault,
       pauseState,
     },
     {

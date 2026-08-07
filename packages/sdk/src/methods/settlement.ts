@@ -31,10 +31,10 @@ export interface CancelDisputeAccounts {
   caller: Address;
   subaccord: Address;
   dispute: Address;
-  stakingToken: Address;
+  feeToken: Address;
   /** Filer's ATA — refund destination (owner checked on-chain). */
   filerTokenAccount: Address;
-  vault: Address;
+  feeVault: Address;
 }
 
 /**

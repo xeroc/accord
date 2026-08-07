@@ -94,6 +94,7 @@ export type CreateSubaccordInstructionData = {
   riskType: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
   stakingToken: Address;
+  feeToken: Address;
   minStake: bigint;
   alphaBps: number;
   reviewWindow: bigint;
@@ -111,6 +112,7 @@ export type CreateSubaccordInstructionDataArgs = {
   riskType: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
   stakingToken: Address;
+  feeToken: Address;
   minStake: number | bigint;
   alphaBps: number;
   reviewWindow: number | bigint;
@@ -131,6 +133,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["stakingToken", getAddressEncoder()],
+      ["feeToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
@@ -153,6 +156,7 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["stakingToken", getAddressDecoder()],
+    ["feeToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
@@ -188,6 +192,7 @@ export type CreateSubaccordAsyncInput<
   riskType: CreateSubaccordInstructionDataArgs["riskType"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
+  feeToken: CreateSubaccordInstructionDataArgs["feeToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
@@ -283,6 +288,7 @@ export type CreateSubaccordInput<
   riskType: CreateSubaccordInstructionDataArgs["riskType"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
+  feeToken: CreateSubaccordInstructionDataArgs["feeToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];

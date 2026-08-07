@@ -46,7 +46,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("9hwXxiJKWkGkr7wLhTXmxJazxDExRtTgeZVAaXPZS74b");
+declare_id!("ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc");
 
 // ===========================================================================
 // Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
@@ -86,19 +86,26 @@ pub(crate) mod layout {
     const PUBKEY: usize = 32;
 
     // --- JurorStake (state.rs) ---
-    // disc | subaccord | juror | amount | active_draws | bump | tree_index | settlement_delta | slash_reserve | withdraw_requested_at | pending_withdrawal
-    const JS_AMOUNT_W: usize = 8;
+    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned
+    const JS_STAKED_W: usize = 8;
     const JS_ACTIVE_DRAWS_W: usize = 4;
     const JS_BUMP_W: usize = 1;
     const JS_TREE_INDEX_W: usize = 4;
-    const JS_SETTLEMENT_DELTA_W: usize = 8;
+    const JS_STAKE_DELTA_W: usize = 8;
     const JS_SLASH_RESERVE_W: usize = 8;
+    const JS_WITHDRAW_REQUESTED_AT_W: usize = 8;
+    const JS_PENDING_WITHDRAWAL_W: usize = 8;
+    const JS_FEES_EARNED_W: usize = 8;
 
-    pub(crate) const JS_AMOUNT_OFF: usize = DISC + PUBKEY + PUBKEY;
-    pub(crate) const JS_ACTIVE_DRAWS_OFF: usize = JS_AMOUNT_OFF + JS_AMOUNT_W;
-    pub(crate) const JS_SETTLEMENT_DELTA_OFF: usize =
+    pub(crate) const JS_STAKED_OFF: usize = DISC + PUBKEY + PUBKEY;
+    pub(crate) const JS_ACTIVE_DRAWS_OFF: usize = JS_STAKED_OFF + JS_STAKED_W;
+    pub(crate) const JS_STAKE_DELTA_OFF: usize =
         JS_ACTIVE_DRAWS_OFF + JS_ACTIVE_DRAWS_W + JS_BUMP_W + JS_TREE_INDEX_W;
-    pub(crate) const JS_SLASH_RESERVE_OFF: usize = JS_SETTLEMENT_DELTA_OFF + JS_SETTLEMENT_DELTA_W;
+    pub(crate) const JS_SLASH_RESERVE_OFF: usize = JS_STAKE_DELTA_OFF + JS_STAKE_DELTA_W;
+    pub(crate) const JS_FEES_EARNED_OFF: usize = JS_SLASH_RESERVE_OFF
+        + JS_SLASH_RESERVE_W
+        + JS_WITHDRAW_REQUESTED_AT_W
+        + JS_PENDING_WITHDRAWAL_W;
 
     // --- AppealBond (state.rs) ---
     // disc | dispute | round_idx | appellant | amount | prior_result | bump
@@ -114,8 +121,7 @@ pub(crate) mod layout {
     // offsets): the highest sliced field must fit inside a serialized account.
     // Catches a struct shrink; does NOT catch a wrong field — that's
     // `layout_tests::offsets_match_borsh`.
-    const _: () =
-        assert!(JS_SLASH_RESERVE_OFF + JS_SLASH_RESERVE_W <= DISC + JurorStake::INIT_SPACE);
+    const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
     const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
 }
 
@@ -134,32 +140,37 @@ mod layout_tests {
         let js = JurorStake {
             subaccord: Pubkey::new_from_array([0xA0; 32]),
             juror: Pubkey::new_from_array([0xA1; 32]),
-            amount: 0x0102_0304_0506_0708,
+            staked: 0x0102_0304_0506_0708,
             active_draws: 0x090A_0B0C,
             bump: 0x0D,
             tree_index: 0x0E0F_1011,
-            settlement_delta: 0x1213_1415_1617_1819,
+            stake_delta: 0x1213_1415_1617_1819,
             slash_reserve: 0x1A1B_1C1D_1E1F_2021,
             withdraw_requested_at: 0x2223_2425_2627_2829,
             pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
+            fees_earned: 0x3233_3435_3637_3839,
         };
         let mut buf = Vec::new();
         js.try_serialize(&mut buf).unwrap();
         assert_eq!(
-            &buf[layout::JS_AMOUNT_OFF..layout::JS_AMOUNT_OFF + 8],
-            &js.amount.to_le_bytes()[..]
+            &buf[layout::JS_STAKED_OFF..layout::JS_STAKED_OFF + 8],
+            &js.staked.to_le_bytes()[..]
         );
         assert_eq!(
             &buf[layout::JS_ACTIVE_DRAWS_OFF..layout::JS_ACTIVE_DRAWS_OFF + 4],
             &js.active_draws.to_le_bytes()[..]
         );
         assert_eq!(
-            &buf[layout::JS_SETTLEMENT_DELTA_OFF..layout::JS_SETTLEMENT_DELTA_OFF + 8],
-            &js.settlement_delta.to_le_bytes()[..]
+            &buf[layout::JS_STAKE_DELTA_OFF..layout::JS_STAKE_DELTA_OFF + 8],
+            &js.stake_delta.to_le_bytes()[..]
         );
         assert_eq!(
             &buf[layout::JS_SLASH_RESERVE_OFF..layout::JS_SLASH_RESERVE_OFF + 8],
             &js.slash_reserve.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::JS_FEES_EARNED_OFF..layout::JS_FEES_EARNED_OFF + 8],
+            &js.fees_earned.to_le_bytes()[..]
         );
 
         // --- AppealBond ---
@@ -289,6 +300,7 @@ pub mod accord {
     ) -> Result<()> {
         let CreateSubaccordParams {
             staking_token,
+            fee_token,
             min_stake,
             alpha_bps,
             review_window,
@@ -319,6 +331,7 @@ pub mod accord {
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
         acc.staking_token = staking_token;
+        acc.fee_token = fee_token;
         acc.min_stake = min_stake;
         acc.alpha_bps = alpha_bps;
         acc.review_window = review_window;
@@ -342,6 +355,7 @@ pub mod accord {
             creator: ctx.accounts.creator.key(),
             subaccord: acc.key(),
             staking_token,
+            fee_token,
             risk_type,
         });
         Ok(())
@@ -349,7 +363,7 @@ pub mod accord {
 
     /// Stake Juror capital into a Subaccord. SPL-transfers `amount` of the
     /// Subaccord's `staking_token` from the Juror's ATA into the Subaccord
-    /// PDA's vault ATA (lazily created on first stake). The `JurorStake` PDA is
+    /// PDA's stake_vault ATA (lazily created on first stake). The `JurorStake` PDA is
     /// init'd on first stake and topped up on subsequent stakes.
     ///
     /// ADR-0012: the caller supplies the juror's accumulator Merkle `path`. The
@@ -361,14 +375,14 @@ pub mod accord {
         require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
         require!(amount > 0, AccordError::InvalidAmount);
 
-        let before = ctx.accounts.vault.amount;
+        let before = ctx.accounts.stake_vault.amount;
 
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.juror_token_account.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.stake_vault.to_account_info(),
                     authority: ctx.accounts.juror.to_account_info(),
                 },
             ),
@@ -376,8 +390,8 @@ pub mod accord {
         )?;
 
         // Fee-on-transfer safe: reload + credit the real delta the vault got.
-        ctx.accounts.vault.reload()?;
-        let after = ctx.accounts.vault.amount;
+        ctx.accounts.stake_vault.reload()?;
+        let after = ctx.accounts.stake_vault.amount;
         let delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -391,7 +405,7 @@ pub mod accord {
         // first-stake signal. An existing juror (top-up / re-stake after full
         // unstake) already has its `tree_index`.
         let is_new_leaf = js.subaccord == Pubkey::default();
-        let old_stake = js.amount;
+        let old_stake = js.staked;
         let index = if is_new_leaf {
             require!(
                 (sub.next_index as u64) < (1u64 << sub.depth.min(31)),
@@ -445,9 +459,9 @@ pub mod accord {
         // Coarse distinct-staker counter (SPEC intake gate). First-ever stake
         // (0 -> positive) and re-stake after a full unstake both increment; a
         // full unstake decrements (see `unstake`).
-        let prev_amount = js.amount;
-        js.amount = new_stake;
-        if prev_amount == 0 {
+        let prev_staked = js.staked;
+        js.staked = new_stake;
+        if prev_staked == 0 {
             sub.staker_count = sub
                 .staker_count
                 .checked_add(1)
@@ -468,7 +482,7 @@ pub mod accord {
     /// **Phase 1 of two-phase withdraw** (REVIEW #5): declares intent to
     /// withdraw `amount` tokens. Ledger-only — no SPL transfer (that is
     /// `withdraw`'s job). Updates the accumulator root immediately (juror's
-    /// sortition weight drops right away), reduces `JurorStake.amount`, and
+    /// sortition weight drops right away), reduces `JurorStake.staked`, and
     /// banks the tokens in `pending_withdrawal` until `withdraw` executes.
     ///
     /// ADR-0012: the caller supplies the juror's accumulator Merkle `path`; the
@@ -476,13 +490,13 @@ pub mod accord {
     /// the reduced leaf stake. A full unstake zeros the leaf's selection weight
     /// but retains its `tree_index` (re-stake is a local update).
     ///
-    /// **Precondition (DRY with `reconcile_stake`):** `settlement_delta` must be
-    /// zero. Pending reward/slash is folded into `amount` by the permissionless
+    /// **Precondition (DRY with `reconcile_stake`):** `stake_delta` must be
+    /// zero. Pending reward/slash is folded into `staked` by the permissionless
     /// `reconcile_stake` crank — call it first. Without this invariant a pending
-    /// reward inflated `free_stake` past what `amount` could honor, so the
+    /// reward inflated `free_stake` past what `staked` could honor, so the
     /// subtraction underflowed. Withdraw only operates on a canonical ledger.
     ///
-    /// Gates: `amount ≤ amount − slash_reserve` (free stake; the reserve covers
+    /// Gates: `amount ≤ staked − slash_reserve` (free stake; the reserve covers
     /// in-flight draw slashes). No `active_draws` gate here — that lock is
     /// enforced at `withdraw`. Allowed while the program is paused (ADR-0007:
     /// only create_dispute / stake are halted — capital is never trapped).
@@ -498,16 +512,16 @@ pub mod accord {
         let sub = &mut ctx.accounts.subaccord;
 
         // DRY with reconcile_stake: the ledger must be canonical (no pending
-        // reward/slash) before we touch `amount`. `reconcile_stake` folds the
-        // delta first; withdraw only ever reads the canonical `amount`.
-        require!(js.settlement_delta == 0, AccordError::PendingSettlement);
+        // reward/slash) before we touch `staked`. `reconcile_stake` folds the
+        // delta first; withdraw only ever reads the canonical `staked`.
+        require!(js.stake_delta == 0, AccordError::PendingSettlement);
 
         // Cannot withdraw more than the free stake: raw amount minus the slash
         // reserve held against in-flight draws.
-        let free_stake = js.amount.saturating_sub(js.slash_reserve);
+        let free_stake = js.staked.saturating_sub(js.slash_reserve);
         require!(amount <= free_stake, AccordError::InsufficientBalance);
 
-        let old_stake = js.amount;
+        let old_stake = js.staked;
         let new_stake = old_stake
             .checked_sub(amount)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -524,7 +538,7 @@ pub mod accord {
             sub.total_stake,
         )?;
 
-        js.amount = new_stake;
+        js.staked = new_stake;
         js.pending_withdrawal = js
             .pending_withdrawal
             .checked_add(amount)
@@ -547,7 +561,7 @@ pub mod accord {
     }
 
     /// **Phase 2 of two-phase withdraw** (REVIEW #5): transfers locked tokens
-    /// from the vault to the juror's ATA. Requires `WITHDRAWAL_DELAY` to have
+    /// from the stake_vault to the juror's ATA. Requires `WITHDRAWAL_DELAY` to have
     /// elapsed since `request_withdraw` AND `active_draws == 0`.
     pub fn withdraw(ctx: Context<Withdraw>) -> Result<()> {
         let js = &mut ctx.accounts.juror_stake;
@@ -577,7 +591,7 @@ pub mod accord {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.key(),
                 Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
+                    from: ctx.accounts.stake_vault.to_account_info(),
                     to: ctx.accounts.juror_token_account.to_account_info(),
                     authority: ctx.accounts.subaccord.to_account_info(),
                 },
@@ -594,8 +608,8 @@ pub mod accord {
         Ok(())
     }
 
-    /// **Permissionless crank** (REVIEW #4): folds a juror's `settlement_delta`
-    /// into their canonical `amount` and updates the accumulator root via a
+    /// **Permissionless crank** (REVIEW #4): folds a juror's `stake_delta`
+    /// into their canonical `staked` and updates the accumulator root via a
     /// Merkle proof. After reconcile, the ledger and accumulator agree again.
     ///
     /// Any caller may trigger this — no tokens move, it's pure ledger + root
@@ -606,12 +620,10 @@ pub mod accord {
         let js = &mut ctx.accounts.juror_stake;
         let sub = &mut ctx.accounts.subaccord;
 
-        require!(js.settlement_delta != 0, AccordError::InvalidAmount);
+        require!(js.stake_delta != 0, AccordError::InvalidAmount);
 
-        let old_amount = js.amount;
-        let new_amount = (js.amount as i64)
-            .saturating_add(js.settlement_delta)
-            .max(0) as u64;
+        let old_amount = js.staked;
+        let new_amount = (js.staked as i64).saturating_add(js.stake_delta).max(0) as u64;
 
         let (new_root, new_total) = verify_and_recompute(
             &js.juror,
@@ -624,8 +636,8 @@ pub mod accord {
             sub.total_stake,
         )?;
 
-        js.amount = new_amount;
-        js.settlement_delta = 0;
+        js.staked = new_amount;
+        js.stake_delta = 0;
         sub.root_hash = new_root;
         sub.total_stake = new_total;
 
@@ -739,21 +751,21 @@ pub mod accord {
             AccordError::InsufficientJurors
         );
 
-        // Custody the fee: filer ATA -> Subaccord PDA vault.
-        let before = ctx.accounts.vault.amount;
+        // Custody the fee: filer ATA -> Subaccord PDA fee_vault (ADR-0020).
+        let before = ctx.accounts.fee_vault.amount;
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.filer_token_account.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.fee_vault.to_account_info(),
                     authority: ctx.accounts.filer.to_account_info(),
                 },
             ),
             fee,
         )?;
-        ctx.accounts.vault.reload()?;
-        let after = ctx.accounts.vault.amount;
+        ctx.accounts.fee_vault.reload()?;
+        let after = ctx.accounts.fee_vault.amount;
         let _delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -900,7 +912,7 @@ pub mod accord {
     /// the authenticated sibling sums, enforces the sortition criterion
     /// (`prefix ≤ r_i < prefix + stake`, where `r_i` is deterministically
     /// derived from the frozen VRF + seat index + retry counter), the inflation
-    /// guard (`JurorStake.amount ≥ leaf.stake`), and distinctness vs already-drawn
+    /// guard (`JurorStake.staked ≥ leaf.stake`), and distinctness vs already-drawn
     /// seats.
     ///
     /// **Deterministic collision re-roll** (bean accord-tzo0): the cranker
@@ -1062,10 +1074,10 @@ pub mod accord {
             let data = js_info.try_borrow_data()?;
             let js = JurorStake::try_deserialize(&mut &data[..])?;
             require!(js.juror == leaf.juror, AccordError::InvalidMembershipProof);
-            // ADR-0012 inflation guard: live amount must cover the frozen leaf.
-            require!(js.amount >= leaf.stake, AccordError::InflatedStake);
+            // ADR-0012 inflation guard: live staked must cover the frozen leaf.
+            require!(js.staked >= leaf.stake, AccordError::InflatedStake);
             // REVIEW #5: free stake must cover this draw's slash + min_stake.
-            let free_stake = js.amount.saturating_sub(js.slash_reserve);
+            let free_stake = js.staked.saturating_sub(js.slash_reserve);
             let required = dispute
                 .terms
                 .min_stake
@@ -1175,13 +1187,10 @@ pub mod accord {
     }
 
     /// Reveal a committed vote. Verifies `hash(vote_le ‖ salt ‖ juror_pubkey)`
-    /// matches the stored commit, records the vote, then **pays the
-    /// participation fee** (`fee_per_juror`) immediately via PDA-signed SPL
-    /// transfer from the vault to the juror's ATA (CONCEPT-REVIEW Ugly 5 /
-    /// bean accord-r6ti). The fee is outcome-independent: every revealer gets
-    /// paid on the spot, so jurors are never cash-starved during a long appeal
-    /// ladder. Non-revealers forfeit their fee (it stays in the vault and folds
-    /// into the coherent pool at settlement). Allowed during the reveal window
+    /// matches the stored commit, records the vote. ADR-0020: vote-recording
+    /// only — no fee credit, no SPL transfer. The participation fee is credited
+    /// to `JurorStake.fees_earned` at `finalize_round` instead (aggregated, not
+    /// per-reveal ATA creation). Allowed during the reveal window
     /// (`commit_end ≤ now < reveal_end`).
     pub fn reveal(ctx: Context<Reveal>, vote: u8, salt: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
@@ -1221,31 +1230,6 @@ pub mod accord {
             dispute.state = DisputeState::Reveal;
         }
 
-        // Participation fee: paid on reveal, outcome-independent (Ugly 5).
-        // PDA-signed transfer from the vault → juror ATA.
-        let fee = dispute.terms.fee_per_juror;
-        if fee > 0 {
-            let bump = [ctx.accounts.subaccord.bump];
-            let signer_seeds = &[
-                SEED_SUBACCORD,
-                ctx.accounts.subaccord.creator.as_ref(),
-                ctx.accounts.subaccord.risk_type.as_ref(),
-                &bump,
-            ];
-            token::transfer(
-                CpiContext::new_with_signer(
-                    ctx.accounts.token_program.key(),
-                    Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
-                        to: ctx.accounts.juror_token_account.to_account_info(),
-                        authority: ctx.accounts.subaccord.to_account_info(),
-                    },
-                    &[signer_seeds],
-                ),
-                fee,
-            )?;
-        }
-
         emit!(Revealed {
             dispute: dispute.key(),
             round_idx: round.round_idx,
@@ -1256,9 +1240,17 @@ pub mod accord {
     }
 
     /// Permissionless crank: after the reveal window elapses, tallies the
-    /// round by plurality and transitions to `RoundResolved`. Handles all
-    /// active states (Drawn/Commit/Reveal) — if no one committed or revealed,
-    /// the result defaults to option 0.
+    /// round by plurality, credits each revealer's `fees_earned`, and
+    /// transitions to `RoundResolved`. Handles all active states
+    /// (Drawn/Commit/Reveal) — if no one committed or revealed, the result
+    /// defaults to option 0.
+    ///
+    /// ADR-0020: the participation fee (`fee_per_juror`) is credited to
+    /// `JurorStake.fees_earned` here (not on `reveal`), and `dispute.fee_paid`
+    /// is decremented. The drawn `JurorStake` PDAs are `remaining_accounts`
+    /// (mut), verified against the round's juror list + PDA derivation. The
+    /// reveal-quorum threshold gate lands under E2 (ADR-0021); for E1 every
+    /// revealer is credited unconditionally.
     pub fn finalize_round(ctx: Context<FinalizeRound>) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
@@ -1285,6 +1277,49 @@ pub mod accord {
             .unwrap_or(0) as u8;
         round.result = winner;
 
+        // --- ADR-0020: credit fees_earned to each revealer (E1 write path) ---
+        let sub_key = ctx.accounts.subaccord.key();
+        let fee_per_juror = dispute.terms.fee_per_juror;
+        let panel = round.juror_count as usize;
+        if fee_per_juror > 0 {
+            require!(
+                ctx.remaining_accounts.len() == panel,
+                AccordError::InvalidPanelSize
+            );
+            // CU-opt field access — see `crate::layout`.
+            const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
+            for i in 0..panel {
+                if round.reveals[i] == u8::MAX {
+                    continue; // non-revealer: no credit
+                }
+                let expected_pda = Pubkey::find_program_address(
+                    &[SEED_JUROR_STAKE, sub_key.as_ref(), round.jurors[i].as_ref()],
+                    &crate::ID,
+                )
+                .0;
+                let js_info = &ctx.remaining_accounts[i];
+                require!(
+                    js_info.key == &expected_pda,
+                    AccordError::InvalidMembershipProof
+                );
+                let mut data = js_info.try_borrow_mut_data()?;
+                let existing = u64::from_le_bytes(
+                    data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                        .try_into()
+                        .unwrap(),
+                );
+                let new_fees = existing
+                    .checked_add(fee_per_juror)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                    .copy_from_slice(&new_fees.to_le_bytes());
+            }
+            dispute.fee_paid = (round.reveal_count as u64)
+                .checked_mul(fee_per_juror)
+                .and_then(|earned| dispute.fee_paid.checked_sub(earned))
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
+
         dispute.state = DisputeState::RoundResolved;
 
         emit!(RoundResolved {
@@ -1297,17 +1332,19 @@ pub mod accord {
 
     /// Permissionless crank: once the appeal window elapses without an appeal,
     /// writes `final_ruling` and settles the **final round's** economics
-    /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). Prior rounds are settled
-    /// separately by `settle_round` cranks (≤31 juror accounts each).
+    /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti, ADR-0020 two-mint). Prior
+    /// rounds are settled separately by `settle_round` cranks (≤31 juror
+    /// accounts each).
     ///
-    /// Settlement is pure ledger accounting — tokens are already in the vault:
+    /// Settlement is pure ledger accounting (ADR-0020: two pools):
     ///
     /// 1. Determine coherence (revealed vote == final ruling).
-    /// 2. Slash each incoherent/non-revealing juror: `α · min_stake`.
-    /// 3. Pool = slash_total + non-revealer fees + forfeited (no-flip) bonds.
-    ///    (Participation fees for revealers were already paid on `reveal`.)
-    /// 4. Equal split of pool among coherent jurors (integer div; remainder
-    ///    stays in vault as protocol surplus).
+    /// 2. Slash each incoherent/non-revealing juror: `α · min_stake` →
+    ///    `stake_delta` (stake_token).
+    /// 3. Stake pool = slash_total → coherent `stake_delta` (stake_token).
+    /// 4. Fee pool = non-revealer fees + forfeited (no-flip) bonds → coherent
+    ///    `fees_earned` (fee_token). (Revealer base fees were credited at
+    ///    `finalize_round`; only the forfeited portion redistributes here.)
     /// 5. Decrement `active_draws` for the final round's drawn jurors.
     /// 6. Write `final_ruling`, mark the round settled, transition to `Final`.
     ///
@@ -1431,8 +1468,8 @@ pub mod accord {
     /// Coherence is judged against `dispute.final_ruling`, not the round's own
     /// result: a round-0 juror who voted the option the final panel overturned
     /// is slashed; one who voted the final ruling gets a coherence share.
-    /// Participation fees were already paid on `reveal`; non-revealer fees fold
-    /// into the coherent pool.
+    /// Revealer base fees were credited at `finalize_round`; non-revealer fees
+    /// fold into the coherent fee pool (ADR-0020).
     pub fn settle_round(ctx: Context<SettleRound>, round_idx: u32) -> Result<()> {
         let dispute = &ctx.accounts.dispute;
         require!(
@@ -1542,21 +1579,21 @@ pub mod accord {
             .checked_add(bond)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
-        // Custody fee + bond: appellant ATA -> Subaccord PDA vault.
-        let before = ctx.accounts.vault.amount;
+        // Custody fee + bond: appellant ATA -> Subaccord PDA fee_vault (ADR-0020).
+        let before = ctx.accounts.fee_vault.amount;
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.key(),
                 Transfer {
                     from: ctx.accounts.appellant_token_account.to_account_info(),
-                    to: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.fee_vault.to_account_info(),
                     authority: ctx.accounts.appellant.to_account_info(),
                 },
             ),
             total,
         )?;
-        ctx.accounts.vault.reload()?;
-        let after = ctx.accounts.vault.amount;
+        ctx.accounts.fee_vault.reload()?;
+        let after = ctx.accounts.fee_vault.amount;
         let _delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -1644,7 +1681,7 @@ pub mod accord {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.key(),
                 Transfer {
-                    from: ctx.accounts.vault.to_account_info(),
+                    from: ctx.accounts.fee_vault.to_account_info(),
                     to: ctx.accounts.claimant_token_account.to_account_info(),
                     authority: ctx.accounts.subaccord.to_account_info(),
                 },
@@ -1853,7 +1890,7 @@ pub mod accord {
                     data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                         .copy_from_slice(&draws.saturating_sub(1).to_le_bytes());
                     // Release slash reserve for this dispute.
-                    const SLASH_RESERVE_OFF: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4 + 8;
+                    const SLASH_RESERVE_OFF: usize = crate::layout::JS_SLASH_RESERVE_OFF;
                     if data.len() >= SLASH_RESERVE_OFF + 8 {
                         let reserve = u64::from_le_bytes(
                             data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
@@ -1890,8 +1927,8 @@ pub mod accord {
                 read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         }
 
-        // --- Refund: vault balance minus appeal-bond reserves (PDA-signed). ---
-        let vault_balance = ctx.accounts.vault.amount;
+        // --- Refund: fee_vault balance minus appeal-bond reserves (PDA-signed). ---
+        let vault_balance = ctx.accounts.fee_vault.amount;
         let filer_fee = vault_balance.saturating_sub(reserved);
 
         let sub = &ctx.accounts.subaccord;
@@ -1907,7 +1944,7 @@ pub mod accord {
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.key(),
                     Transfer {
-                        from: ctx.accounts.vault.to_account_info(),
+                        from: ctx.accounts.fee_vault.to_account_info(),
                         to: ctx.accounts.filer_token_account.to_account_info(),
                         authority: ctx.accounts.subaccord.to_account_info(),
                     },
@@ -1933,6 +1970,45 @@ pub mod accord {
     pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
         let r = ctx.accounts.dispute.final_ruling;
         Ok((r != u8::MAX).then_some(r))
+    }
+
+    /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls the entire
+    /// `fees_earned` balance from the Subaccord's `fee_vault` → the juror's
+    /// `fee_token` ATA, then zeroes `fees_earned`. No `active_draws` gate, no
+    /// timelock — earned fees are not at-risk capital.
+    pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()> {
+        let js = &mut ctx.accounts.juror_stake;
+        let amt = js.fees_earned;
+        require!(amt > 0, AccordError::NoFeesEarned);
+        js.fees_earned = 0;
+
+        let sub = &ctx.accounts.subaccord;
+        let bump = [sub.bump];
+        let signer_seeds = &[
+            SEED_SUBACCORD,
+            sub.creator.as_ref(),
+            sub.risk_type.as_ref(),
+            &bump,
+        ];
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                Transfer {
+                    from: ctx.accounts.fee_vault.to_account_info(),
+                    to: ctx.accounts.juror_fee_token_account.to_account_info(),
+                    authority: ctx.accounts.subaccord.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            amt,
+        )?;
+
+        emit!(FeesWithdrawn {
+            subaccord: sub.key(),
+            juror: ctx.accounts.juror.key(),
+            amount: amt,
+        });
+        Ok(())
     }
 }
 
@@ -2215,15 +2291,17 @@ fn release_prior_rounds<'info>(
     Ok(idx)
 }
 
-/// Shared per-round coherence settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti).
+/// Shared per-round coherence settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti,
+/// ADR-0020 two-mint rework).
 ///
 /// Judges every drawn juror against `final_ruling` (NOT the round's own result),
 /// slashes incoherent/non-revealing jurors by `α·min_stake`, and redistributes
-/// the pool (slash_total + non-revealer fees + `pool_extra`) equally among
-/// coherent jurors. Participation fees for revealers were already paid on
-/// `reveal`; the non-revealer fees `(panel - reveal_count)·fee_per_juror` remain
-/// in the vault and fold into the coherent pool here. Decrements `active_draws`
-/// for every drawn juror (releases the unstake lock).
+/// two distinct pools among coherent jurors:
+/// - **stake pool** (`stake_token`): slash proceeds → written to `stake_delta`.
+/// - **fee pool** (`fee_token`): non-revealer fees + forfeited bonds → written
+///   to `fees_earned`. Revealers already received their base `fee_per_juror`
+///   credit at `finalize_round`; only the forfeited portion redistributes here.
+/// Decrements `active_draws` for every drawn juror (releases the unstake lock).
 ///
 /// `pool_extra` is the forfeited (no-flip) appeal-bond total (final round only;
 /// 0 for prior rounds). All adjustments are ledger-only — no SPL transfers.
@@ -2266,50 +2344,56 @@ fn settle_round_accounts(
         }
     }
 
-    // Non-revealer fees: revealers were paid on reveal; non-revealers forfeit
-    // into the coherent pool. `(panel - reveal_count) · fee_per_juror`.
+    // Fee pool (fee_token): non-revealer fees + forfeited bonds (ADR-0020).
+    // Revealers already got their base fee at finalize_round; only the
+    // forfeited portion redistributes here.
     let non_revealer_fee = ((panel as u64).saturating_sub(round.reveal_count as u64))
         .checked_mul(terms.fee_per_juror)
         .ok_or(AccordError::ArithmeticOverflow)?;
-
-    let pool = slash_total
-        .checked_add(non_revealer_fee)
-        .and_then(|v| v.checked_add(pool_extra))
+    let fee_pool = non_revealer_fee
+        .checked_add(pool_extra)
         .ok_or(AccordError::ArithmeticOverflow)?;
-    let share = if coherent_count > 0 {
-        pool / coherent_count as u64
+
+    let stake_share = if coherent_count > 0 {
+        slash_total / coherent_count as u64
     } else {
-        0 // no coherent jurors: pool stays in vault (accepted edge case)
+        0
+    };
+    let fee_share = if coherent_count > 0 {
+        fee_pool / coherent_count as u64
+    } else {
+        0 // no coherent jurors: pools stay (accepted edge case)
     };
 
-    // --- Second pass: apply slashes/rewards to settlement_delta + decrement draws ---
-    // REVIEW #4: do NOT mutate `amount` — the accumulator root commits to it.
-    // Write the net delta instead; `reconcile_stake` folds it into `amount`
-    // later via a Merkle proof.
-    // CU-opt field access — see `crate::layout` (REVIEW #4: `amount` never mutated here).
-    const AMOUNT_OFFSET: usize = crate::layout::JS_AMOUNT_OFF;
+    // --- Second pass: apply slashes/rewards to stake_delta + fees_earned + decrement draws ---
+    // ADR-0020: do NOT mutate `staked` — the accumulator root commits to it.
+    // Write the net stake_delta instead; `reconcile_stake` folds it into
+    // `staked` later via a Merkle proof. Fee rewards go to `fees_earned`.
+    // CU-opt field access — see `crate::layout`.
+    const STAKED_OFFSET: usize = crate::layout::JS_STAKED_OFF;
     const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
-    const SETTLEMENT_DELTA_OFFSET: usize = crate::layout::JS_SETTLEMENT_DELTA_OFF;
+    const STAKE_DELTA_OFFSET: usize = crate::layout::JS_STAKE_DELTA_OFF;
     const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
+    const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
 
     for i in 0..panel {
         let acct_info = &accounts[i];
         let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
 
-        let (amount, active_draws, existing_delta, slash_reserve) = {
+        let (staked, active_draws, existing_delta, slash_reserve, existing_fees) = {
             let data = acct_info.try_borrow_data()?;
-            if data.len() < SLASH_RESERVE_OFFSET + 8 {
+            if data.len() < FEES_EARNED_OFFSET + 8 {
                 return Err(AccordError::InvalidMembershipProof.into());
             }
-            let amt =
-                u64::from_le_bytes(data[AMOUNT_OFFSET..AMOUNT_OFFSET + 8].try_into().unwrap());
+            let stk =
+                u64::from_le_bytes(data[STAKED_OFFSET..STAKED_OFFSET + 8].try_into().unwrap());
             let draws = u32::from_le_bytes(
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                     .try_into()
                     .unwrap(),
             );
             let delta = i64::from_le_bytes(
-                data[SETTLEMENT_DELTA_OFFSET..SETTLEMENT_DELTA_OFFSET + 8]
+                data[STAKE_DELTA_OFFSET..STAKE_DELTA_OFFSET + 8]
                     .try_into()
                     .unwrap(),
             );
@@ -2318,25 +2402,37 @@ fn settle_round_accounts(
                     .try_into()
                     .unwrap(),
             );
-            (amt, draws, delta, reserve)
+            let fees = u64::from_le_bytes(
+                data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            (stk, draws, delta, reserve, fees)
         };
 
-        let net_delta = if is_coherent {
-            share as i64
+        let (new_delta, new_fees) = if is_coherent {
+            (
+                existing_delta.saturating_add(stake_share as i64),
+                existing_fees
+                    .checked_add(fee_share)
+                    .ok_or(AccordError::ArithmeticOverflow)?,
+            )
         } else {
-            -(slash_per_juror.min(amount) as i64)
+            (
+                existing_delta.saturating_add(-(slash_per_juror.min(staked) as i64)),
+                existing_fees,
+            )
         };
-        let new_delta = existing_delta.saturating_add(net_delta);
         let new_draws = active_draws.saturating_sub(1);
         let new_reserve = slash_reserve.saturating_sub(slash_per_juror);
 
         let mut data = acct_info.try_borrow_mut_data()?;
-        data[SETTLEMENT_DELTA_OFFSET..SETTLEMENT_DELTA_OFFSET + 8]
-            .copy_from_slice(&new_delta.to_le_bytes());
+        data[STAKE_DELTA_OFFSET..STAKE_DELTA_OFFSET + 8].copy_from_slice(&new_delta.to_le_bytes());
         data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
             .copy_from_slice(&new_draws.to_le_bytes());
         data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
             .copy_from_slice(&new_reserve.to_le_bytes());
+        data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8].copy_from_slice(&new_fees.to_le_bytes());
     }
 
     Ok(())
@@ -2451,14 +2547,14 @@ pub struct Stake<'info> {
         associated_token::authority = juror,
     )]
     pub juror_token_account: Account<'info, TokenAccount>,
-    /// Subaccord PDA's vault ATA; `authority` (wallet) is the Subaccord PDA.
+    /// Subaccord PDA's stake_vault ATA; `authority` (wallet) is the Subaccord PDA.
     #[account(
         init_if_needed,
         payer = juror,
         associated_token::mint = staking_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub stake_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -2522,7 +2618,7 @@ pub struct Withdraw<'info> {
         associated_token::mint = staking_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub stake_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -2600,7 +2696,7 @@ pub struct ExecuteSubaccordUpdate<'info> {
 /// `filer` is the Arbitrable (a program signer via CPI, or any wallet). The
 /// dispute PDA is `["dispute", filer, nonce]` (caller-chosen nonce gives the
 /// filer a private dispute namespace). The fee moves from the filer's ATA into
-/// the Subaccord PDA's vault; the vault must already exist (guaranteed: the
+/// the Subaccord PDA's fee_vault; the fee_vault must already exist (guaranteed: the
 /// `staker_count >= N` gate implies at least one prior stake created it).
 #[derive(Accounts)]
 #[instruction(options: Vec<[u8; 32]>, evidence_hash: [u8; 32], nonce: u64, fee: u64)]
@@ -2622,21 +2718,25 @@ pub struct CreateDispute<'info> {
         bump,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
+    #[account(address = subaccord.fee_token)]
+    pub fee_token: Account<'info, Mint>,
     #[account(
         mut,
-        associated_token::mint = staking_token,
+        associated_token::mint = fee_token,
         associated_token::authority = filer,
     )]
     pub filer_token_account: Account<'info, TokenAccount>,
+    /// Subaccord PDA's fee_vault ATA (ADR-0020). Created on first dispute if
+    /// it doesn't exist yet.
     #[account(
-        mut,
-        associated_token::mint = staking_token,
+        init_if_needed,
+        payer = filer,
+        associated_token::mint = fee_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub fee_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
@@ -2742,10 +2842,9 @@ pub struct Commit<'info> {
     pub round: AccountLoader<'info, Round>,
 }
 
-/// Account context for `reveal`. Same shape as `Commit` plus the token
-/// accounts needed to pay the participation fee on reveal (CONCEPT-REVIEW
-/// Ugly 5 / bean accord-r6ti): the vault (Subaccord PDA's ATA) sources the
-/// fee, the juror's ATA receives it.
+/// Account context for `reveal`. Same shape as `Commit` — ADR-0020 removed the
+/// participation-fee SPL transfer (fees are credited at `finalize_round`
+/// instead). No token accounts needed.
 #[derive(Accounts)]
 pub struct Reveal<'info> {
     #[account(mut)]
@@ -2768,21 +2867,6 @@ pub struct Reveal<'info> {
         bump,
     )]
     pub round: AccountLoader<'info, Round>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = juror,
-    )]
-    pub juror_token_account: Account<'info, TokenAccount>,
-    #[account(
-        mut,
-        associated_token::mint = staking_token,
-        associated_token::authority = subaccord,
-    )]
-    pub vault: Box<Account<'info, TokenAccount>>,
-    pub token_program: Program<'info, Token>,
 }
 
 /// Account context for `finalize_round` — permissionless crank.
@@ -2909,21 +2993,23 @@ pub struct Appeal<'info> {
         bump,
     )]
     pub appeal_bond: Box<Account<'info, AppealBond>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
+    #[account(address = subaccord.fee_token)]
+    pub fee_token: Account<'info, Mint>,
     #[account(
         mut,
-        associated_token::mint = staking_token,
+        associated_token::mint = fee_token,
         associated_token::authority = appellant,
     )]
     pub appellant_token_account: Account<'info, TokenAccount>,
     #[account(
-        mut,
-        associated_token::mint = staking_token,
+        init_if_needed,
+        payer = appellant,
+        associated_token::mint = fee_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Box<Account<'info, TokenAccount>>,
+    pub fee_vault: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
@@ -2956,18 +3042,18 @@ pub struct ClaimAppealRefund<'info> {
         bump = appeal_bond.bump,
     )]
     pub appeal_bond: Box<Account<'info, AppealBond>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
+    #[account(address = subaccord.fee_token)]
+    pub fee_token: Account<'info, Mint>,
     /// The appellant's ATA — sweep destination. Any caller may pass it; the
     /// handler rejects it unless its owner matches the bond's recorded appellant.
-    #[account(mut, token::mint = staking_token)]
+    #[account(mut, token::mint = fee_token)]
     pub claimant_token_account: Account<'info, TokenAccount>,
     #[account(
         mut,
-        associated_token::mint = staking_token,
+        associated_token::mint = fee_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub fee_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -3006,21 +3092,56 @@ pub struct CancelDispute<'info> {
         has_one = subaccord,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
-    #[account(address = subaccord.staking_token)]
-    pub staking_token: Account<'info, Mint>,
+    #[account(address = subaccord.fee_token)]
+    pub fee_token: Account<'info, Mint>,
     /// Refund destination — must be the filer's ATA.
     #[account(
         mut,
-        associated_token::mint = staking_token,
+        associated_token::mint = fee_token,
         associated_token::authority = dispute.filer,
     )]
     pub filer_token_account: Account<'info, TokenAccount>,
     #[account(
         mut,
-        associated_token::mint = staking_token,
+        associated_token::mint = fee_token,
         associated_token::authority = subaccord,
     )]
-    pub vault: Box<Account<'info, TokenAccount>>,
+    pub fee_vault: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
+}
+
+/// Account context for `withdraw_fees` (ADR-0020). Per-juror pull of
+/// aggregate `fees_earned` from the Subaccord's `fee_vault` → the juror's
+/// `fee_token` ATA. No `active_draws` gate, no timelock.
+#[derive(Accounts)]
+pub struct WithdrawFees<'info> {
+    #[account(mut)]
+    pub juror: Signer<'info>,
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+    #[account(address = subaccord.fee_token)]
+    pub fee_token: Account<'info, Mint>,
+    #[account(
+        mut,
+        associated_token::mint = fee_token,
+        associated_token::authority = juror,
+    )]
+    pub juror_fee_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        associated_token::mint = fee_token,
+        associated_token::authority = subaccord,
+    )]
+    pub fee_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
 }
 

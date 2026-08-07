@@ -31,3 +31,4 @@ export * from "./reveal";
 export * from "./settleRound";
 export * from "./stake";
 export * from "./withdraw";
+export * from "./withdrawFees";

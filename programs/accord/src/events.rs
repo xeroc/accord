@@ -11,6 +11,7 @@ pub struct SubaccordCreated {
     pub creator: Pubkey,
     pub subaccord: Pubkey,
     pub staking_token: Pubkey,
+    pub fee_token: Pubkey,
     pub risk_type: [u8; 32],
 }
 
@@ -164,4 +165,12 @@ pub struct DisputeCancelled {
     pub dispute: Pubkey,
     pub filer: Pubkey,
     pub refund: u64,
+}
+
+/// Emitted when a juror withdraws aggregate earned fees (ADR-0020).
+#[event]
+pub struct FeesWithdrawn {
+    pub subaccord: Pubkey,
+    pub juror: Pubkey,
+    pub amount: u64,
 }

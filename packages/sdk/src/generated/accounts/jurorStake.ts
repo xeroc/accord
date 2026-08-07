@@ -55,23 +55,24 @@ export type JurorStake = {
   discriminator: ReadonlyUint8Array;
   subaccord: Address;
   juror: Address;
-  amount: bigint;
+  /** Collateral (stake_token). Sortition weight + slash exposure. */
+  staked: bigint;
   activeDraws: number;
   bump: number;
   /** Leaf position in the Subaccord accumulator (assigned at first stake). */
   treeIndex: number;
   /**
-   * Net slash(-)/reward(+) accumulated from settlements. Written by
-   * `settle_round_accounts` instead of mutating `amount` — keeps the
-   * accumulator root canonical. Folded into `amount` by the permissionless
+   * Net slash(-)/reward(+) accumulated from settlements, in `stake_token`.
+   * Written by settlement instead of mutating `staked` — keeps the
+   * accumulator root canonical. Folded into `staked` by the permissionless
    * `reconcile_stake` crank (which updates the root via a Merkle proof).
    */
-  settlementDelta: bigint;
+  stakeDelta: bigint;
   /**
    * Pending slash exposure from all active draws. Incremented by
    * `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
    * by settlement or cancel. Ensures the juror can always cover every
-   * concurrent slash. `amount - slash_reserve` is the truly free stake.
+   * concurrent slash. `staked - slash_reserve` is the truly free stake.
    */
   slashReserve: bigint;
   /**
@@ -85,28 +86,36 @@ export type JurorStake = {
    * consumed at `withdraw`.
    */
   pendingWithdrawal: bigint;
+  /**
+   * Aggregate earned fees (`fee_token`, ADR-0020). Credited at
+   * `finalize_round` + settlement; withdrawn via the ungated
+   * `withdraw_fees` instruction. No `active_draws` gate (fees are earned,
+   * not at-risk capital).
+   */
+  feesEarned: bigint;
 };
 
 export type JurorStakeArgs = {
   subaccord: Address;
   juror: Address;
-  amount: number | bigint;
+  /** Collateral (stake_token). Sortition weight + slash exposure. */
+  staked: number | bigint;
   activeDraws: number;
   bump: number;
   /** Leaf position in the Subaccord accumulator (assigned at first stake). */
   treeIndex: number;
   /**
-   * Net slash(-)/reward(+) accumulated from settlements. Written by
-   * `settle_round_accounts` instead of mutating `amount` — keeps the
-   * accumulator root canonical. Folded into `amount` by the permissionless
+   * Net slash(-)/reward(+) accumulated from settlements, in `stake_token`.
+   * Written by settlement instead of mutating `staked` — keeps the
+   * accumulator root canonical. Folded into `staked` by the permissionless
    * `reconcile_stake` crank (which updates the root via a Merkle proof).
    */
-  settlementDelta: number | bigint;
+  stakeDelta: number | bigint;
   /**
    * Pending slash exposure from all active draws. Incremented by
    * `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
    * by settlement or cancel. Ensures the juror can always cover every
-   * concurrent slash. `amount - slash_reserve` is the truly free stake.
+   * concurrent slash. `staked - slash_reserve` is the truly free stake.
    */
   slashReserve: number | bigint;
   /**
@@ -120,6 +129,13 @@ export type JurorStakeArgs = {
    * consumed at `withdraw`.
    */
   pendingWithdrawal: number | bigint;
+  /**
+   * Aggregate earned fees (`fee_token`, ADR-0020). Credited at
+   * `finalize_round` + settlement; withdrawn via the ungated
+   * `withdraw_fees` instruction. No `active_draws` gate (fees are earned,
+   * not at-risk capital).
+   */
+  feesEarned: number | bigint;
 };
 
 /** Gets the encoder for {@link JurorStakeArgs} account data. */
@@ -129,14 +145,15 @@ export function getJurorStakeEncoder(): FixedSizeEncoder<JurorStakeArgs> {
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["subaccord", getAddressEncoder()],
       ["juror", getAddressEncoder()],
-      ["amount", getU64Encoder()],
+      ["staked", getU64Encoder()],
       ["activeDraws", getU32Encoder()],
       ["bump", getU8Encoder()],
       ["treeIndex", getU32Encoder()],
-      ["settlementDelta", getI64Encoder()],
+      ["stakeDelta", getI64Encoder()],
       ["slashReserve", getU64Encoder()],
       ["withdrawRequestedAt", getI64Encoder()],
       ["pendingWithdrawal", getU64Encoder()],
+      ["feesEarned", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: JUROR_STAKE_DISCRIMINATOR }),
   );
@@ -148,14 +165,15 @@ export function getJurorStakeDecoder(): FixedSizeDecoder<JurorStake> {
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["subaccord", getAddressDecoder()],
     ["juror", getAddressDecoder()],
-    ["amount", getU64Decoder()],
+    ["staked", getU64Decoder()],
     ["activeDraws", getU32Decoder()],
     ["bump", getU8Decoder()],
     ["treeIndex", getU32Decoder()],
-    ["settlementDelta", getI64Decoder()],
+    ["stakeDelta", getI64Decoder()],
     ["slashReserve", getU64Decoder()],
     ["withdrawRequestedAt", getI64Decoder()],
     ["pendingWithdrawal", getU64Decoder()],
+    ["feesEarned", getU64Decoder()],
   ]);
 }
 
@@ -221,5 +239,5 @@ export async function fetchAllMaybeJurorStake(
 }
 
 export function getJurorStakeSize(): number {
-  return 121;
+  return 129;
 }

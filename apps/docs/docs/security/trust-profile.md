@@ -63,7 +63,8 @@ trust_profile:
   upgrade_authority: <pubkey | null> # ADR-0007; multisig until post-audit freeze (null)
   paused: <bool> # PauseState singleton
   juror_admission: key_pseudonymous # NOT identity-verified humans (ADR-0001)
-  staking_token: <mint>
+  staking_token: <mint> # collateral (ADR-0002/0020)
+  fee_token: <mint> # compensation — fees + bonds (ADR-0020)
   total_stake: <u64> # accumulator root.sum (ADR-0012)
   juror_count: <u32> # live, non-zero leaves
   stake_concentration: # computed from JurorStake

@@ -77,9 +77,14 @@ describe("e2e: lifecycle.update (requires Surfpool)", () => {
     const authority = await fundSigner(env);
 
     // ── 2. Mutable Subaccord with our authority ───────────────────────────
-    const args = defaultSubaccordArgs(env.payer.address, env.payer.address, {
-      authority: authority.address,
-    });
+    const args = defaultSubaccordArgs(
+      env.payer.address,
+      env.payer.address,
+      env.payer.address,
+      {
+        authority: authority.address,
+      },
+    );
     const { instruction: createIx, subaccord } = await createSubaccord(
       env.accord.adapter,
       env.programId,
@@ -100,14 +105,15 @@ describe("e2e: lifecycle.update (requires Surfpool)", () => {
     });
     const nonce = 7n;
     const payload: UpdatePayload = { __kind: "MinStake", fields: [9_999n] };
-    const { instruction: proposeIx, pendingUpdate } = await proposeSubaccordUpdate(
-      authorityAccord.adapter,
-      env.programId,
-      authority.address,
-      subaccord,
-      nonce,
-      payload,
-    );
+    const { instruction: proposeIx, pendingUpdate } =
+      await proposeSubaccordUpdate(
+        authorityAccord.adapter,
+        env.programId,
+        authority.address,
+        subaccord,
+        nonce,
+        payload,
+      );
     await env.sendIx(proposeIx);
 
     const pu = (await fetchDecoded(

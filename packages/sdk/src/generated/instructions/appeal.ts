@@ -58,11 +58,13 @@ export type AppealInstruction<
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
   TAccountAppealBond extends string | AccountMeta<string> = string,
-  TAccountStakingToken extends string | AccountMeta<string> = string,
+  TAccountFeeToken extends string | AccountMeta<string> = string,
   TAccountAppellantTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountFeeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountAssociatedTokenProgram extends string | AccountMeta<string> =
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -89,18 +91,21 @@ export type AppealInstruction<
       TAccountAppealBond extends string
         ? WritableAccount<TAccountAppealBond>
         : TAccountAppealBond,
-      TAccountStakingToken extends string
-        ? ReadonlyAccount<TAccountStakingToken>
-        : TAccountStakingToken,
+      TAccountFeeToken extends string
+        ? ReadonlyAccount<TAccountFeeToken>
+        : TAccountFeeToken,
       TAccountAppellantTokenAccount extends string
         ? WritableAccount<TAccountAppellantTokenAccount>
         : TAccountAppellantTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
+      TAccountFeeVault extends string
+        ? WritableAccount<TAccountFeeVault>
+        : TAccountFeeVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountAssociatedTokenProgram extends string
+        ? ReadonlyAccount<TAccountAssociatedTokenProgram>
+        : TAccountAssociatedTokenProgram,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -142,10 +147,11 @@ export type AppealAsyncInput<
   TAccountDispute extends string = string,
   TAccountRound extends string = string,
   TAccountAppealBond extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountAppellantTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   appellant: TransactionSigner<TAccountAppellant>;
@@ -159,10 +165,11 @@ export type AppealAsyncInput<
   round: Address<TAccountRound>;
   /** Per-appeal bond custody (ADR-0004). Keyed by the round being appealed. */
   appealBond: Address<TAccountAppealBond>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   appellantTokenAccount?: Address<TAccountAppellantTokenAccount>;
-  vault?: Address<TAccountVault>;
+  feeVault?: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
 };
 
@@ -173,10 +180,11 @@ export async function getAppealInstructionAsync<
   TAccountDispute extends string,
   TAccountRound extends string,
   TAccountAppealBond extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountAppellantTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
+  TAccountAssociatedTokenProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -187,10 +195,11 @@ export async function getAppealInstructionAsync<
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountAppellantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -203,10 +212,11 @@ export async function getAppealInstructionAsync<
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountAppellantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >
 > {
@@ -221,13 +231,17 @@ export async function getAppealInstructionAsync<
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     appellantTokenAccount: {
       value: input.appellantTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    associatedTokenProgram: {
+      value: input.associatedTokenProgram ?? null,
+      isWritable: false,
+    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -259,15 +273,15 @@ export async function getAppealInstructionAsync<
         ),
         getAddressEncoder().encode(
           getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
+            "feeToken",
+            accounts.feeToken.value,
           ),
         ),
       ],
     });
   }
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
+  if (!accounts.feeVault.value) {
+    accounts.feeVault.value = await getProgramDerivedAddress({
       programAddress:
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
       seeds: [
@@ -286,8 +300,8 @@ export async function getAppealInstructionAsync<
         ),
         getAddressEncoder().encode(
           getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
+            "feeToken",
+            accounts.feeToken.value,
           ),
         ),
       ],
@@ -296,6 +310,10 @@ export async function getAppealInstructionAsync<
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+  if (!accounts.associatedTokenProgram.value) {
+    accounts.associatedTokenProgram.value =
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -311,10 +329,11 @@ export async function getAppealInstructionAsync<
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("round", accounts.round),
       getAccountMeta("appealBond", accounts.appealBond),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("appellantTokenAccount", accounts.appellantTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getAppealInstructionDataEncoder().encode({}),
@@ -327,10 +346,11 @@ export async function getAppealInstructionAsync<
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountAppellantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >);
 }
@@ -342,10 +362,11 @@ export type AppealInput<
   TAccountDispute extends string = string,
   TAccountRound extends string = string,
   TAccountAppealBond extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountAppellantTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   appellant: TransactionSigner<TAccountAppellant>;
@@ -359,10 +380,11 @@ export type AppealInput<
   round: Address<TAccountRound>;
   /** Per-appeal bond custody (ADR-0004). Keyed by the round being appealed. */
   appealBond: Address<TAccountAppealBond>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   appellantTokenAccount: Address<TAccountAppellantTokenAccount>;
-  vault: Address<TAccountVault>;
+  feeVault: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
 };
 
@@ -373,10 +395,11 @@ export function getAppealInstruction<
   TAccountDispute extends string,
   TAccountRound extends string,
   TAccountAppealBond extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountAppellantTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
+  TAccountAssociatedTokenProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -387,10 +410,11 @@ export function getAppealInstruction<
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountAppellantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -402,10 +426,11 @@ export function getAppealInstruction<
   TAccountDispute,
   TAccountRound,
   TAccountAppealBond,
-  TAccountStakingToken,
+  TAccountFeeToken,
   TAccountAppellantTokenAccount,
-  TAccountVault,
+  TAccountFeeVault,
   TAccountTokenProgram,
+  TAccountAssociatedTokenProgram,
   TAccountSystemProgram
 > {
   // Program address.
@@ -419,13 +444,17 @@ export function getAppealInstruction<
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     appellantTokenAccount: {
       value: input.appellantTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    associatedTokenProgram: {
+      value: input.associatedTokenProgram ?? null,
+      isWritable: false,
+    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -437,6 +466,10 @@ export function getAppealInstruction<
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+  if (!accounts.associatedTokenProgram.value) {
+    accounts.associatedTokenProgram.value =
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -452,10 +485,11 @@ export function getAppealInstruction<
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("round", accounts.round),
       getAccountMeta("appealBond", accounts.appealBond),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("appellantTokenAccount", accounts.appellantTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getAppealInstructionDataEncoder().encode({}),
@@ -468,10 +502,11 @@ export function getAppealInstruction<
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountAppellantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >);
 }
@@ -493,11 +528,12 @@ export type ParsedAppealInstruction<
     round: TAccountMetas[4];
     /** Per-appeal bond custody (ADR-0004). Keyed by the round being appealed. */
     appealBond: TAccountMetas[5];
-    stakingToken: TAccountMetas[6];
+    feeToken: TAccountMetas[6];
     appellantTokenAccount: TAccountMetas[7];
-    vault: TAccountMetas[8];
+    feeVault: TAccountMetas[8];
     tokenProgram: TAccountMetas[9];
-    systemProgram: TAccountMetas[10];
+    associatedTokenProgram: TAccountMetas[10];
+    systemProgram: TAccountMetas[11];
   };
   data: AppealInstructionData;
 };
@@ -510,12 +546,12 @@ export function parseAppealInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAppealInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 11,
+        expectedAccountMetas: 12,
       },
     );
   }
@@ -534,10 +570,11 @@ export function parseAppealInstruction<
       dispute: getNextAccount(),
       round: getNextAccount(),
       appealBond: getNextAccount(),
-      stakingToken: getNextAccount(),
+      feeToken: getNextAccount(),
       appellantTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
+      feeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
+      associatedTokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
     },
     data: getAppealInstructionDataDecoder().decode(instruction.data),

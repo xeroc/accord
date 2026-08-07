@@ -123,7 +123,7 @@ feature that touches the chain.
 - **Surfpool program deployment — do NOT start `surfpool` bare.** Surfpool does
   not auto-deploy like `solana-test-validator --bpf-program`; it deploys via the
   committed runbook `runbooks/deployment/main.tx` (`instant_surfnet_deployment =
-  true` cheatcode ⇒ direct program-data write, instant + deterministic) when
+true` cheatcode ⇒ direct program-data write, instant + deterministic) when
   started with `--yes` (skips runbook-generation prompts). `make run_surfpool`
   runs `surfpool start --yes --db :memory:` — the `--db :memory:` guarantees a
   fresh Surfnet each start (singleton-PDA specs like `lifecycle.pause` stay
@@ -157,12 +157,12 @@ feature that touches the chain.
     re-exported from `@accord/sdk`.
   - `setup/fixtures.ts` — `randomBytes32()`, `DEFAULT_PUBKEY`,
     `defaultSubaccordArgs(...)`.
-  One spec file per instruction group (`lifecycle.pause.timelock`,
-  `lifecycle.update`, `lifecycle.subaccord`, `staking`, `dispute`, `snapshot`,
-  `voting`, `appeal`, `draw`, `full-lifecycle`) + `draw-harness.ts` (the shared
-  VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
-  idempotently guards the PauseState singleton, so the **whole suite runs GREEN
-  together on one Surfnet** (`make test_surfpool`).
+    One spec file per instruction group (`lifecycle.pause.timelock`,
+    `lifecycle.update`, `lifecycle.subaccord`, `staking`, `dispute`, `snapshot`,
+    `voting`, `appeal`, `draw`, `full-lifecycle`) + `draw-harness.ts` (the shared
+    VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
+    idempotently guards the PauseState singleton, so the **whole suite runs GREEN
+    together on one Surfnet** (`make test_surfpool`).
 
 - **The green rule (non-negotiable).** A feature/milestone is **not complete**
   until its e2e spec passes against a running Surfpool — not skipped. "Skip if
@@ -170,10 +170,10 @@ feature that touches the chain.
   Surfpool lane the e2e MUST be GREEN:
   1. `make run_surfpool` (terminal 1) — must show the Accord program deployed.
   2. `make test_surfpool` (terminal 2) — every touched spec green.
-  Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
-  change**. Shipping an instruction without a green e2e spec is a blocker, not a
-  follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
-  SDK↔program↔Surfpool integration.
+     Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
+     change**. Shipping an instruction without a green e2e spec is a blocker, not a
+     follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
+     SDK↔program↔Surfpool integration.
 
 ## Accord (Program B — built first)
 
@@ -194,7 +194,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`), `0020` (two-mint/two-vault economics).
 
 ## Build Order
 
@@ -204,15 +204,16 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` 
 
 ## v1 Defaults (configurable per Subaccord)
 
-| Parameter            | Default               | Notes                                 |
-| -------------------- | --------------------- | ------------------------------------- |
-| Jurors per dispute   | 3                     | Per Subaccord                         |
-| Review window        | 7 days                | Jurors assess evidence                |
-| Commit window        | 2 days                | `hash(vote, salt)`                    |
-| Reveal window        | 2 days                | `{vote, salt}`                        |
-| Alpha (slash factor) | 10%                   | Incoherent juror stake lost           |
-| Min juror stake      | 1,000 (staking_token) | Draw eligibility; per-Subaccord token |
-| Max appeals          | 3                     | 3 → 7 → 15 → 31 jurors                |
+| Parameter            | Default                  | Notes                                                  |
+| -------------------- | ------------------------ | ------------------------------------------------------ |
+| Jurors per dispute   | 3                        | Per Subaccord                                          |
+| Review window        | 7 days                   | Jurors assess evidence                                 |
+| Commit window        | 2 days                   | `hash(vote, salt)`                                     |
+| Reveal window        | 2 days                   | `{vote, salt}`                                         |
+| Alpha (slash factor) | 10%                      | Incoherent juror stake lost (staking_token)            |
+| Min juror stake      | 1,000 (staking_token)    | Draw eligibility; collateral mint (ADR-0020)           |
+| Fee per juror        | Configurable (fee_token) | Compensation mint, separate from collateral (ADR-0020) |
+| Max appeals          | 3                        | 3 → 7 → 15 → 31 jurors                                 |
 
 ## Beans
 
@@ -247,8 +248,18 @@ in `.beans.yml` (prefix `Accord-`).
 - **Program ID.** `declare_id!` and `Anchor.toml [programs.*]` are kept in sync
   with `target/deploy/accord-keypair.json` via `anchor keys sync`. The keypair
   was provisioned by `solana-keygen`; `anchor build` uses it for the `.so`.
-- **Per-Subaccord staking token.** Each Subaccord defines its `staking_token` at
-  creation (ADR-0002); USDC is the common default, not hard-coded.
+- **Per-Subaccord staking token.** Each Subaccord defines its `staking_token`
+  (collateral) at creation (ADR-0002/0020); USDC is the common default, not
+  hard-coded.
+- **Two mints / two vaults (ADR-0020).** Each Subaccord also defines a
+  `fee_token` (compensation — fees + bonds). `stake_vault` (ATA of
+  `staking_token`) holds collateral and is NEVER touched by dispute fee
+  economics. `fee_vault` (ATA of `fee_token`) holds filer fees, appeal bonds,
+  and the reward pool. Slashing is ledger-only (`stake_delta`); the
+  `stake_vault` balance is invariant under slash+redistribution. `fees_earned`
+  on `JurorStake` aggregates compensation across disputes; `withdraw_fees`
+  pulls it (no `active_draws` gate, no timelock). `reveal` is vote-recording
+  only — fees credit at `finalize_round`.
 - **Evidence crypto lives in the SDK, not the daemon.** The ECIES / AES-256-GCM
   / HKDF-SHA256 / Ed↔X25519 evidence protocol is a multi-party wire contract
   shared by claimant, operator, and juror — it lives in

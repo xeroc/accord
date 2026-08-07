@@ -61,6 +61,11 @@ export type Subaccord = {
   discriminator: ReadonlyUint8Array;
   creator: Address;
   stakingToken: Address;
+  /**
+   * Compensation mint — fees + appeal bonds (ADR-0020). Distinct from
+   * `staking_token` so collateral and compensation are decoupled.
+   */
+  feeToken: Address;
   minStake: bigint;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
@@ -82,7 +87,7 @@ export type Subaccord = {
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
-   * Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+   * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
    * positive→0 decrements). This is a *coarse* intake gate for
    * `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
@@ -115,6 +120,11 @@ export type Subaccord = {
 export type SubaccordArgs = {
   creator: Address;
   stakingToken: Address;
+  /**
+   * Compensation mint — fees + appeal bonds (ADR-0020). Distinct from
+   * `staking_token` so collateral and compensation are decoupled.
+   */
+  feeToken: Address;
   minStake: number | bigint;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
@@ -136,7 +146,7 @@ export type SubaccordArgs = {
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
-   * Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+   * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
    * positive→0 decrements). This is a *coarse* intake gate for
    * `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
@@ -173,6 +183,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["creator", getAddressEncoder()],
       ["stakingToken", getAddressEncoder()],
+      ["feeToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
@@ -202,6 +213,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["creator", getAddressDecoder()],
     ["stakingToken", getAddressDecoder()],
+    ["feeToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
@@ -282,5 +294,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 294;
+  return 326;
 }

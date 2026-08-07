@@ -261,6 +261,7 @@ fn setup_accumulator() -> AccEnv {
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 staking_token: mint,
+                fee_token: mint,
                 min_stake: 1_000,
                 alpha_bps: 1_000,
                 review_window: 60,
@@ -347,7 +348,7 @@ fn do_stake(
             juror_stake: js,
             staking_token: env.mint,
             juror_token_account: jata,
-            vault: vata,
+            stake_vault: vata,
             token_program: TOKEN_PROGRAM_ID,
             associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
@@ -392,7 +393,7 @@ fn do_withdraw(env: &mut AccEnv, juror: &Keypair) -> TransactionResult {
             juror_stake: js,
             staking_token: env.mint,
             juror_token_account: jata,
-            vault: vata,
+            stake_vault: vata,
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::Withdraw {})
@@ -435,7 +436,7 @@ fn first_stake_updates_root_and_credits_juror() {
 
     // JurorStake written.
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js.amount, stake_amt);
+    assert_eq!(js.staked, stake_amt);
     assert_eq!(js.juror, juror.pubkey());
     assert_eq!(js.subaccord, env.subaccord);
     assert_eq!(js.tree_index, 0);
@@ -506,7 +507,7 @@ fn top_up_existing_juror_updates_root_locally() {
     // Locality: juror 2's tree_index and stake are unchanged.
     let js2 = read_juror_stake(&env, &env.subaccord, &j2.pubkey());
     assert_eq!(js2.tree_index, 1, "juror 2 index unchanged");
-    assert_eq!(js2.amount, 2_000, "juror 2 stake unchanged");
+    assert_eq!(js2.staked, 2_000, "juror 2 stake unchanged");
 
     // next_index unchanged (no new leaf).
     assert_eq!(sub.next_index, 2);
@@ -599,7 +600,7 @@ fn unstake_updates_root_and_reduces_stake() {
     assert_eq!(sub.total_stake, 3_000);
 
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js.amount, 3_000);
+    assert_eq!(js.staked, 3_000);
     // tree_index retained (re-stake is a local update).
     assert_eq!(js.tree_index, 0);
 }
@@ -634,7 +635,7 @@ fn full_unstake_zeros_leaf_but_retains_tree_index() {
     assert_eq!(sub.staker_count, 1, "distinct staker count drops");
 
     let js = read_juror_stake(&env, &env.subaccord, &j1.pubkey());
-    assert_eq!(js.amount, 0);
+    assert_eq!(js.staked, 0);
     assert_eq!(js.tree_index, 0, "tree_index retained after full unstake");
 }
 
@@ -713,10 +714,11 @@ fn commit_vrf_callback_freezes_live_root() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -802,10 +804,11 @@ fn draw_seat_fills_round_against_frozen_root() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -990,10 +993,11 @@ fn out_of_order_seat_rejected() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -1116,10 +1120,11 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -1392,6 +1397,7 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 staking_token: env.mint,
+                fee_token: env.mint,
                 min_stake: 1_000,
                 alpha_bps: 1_000,
                 review_window: 60,
@@ -1443,10 +1449,11 @@ fn create_dispute_under_a(env: &mut AccEnv) -> (Pubkey, Keypair) {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -1501,9 +1508,9 @@ fn cancel_dispute_rejects_wrong_subaccord() {
             caller: env.creator.pubkey(),
             subaccord: sub_b,
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_b,
+            fee_vault: vault_b,
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::CancelDispute {})
@@ -1627,9 +1634,9 @@ fn cancel_blocked_immediately_after_appeal_timestamp_reset() {
             caller: env.creator.pubkey(),
             subaccord: env.subaccord,
             dispute: _dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::CancelDispute {})
@@ -1656,9 +1663,9 @@ fn cancel_blocked_immediately_after_appeal_timestamp_reset() {
             caller: caller2.pubkey(),
             subaccord: env.subaccord,
             dispute: _dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::CancelDispute {})
@@ -1836,9 +1843,9 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
             caller: env.creator.pubkey(),
             subaccord: env.subaccord,
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault,
+            fee_vault: vault,
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::CancelDispute {})
@@ -1896,9 +1903,9 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
             subaccord: env.subaccord,
             dispute,
             appeal_bond: bond_pda,
-            staking_token: env.mint,
+            fee_token: env.mint,
             claimant_token_account: appellant_ata,
-            vault,
+            fee_vault: vault,
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::ClaimAppealRefund { round_idx: 0u32 })
@@ -1965,10 +1972,11 @@ fn cancel_releases_partially_drawn_panel() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -2037,9 +2045,9 @@ fn cancel_releases_partially_drawn_panel() {
             caller: env.creator.pubkey(),
             subaccord: env.subaccord,
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::CancelDispute {})
@@ -2117,8 +2125,8 @@ fn reconcile_stake_folds_delta_into_amount_and_updates_root() {
 
     let sub_before = read_subaccord(&env);
     let js_before = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js_before.amount, stake_amt);
-    assert_eq!(js_before.settlement_delta, 0);
+    assert_eq!(js_before.staked, stake_amt);
+    assert_eq!(js_before.stake_delta, 0);
 
     // Simulate a settlement slash of 500.
     inject_settlement_delta(&mut env, &juror.pubkey(), -500);
@@ -2158,8 +2166,8 @@ fn reconcile_stake_folds_delta_into_amount_and_updates_root() {
 
     // Amount folded, delta zeroed.
     let js_after = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js_after.amount, 4_500, "amount must reflect the delta");
-    assert_eq!(js_after.settlement_delta, 0, "delta must be zeroed");
+    assert_eq!(js_after.staked, 4_500, "amount must reflect the delta");
+    assert_eq!(js_after.stake_delta, 0, "delta must be zeroed");
 
     // Root updated to match the new leaf.
     let sub_after = read_subaccord(&env);
@@ -2223,8 +2231,8 @@ fn request_withdraw_requires_settlement_delta_zero() {
         .assert_success();
 
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js.amount, 4_500, "reconcile folded the slash into amount");
-    assert_eq!(js.settlement_delta, 0, "delta cleared by reconcile");
+    assert_eq!(js.staked, 4_500, "reconcile folded the slash into amount");
+    assert_eq!(js.stake_delta, 0, "delta cleared by reconcile");
 
     // Ledger now canonical: request_withdraw of the full free stake (4500, no
     // slash reserve) succeeds.
@@ -2233,8 +2241,8 @@ fn request_withdraw_requires_settlement_delta_zero() {
     do_request_withdraw(&mut env, &juror, 4_500, proof2).assert_success();
 
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js.amount, 0, "amount reduced by withdrawal");
-    assert_eq!(js.settlement_delta, 0, "delta still zero");
+    assert_eq!(js.staked, 0, "amount reduced by withdrawal");
+    assert_eq!(js.stake_delta, 0, "delta still zero");
 }
 
 // ─── two-phase withdraw + slash_reserve tests (REVIEW #5) ────────────────────
@@ -2257,7 +2265,7 @@ fn two_phase_request_then_withdraw_after_timelock() {
 
     // Amount reduced, pending withdrawal set.
     let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
-    assert_eq!(js.amount, 0);
+    assert_eq!(js.staked, 0);
     assert_eq!(js.pending_withdrawal, stake_amt);
     assert!(js.withdraw_requested_at > 0);
 
@@ -2368,10 +2376,11 @@ fn commit_reveal_finalize_settle_single_round() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -2486,7 +2495,6 @@ fn commit_reveal_finalize_settle_single_round() {
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
     warp_seconds(&mut env, commit_end - now + 1);
     for (idx, salt) in [(drawn[0].1, salt0), (drawn[1].1, salt1)] {
-        let jata = juror_ata(&jurors[idx].pubkey(), &env.mint);
         let ix = env
             .ctx
             .program()
@@ -2495,10 +2503,6 @@ fn commit_reveal_finalize_settle_single_round() {
                 subaccord: env.subaccord,
                 dispute,
                 round: rnd,
-                staking_token: env.mint,
-                juror_token_account: jata,
-                vault: vault_ata(&env.subaccord, &env.mint),
-                token_program: TOKEN_PROGRAM_ID,
             })
             .args(instruction::Reveal { vote, salt })
             .instruction()
@@ -2524,6 +2528,23 @@ fn commit_reveal_finalize_settle_single_round() {
         .args(instruction::FinalizeRound {})
         .instruction()
         .unwrap();
+    // ADR-0020: finalize_round credits fees_earned — needs panel JurorStake PDAs.
+    let ix = {
+        let mut accts = ix.accounts.clone();
+        for &(_, leaf_idx) in &drawn {
+            let js = juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey());
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: js,
+                is_signer: false,
+                is_writable: true,
+            });
+        }
+        solana_program::instruction::Instruction {
+            program_id: ix.program_id,
+            accounts: accts,
+            data: ix.data.clone(),
+        }
+    };
     env.ctx
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
@@ -2570,17 +2591,27 @@ fn commit_reveal_finalize_settle_single_round() {
         .unwrap()
         .assert_success();
 
-    // Verify final state + settlement.
+    // Verify final state + settlement (ADR-0020 two-pool: stake_delta + fees_earned).
     let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
         .unwrap();
     assert_eq!(d.state, DisputeState::Final);
     assert_eq!(d.final_ruling, 0u8);
+    // Stake pool = slash from 1 incoherent (α=10% of 1000 = 100); share = 100/2 = 50.
+    // Fee pool = 1 non-revealer fee (1_000_000); share = 1_000_000/2 = 500_000.
+    // Revealer base fee (1_000_000) credited at finalize_round.
     for &(seat, leaf_idx) in &drawn {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
         assert_eq!(js.active_draws, 0, "seat {seat} active_draws");
         assert_eq!(js.slash_reserve, 0, "seat {seat} slash_reserve");
-        let expected = if seat < 2 { 500_050i64 } else { -100i64 };
-        assert_eq!(js.settlement_delta, expected, "seat {seat} delta");
+        if seat < 2 {
+            // Coherent: stake_delta = slash share (50); fees_earned = base + fee share.
+            assert_eq!(js.stake_delta, 50i64, "seat {seat} stake_delta");
+            assert_eq!(js.fees_earned, 1_500_000u64, "seat {seat} fees_earned");
+        } else {
+            // Incoherent: stake_delta = -slash; fees_earned = 0 (didn't reveal).
+            assert_eq!(js.stake_delta, -100i64, "seat {seat} stake_delta");
+            assert_eq!(js.fees_earned, 0u64, "seat {seat} fees_earned");
+        }
     }
 }
 
@@ -2637,10 +2668,11 @@ fn pause_blocks_stake_and_create_dispute() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -2749,10 +2781,11 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -2924,9 +2957,9 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
         assert_eq!(js.active_draws, 0, "seat {seat}");
         assert_eq!(js.slash_reserve, 0, "seat {seat}");
         if seat < 2 {
-            assert_eq!(js.settlement_delta, 50, "coherent seat {seat}");
+            assert_eq!(js.stake_delta, 50, "coherent seat {seat}");
         } else {
-            assert_eq!(js.settlement_delta, -100, "incoherent seat {seat}");
+            assert_eq!(js.stake_delta, -100, "incoherent seat {seat}");
         }
     }
     let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
@@ -2976,10 +3009,11 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
             subaccord: env.subaccord,
             pause_state: pause_pda(),
             dispute,
-            staking_token: env.mint,
+            fee_token: env.mint,
             filer_token_account: fata,
-            vault: vault_ata(&env.subaccord, &env.mint),
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
             token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
@@ -3035,7 +3069,7 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
     let (_, _, pt) = build_root_and_path(&leaves, TEST_DEPTH, 0);
     do_stake(&mut env, &j0, 1_000, pt).assert_success();
     let js = read_juror_stake(&env, &env.subaccord, &j0.pubkey());
-    assert_eq!(js.amount, 2_000);
+    assert_eq!(js.staked, 2_000);
 
     // Draw should succeed now (2000 >= 1100).
     // Use a different caller to avoid LiteSVM AlreadyProcessed (same tx hash).
@@ -3231,6 +3265,7 @@ fn try_create_subaccord(max_appeals: u8, aggregation: Aggregation) -> Transactio
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 staking_token: mint,
+                fee_token: mint,
                 min_stake: 1_000,
                 alpha_bps: 1_000,
                 review_window: 60,

@@ -116,6 +116,8 @@ export const ACCORD_ERROR__DISPUTE_FAILED = 0x17a0; // 6048
 export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a1; // 6049
 /** MaxRetriesExceeded: Sortition retries exceeded the on-chain bound; the pool may be too concentrated. */
 export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a2; // 6050
+/** NoFeesEarned: Juror has no earned fees to withdraw. */
+export const ACCORD_ERROR__NO_FEES_EARNED = 0x17a3; // 6051
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -146,6 +148,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED
   | typeof ACCORD_ERROR__MAX_APPEALS_REACHED
   | typeof ACCORD_ERROR__MAX_RETRIES_EXCEEDED
+  | typeof ACCORD_ERROR__NO_FEES_EARNED
   | typeof ACCORD_ERROR__NO_PENDING_UNPAUSE
   | typeof ACCORD_ERROR__NO_PENDING_UPDATE
   | typeof ACCORD_ERROR__NO_PENDING_WITHDRAWAL
@@ -201,6 +204,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED]: `Subaccord max_appeals exceeds the program ceiling.`,
     [ACCORD_ERROR__MAX_APPEALS_REACHED]: `Maximum appeals reached for this dispute.`,
     [ACCORD_ERROR__MAX_RETRIES_EXCEEDED]: `Sortition retries exceeded the on-chain bound; the pool may be too concentrated.`,
+    [ACCORD_ERROR__NO_FEES_EARNED]: `Juror has no earned fees to withdraw.`,
     [ACCORD_ERROR__NO_PENDING_UNPAUSE]: `No pending unpause to execute.`,
     [ACCORD_ERROR__NO_PENDING_UPDATE]: `No pending update to execute.`,
     [ACCORD_ERROR__NO_PENDING_WITHDRAWAL]: `No pending withdrawal to execute.`,
