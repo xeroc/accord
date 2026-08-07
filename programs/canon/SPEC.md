@@ -81,8 +81,12 @@ LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdra
 
 ## v1 canonical defaults
 
-One set for all Canon lists (no per-tier variation in v1); retunable via the
-Subaccord authority timelock as real dispute/juror data arrives.
+Each Canon list's params live on its 1:1 backing Subaccord (per-list, not
+global). They are initialized to the Canon defaults below, **controlled by the
+Subaccord authority (NOT the list creator)**, and retunable via the 48h
+propose/execute timelock (ADR-0005); `authority = Pubkey::default()` ⇒
+immutable. For v1, Canon sets the authority to the Canon governance multisig
+(retunable) at `create_list`.
 
 | param | v1 value | notes |
 | --- | --- | --- |
@@ -116,10 +120,13 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
   (transparent criteria ⇒ consistent, auditable rulings); anyone reads and
   verifies it against the on-chain hash. Passed to Accord as the Subaccord
   `risk_type`.
-- **Evidence (juror-only, dispute-level).** The per-dispute manifest
-  (`evidence_hash`, `accord-evidence/v1`) carries the `item` reference plus the
-  submitter/challenger claim and proof, re-encrypted for drawn jurors per
-  ADR-0006.
+- **Evidence (juror-only, dispute-level, single-party).** The per-dispute
+  manifest (`evidence_hash`, `accord-evidence/v1`) carries the `item` reference
+  plus the **challenger's** claim and proof — the challenger files via Canon
+  (single filer, ADR-0004); the submitter does not file rebuttal evidence.
+  Re-encrypted for drawn jurors per ADR-0006. The submitter's recourse against a
+  wrong `remove` is the permissionless appeal ladder (two-party Accord disputes
+  are a future extension, bean `accord-s72c`).
 
 Because Canon is the filer, item → list → `rules_hash` resolution is trivial;
 because the rules are public, the evidence operator needs no extension (it only
@@ -138,6 +145,14 @@ juror-only evidence → `keep` / `remove`.
   payout) — *flag for revisit.*
 - **Re-challenge while `Listed`:** re-uses `challenge_item`; progressive
   protection continues to accumulate.
+- **No cancel during `Pending` (v1):** a submitted item is committed through the
+  `listing_window`; exit is via the withdraw path after `Listed`, not an early
+  cancel.
+- **Cranks:** `advance_pending` / `settle_item` / `advance_withdrawal` are
+  permissionless and **unrewarded** in v1 — the motivated party cranks (submitter
+  wants listing/withdrawal; challenger wants the bounty).
+- **Program upgrade authority:** the Canon program mirrors Accord ADR-0007 —
+  Squads multisig, then post-audit freeze.
 - **Insufficient accord_fee / challenge_stake:** `challenge_item` reverts.
 
 ## Out of scope (v2+)
