@@ -190,11 +190,13 @@ draw(dispute, vrf, memberships[])                         — VRF; N distinct Ju
 commit / reveal                                           — hash(vote, salt, juror_pubkey) then {vote, salt}
 appeal(dispute)                                           — permissionless; 2N+1; bond forfeited if no flip
 finalize_round / finalize_dispute                         — permissionless crank; redistribution + active_draws--
+redraw(dispute)                                            — permissionless; shortfall redraw (slash no-shows, draw_attempt++) / Failed on exhaustion (ADR-0021)
+withdraw_fees                                              — per-juror earned-fee pull from fee_vault (ADR-0020)
 get_ruling(dispute)                                       — lazy read by the Arbitrable
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`), `0020` (two-mint/two-vault economics).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`), `0020` (two-mint/two-vault economics), `0021` (reveal quorum + shortfall redraw).
 
 ## Build Order
 
@@ -204,16 +206,19 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` 
 
 ## v1 Defaults (configurable per Subaccord)
 
-| Parameter            | Default                  | Notes                                                  |
-| -------------------- | ------------------------ | ------------------------------------------------------ |
-| Jurors per dispute   | 3                        | Per Subaccord                                          |
-| Review window        | 7 days                   | Jurors assess evidence                                 |
-| Commit window        | 2 days                   | `hash(vote, salt)`                                     |
-| Reveal window        | 2 days                   | `{vote, salt}`                                         |
-| Alpha (slash factor) | 10%                      | Incoherent juror stake lost (staking_token)            |
-| Min juror stake      | 1,000 (staking_token)    | Draw eligibility; collateral mint (ADR-0020)           |
-| Fee per juror        | Configurable (fee_token) | Compensation mint, separate from collateral (ADR-0020) |
-| Max appeals          | 3                        | 3 → 7 → 15 → 31 jurors                                 |
+| Parameter            | Default                  | Notes                                                                                |
+| -------------------- | ------------------------ | ------------------------------------------------------------------------------------ |
+| Jurors per dispute   | 3                        | Per Subaccord                                                                        |
+| Review window        | 7 days                   | Jurors assess evidence                                                               |
+| Commit window        | 2 days                   | `hash(vote, salt)`                                                                   |
+| Reveal window        | 2 days                   | `{vote, salt}`                                                                       |
+| Alpha (slash factor) | 10%                      | Incoherent juror stake lost (staking_token)                                          |
+| Min juror stake      | 1,000 (staking_token)    | Draw eligibility; collateral mint (ADR-0020)                                         |
+| Fee per juror        | Configurable (fee_token) | Compensation mint, separate from collateral (ADR-0020)                               |
+| Max appeals          | 3                        | 3 → 7 → 15 → 31 jurors                                                               |
+| Reveal threshold     | 6,666 bps (2/3)          | Reveal-quorum fraction; absolute commitment escalates per appeal for free (ADR-0021) |
+| Shortfall policy     | `Redraw`                 | Same-size redraw via orthogonal `draw_attempt` (ADR-0021)                            |
+| Max draw attempts    | 3                        | Per-round redraw cap before `Failed`; orthogonal to `max_appeals` (ADR-0021)         |
 
 ## Beans
 
