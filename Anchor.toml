@@ -15,6 +15,6 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm --filter @accord/tests test"
+test = "pnpm --filter @useaccord/tests test"
 
 [hooks]

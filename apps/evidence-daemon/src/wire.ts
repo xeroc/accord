@@ -15,10 +15,10 @@
 import { address, type Address } from "@solana/kit";
 import bs58 from "bs58";
 
-import type { Accord } from "@accord/sdk";
+import type { Accord } from "@useaccord/sdk";
 
 import { readDispute, readRound, readSubaccord } from "./chain/reader";
-import { deliverToJuror, operatorDecrypt, sha256 } from "@accord/sdk/evidence";
+import { deliverToJuror, operatorDecrypt, sha256 } from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "./keys/keyring";
 import { deliver } from "./pipeline/deliver";
 import {

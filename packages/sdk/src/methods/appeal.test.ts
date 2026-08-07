@@ -1,6 +1,6 @@
 // appeal.test.ts — runnable self-check for the appeal ladder + cost math +
 // AppealBond PDA seeds. Excluded from the build.
-//   pnpm --filter @accord/sdk test
+//   pnpm --filter @useaccord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

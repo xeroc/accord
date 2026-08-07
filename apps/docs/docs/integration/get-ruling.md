@@ -29,7 +29,7 @@ match accord::cpi::get_ruling(cpi_ctx)? {
 ```
 
 ```typescript
-import { fetchDisputeMaybe } from "@accord/sdk";
+import { fetchDisputeMaybe } from "@useaccord/sdk";
 
 const d = await fetchDisputeMaybe(accord, dispute);
 if (d?.exists && d.data.finalRuling !== null) {

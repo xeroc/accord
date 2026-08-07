@@ -9,7 +9,7 @@
 // Window timing (per Subaccord v1 defaults): commit opens at review_end
 // (draw_time + review_window), reveal at commit_end (+commit_window),
 // finalizable at reveal_end (+reveal_window).
-import { commit, findJurorStakePda, finalizeRound, reveal } from "@accord/sdk";
+import { commit, findJurorStakePda, finalizeRound, reveal } from "@useaccord/sdk";
 
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import {

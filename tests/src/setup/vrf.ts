@@ -16,7 +16,7 @@ import {
   ACCORD_PROGRAM_ID,
   getDisputeDecoder,
   getDisputeEncoder,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import type { Address } from "@solana/kit";
 
 import { setAccountRaw } from "./cheats.js";

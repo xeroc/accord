@@ -61,7 +61,7 @@ import {
   commit,
   reveal,
   commitHash,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 
 await requestVrf(accord.adapter, accord.PROGRAM_ID, { dispute });
 // VRF oracle calls commit_vrf_callback → dispute.frozen_root set …

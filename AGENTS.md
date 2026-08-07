@@ -22,8 +22,8 @@ Schelling Point here is **honesty** — Jurors vote truthfully because coherent-
 programs/
   accord/            Accord — Schelling-point arbitration
 packages/
-  sdk/              @accord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @accord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
-tests/              @accord/tests — jest integration suite (runs vs test-validator / Surfpool)
+  sdk/              @useaccord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @useaccord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
+tests/              @useaccord/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
 apps/docs/          MkDocs documentation site (developer-facing)
 apps/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
@@ -81,6 +81,28 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - Use PDAs consistently; derive via helper fns in the SDK (`packages/sdk/src/pda.ts`).
 - Prefer `init`/`init_if_needed` with `seeds` + `bump` over manual PDA writes.
 
+## Documentation
+
+- **Docs match reality, always.** Code comments, doc-comments, `SPEC.md`,
+  `security-checklist.md`, ADRs, and bean scope/summary sections must describe
+  the code as it _is_ — not as it was planned, renamed-away, or "will be." A
+  doc that narrates behavior the code doesn't have (e.g. "the tally dispatches
+  off X" when it doesn't, or a struct field listed in an account table that no
+  longer exists) is a bug: fix the doc or fix the code in the same change,
+  never leave them diverged.
+- **Forward-looking comments must be true today.** "Future variants ship as…"
+  is allowed only if the described seam already exists in code (field present,
+  dispatch wired). Otherwise mark it `// TODO` / "not yet implemented" or omit
+  it — aspirational prose rots into lies silently.
+- **Renames/drops are doc changes too.** When you rename or remove a field,
+  instruction, or error, grep the whole docs surface (`SPEC.md`,
+  `security-checklist.md`, `apps/docs/`, `README.md`, beans, ADRs) and update
+  every reference in the same change. The MkDocs site (`apps/docs/docs/`) and
+  `README.md` are part of this surface — stale names there are reality-mismatches.
+- **When behavior and docs disagree, trust the code — then reconcile.** Don't
+  bend a test to match a stale doc; don't rewrite a doc to match a bug. Decide
+  which is correct, fix the wrong one, update the other.
+
 ## Testing Instructions
 
 - **Two harnesses, complementary** (decision veridao-8ys4):
@@ -116,7 +138,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ### e2e suite — `tests/src` (Surfpool + jest + SDK)
 
 The jest suite in `tests/src/` is the **integration proof**: it drives the real
-program through the `@accord/sdk` facade against a live Surfpool instance.
+program through the `@useaccord/sdk` facade against a live Surfpool instance.
 LiteSVM is the fast inner TDD loop; **e2e is the sign-off**, never skipped for a
 feature that touches the chain.
 
@@ -154,7 +176,7 @@ true` cheatcode ⇒ direct program-data write, instant + deterministic) when
     `fetchDecoded(env, pda, getXDecoder())`. **Use `fetchDecoded`**, not the
     facade's `fetchX`/`getRuling`/`fetchJurorStake` — those need a
     `ClientWithRpc` and break over a raw `createSolanaRpc`. Account decoders are
-    re-exported from `@accord/sdk`.
+    re-exported from `@useaccord/sdk`.
   - `setup/fixtures.ts` — `randomBytes32()`, `DEFAULT_PUBKEY`,
     `defaultSubaccordArgs(...)`.
     One spec file per instruction group (`lifecycle.pause.timelock`,
@@ -194,7 +216,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@accord/sdk/evidence`), `0020` (two-mint/two-vault economics).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0015` (evidence crypto → `@useaccord/sdk/evidence`).
 
 ## Build Order
 
@@ -263,8 +285,8 @@ in `.beans.yml` (prefix `Accord-`).
 - **Evidence crypto lives in the SDK, not the daemon.** The ECIES / AES-256-GCM
   / HKDF-SHA256 / Ed↔X25519 evidence protocol is a multi-party wire contract
   shared by claimant, operator, and juror — it lives in
-  `@accord/sdk/evidence` (ADR-0015), **not** `apps/evidence-daemon`. The daemon
+  `@useaccord/sdk/evidence` (ADR-0015), **not** `apps/evidence-daemon`. The daemon
   keeps only `EnvKeyring`, S3 storage, the pipeline, and HTTP; it imports the
   protocol from the SDK. Don't reimplement crypto primitives in the daemon or an
-  Arbitrable — import `@accord/sdk/evidence` (backed by `@noble`; nothing
+  Arbitrable — import `@useaccord/sdk/evidence` (backed by `@noble`; nothing
   hand-rolled).

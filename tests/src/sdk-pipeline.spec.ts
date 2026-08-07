@@ -1,4 +1,4 @@
-// sdk-pipeline.spec.ts — the jest ↔ @solana/kit ↔ @accord/sdk pipeline smoke.
+// sdk-pipeline.spec.ts — the jest ↔ @solana/kit ↔ @useaccord/sdk pipeline smoke.
 //
 // Foundational check (ADR-0010) that the harness imports the SDK, the Kit
 // client resolves under ESM jest, and the Accord facade exposes a wired
@@ -14,7 +14,7 @@ import {
   createAccordMethods,
   type AccordAdapter,
   type AccordMethods,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import type { Address, TransactionSigner } from "@solana/kit";
 
 /** Minimal offline TransactionSigner — no signing happens in this smoke. */

@@ -2596,9 +2596,13 @@ fn commit_reveal_finalize_settle_single_round() {
         .unwrap();
     assert_eq!(d.state, DisputeState::Final);
     assert_eq!(d.final_ruling, 0u8);
-    // Stake pool = slash from 1 incoherent (α=10% of 1000 = 100); share = 100/2 = 50.
-    // Fee pool = 1 non-revealer fee (1_000_000); share = 1_000_000/2 = 500_000.
-    // Revealer base fee (1_000_000) credited at finalize_round.
+    // finalized_at stamped at the Final transition (Betline reveal-window
+    // anchor); 0 before Final, now > 0 and cannot precede filing.
+    assert!(d.finalized_at > 0, "finalized_at must be stamped at Final");
+    assert!(
+        d.finalized_at >= d.filed_at,
+        "finalized_at cannot precede filed_at"
+    );
     for &(seat, leaf_idx) in &drawn {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
         assert_eq!(js.active_draws, 0, "seat {seat} active_draws");
@@ -3291,6 +3295,19 @@ fn create_subaccord_stores_aggregation_plurality() {
     let env = setup_accumulator();
     let stored = read_subaccord(&env);
     assert_eq!(stored.aggregation, Aggregation::Plurality);
+}
+
+#[test]
+fn create_dispute_freezes_aggregation_onto_terms() {
+    // ADR-0019: the dispute's aggregation rule is frozen at filing time onto
+    // `terms` (Ugly-6), so finalize_round can dispatch off it without reading
+    // live `subaccord`. v1 = Plurality. setup_accumulator's Subaccord is
+    // created Plurality, so the frozen copy must read Plurality too.
+    let mut env = setup_accumulator();
+    let (dispute, _filer) = create_dispute_under_a(&mut env);
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.terms.aggregation, Aggregation::Plurality);
 }
 
 #[test]

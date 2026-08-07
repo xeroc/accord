@@ -7,7 +7,7 @@
 //
 // Requires `make run_surfpool` (terminal 1). Skips cleanly on the offline CI
 // lane — see AGENTS.md "e2e suite — tests/src".
-import { createSubaccord } from "@accord/sdk";
+import { createSubaccord } from "@useaccord/sdk";
 
 import { expectAccordAccount } from "./setup/assertions.js";
 import { defaultSubaccordArgs } from "./setup/fixtures.js";

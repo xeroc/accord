@@ -192,7 +192,7 @@ See [Testing](#testing) for the two-harness philosophy.
 │       ├── SPEC.md             # v1 build spec (account model, state machine)
 │       └── security-checklist.md
 ├── packages/
-│   └── sdk/                    # @accord/sdk — TypeScript SDK (codegen, in progress)
+│   └── sdk/                    # @useaccord/sdk — TypeScript SDK (codegen, in progress)
 ├── tests/                      # jest + Surfpool integration suite
 ├── apps/
 │   └── docs/                   # MkDocs Material docs site (domain TBD)
@@ -322,7 +322,7 @@ let dispute = accord::create_dispute(
     vec![option_a_hash, option_b_hash], // 2+ option hashes
     evidence_hash,                       // commitment to the evidence
     nonce,                               // caller-chosen, for PDA uniqueness
-    fee,                                 // jurors_per_dispute * fee_per_juror
+    fee,                                 // INITIAL_NUM_JURORS (3) * fee_per_juror
 )?;
 
 // 2. Read the ruling (lazy — call whenever, after finalization)
@@ -330,7 +330,7 @@ let ruling: Option<u8> = accord::get_ruling(ctx.accounts.dispute)?;
 ```
 
 ```typescript
-import { Accord } from "@accord/sdk";
+import { Accord } from "@useaccord/sdk";
 
 // File a dispute
 const { dispute } = await accord.createDispute({
@@ -396,7 +396,7 @@ scripts by design.
 Per-package lint auto-fix (where defined):
 
 ```bash
-pnpm --filter @accord/sdk run lint:fix
+pnpm --filter @useaccord/sdk run lint:fix
 ```
 
 ---
@@ -444,7 +444,7 @@ tests are green.
 | -------------------------------------- | -------------- | ------------------------------------------------------------------ |
 | `programs/accord` (on-chain)           | ✅ Implemented | Full v1 instruction set + per-instruction LiteSVM tests            |
 | Formal verification (`accord.qedspec`) | ⚠️ Declared    | Four economic invariants modeled; pending VRF/param-bounds binding |
-| `@accord/sdk` (TypeScript)             | 🚧 Scaffolded  | Codama codegen pipeline in progress (ADR-0010); facade stub only   |
+| `@useaccord/sdk` (TypeScript)             | 🚧 Scaffolded  | Codama codegen pipeline in progress (ADR-0010); facade stub only   |
 | `tests/` (jest/Surfpool)               | 🚧 Scaffolded  | Harness configured; integration specs in progress                  |
 | `apps/docs` (MkDocs)                   | ✅ Live        | Full integration guide, protocol reference, security docs, ADRs    |
 | Security audit                         | ❌ Not started | Pre-mainnet; do not secure real value yet                          |

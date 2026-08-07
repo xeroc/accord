@@ -29,7 +29,7 @@ import {
   getPendingUpdateDecoder,
   UPDATE_TIMELOCK_SLOTS,
   type UpdatePayload,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import type { Address } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";

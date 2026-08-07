@@ -34,7 +34,7 @@ status banner is annotated.
 | [0016](0016-pause-scope-split-contains-new-exposure-never-adjudication.md)    | Pause scope — split: pause contains new exposure, never adjudication (amends 0007)                  | Accepted             |
 | [0017](0017-evidence-data-format-manifest-yaml.md)                            | Evidence data format — `manifest.yaml` Merkle root, salted option labels                            | Accepted             |
 | [0018](0018-multi-round-settlement-against-final-ruling.md)                   | Multi-round settlement against the final ruling                                                     | Accepted             |
-| [0019](0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)     | Subaccord dispute-kit — aggregation enum; rename `jurors_per_dispute` → `initial_num_jurors`        | Accepted             |
+| [0019](0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)     | Subaccord dispute-kit — aggregation enum; round-1 panel fixed at `INITIAL_NUM_JURORS` (=3)          | Accepted             |
 | [0020](0020-two-mint-two-vault-stake-token-fee-token.md)                      | Two-mint/two-vault economics — `stake_token` (collateral) + `fee_token` (compensation)              | Accepted             |
 | [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md)                   | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx`                         | Accepted             |
 

@@ -1,6 +1,6 @@
 // staking.test.ts — runnable self-check for the staking guards (active_draws /
 // balance / amount). The active_draws guard is the test-matrix row 4 acceptance.
-// Excluded from the build; run via: pnpm --filter @accord/sdk test
+// Excluded from the build; run via: pnpm --filter @useaccord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

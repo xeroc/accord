@@ -13,7 +13,7 @@
  */
 import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
 import { address, type TransactionSigner } from "@solana/kit";
-import { Accord } from "@accord/sdk";
+import { Accord } from "@useaccord/sdk";
 
 import { loadConfig, loadServerConfig } from "./config.js";
 import { EnvKeyring } from "./keys/keyring.js";

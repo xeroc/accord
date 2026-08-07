@@ -1,5 +1,5 @@
 /* Hallmark · macrostructure: Manifesto (technical) · design-system: brand/DESIGN.md · theme: ink+amber (locked) · genre: technical/dark */
-/* @accord/landing — global styles
+/* @useaccord/landing — global styles
  * Tokens are a 1:1 mapping of brand/DESIGN.md §04 (color) and §05 (type).
  * Ink-dominant, one identity accent (amber), two restricted state colors.
  * Tailwind v4 CSS-first config: these @theme vars generate the utilities

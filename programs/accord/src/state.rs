@@ -8,10 +8,12 @@
 use crate::constants::{MAX_JURORS, MAX_OPTIONS};
 use anchor_lang::prelude::*;
 
-/// Per-Subaccord dispute-kit aggregation rule (ADR-0019). v1 ships a single
-/// variant; future variants (`RankedChoice`/IRV, `Median`) ship as new enum
-/// entries without touching Core or existing disputes. The tally path
-/// dispatches off this field — plurality today, additive later.
+/// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
+/// variants (`RankedChoice`/IRV, `Median`) ship as new enum entries. The rule
+/// is frozen onto `CaseTerms` at filing time and `finalize_round` tallies off
+/// it (`match dispute.terms.aggregation`) — plurality today. The match carries
+/// no wildcard arm, so adding a variant is a compile error until its tally arm
+/// lands — the extension seam is real and machine-checked, not aspirational.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum Aggregation {
     Plurality,
@@ -135,6 +137,7 @@ pub struct CaseTerms {
     pub commit_window: u64,
     pub reveal_window: u64,
     pub max_appeals: u8,
+    pub aggregation: Aggregation,
 }
 
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
@@ -163,6 +166,12 @@ pub struct Dispute {
     /// (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
     /// sentinels for `reveals`/`result`.
     pub final_ruling: u8,
+    /// Unix timestamp stamped at the single `Final` transition
+    /// (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
+    /// for downstream consumers (e.g. the Betline primitive's bettor reveal
+    /// window, which must open exactly when the dispute finalizes). `0` is a
+    /// safe sentinel: real Unix time is never 0 for on-chain disputes.
+    pub finalized_at: i64,
     /// Total fee deposited by the filer (N * fee_per_juror at creation; appeals
     /// add to the round's pool). Drives the redistribution economics.
     pub fee_paid: u64,

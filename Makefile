@@ -57,7 +57,7 @@ test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .s
 	# `anchor build` is unaffected — it manages its own toolchain.
 
 test_surfpool: ## Run the full suite against a running Surfpool instance
-	pnpm --filter @accord/tests test
+	pnpm --filter @useaccord/tests test
 
 run_surfpool: ## Start a fresh Surfpool Surfnet (auto-deploys accord.so via runbook; separate terminal)
 	surfpool start --yes --db :memory:

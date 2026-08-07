@@ -786,6 +786,7 @@ pub mod accord {
         d.state = DisputeState::Created;
         d.current_round = 0;
         d.final_ruling = u8::MAX;
+        d.finalized_at = 0;
         d.fee_paid = fee;
         // Ugly 4: record the filing timestamp so cancel_dispute has a pre-draw
         // anchor (snapshot/VRF liveness backstop).
@@ -801,6 +802,7 @@ pub mod accord {
             commit_window: sub.commit_window,
             reveal_window: sub.reveal_window,
             max_appeals: sub.max_appeals,
+            aggregation: sub.aggregation,
         };
         d.bump = ctx.bumps.dispute;
 
@@ -1264,17 +1266,20 @@ pub mod accord {
         let now = Clock::get()?.unix_timestamp;
         require!(now >= round.reveal_end, AccordError::RoundNotFinalizable);
 
-        let mut counts = [0u32; MAX_OPTIONS];
-        for i in 0..round.juror_count as usize {
-            let v = round.reveals[i];
-            if v != u8::MAX && (v as usize) < MAX_OPTIONS {
-                counts[v as usize] += 1;
+        let winner = match dispute.terms.aggregation {
+            Aggregation::Plurality => {
+                let mut counts = [0u32; MAX_OPTIONS];
+                for i in 0..round.juror_count as usize {
+                    let v = round.reveals[i];
+                    if v != u8::MAX && (v as usize) < MAX_OPTIONS {
+                        counts[v as usize] += 1;
+                    }
+                }
+                (0..dispute.num_options as usize)
+                    .max_by_key(|&i| counts[i])
+                    .unwrap_or(0) as u8
             }
-        }
-
-        let winner = (0..dispute.num_options as usize)
-            .max_by_key(|&i| counts[i])
-            .unwrap_or(0) as u8;
+        };
         round.result = winner;
 
         // --- ADR-0020: credit fees_earned to each revealer (E1 write path) ---
@@ -1449,6 +1454,7 @@ pub mod accord {
         round.settled = 1;
 
         dispute.final_ruling = final_ruling;
+        dispute.finalized_at = now;
         dispute.state = DisputeState::Final;
 
         emit!(RulingFinalized {

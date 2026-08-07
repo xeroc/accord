@@ -1,10 +1,20 @@
 # Canon — Architecture Decision Records
 
-ADR records for the **Canon** program (the curated-list registry).
+ADR records for the **Canon** program (the curated-list registry Arbitrable over
+Accord). Canon's series is independent of Accord's, starting at `canon/0001`.
 
-Canon has **no ADRs yet**. Its series is independent of Accord's and will start
-at `canon/0001`. When the first Canon ADR is authored, add it here and start the
-index table below.
+## Index
+
+| # | Title | Status |
+| --- | --- | --- |
+| [0001](0001-canon-curated-list-arbitrable-over-accord.md) | Accord Canon — a curated-list Arbitrable over Accord | Accepted |
+
+## How to read them
+
+- New to Canon: start with [0001](0001-canon-curated-list-arbitrable-over-accord.md)
+  (what Canon is — an Arbitrable, not a court), then `programs/canon/SPEC.md`
+  (the implementation reference: account model, instructions, state machine,
+  Stake-Curate economics).
 
 See the [ADR hub](../index.md) for the per-program convention and the
 [Accord ADR series](../accord/index.md) for an example of a populated index.

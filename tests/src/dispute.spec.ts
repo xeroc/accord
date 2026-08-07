@@ -29,7 +29,7 @@ import {
   type CreateDisputeAccounts,
   type CreateDisputeArgs,
   type StakingAccounts,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import {
   getProgramDerivedAddress,
   getAddressEncoder,

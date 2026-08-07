@@ -9,7 +9,7 @@ The Arbitrable's only write into the Accord. `create_dispute` custodies the roun
 | `options`       | `Vec<[u8; 32]>` | 2..=`MAX_OPTIONS` (32). Option label hashes.                                                |
 | `evidence_hash` | `[u8; 32]`      | [ADR-0006](../adr/0006-evidence-onchain-hash-trusted-re-encryption-operator.md) commitment. |
 | `nonce`         | `u64`           | Caller-chosen; PDA uniqueness (`["dispute", filer, nonce]`).                                |
-| `fee`           | `u64`           | **Must equal** `jurors_per_dispute · fee_per_juror`.                                        |
+| `fee`           | `u64`           | **Must equal** `INITIAL_NUM_JURORS · fee_per_juror` (= `3 · fee_per_juror`).                |
 
 ## Gates
 
@@ -17,19 +17,19 @@ The Arbitrable's only write into the Accord. `create_dispute` custodies the roun
 | --------------------------------------------- | -------------------- |
 | `!pause_state.paused`                         | `ProgramPaused`      |
 | `2 ≤ options.len() ≤ 32`                      | `InvalidOptions`     |
-| `fee == jurors_per_dispute · fee_per_juror`   | `FeeMismatch`        |
-| `subaccord.staker_count ≥ jurors_per_dispute` | `InsufficientJurors` |
+| `fee == INITIAL_NUM_JURORS · fee_per_juror`   | `FeeMismatch`        |
+| `subaccord.staker_count ≥ INITIAL_NUM_JURORS` | `InsufficientJurors` |
 
 ## Fee
 
 ```
-fee = jurors_per_dispute × fee_per_juror      // moves filer ATA → vault
+fee = INITIAL_NUM_JURORS × fee_per_juror      // = 3 × fee_per_juror (ADR-0019); moves filer ATA → vault
 ```
 
 The fee is authoritative on-chain: the filer signs the exact charge. Appeal-round fees are paid by the appellant ([appeals](appeals.md)).
 
 ```rust
-let required_fee = (subaccord.jurors_per_dispute as u64) * subaccord.fee_per_juror;
+let required_fee = 3u64 * subaccord.fee_per_juror; // INITIAL_NUM_JURORS (ADR-0019)
 accord::cpi::create_dispute(
     cpi_ctx,
     vec![option_a_hash, option_b_hash],
@@ -41,7 +41,7 @@ accord::cpi::create_dispute(
 ```
 
 ```typescript
-import { createDispute, findDisputePda } from "@accord/sdk";
+import { createDispute, findDisputePda } from "@useaccord/sdk";
 
 const { instruction, dispute } = await createDispute(
   accord.adapter,
