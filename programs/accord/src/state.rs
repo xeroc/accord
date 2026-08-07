@@ -8,6 +8,15 @@
 use crate::constants::{MAX_JURORS, MAX_OPTIONS};
 use anchor_lang::prelude::*;
 
+/// Per-Subaccord dispute-kit aggregation rule (ADR-0019). v1 ships a single
+/// variant; future variants (`RankedChoice`/IRV, `Median`) ship as new enum
+/// entries without touching Core or existing disputes. The tally path
+/// dispatches off this field — plurality today, additive later.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub enum Aggregation {
+    Plurality,
+}
+
 /// A specialized Juror pool. Permissionless; `staking_token`, windows, `alpha`,
 /// `min_stake`, `fee_per_juror`, `authority`, and `evidence_operator` are mutable
 /// via propose/execute (ADR-0005); `risk_type` and `evidence_spec` are immutable.
@@ -19,7 +28,6 @@ pub struct Subaccord {
     pub creator: Pubkey,
     pub staking_token: Pubkey, // SPL mint juror capital is staked in (ADR-0002)
     pub min_stake: u64,        // draw eligibility threshold, in `staking_token`
-    pub jurors_per_dispute: u32,
     /// Slash factor in basis points (10% = 1000). Incoherent Juror loses
     /// `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
     pub alpha_bps: u16,
@@ -27,6 +35,8 @@ pub struct Subaccord {
     pub commit_window: u64, // seconds
     pub reveal_window: u64, // seconds
     pub max_appeals: u8,
+    /// Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`.
+    pub aggregation: Aggregation,
     pub fee_per_juror: u64, // in `staking_token`
     /// `Pubkey::default()` => immutable. Otherwise signs propose/execute updates.
     pub authority: Pubkey,
@@ -111,7 +121,6 @@ pub struct CaseTerms {
     pub alpha_bps: u16,
     pub min_stake: u64,
     pub fee_per_juror: u64,
-    pub jurors_per_dispute: u32,
     pub review_window: u64,
     pub commit_window: u64,
     pub reveal_window: u64,
@@ -312,12 +321,12 @@ pub enum DisputeState {
 pub struct CreateSubaccordParams {
     pub staking_token: Pubkey,
     pub min_stake: u64,
-    pub jurors_per_dispute: u32,
     pub alpha_bps: u16,
     pub review_window: u64,
     pub commit_window: u64,
     pub reveal_window: u64,
     pub max_appeals: u8,
+    pub aggregation: Aggregation,
     pub fee_per_juror: u64,
     pub authority: Pubkey,
     pub evidence_operator: Pubkey,
@@ -329,7 +338,6 @@ pub struct CreateSubaccordParams {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub enum UpdatePayload {
     MinStake(u64),
-    JurorsPerDispute(u32),
     AlphaBps(u16),
     ReviewWindow(u64),
     CommitWindow(u64),

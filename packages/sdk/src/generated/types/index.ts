@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./aggregation";
 export * from "./caseTerms";
 export * from "./disputeState";
 export * from "./leafClaim";

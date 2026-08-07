@@ -42,6 +42,12 @@ import {
   type MaybeEncodedAccount,
   type ReadonlyUint8Array,
 } from "@solana/kit";
+import {
+  getAggregationDecoder,
+  getAggregationEncoder,
+  type Aggregation,
+  type AggregationArgs,
+} from "../types";
 
 export const SUBACCORD_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   210, 63, 193, 190, 9, 166, 89, 170,
@@ -56,7 +62,6 @@ export type Subaccord = {
   creator: Address;
   stakingToken: Address;
   minStake: bigint;
-  jurorsPerDispute: number;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
    * `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
@@ -66,6 +71,8 @@ export type Subaccord = {
   commitWindow: bigint;
   revealWindow: bigint;
   maxAppeals: number;
+  /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
+  aggregation: Aggregation;
   feePerJuror: bigint;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
@@ -109,7 +116,6 @@ export type SubaccordArgs = {
   creator: Address;
   stakingToken: Address;
   minStake: number | bigint;
-  jurorsPerDispute: number;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
    * `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
@@ -119,6 +125,8 @@ export type SubaccordArgs = {
   commitWindow: number | bigint;
   revealWindow: number | bigint;
   maxAppeals: number;
+  /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
+  aggregation: AggregationArgs;
   feePerJuror: number | bigint;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
@@ -166,12 +174,12 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["creator", getAddressEncoder()],
       ["stakingToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
-      ["jurorsPerDispute", getU32Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
       ["revealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
+      ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
@@ -195,12 +203,12 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["creator", getAddressDecoder()],
     ["stakingToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
-    ["jurorsPerDispute", getU32Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
@@ -274,5 +282,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 297;
+  return 294;
 }

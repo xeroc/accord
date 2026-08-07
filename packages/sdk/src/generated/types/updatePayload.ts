@@ -18,8 +18,6 @@ import {
   getTupleEncoder,
   getU16Decoder,
   getU16Encoder,
-  getU32Decoder,
-  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -38,7 +36,6 @@ import {
  */
 export type UpdatePayload =
   | { __kind: "MinStake"; fields: readonly [bigint] }
-  | { __kind: "JurorsPerDispute"; fields: readonly [number] }
   | { __kind: "AlphaBps"; fields: readonly [number] }
   | { __kind: "ReviewWindow"; fields: readonly [bigint] }
   | { __kind: "CommitWindow"; fields: readonly [bigint] }
@@ -50,7 +47,6 @@ export type UpdatePayload =
 
 export type UpdatePayloadArgs =
   | { __kind: "MinStake"; fields: readonly [number | bigint] }
-  | { __kind: "JurorsPerDispute"; fields: readonly [number] }
   | { __kind: "AlphaBps"; fields: readonly [number] }
   | { __kind: "ReviewWindow"; fields: readonly [number | bigint] }
   | { __kind: "CommitWindow"; fields: readonly [number | bigint] }
@@ -65,10 +61,6 @@ export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
     [
       "MinStake",
       getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
-    ],
-    [
-      "JurorsPerDispute",
-      getStructEncoder([["fields", getTupleEncoder([getU32Encoder()])]]),
     ],
     [
       "AlphaBps",
@@ -110,10 +102,6 @@ export function getUpdatePayloadDecoder(): Decoder<UpdatePayload> {
     [
       "MinStake",
       getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
-    ],
-    [
-      "JurorsPerDispute",
-      getStructDecoder([["fields", getTupleDecoder([getU32Decoder()])]]),
     ],
     [
       "AlphaBps",
@@ -166,18 +154,6 @@ export function updatePayload(
     "MinStake"
   >["fields"],
 ): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "MinStake">;
-export function updatePayload(
-  kind: "JurorsPerDispute",
-  data: GetDiscriminatedUnionVariantContent<
-    UpdatePayloadArgs,
-    "__kind",
-    "JurorsPerDispute"
-  >["fields"],
-): GetDiscriminatedUnionVariant<
-  UpdatePayloadArgs,
-  "__kind",
-  "JurorsPerDispute"
->;
 export function updatePayload(
   kind: "AlphaBps",
   data: GetDiscriminatedUnionVariantContent<

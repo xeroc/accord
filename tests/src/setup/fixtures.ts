@@ -2,7 +2,7 @@
 // Kept free of chain access so they're usable in any lane (incl. offline).
 
 import { address, type Address } from "@solana/kit";
-import type { CreateSubaccordArgs } from "@accord/sdk";
+import { Aggregation, type CreateSubaccordArgs } from "@accord/sdk";
 
 /** Solana `Pubkey::default()` (all-ones). Used as `authority` ⇒ immutable Subaccord. */
 export const DEFAULT_PUBKEY: Address = address(
@@ -30,12 +30,12 @@ export function defaultSubaccordArgs(
     evidenceSpec: randomBytes32(),
     stakingToken,
     minStake: 1_000n,
-    jurorsPerDispute: 3,
     alphaBps: 1_000, // 10%
     reviewWindow: 604_800n, // 7 days
     commitWindow: 172_800n, // 2 days
     revealWindow: 172_800n, // 2 days
     maxAppeals: 3,
+    aggregation: Aggregation.Plurality,
     feePerJuror: 0n,
     authority: DEFAULT_PUBKEY, // immutable
     evidenceOperator,

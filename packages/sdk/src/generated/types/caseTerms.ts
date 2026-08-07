@@ -12,8 +12,6 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
-  getU32Decoder,
-  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -37,7 +35,6 @@ export type CaseTerms = {
   alphaBps: number;
   minStake: bigint;
   feePerJuror: bigint;
-  jurorsPerDispute: number;
   reviewWindow: bigint;
   commitWindow: bigint;
   revealWindow: bigint;
@@ -48,7 +45,6 @@ export type CaseTermsArgs = {
   alphaBps: number;
   minStake: number | bigint;
   feePerJuror: number | bigint;
-  jurorsPerDispute: number;
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
   revealWindow: number | bigint;
@@ -60,7 +56,6 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["alphaBps", getU16Encoder()],
     ["minStake", getU64Encoder()],
     ["feePerJuror", getU64Encoder()],
-    ["jurorsPerDispute", getU32Encoder()],
     ["reviewWindow", getU64Encoder()],
     ["commitWindow", getU64Encoder()],
     ["revealWindow", getU64Encoder()],
@@ -73,7 +68,6 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["alphaBps", getU16Decoder()],
     ["minStake", getU64Decoder()],
     ["feePerJuror", getU64Decoder()],
-    ["jurorsPerDispute", getU32Decoder()],
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],

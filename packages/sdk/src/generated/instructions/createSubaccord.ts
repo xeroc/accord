@@ -18,8 +18,6 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
-  getU32Decoder,
-  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -50,6 +48,12 @@ import {
 } from "@solana/kit/program-client-core";
 import { findSubaccordPda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
+import {
+  getAggregationDecoder,
+  getAggregationEncoder,
+  type Aggregation,
+  type AggregationArgs,
+} from "../types";
 
 export const CREATE_SUBACCORD_DISCRIMINATOR: ReadonlyUint8Array =
   new Uint8Array([135, 240, 91, 50, 192, 161, 177, 22]);
@@ -91,12 +95,12 @@ export type CreateSubaccordInstructionData = {
   evidenceSpec: ReadonlyUint8Array;
   stakingToken: Address;
   minStake: bigint;
-  jurorsPerDispute: number;
   alphaBps: number;
   reviewWindow: bigint;
   commitWindow: bigint;
   revealWindow: bigint;
   maxAppeals: number;
+  aggregation: Aggregation;
   feePerJuror: bigint;
   authority: Address;
   evidenceOperator: Address;
@@ -108,12 +112,12 @@ export type CreateSubaccordInstructionDataArgs = {
   evidenceSpec: ReadonlyUint8Array;
   stakingToken: Address;
   minStake: number | bigint;
-  jurorsPerDispute: number;
   alphaBps: number;
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
   revealWindow: number | bigint;
   maxAppeals: number;
+  aggregation: AggregationArgs;
   feePerJuror: number | bigint;
   authority: Address;
   evidenceOperator: Address;
@@ -128,12 +132,12 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["stakingToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
-      ["jurorsPerDispute", getU32Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
       ["revealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
+      ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
@@ -150,12 +154,12 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["stakingToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
-    ["jurorsPerDispute", getU32Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
@@ -185,12 +189,12 @@ export type CreateSubaccordAsyncInput<
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
-  jurorsPerDispute: CreateSubaccordInstructionDataArgs["jurorsPerDispute"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
   commitWindow: CreateSubaccordInstructionDataArgs["commitWindow"];
   revealWindow: CreateSubaccordInstructionDataArgs["revealWindow"];
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
+  aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
@@ -280,12 +284,12 @@ export type CreateSubaccordInput<
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
-  jurorsPerDispute: CreateSubaccordInstructionDataArgs["jurorsPerDispute"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
   commitWindow: CreateSubaccordInstructionDataArgs["commitWindow"];
   revealWindow: CreateSubaccordInstructionDataArgs["revealWindow"];
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
+  aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];

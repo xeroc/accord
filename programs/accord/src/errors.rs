@@ -54,7 +54,7 @@ pub enum AccordError {
     InvalidOptions,
     #[msg("Dispute is not in the required state for this instruction.")]
     InvalidState,
-    #[msg("Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror).")]
+    #[msg("Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).")]
     FeeMismatch,
 
     // --- accumulator (ADR-0012) ---

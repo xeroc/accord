@@ -30,7 +30,7 @@ import {
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "../constants.js";
-import type { UpdatePayload } from "../types.js";
+import type { Aggregation, UpdatePayload } from "../types.js";
 
 export {
   MAX_APPEALS,
@@ -69,14 +69,17 @@ export interface CreateSubaccordArgs {
   /** SPL mint juror capital is staked in (ADR-0002). */
   stakingToken: Address;
   minStake: bigint;
-  jurorsPerDispute: number; // u32
   /** Slash factor in bps (10% = 1000). */
   alphaBps: number; // u16
   reviewWindow: bigint; // seconds
   commitWindow: bigint; // seconds
   revealWindow: bigint; // seconds
-  /** ≤ {@link MAX_APPEALS}; bounded by the program's appeal-bond array. */
+  /** ≤ {@link MAX_APPEALS}; the sole per-Subaccord panel-shape knob. The
+   *  round-1 size is the fixed {@link INITIAL_NUM_JURORS} (3); each appeal
+   *  doubles+1 (3 → 7 → 15 → 31 at max_appeals = 3). */
   maxAppeals: number; // u8
+  /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
+  aggregation: Aggregation;
   feePerJuror: bigint;
   /** `Pubkey::default()` => immutable Subaccord; else signs propose/execute. */
   authority: Address;
@@ -134,7 +137,8 @@ export function pauseSeeds(): Uint8Array[] {
   return [SEED_PAUSE];
 }
 
-/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs:168). */
+/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs). The round-1 panel is the
+ * fixed `INITIAL_NUM_JURORS` (=3), so this is the only panel-shape gate. */
 export function assertValidMaxAppeals(maxAppeals: number): void {
   if (
     !Number.isInteger(maxAppeals) ||

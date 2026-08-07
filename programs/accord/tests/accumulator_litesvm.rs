@@ -20,7 +20,8 @@ use accord::constants::{
     WITHDRAWAL_DELAY,
 };
 use accord::state::{
-    CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode, Subaccord,
+    Aggregation, CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode,
+    Subaccord,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
@@ -261,12 +262,12 @@ fn setup_accumulator() -> AccEnv {
             params: CreateSubaccordParams {
                 staking_token: mint,
                 min_stake: 1_000,
-                jurors_per_dispute: 3,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
                 max_appeals: 3,
+                aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 authority: creator.pubkey(),
                 evidence_operator: creator.pubkey(),
@@ -702,7 +703,7 @@ fn commit_vrf_callback_freezes_live_root() {
 
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64; // jurors_per_dispute * fee_per_juror
+    let fee = 3 * 1_000_000u64; // initial_num_jurors * fee_per_juror
 
     let ix = env
         .ctx
@@ -1392,12 +1393,12 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
             params: CreateSubaccordParams {
                 staking_token: env.mint,
                 min_stake: 1_000,
-                jurors_per_dispute: 3,
                 alpha_bps: 1_000,
                 review_window: 60,
                 commit_window: 60,
                 reveal_window: 60,
                 max_appeals: 3,
+                aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 authority: env.creator.pubkey(),
                 evidence_operator: env.creator.pubkey(),
@@ -3191,4 +3192,93 @@ fn submit_draw_seat(
     env.ctx
         .execute_instruction(ix_with_meta, &[&env.creator])
         .unwrap()
+}
+
+// ─── ADR-0019 dispute-kit: aggregation enum stored on Subaccord ──
+//
+// The round-1 panel size is the fixed `INITIAL_NUM_JURORS` (=3); the only
+// per-Subaccord panel-shape knob is `max_appeals` (0..=3 ⇒ ladders 3 / 3→7 /
+// 3→7→15 / 3→7→15→31). `aggregation` (v1 = `Plurality`) is stored verbatim —
+// the forward-compat hook for future IRV/Median variants.
+
+/// Build a fresh SVM + funded creator and attempt `create_subaccord` with the
+/// given `max_appeals` + `aggregation`. Returns the tx result so callers can
+/// assert success/failure. A fresh creator keypair per call keeps the Subaccord
+/// PDA unique.
+fn try_create_subaccord(max_appeals: u8, aggregation: Aggregation) -> TransactionResult {
+    let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
+    let creator = Keypair::new();
+    ctx.svm
+        .airdrop(&creator.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    // Non-zero risk_type (namespace-squat guard); distinct from setup_accumulator.
+    let risk_type = {
+        let mut rt = [0u8; 32];
+        rt[0] = 0x7F;
+        rt
+    };
+    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let mint = Pubkey::new_unique(); // create_subaccord stores but does not validate the mint
+    let ix = ctx
+        .program()
+        .accounts(accounts::CreateSubaccord {
+            creator: creator.pubkey(),
+            subaccord: sub,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateSubaccord {
+            risk_type,
+            evidence_spec: [0u8; 32],
+            params: CreateSubaccordParams {
+                staking_token: mint,
+                min_stake: 1_000,
+                alpha_bps: 1_000,
+                review_window: 60,
+                commit_window: 60,
+                reveal_window: 60,
+                max_appeals,
+                aggregation,
+                fee_per_juror: 1_000_000,
+                authority: creator.pubkey(),
+                evidence_operator: creator.pubkey(),
+                depth: TEST_DEPTH,
+            },
+        })
+        .instruction()
+        .unwrap();
+    ctx.execute_instruction(ix, &[&creator]).unwrap()
+}
+
+#[test]
+fn create_subaccord_stores_aggregation_plurality() {
+    // setup_accumulator creates with the v1 defaults; the stored aggregation
+    // must be Plurality (the tally-rule hook, ADR-0019).
+    let env = setup_accumulator();
+    let stored = read_subaccord(&env);
+    assert_eq!(stored.aggregation, Aggregation::Plurality);
+}
+
+#[test]
+fn create_subaccord_rejects_max_appeals_above_ceiling() {
+    // max_appeals > MAX_APPEALS (3) is the only remaining panel-shape gate now
+    // that the round-1 size is fixed at 3 (ladder 3→7→15→31 always fits 31).
+    let r = try_create_subaccord(4, Aggregation::Plurality);
+    assert!(
+        !r.is_success(),
+        "max_appeals=4 > MAX_APPEALS must be rejected; logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_accepts_max_appeals_ladder() {
+    // Each max_appeals value 0..=3 yields a distinct, valid appeal ladder.
+    for ma in 0u8..=3 {
+        let r = try_create_subaccord(ma, Aggregation::Plurality);
+        assert!(
+            r.is_success(),
+            "max_appeals={ma} must be accepted; logs={:?}",
+            r.logs()
+        );
+    }
 }
