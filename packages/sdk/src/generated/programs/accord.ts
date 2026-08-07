@@ -76,6 +76,7 @@ import {
   getProposeSubaccordUpdateInstructionAsync,
   getProposeUnpauseInstructionAsync,
   getReconcileStakeInstruction,
+  getRedrawInstructionAsync,
   getRequestVrfInstructionAsync,
   getRequestWithdrawInstructionAsync,
   getRevealInstruction,
@@ -102,6 +103,7 @@ import {
   parseProposeSubaccordUpdateInstruction,
   parseProposeUnpauseInstruction,
   parseReconcileStakeInstruction,
+  parseRedrawInstruction,
   parseRequestVrfInstruction,
   parseRequestWithdrawInstruction,
   parseRevealInstruction,
@@ -143,6 +145,7 @@ import {
   type ParsedProposeSubaccordUpdateInstruction,
   type ParsedProposeUnpauseInstruction,
   type ParsedReconcileStakeInstruction,
+  type ParsedRedrawInstruction,
   type ParsedRequestVrfInstruction,
   type ParsedRequestWithdrawInstruction,
   type ParsedRevealInstruction,
@@ -154,6 +157,7 @@ import {
   type ProposeSubaccordUpdateAsyncInput,
   type ProposeUnpauseAsyncInput,
   type ReconcileStakeInput,
+  type RedrawAsyncInput,
   type RequestVrfAsyncInput,
   type RequestWithdrawAsyncInput,
   type RevealInput,
@@ -174,7 +178,7 @@ import {
 } from "../pdas";
 
 export const ACCORD_PROGRAM_ADDRESS =
-  "ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc" as Address<"ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc">;
+  "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi" as Address<"426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi">;
 
 export enum AccordAccount {
   AppealBond,
@@ -293,6 +297,7 @@ export enum AccordInstruction {
   ProposeSubaccordUpdate,
   ProposeUnpause,
   ReconcileStake,
+  Redraw,
   RequestVrf,
   RequestWithdraw,
   Reveal,
@@ -519,6 +524,17 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([86, 111, 66, 164, 105, 158, 114, 164]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.Redraw;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([5, 87, 79, 152, 164, 176, 190, 226]),
       ),
       0,
@@ -599,7 +615,7 @@ export function identifyAccordInstruction(
 }
 
 export type ParsedAccordInstruction<
-  TProgram extends string = "ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc",
+  TProgram extends string = "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi",
 > =
   | ({
       instructionType: AccordInstruction.Appeal;
@@ -658,6 +674,9 @@ export type ParsedAccordInstruction<
   | ({
       instructionType: AccordInstruction.ReconcileStake;
     } & ParsedReconcileStakeInstruction<TProgram>)
+  | ({
+      instructionType: AccordInstruction.Redraw;
+    } & ParsedRedrawInstruction<TProgram>)
   | ({
       instructionType: AccordInstruction.RequestVrf;
     } & ParsedRequestVrfInstruction<TProgram>)
@@ -818,6 +837,13 @@ export function parseAccordInstruction<TProgram extends string>(
         ...parseReconcileStakeInstruction(instruction),
       };
     }
+    case AccordInstruction.Redraw: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.Redraw,
+        ...parseRedrawInstruction(instruction),
+      };
+    }
     case AccordInstruction.RequestVrf: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -972,6 +998,9 @@ export type AccordPluginInstructions = {
     input: ReconcileStakeInput,
   ) => ReturnType<typeof getReconcileStakeInstruction> &
     SelfPlanAndSendFunctions;
+  redraw: (
+    input: RedrawAsyncInput,
+  ) => ReturnType<typeof getRedrawInstructionAsync> & SelfPlanAndSendFunctions;
   requestVrf: (
     input: RequestVrfAsyncInput,
   ) => ReturnType<typeof getRequestVrfInstructionAsync> &
@@ -1115,6 +1144,11 @@ export function accordProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getReconcileStakeInstruction(input),
+            ),
+          redraw: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRedrawInstructionAsync(input),
             ),
           requestVrf: (input) =>
             addSelfPlanAndSendFunctions(

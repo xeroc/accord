@@ -31,7 +31,7 @@ describe("jest ↔ kit ↔ sdk pipeline", () => {
     // The keypair (target/deploy/accord-keypair.json) is the deploy truth;
     // declare_id!, Anchor.toml, and ACCORD_PROGRAM_ID are all synced to it.
     expect(ACCORD_PROGRAM_ID).toBe(
-      "ERha4v336YFbuKEPaxcFUtW49fmHFnmNCSnTcP1MTbKc",
+      "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi",
     );
   });
 

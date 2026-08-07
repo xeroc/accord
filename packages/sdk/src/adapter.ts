@@ -54,6 +54,7 @@ import { getCommitInstruction } from "./generated/instructions/commit.js";
 import { getRevealInstruction } from "./generated/instructions/reveal.js";
 import { getFinalizeRoundInstruction } from "./generated/instructions/finalizeRound.js";
 import { getFinalizeDisputeInstruction } from "./generated/instructions/finalizeDispute.js";
+import { getRedrawInstruction } from "./generated/instructions/redraw.js";
 import { getAppealInstruction } from "./generated/instructions/appeal.js";
 import { getClaimAppealRefundInstruction } from "./generated/instructions/claimAppealRefund.js";
 
@@ -412,6 +413,22 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       );
       return appendRemaining(ix, input.remainingAccounts);
     },
+    buildRedraw(input) {
+      const ix = getRedrawInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          dispute: input.accounts.dispute,
+          round: input.accounts.round,
+          feeToken: input.accounts.feeToken,
+          filerTokenAccount: input.accounts.filerTokenAccount,
+          feeVault: input.accounts.feeVault,
+          tokenProgram: input.accounts.tokenProgram,
+        },
+        { programAddress: input.programId },
+      );
+      return appendRemaining(ix, input.remainingAccounts ?? []);
+    },
     encodeAddress(address) {
       return new Uint8Array(getAddressEncoder().encode(address));
     },
@@ -463,6 +480,9 @@ function mapCreateSubaccordArgs(
     maxAppeals: args.maxAppeals,
     aggregation: args.aggregation,
     feePerJuror: args.feePerJuror,
+    revealThresholdBps: args.revealThresholdBps,
+    shortfallPolicy: args.shortfallPolicy,
+    maxDrawAttempts: args.maxDrawAttempts,
     authority: args.authority,
     evidenceOperator: args.evidenceOperator,
     depth: args.depth,

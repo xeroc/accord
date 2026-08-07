@@ -25,6 +25,10 @@ import {
   getAggregationEncoder,
   type Aggregation,
   type AggregationArgs,
+  getShortfallPolicyDecoder,
+  getShortfallPolicyEncoder,
+  type ShortfallPolicy,
+  type ShortfallPolicyArgs,
 } from ".";
 
 /**
@@ -46,6 +50,15 @@ export type CaseTerms = {
   revealWindow: bigint;
   maxAppeals: number;
   aggregation: Aggregation;
+  /**
+   * Frozen reveal-quorum fraction (ADR-0021). Mirrors
+   * `Subaccord.reveal_threshold_bps` at filing time.
+   */
+  revealThresholdBps: number;
+  /** Frozen shortfall policy (ADR-0021). */
+  shortfallPolicy: ShortfallPolicy;
+  /** Frozen redraw cap (ADR-0021). */
+  maxDrawAttempts: number;
 };
 
 export type CaseTermsArgs = {
@@ -57,6 +70,15 @@ export type CaseTermsArgs = {
   revealWindow: number | bigint;
   maxAppeals: number;
   aggregation: AggregationArgs;
+  /**
+   * Frozen reveal-quorum fraction (ADR-0021). Mirrors
+   * `Subaccord.reveal_threshold_bps` at filing time.
+   */
+  revealThresholdBps: number;
+  /** Frozen shortfall policy (ADR-0021). */
+  shortfallPolicy: ShortfallPolicyArgs;
+  /** Frozen redraw cap (ADR-0021). */
+  maxDrawAttempts: number;
 };
 
 export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
@@ -69,6 +91,9 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["revealWindow", getU64Encoder()],
     ["maxAppeals", getU8Encoder()],
     ["aggregation", getAggregationEncoder()],
+    ["revealThresholdBps", getU16Encoder()],
+    ["shortfallPolicy", getShortfallPolicyEncoder()],
+    ["maxDrawAttempts", getU8Encoder()],
   ]);
 }
 
@@ -82,6 +107,9 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["revealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
     ["aggregation", getAggregationDecoder()],
+    ["revealThresholdBps", getU16Decoder()],
+    ["shortfallPolicy", getShortfallPolicyDecoder()],
+    ["maxDrawAttempts", getU8Decoder()],
   ]);
 }
 

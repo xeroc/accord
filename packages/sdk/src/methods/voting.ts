@@ -174,6 +174,12 @@ export interface AccordVotingClient {
     /** remaining_accounts: drawn JurorStake PDAs (+ AppealBond PDAs). */
     remainingAccounts: Address[];
   }): Instruction;
+  /** `redraw` (ADR-0021) — see {@link redraw}. */
+  buildRedraw(input: {
+    programId: Address;
+    accounts: RedrawAccounts;
+    remainingAccounts?: Address[];
+  }): Instruction;
   /** Encode a juror Address to its 32-byte pubkey (Kit `getAddressEncoder`). */
   encodeAddress(address: Address): Uint8Array;
 }
@@ -275,4 +281,45 @@ export function finalizeDispute(
     accounts,
     remainingAccounts,
   });
+}
+
+// --- Shortfall redraw (ADR-0021) -------------------------------------------
+
+/**
+ * Accounts for `redraw` (lib.rs). The Fail branch refunds the filer from
+ * `feeVault`, so it carries the filer's `feeToken` ATA + the vault (validated
+ * but unused on the Redraw branch).
+ */
+export interface RedrawAccounts {
+  /** Permissionless cranker. */
+  caller: Address;
+  subaccord: Address;
+  dispute: Address;
+  /** The shortfall round (`dispute.current_round`). */
+  round: Address;
+  feeToken: Address;
+  /** Filer's `feeToken` ATA — refund destination on exhaustion. */
+  filerTokenAccount: Address;
+  feeVault: Address;
+  tokenProgram: Address;
+}
+
+/**
+ * Build the permissionless `redraw` crank (lib.rs, ADR-0021). Only callable
+ * from `RedrawEligible`. Slashes no-shows into `stake_delta`, bumps
+ * `round.draw_attempt` (orthogonal to `round_idx` — same panel size, no appeal
+ * consumed), clears the round → `Created`; on `draw_attempt + 1 ≥
+ * max_draw_attempts` → `Failed` (filer `fee_paid` refunded, slashes stand).
+ *
+ * `remainingAccounts` = the round's drawn `JurorStake` PDAs (panel); on the Fail
+ * branch additionally prior-round `Round` PDAs + their `JurorStake` PDAs + the
+ * dispute's `AppealBond` PDAs (same layout as `cancel_dispute`).
+ */
+export function redraw(
+  client: AccordVotingClient,
+  programId: Address,
+  accounts: RedrawAccounts,
+  remainingAccounts: Address[] = [],
+): Instruction {
+  return client.buildRedraw({ programId, accounts, remainingAccounts });
 }

@@ -24,6 +24,12 @@ export {
 } from "./generated/types/aggregation.js";
 
 export {
+  ShortfallPolicy,
+  type ShortfallPolicyArgs,
+  getShortfallPolicyCodec,
+} from "./generated/types/shortfallPolicy.js";
+
+export {
   type UpdatePayload,
   getUpdatePayloadCodec,
 } from "./generated/types/updatePayload.js";

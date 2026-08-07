@@ -1,11 +1,11 @@
 ---
 # accord-vsyq
 title: Two-mint/two-vault economics + reveal-quorum shortfall redraw
-status: todo
+status: completed
 type: milestone
 priority: high
 created_at: 2026-08-07T18:07:44Z
-updated_at: 2026-08-07T18:07:44Z
+updated_at: 2026-08-07T23:35:03Z
 ---
 
 Two coupled economics changes resolved in the 2026-08-07 grilling. **ADR-0020** splits

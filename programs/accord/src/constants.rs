@@ -80,6 +80,17 @@ pub const DEFAULT_COMMIT_WINDOW_SECS: u64 = 2 * 24 * 60 * 60;
 pub const DEFAULT_REVEAL_WINDOW_SECS: u64 = 2 * 24 * 60 * 60;
 pub const DEFAULT_MAX_APPEALS: u8 = 3;
 
+/// Default reveal-quorum fraction in basis points (ADR-0021): 6666 = 2/3. A
+/// round is authoritative only once `reveal_count >= ceil(panel × bps / 10_000)`.
+/// The absolute commitment escalates per appeal for free via panel growth.
+pub const DEFAULT_REVEAL_THRESHOLD_BPS: u16 = 6_666;
+
+/// Default maximum same-size redraws per round before a dispute fails
+/// (ADR-0021). Orthogonal to `MAX_APPEALS` (which bounds appeal rounds).
+pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
+/// Program ceiling on per-round redraw attempts (bounds the redraw ladder).
+pub const MAX_DRAW_ATTEMPTS: u8 = 10;
+
 /// Maximum sortition retries per seat in `draw_seat` (bean accord-tzo0). The
 /// deterministic collision re-roll increments this counter until the selected
 /// leaf is not an already-drawn juror. 1024 is generous: with ≥ N eligible

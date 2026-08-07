@@ -140,4 +140,12 @@ pub enum AccordError {
     // --- two-mint economics (ADR-0020) ---
     #[msg("Juror has no earned fees to withdraw.")]
     NoFeesEarned,
+
+    // --- reveal quorum + shortfall redraw (ADR-0021) ---
+    #[msg("Dispute is not in RedrawEligible state; redraw is not available.")]
+    NotRedrawEligible,
+    #[msg("Subaccord max_draw_attempts exceeds the program ceiling.")]
+    MaxDrawAttemptsLimitExceeded,
+    #[msg("Reveal threshold (bps) must be <= 10_000.")]
+    InvalidThreshold,
 }

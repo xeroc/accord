@@ -51,8 +51,12 @@ import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 import {
   getAggregationDecoder,
   getAggregationEncoder,
+  getShortfallPolicyDecoder,
+  getShortfallPolicyEncoder,
   type Aggregation,
   type AggregationArgs,
+  type ShortfallPolicy,
+  type ShortfallPolicyArgs,
 } from "../types";
 
 export const CREATE_SUBACCORD_DISCRIMINATOR: ReadonlyUint8Array =
@@ -103,6 +107,12 @@ export type CreateSubaccordInstructionData = {
   maxAppeals: number;
   aggregation: Aggregation;
   feePerJuror: bigint;
+  /** Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3). */
+  revealThresholdBps: number;
+  /** Shortfall policy (ADR-0021). v1 = `Redraw`. */
+  shortfallPolicy: ShortfallPolicy;
+  /** Redraw cap per round (ADR-0021). Default 3. */
+  maxDrawAttempts: number;
   authority: Address;
   evidenceOperator: Address;
   depth: number;
@@ -121,6 +131,12 @@ export type CreateSubaccordInstructionDataArgs = {
   maxAppeals: number;
   aggregation: AggregationArgs;
   feePerJuror: number | bigint;
+  /** Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3). */
+  revealThresholdBps: number;
+  /** Shortfall policy (ADR-0021). v1 = `Redraw`. */
+  shortfallPolicy: ShortfallPolicyArgs;
+  /** Redraw cap per round (ADR-0021). Default 3. */
+  maxDrawAttempts: number;
   authority: Address;
   evidenceOperator: Address;
   depth: number;
@@ -142,6 +158,9 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["maxAppeals", getU8Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
+      ["revealThresholdBps", getU16Encoder()],
+      ["shortfallPolicy", getShortfallPolicyEncoder()],
+      ["maxDrawAttempts", getU8Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["depth", getU8Encoder()],
@@ -165,6 +184,9 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["maxAppeals", getU8Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
+    ["revealThresholdBps", getU16Decoder()],
+    ["shortfallPolicy", getShortfallPolicyDecoder()],
+    ["maxDrawAttempts", getU8Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["depth", getU8Decoder()],
@@ -201,6 +223,9 @@ export type CreateSubaccordAsyncInput<
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
   aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
+  revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
+  shortfallPolicy: CreateSubaccordInstructionDataArgs["shortfallPolicy"];
+  maxDrawAttempts: CreateSubaccordInstructionDataArgs["maxDrawAttempts"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
@@ -297,6 +322,9 @@ export type CreateSubaccordInput<
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
   aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
+  revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
+  shortfallPolicy: CreateSubaccordInstructionDataArgs["shortfallPolicy"];
+  maxDrawAttempts: CreateSubaccordInstructionDataArgs["maxDrawAttempts"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];

@@ -11,4 +11,5 @@ export * from "./caseTerms";
 export * from "./disputeState";
 export * from "./leafClaim";
 export * from "./mSTNode";
+export * from "./shortfallPolicy";
 export * from "./updatePayload";
