@@ -20,6 +20,12 @@ import {
   type FixedSizeDecoder,
   type FixedSizeEncoder,
 } from "@solana/kit";
+import {
+  getShortfallPolicyDecoder,
+  getShortfallPolicyEncoder,
+  type ShortfallPolicy,
+  type ShortfallPolicyArgs,
+} from ".";
 
 /**
  * Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -39,6 +45,15 @@ export type CaseTerms = {
   commitWindow: bigint;
   revealWindow: bigint;
   maxAppeals: number;
+  /**
+   * Frozen reveal-quorum fraction (ADR-0021). Mirrors
+   * `Subaccord.reveal_threshold_bps` at filing time.
+   */
+  revealThresholdBps: number;
+  /** Frozen shortfall policy (ADR-0021). */
+  shortfallPolicy: ShortfallPolicy;
+  /** Frozen redraw cap (ADR-0021). */
+  maxDrawAttempts: number;
 };
 
 export type CaseTermsArgs = {
@@ -49,6 +64,15 @@ export type CaseTermsArgs = {
   commitWindow: number | bigint;
   revealWindow: number | bigint;
   maxAppeals: number;
+  /**
+   * Frozen reveal-quorum fraction (ADR-0021). Mirrors
+   * `Subaccord.reveal_threshold_bps` at filing time.
+   */
+  revealThresholdBps: number;
+  /** Frozen shortfall policy (ADR-0021). */
+  shortfallPolicy: ShortfallPolicyArgs;
+  /** Frozen redraw cap (ADR-0021). */
+  maxDrawAttempts: number;
 };
 
 export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
@@ -60,6 +84,9 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["commitWindow", getU64Encoder()],
     ["revealWindow", getU64Encoder()],
     ["maxAppeals", getU8Encoder()],
+    ["revealThresholdBps", getU16Encoder()],
+    ["shortfallPolicy", getShortfallPolicyEncoder()],
+    ["maxDrawAttempts", getU8Encoder()],
   ]);
 }
 
@@ -72,6 +99,9 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["revealThresholdBps", getU16Decoder()],
+    ["shortfallPolicy", getShortfallPolicyDecoder()],
+    ["maxDrawAttempts", getU8Decoder()],
   ]);
 }
 

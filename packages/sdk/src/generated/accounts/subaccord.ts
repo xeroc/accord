@@ -45,8 +45,12 @@ import {
 import {
   getAggregationDecoder,
   getAggregationEncoder,
+  getShortfallPolicyDecoder,
+  getShortfallPolicyEncoder,
   type Aggregation,
   type AggregationArgs,
+  type ShortfallPolicy,
+  type ShortfallPolicyArgs,
 } from "../types";
 
 export const SUBACCORD_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -79,6 +83,21 @@ export type Subaccord = {
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: Aggregation;
   feePerJuror: bigint;
+  /**
+   * Reveal-quorum fraction in basis points (ADR-0021). A round is
+   * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
+   * free via panel growth.
+   */
+  revealThresholdBps: number;
+  /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
+  shortfallPolicy: ShortfallPolicy;
+  /**
+   * Maximum same-size redraws per round before the dispute fails (ADR-0021).
+   * `(round_idx, draw_attempt)` with `draw_attempt` reaching this bound ⇒
+   * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
+   */
+  maxDrawAttempts: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
@@ -138,6 +157,21 @@ export type SubaccordArgs = {
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: AggregationArgs;
   feePerJuror: number | bigint;
+  /**
+   * Reveal-quorum fraction in basis points (ADR-0021). A round is
+   * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
+   * free via panel growth.
+   */
+  revealThresholdBps: number;
+  /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
+  shortfallPolicy: ShortfallPolicyArgs;
+  /**
+   * Maximum same-size redraws per round before the dispute fails (ADR-0021).
+   * `(round_idx, draw_attempt)` with `draw_attempt` reaching this bound ⇒
+   * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
+   */
+  maxDrawAttempts: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
@@ -192,6 +226,9 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["maxAppeals", getU8Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
+      ["revealThresholdBps", getU16Encoder()],
+      ["shortfallPolicy", getShortfallPolicyEncoder()],
+      ["maxDrawAttempts", getU8Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
@@ -222,6 +259,9 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["maxAppeals", getU8Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
+    ["revealThresholdBps", getU16Decoder()],
+    ["shortfallPolicy", getShortfallPolicyDecoder()],
+    ["maxDrawAttempts", getU8Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
@@ -294,5 +334,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 326;
+  return 330;
 }
