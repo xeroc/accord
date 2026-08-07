@@ -17,7 +17,7 @@ status banner is annotated.
 | #                                                                                       | Title                                                                                                  | Status                |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------- |
 | [0001](0001-schelling-accord-replaces-hired-judges.md)                                  | Schelling-point Accord replaces hired-judge committee                                                  | Accepted              |
-| [0002](0002-per-subaccord-staking-token-no-accord-token-v1.md)                          | Per-Subaccord staking token, no Accord token in v1                                                     | Accepted              |
+| [0002](0002-per-subaccord-staking-token-no-accord-token-v1.md)                          | Per-Subaccord staking token, no Accord token in v1                                                     | Partially superseded  |
 | [0003](0003-accord-draw-merkle-snapshot-distinct-vrf.md)                                | Draw — Merkle Snapshot, off-chain sortition, distinct Jurors                                           | Partially superseded  |
 | [0004](0004-accord-party-agnostic-permissionless-appeal.md)                             | Party-agnostic; appeal is permissionless                                                               | Accepted              |
 | [0005](0005-subaccord-authority-pubkey-timelock.md)                                     | Subaccord authority — pubkey-gated, 48h timelock                                                       | Accepted              |
@@ -35,6 +35,8 @@ status banner is annotated.
 | [0017](0017-evidence-data-format-manifest-yaml.md)                                      | Evidence data format — `manifest.yaml` Merkle root, salted option labels                               | Accepted              |
 | [0018](0018-multi-round-settlement-against-final-ruling.md)                             | Multi-round settlement against the final ruling                                                        | Accepted              |
 | [0019](0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)               | Subaccord dispute-kit — aggregation enum; rename `jurors_per_dispute` → `initial_num_jurors`           | Accepted              |
+| [0020](0020-two-mint-two-vault-stake-token-fee-token.md)                                | Two-mint/two-vault economics — `stake_token` (collateral) + `fee_token` (compensation)                 | Accepted              |
+| [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md)                             | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx`                            | Accepted              |
 
 ### Supersession map
 
@@ -49,6 +51,9 @@ status banner is annotated.
 - **0016** amends **0007** (pause scope: pausing must not consume appeal
   deadlines).
 - **0015** amends **0011** (evidence crypto lives in the SDK, not the daemon).
+- **0020** supersedes the single-token decision of **0002** (one `staking_token` for both
+  stake and fees → split `stake_token` collateral + `fee_token` compensation, dual vaults,
+  `fees_earned` ledger). 0002's per-Subaccord-choice and no-Accord-token decisions stand.
 
 ## How to read them
 
@@ -64,7 +69,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0020**).
+1. Number = next sequential (currently **0022**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

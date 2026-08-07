@@ -1,3 +1,8 @@
+> **Status: Partially superseded by [ADR-0020](0020-two-mint-two-vault-stake-token-fee-token.md)** —
+> the "single `staking_token` for both stake and fees" decision is replaced by a two-mint split
+> (`stake_token` collateral + `fee_token` compensation). This ADR's other decisions (per-Subaccord
+> token choice, no Accord token in v1, stake-asset-agnostic Schelling) stand.
+
 # Per-Subaccord staking token — no accord token in v1
 
 Each Subaccord specifies the SPL token its Jurors stake at creation (`staking_token`). Selection probability ∝ amount staked in that token; coherence slashing loses the same token. USDC is the common default, not a hard-coded requirement — a Subaccord may stake USDC, SOL, or any SPL token. No accord-specific token is introduced in v1.
