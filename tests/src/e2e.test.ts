@@ -559,12 +559,12 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
     );
 
     // confirm the dispute advanced to Drawn; read the authoritative juror set
-    const disputeAcc = await fetchDispute(accord, dispute);
+    const disputeAcc = await fetchDispute(accord.rpc, dispute);
     expect(disputeAcc).not.toBeNull();
     expect(disputeAcc.state as number).toBeGreaterThanOrEqual(
       DisputeState.Drawn as number,
     );
-    const round = await fetchRound(accord, roundPda);
+    const round = await fetchRound(accord.rpc, roundPda);
     expect(round).not.toBeNull();
     const ZERO = address("11111111111111111111111111111111");
     const drawn = (round.jurors as string[]).filter((j) => j !== ZERO);
