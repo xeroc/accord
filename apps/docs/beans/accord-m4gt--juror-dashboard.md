@@ -1,10 +1,11 @@
 ---
 # accord-m4gt
 title: Juror dashboard
-status: completed
+status: todo
 type: task
+priority: normal
 created_at: 2026-08-07T23:09:16Z
-updated_at: 2026-08-08T00:00:00Z
+updated_at: 2026-08-08T23:18:59Z
 parent: accord-pbff
 ---
 

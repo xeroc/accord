@@ -1,10 +1,11 @@
 ---
 # accord-bko6
 title: Stake/unstake flow with MST accumulator
-status: completed
+status: todo
 type: task
+priority: normal
 created_at: 2026-08-07T23:09:16Z
-updated_at: 2026-08-08T00:00:00Z
+updated_at: 2026-08-08T23:19:01Z
 parent: accord-pbff
 ---
 
