@@ -3,8 +3,9 @@
 title: Subaccord list view
 status: todo
 type: task
+priority: normal
 created_at: 2026-08-07T23:09:07Z
-updated_at: 2026-08-07T23:09:07Z
+updated_at: 2026-08-08T01:00:06Z
 parent: accord-pjxh
 ---
 
