@@ -17,3 +17,11 @@ action "deploy_accord" "svm::deploy_program" {
     # the local Surfnet harness deterministic + fast for `make run_surfpool`).
     instant_surfnet_deployment = true
 }
+
+action "deploy_canon" "svm::deploy_program" {
+    description = "Deploy canon program"
+    program = svm::get_program_from_anchor_project("canon")
+    authority = signer.authority
+    payer = signer.payer
+    instant_surfnet_deployment = true
+}

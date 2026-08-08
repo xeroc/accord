@@ -67,7 +67,12 @@ export {
 
 // Re-export the domain types. CanonList/CanonItem structs live in the
 // generated accounts module; ItemState is a runtime enum from generated types.
-export type { CanonList, CanonItem } from "./generated/accounts/index.js";
+export type {
+  CanonList,
+  CanonItem,
+  CanonListArgs,
+  CanonItemArgs,
+} from "./generated/accounts/index.js";
 export { ItemState } from "./generated/types/index.js";
 
 export const SDK_NAME = "@useaccord/canon";
