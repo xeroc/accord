@@ -1,4 +1,6 @@
 import { Routes, Route, Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 
 /**
  * App shell — routes + layout skeleton.
@@ -19,23 +21,28 @@ import { Routes, Route, Link } from "react-router-dom";
  */
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+      <Toaster />
+    </>
   );
 }
 
 function Home() {
   return (
-    <main style={{ fontFamily: "ui-monospace, monospace", padding: "2rem" }}>
-      <h1>Accord</h1>
-      <p>Mechanize the verdict.</p>
-      <p style={{ color: "#7d8590" }}>
+    <main className="min-h-screen bg-background p-8 font-mono">
+      <h1 className="text-2xl font-bold text-foreground">Accord</h1>
+      <p className="mt-2 text-muted-foreground">Mechanize the verdict.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
         dApp scaffold ready. Routes and wallet connection land next.
       </p>
-      <nav>
-        <Link to="/">Home</Link>
+      <nav className="mt-4">
+        <Button asChild>
+          <Link to="/">Home</Link>
+        </Button>
       </nav>
     </main>
   );
@@ -43,10 +50,14 @@ function Home() {
 
 function NotFound() {
   return (
-    <main style={{ fontFamily: "ui-monospace, monospace", padding: "2rem" }}>
-      <h1>404</h1>
-      <p>This route does not exist yet.</p>
-      <Link to="/">Back to home</Link>
+    <main className="min-h-screen bg-background p-8 font-mono">
+      <h1 className="text-2xl font-bold text-foreground">404</h1>
+      <p className="mt-2 text-muted-foreground">
+        This route does not exist yet.
+      </p>
+      <Button asChild variant="outline">
+        <Link to="/">Back to home</Link>
+      </Button>
     </main>
   );
 }
