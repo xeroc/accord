@@ -13,6 +13,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@solana-program/token": "^0.15.0",
+    "@solana/connector": "^0.2.6",
+    "@solana/kit": "^7.0.0",
+    "@useaccord/sdk": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"
