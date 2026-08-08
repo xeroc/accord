@@ -11,64 +11,67 @@ import {
   findRoundPda,
 } from "@useaccord/sdk";
 
-import { createRpc, getCluster } from "../../shared/cluster";
+import { useClusterRpc } from "../../shared/rpc";
 
 export function useDispute(address: string | undefined) {
+  const crpc = useClusterRpc();
   return useQuery({
-    queryKey: ["dispute", address, getCluster()],
+    queryKey: ["dispute", address, crpc?.endpoint],
     queryFn: async () => {
-      if (!address) return null;
-      const maybe = await fetchMaybeDispute(createRpc(), address as Address);
+      if (!address || !crpc) return null;
+      const maybe = await fetchMaybeDispute(crpc.rpc, address as Address);
       if (!maybe.exists) return null;
       return maybe as Account<Dispute>;
     },
-    enabled: !!address,
+    enabled: !!address && !!crpc,
     staleTime: 15_000,
   });
 }
 
 export function useRound(dispute: Account<Dispute> | null | undefined) {
+  const crpc = useClusterRpc();
   return useQuery({
     queryKey: [
       "round",
       dispute?.address,
       dispute?.data.currentRound,
-      getCluster(),
+      crpc?.endpoint,
     ],
     queryFn: async () => {
-      if (!dispute) return null;
+      if (!dispute || !crpc) return null;
       const [pda] = await findRoundPda({
         dispute: dispute.address,
         roundIdx: dispute.data.currentRound,
       });
-      const maybe = await fetchMaybeRound(createRpc(), pda);
+      const maybe = await fetchMaybeRound(crpc.rpc, pda);
       if (!maybe.exists) return null;
       return maybe as Account<Round>;
     },
-    enabled: !!dispute,
+    enabled: !!dispute && !!crpc,
     staleTime: 15_000,
   });
 }
 
 export function useAppealBond(dispute: Account<Dispute> | null | undefined) {
+  const crpc = useClusterRpc();
   return useQuery({
     queryKey: [
       "appealBond",
       dispute?.address,
       dispute?.data.currentRound,
-      getCluster(),
+      crpc?.endpoint,
     ],
     queryFn: async () => {
-      if (!dispute) return null;
+      if (!dispute || !crpc) return null;
       const [pda] = await findAppealBondPda({
         dispute: dispute.address,
         roundIdx: dispute.data.currentRound,
       });
-      const maybe = await fetchMaybeAppealBond(createRpc(), pda);
+      const maybe = await fetchMaybeAppealBond(crpc.rpc, pda);
       if (!maybe.exists) return null;
       return maybe as Account<AppealBond>;
     },
-    enabled: !!dispute,
+    enabled: !!dispute && !!crpc,
     staleTime: 15_000,
   });
 }

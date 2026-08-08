@@ -1,46 +1,11 @@
 /**
- * cluster.ts — Solana cluster config + RPC helpers.
+ * cluster.ts — cluster config for ConnectorKit's getDefaultConfig.
  *
- * Two consumers coexist after the scaffold-infrastructure merge:
- *  - Dispute feature hooks import { createRpc, getCluster } for react-query
- *    fetchers (localStorage-backed cluster selection).
- *  - ConnectorKit's getDefaultConfig (providers.tsx) takes @solana/connector
- *    factory functions directly; CLUSTERS/ClusterConfig are exported for
- *    barrel re-export (shared/index.ts) and future consumers.
+ * providers.tsx builds its cluster list inline via @solana/connector factory
+ * functions; CLUSTERS/ClusterConfig are exported for barrel re-export
+ * (shared/index.ts) and future consumers. Active-cluster state lives in
+ * ConnectorKit (useCluster) — read it via shared/rpc.ts (useClusterRpc).
  */
-
-import { createSolanaRpc } from "@solana/kit";
-
-// --- Function-based cluster for react-query fetchers ---
-
-export type Cluster = "devnet" | "mainnet-beta" | "localnet";
-
-const STORAGE_KEY = "accord-cluster";
-
-const RPC_URLS: Record<Cluster, string> = {
-  devnet: import.meta.env.VITE_DEVNET_RPC || "https://api.devnet.solana.com",
-  "mainnet-beta":
-    import.meta.env.VITE_MAINNET_RPC || "https://api.mainnet-beta.solana.com",
-  localnet: "http://localhost:8899",
-};
-
-export function getCluster(): Cluster {
-  return (localStorage.getItem(STORAGE_KEY) as Cluster) || "devnet";
-}
-
-export function setCluster(c: Cluster): void {
-  localStorage.setItem(STORAGE_KEY, c);
-}
-
-export function getRpcUrl(cluster: Cluster = getCluster()): string {
-  return RPC_URLS[cluster];
-}
-
-export function createRpc(cluster: Cluster = getCluster()) {
-  return createSolanaRpc(getRpcUrl(cluster));
-}
-
-// --- Cluster list for ConnectorKit + barrel re-export ---
 
 export interface ClusterConfig {
   id: "devnet" | "mainnet-beta" | "localnet";
@@ -50,6 +15,11 @@ export interface ClusterConfig {
   /** WebSocket endpoint for subscriptions (optional; derived if absent). */
   urlWs?: string;
 }
+
+const DEVNET_RPC =
+  import.meta.env.VITE_DEVNET_RPC || "https://api.devnet.solana.com";
+const MAINNET_RPC =
+  import.meta.env.VITE_MAINNET_RPC || "https://api.mainnet-beta.solana.com";
 
 /** Derive a ws/wss URL from an http/https endpoint (best-effort). */
 function toWsUrl(httpUrl: string): string {
@@ -61,14 +31,14 @@ export const CLUSTERS: ClusterConfig[] = [
   {
     id: "devnet",
     label: "Devnet",
-    url: RPC_URLS.devnet,
-    urlWs: toWsUrl(RPC_URLS.devnet),
+    url: DEVNET_RPC,
+    urlWs: toWsUrl(DEVNET_RPC),
   },
   {
     id: "mainnet-beta",
     label: "Mainnet",
-    url: RPC_URLS["mainnet-beta"],
-    urlWs: toWsUrl(RPC_URLS["mainnet-beta"]),
+    url: MAINNET_RPC,
+    urlWs: toWsUrl(MAINNET_RPC),
   },
   {
     id: "localnet",
