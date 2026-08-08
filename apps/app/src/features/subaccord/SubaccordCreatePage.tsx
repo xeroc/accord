@@ -38,7 +38,7 @@ import {
   type CreateSubaccordArgs,
 } from "@useaccord/sdk";
 
-import { getEndpoint, getRpc, getRpcSubscriptions } from "../../shared/rpc";
+import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { ZERO_ADDRESS, useSigner } from "../../shared/wallet";
 
@@ -87,6 +87,7 @@ const DEFAULTS: FormState = {
 
 export function SubaccordCreatePage() {
   const { signer } = useSigner();
+  const crpc = useClusterRpc();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [error, setError] = useState<string | null>(null);
@@ -100,17 +101,21 @@ export function SubaccordCreatePage() {
     e.preventDefault();
     setError(null);
     if (!signer) return; // gate: connect-wallet banner shows below.
+    if (!crpc) {
+      setError("No RPC cluster active.");
+      return;
+    }
     setSending(true);
     try {
       const args = buildArgs(form, signer.address);
-      const accord = new Accord({ endpoint: getEndpoint("devnet"), signer });
+      const accord = new Accord({ endpoint: crpc.endpoint, signer });
       const { instruction, subaccord } = await accord.methods.createSubaccord(
         signer.address,
         args,
       );
       await sendInstruction(
-        getRpc("devnet"),
-        getRpcSubscriptions("devnet"),
+        crpc.rpc,
+        crpc.rpcSubscriptions,
         signer,
         instruction,
       );

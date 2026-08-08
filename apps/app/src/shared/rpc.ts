@@ -64,36 +64,36 @@ export function useAccord(): AccordEnv | null {
 
 // --- Standalone read-only RPC (subaccord list/detail views) ---------------
 
-export type Cluster = "devnet" | "mainnet" | "localnet";
-
-const RPC_URLS: Record<Cluster, string> = {
-  devnet: import.meta.env.VITE_DEVNET_RPC ?? "https://api.devnet.solana.com",
-  mainnet:
-    import.meta.env.VITE_MAINNET_RPC ?? "https://api.mainnet-beta.solana.com",
-  localnet: "http://localhost:8899",
-};
-
-const WS_URLS: Record<Cluster, string> = {
-  devnet: "wss://api.devnet.solana.com",
-  mainnet: "wss://api.mainnet-beta.solana.com",
-  localnet: "ws://localhost:8900",
-};
-
-/** Bare endpoint URL for the active cluster — the `Accord` facade takes a
- * string endpoint (it builds its own rpc internally), so write views need the
- * raw URL rather than the constructed `Rpc`. */
-export function getEndpoint(cluster: Cluster = "devnet"): string {
-  return RPC_URLS[cluster];
+export interface ClusterRpc {
+  /** Bare endpoint URL — the `Accord` facade takes a string endpoint. */
+  endpoint: string;
+  /** Bare read-only RPC bound to the active cluster. */
+  rpc: Rpc<SolanaRpcApi>;
+  /** WebSocket subscriptions — `sendAndConfirm` needs both. */
+  rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
 }
 
-/** Bare read-only RPC for the active cluster. Default devnet. */
-export function getRpc(cluster: Cluster = "devnet"): Rpc<SolanaRpcApi> {
-  return createSolanaRpc(RPC_URLS[cluster]);
-}
+/**
+ * Read-only RPC bound to the **active ConnectorKit cluster** — the same one
+ * the navbar selector drives. Returns `null` only if no cluster is active
+ * (should not happen with the default config, but callers should gate).
+ *
+ * Use this in read-only views (list/detail) that don't need a signer. Write
+ * views that need a signer use `useAccord()` instead.
+ */
+export function useClusterRpc(): ClusterRpc | null {
+  const { cluster } = useCluster();
 
-/** WebSocket subscriptions endpoint — `sendAndConfirm` needs both. */
-export function getRpcSubscriptions(
-  cluster: Cluster = "devnet",
-): RpcSubscriptions<SolanaRpcSubscriptionsApi> {
-  return createSolanaRpcSubscriptions(WS_URLS[cluster]);
+  return useMemo<ClusterRpc | null>(() => {
+    if (!cluster) return null;
+    // Cast to string: cluster.url is a MainnetUrl|DevnetUrl|… union that
+    // selects a cluster-specific Rpc overload; we want the generic one.
+    const url = cluster.url as string;
+    const wsUrl = (cluster.urlWs as string) ?? url.replace(/^http/, "ws");
+    return {
+      endpoint: url,
+      rpc: createSolanaRpc(url),
+      rpcSubscriptions: createSolanaRpcSubscriptions(wsUrl),
+    };
+  }, [cluster]);
 }

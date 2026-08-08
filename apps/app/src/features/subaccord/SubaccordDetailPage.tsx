@@ -15,7 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { Address, ReadonlyUint8Array } from "@solana/kit";
 
-import { getRpc } from "../../shared/rpc";
+import { useClusterRpc } from "../../shared/rpc";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
 import {
   formatHash,
@@ -26,13 +26,12 @@ import {
 import { Skeleton } from "../../components/Skeleton";
 
 export function SubaccordDetailPage() {
-  // ponytail: devnet default; cluster selector lands with the navbar/wallet bean.
-  const rpc = getRpc("devnet");
+  const rpc = useClusterRpc()?.rpc ?? null;
   const { address = "" } = useParams<{ address: string }>();
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["subaccord", address],
-    queryFn: () => fetchSubaccord(rpc, address as Address),
-    enabled: Boolean(address),
+    queryKey: ["subaccord", address, rpc],
+    queryFn: () => fetchSubaccord(rpc!, address as Address),
+    enabled: Boolean(address) && Boolean(rpc),
     staleTime: 30_000,
   });
 

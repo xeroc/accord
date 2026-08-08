@@ -13,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { findAllSubaccords } from "@useaccord/sdk";
 
-import { getRpc } from "../../shared/rpc";
+import { useClusterRpc } from "../../shared/rpc";
 import { shortAddress, formatTokenAmount } from "../../shared/format";
 import { Skeleton } from "../../components/Skeleton";
 
@@ -22,11 +22,11 @@ import { Skeleton } from "../../components/Skeleton";
 type SubaccordAccount = Awaited<ReturnType<typeof findAllSubaccords>>[number];
 
 export function SubaccordListPage() {
-  // ponytail: devnet default; cluster selector lands with the navbar/wallet bean.
-  const rpc = getRpc("devnet");
+  const rpc = useClusterRpc()?.rpc ?? null;
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["subaccords"],
-    queryFn: () => findAllSubaccords(rpc),
+    queryKey: ["subaccords", rpc],
+    queryFn: () => findAllSubaccords(rpc!),
+    enabled: Boolean(rpc),
     staleTime: 30_000,
   });
 
