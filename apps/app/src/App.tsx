@@ -1,6 +1,7 @@
 import { Routes, Route, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { Navbar } from "@/components/navbar";
 
 /**
  * App shell — routes + layout skeleton.
@@ -22,6 +23,7 @@ import { Toaster } from "@/components/ui/sonner";
 export function App() {
   return (
     <>
+      <Navbar />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="*" element={<NotFound />} />
