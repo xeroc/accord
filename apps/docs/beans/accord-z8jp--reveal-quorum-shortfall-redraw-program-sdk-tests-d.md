@@ -1,11 +1,11 @@
 ---
 # accord-z8jp
 title: Reveal quorum + shortfall redraw (program + sdk + tests + docs)
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-07T18:07:45Z
-updated_at: 2026-08-07T18:07:45Z
+updated_at: 2026-08-07T23:32:16Z
 parent: accord-vsyq
 blocked_by:
     - accord-edz4

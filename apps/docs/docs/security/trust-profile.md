@@ -63,7 +63,8 @@ trust_profile:
   upgrade_authority: <pubkey | null> # ADR-0007; multisig until post-audit freeze (null)
   paused: <bool> # PauseState singleton
   juror_admission: key_pseudonymous # NOT identity-verified humans (ADR-0001)
-  staking_token: <mint>
+  staking_token: <mint> # collateral (ADR-0002/0020)
+  fee_token: <mint> # compensation — fees + bonds (ADR-0020)
   total_stake: <u64> # accumulator root.sum (ADR-0012)
   juror_count: <u32> # live, non-zero leaves
   stake_concentration: # computed from JurorStake
@@ -75,6 +76,9 @@ trust_profile:
     liveness: provider_dependent
   evidence_operator: <pubkey> # ADR-0006/0011 trusted re-encryption
   enforcement: application_level # oracle output, NOT self-enforcing (ADR-0004)
+  reveal_threshold_bps: <u16> # ADR-0021 reveal-quorum fraction (default 6666 = 2/3)
+  max_draw_attempts: <u8> # ADR-0021 same-size redraw cap before Failed (default 3)
+  veto_by_abstention: priced_bounded # > (1−threshold) can force Failed, not a wrong ruling
   security_value_ceiling: <u64> # cheapest rational-capture cost (see below)
 ```
 
@@ -133,8 +137,15 @@ These are deferred to v2+ and documented to avoid over-claiming:
 - **Validity proof (SNARK) for the accumulator root** — removes the indexer
   liveness assumption by proving root correctness. The trustless destination.
 - **Epoch machinery** — anchor-slot liveness without a freeze (Bad 2). v2.
-- **Participation quorum / inconclusive-outcome handling** — open gap; planned
-  follow-up milestone (Bad 9).
+- **Participation quorum / inconclusive-outcome handling** — resolved in v1 by
+  [ADR-0021](../../adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md):
+  `finalize_round` requires a reveal-fraction quorum (`reveal_threshold_bps`,
+  default 2/3); a shortfall redraws the same-size panel (slashing no-shows into
+  `stake_delta`) up to `max_draw_attempts`, then fails. Veto-by-abstention is
+  reintroduced but **priced** (`α · min_stake × seats × attempts`) and **bounded**
+  — a `> (1 − threshold)` holder can force `Failed` (fees + bonds refunded) but
+  cannot force a wrong ruling. The prior no-quorum liveness hedge (zero-mandate
+  rulings by tie-break) is intentionally traded for no-mandate safety.
 - **Evidence cryptography** — threshold PRE / TEE to remove the trusted Evidence
   Operator ([0011](../adr/0011-evidence-operator-daemon-offchain-service.md)).
 

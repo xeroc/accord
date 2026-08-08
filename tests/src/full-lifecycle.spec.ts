@@ -131,12 +131,17 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
     round = await readRound(env, roundPda);
     await warpTo(env, round!.revealEnd);
     await env.sendIx(
-      finalizeRound(env.accord.adapter, env.programId, {
-        signer: env.payer.address,
-        subaccord: fx.subaccord,
-        dispute: armed.dispute,
-        round: roundPda,
-      }),
+      finalizeRound(
+        env.accord.adapter,
+        env.programId,
+        {
+          signer: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        jurorStakeAccounts,
+      ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
 

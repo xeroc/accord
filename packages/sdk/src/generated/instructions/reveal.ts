@@ -10,10 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU8Decoder,
@@ -38,7 +36,6 @@ import {
 } from "@solana/kit";
 import {
   getAccountMetaFactory,
-  getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
@@ -57,11 +54,6 @@ export type RevealInstruction<
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
-  TAccountStakingToken extends string | AccountMeta<string> = string,
-  TAccountJurorTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
-  TAccountTokenProgram extends string | AccountMeta<string> =
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -80,18 +72,6 @@ export type RevealInstruction<
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
-      TAccountStakingToken extends string
-        ? ReadonlyAccount<TAccountStakingToken>
-        : TAccountStakingToken,
-      TAccountJurorTokenAccount extends string
-        ? WritableAccount<TAccountJurorTokenAccount>
-        : TAccountJurorTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
-      TAccountTokenProgram extends string
-        ? ReadonlyAccount<TAccountTokenProgram>
-        : TAccountTokenProgram,
       ...TRemainingAccounts,
     ]
   >;
@@ -136,195 +116,16 @@ export function getRevealInstructionDataCodec(): FixedSizeCodec<
   );
 }
 
-export type RevealAsyncInput<
-  TAccountJuror extends string = string,
-  TAccountSubaccord extends string = string,
-  TAccountDispute extends string = string,
-  TAccountRound extends string = string,
-  TAccountStakingToken extends string = string,
-  TAccountJurorTokenAccount extends string = string,
-  TAccountVault extends string = string,
-  TAccountTokenProgram extends string = string,
-> = {
-  juror: TransactionSigner<TAccountJuror>;
-  subaccord: Address<TAccountSubaccord>;
-  dispute: Address<TAccountDispute>;
-  round: Address<TAccountRound>;
-  stakingToken: Address<TAccountStakingToken>;
-  jurorTokenAccount?: Address<TAccountJurorTokenAccount>;
-  vault?: Address<TAccountVault>;
-  tokenProgram?: Address<TAccountTokenProgram>;
-  vote: RevealInstructionDataArgs["vote"];
-  salt: RevealInstructionDataArgs["salt"];
-};
-
-export async function getRevealInstructionAsync<
-  TAccountJuror extends string,
-  TAccountSubaccord extends string,
-  TAccountDispute extends string,
-  TAccountRound extends string,
-  TAccountStakingToken extends string,
-  TAccountJurorTokenAccount extends string,
-  TAccountVault extends string,
-  TAccountTokenProgram extends string,
-  TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
->(
-  input: RevealAsyncInput<
-    TAccountJuror,
-    TAccountSubaccord,
-    TAccountDispute,
-    TAccountRound,
-    TAccountStakingToken,
-    TAccountJurorTokenAccount,
-    TAccountVault,
-    TAccountTokenProgram
-  >,
-  config?: { programAddress?: TProgramAddress },
-): Promise<
-  RevealInstruction<
-    TProgramAddress,
-    TAccountJuror,
-    TAccountSubaccord,
-    TAccountDispute,
-    TAccountRound,
-    TAccountStakingToken,
-    TAccountJurorTokenAccount,
-    TAccountVault,
-    TAccountTokenProgram
-  >
-> {
-  // Program address.
-  const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
-
-  // Original accounts.
-  const originalAccounts = {
-    juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
-    dispute: { value: input.dispute ?? null, isWritable: true },
-    round: { value: input.round ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
-    jurorTokenAccount: {
-      value: input.jurorTokenAccount ?? null,
-      isWritable: true,
-    },
-    vault: { value: input.vault ?? null, isWritable: true },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-  };
-  const accounts = originalAccounts as Record<
-    keyof typeof originalAccounts,
-    ResolvedInstructionAccount
-  >;
-
-  // Original args.
-  const args = { ...input };
-
-  // Resolve default values.
-  if (!accounts.jurorTokenAccount.value) {
-    accounts.jurorTokenAccount.value = await getProgramDerivedAddress({
-      programAddress:
-        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
-      seeds: [
-        getAddressEncoder().encode(
-          getAddressFromResolvedInstructionAccount(
-            "juror",
-            accounts.juror.value,
-          ),
-        ),
-        getBytesEncoder().encode(
-          new Uint8Array([
-            6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235,
-            121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133,
-            126, 255, 0, 169,
-          ]),
-        ),
-        getAddressEncoder().encode(
-          getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
-          ),
-        ),
-      ],
-    });
-  }
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
-      programAddress:
-        "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
-      seeds: [
-        getAddressEncoder().encode(
-          getAddressFromResolvedInstructionAccount(
-            "subaccord",
-            accounts.subaccord.value,
-          ),
-        ),
-        getBytesEncoder().encode(
-          new Uint8Array([
-            6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235,
-            121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133,
-            126, 255, 0, 169,
-          ]),
-        ),
-        getAddressEncoder().encode(
-          getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
-          ),
-        ),
-      ],
-    });
-  }
-  if (!accounts.tokenProgram.value) {
-    accounts.tokenProgram.value =
-      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
-  }
-
-  const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
-  return Object.freeze({
-    accounts: [
-      getAccountMeta("juror", accounts.juror),
-      getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("round", accounts.round),
-      getAccountMeta("stakingToken", accounts.stakingToken),
-      getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
-      getAccountMeta("vault", accounts.vault),
-      getAccountMeta("tokenProgram", accounts.tokenProgram),
-    ],
-    data: getRevealInstructionDataEncoder().encode(
-      args as RevealInstructionDataArgs,
-    ),
-    programAddress,
-  } as RevealInstruction<
-    TProgramAddress,
-    TAccountJuror,
-    TAccountSubaccord,
-    TAccountDispute,
-    TAccountRound,
-    TAccountStakingToken,
-    TAccountJurorTokenAccount,
-    TAccountVault,
-    TAccountTokenProgram
-  >);
-}
-
 export type RevealInput<
   TAccountJuror extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
   TAccountRound extends string = string,
-  TAccountStakingToken extends string = string,
-  TAccountJurorTokenAccount extends string = string,
-  TAccountVault extends string = string,
-  TAccountTokenProgram extends string = string,
 > = {
   juror: TransactionSigner<TAccountJuror>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
   round: Address<TAccountRound>;
-  stakingToken: Address<TAccountStakingToken>;
-  jurorTokenAccount: Address<TAccountJurorTokenAccount>;
-  vault: Address<TAccountVault>;
-  tokenProgram?: Address<TAccountTokenProgram>;
   vote: RevealInstructionDataArgs["vote"];
   salt: RevealInstructionDataArgs["salt"];
 };
@@ -334,21 +135,13 @@ export function getRevealInstruction<
   TAccountSubaccord extends string,
   TAccountDispute extends string,
   TAccountRound extends string,
-  TAccountStakingToken extends string,
-  TAccountJurorTokenAccount extends string,
-  TAccountVault extends string,
-  TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
   input: RevealInput<
     TAccountJuror,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountRound,
-    TAccountStakingToken,
-    TAccountJurorTokenAccount,
-    TAccountVault,
-    TAccountTokenProgram
+    TAccountRound
   >,
   config?: { programAddress?: TProgramAddress },
 ): RevealInstruction<
@@ -356,11 +149,7 @@ export function getRevealInstruction<
   TAccountJuror,
   TAccountSubaccord,
   TAccountDispute,
-  TAccountRound,
-  TAccountStakingToken,
-  TAccountJurorTokenAccount,
-  TAccountVault,
-  TAccountTokenProgram
+  TAccountRound
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -371,13 +160,6 @@ export function getRevealInstruction<
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
-    jurorTokenAccount: {
-      value: input.jurorTokenAccount ?? null,
-      isWritable: true,
-    },
-    vault: { value: input.vault ?? null, isWritable: true },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -387,12 +169,6 @@ export function getRevealInstruction<
   // Original args.
   const args = { ...input };
 
-  // Resolve default values.
-  if (!accounts.tokenProgram.value) {
-    accounts.tokenProgram.value =
-      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
-  }
-
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
@@ -400,10 +176,6 @@ export function getRevealInstruction<
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("round", accounts.round),
-      getAccountMeta("stakingToken", accounts.stakingToken),
-      getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
-      getAccountMeta("vault", accounts.vault),
-      getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getRevealInstructionDataEncoder().encode(
       args as RevealInstructionDataArgs,
@@ -414,11 +186,7 @@ export function getRevealInstruction<
     TAccountJuror,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountRound,
-    TAccountStakingToken,
-    TAccountJurorTokenAccount,
-    TAccountVault,
-    TAccountTokenProgram
+    TAccountRound
   >);
 }
 
@@ -432,10 +200,6 @@ export type ParsedRevealInstruction<
     subaccord: TAccountMetas[1];
     dispute: TAccountMetas[2];
     round: TAccountMetas[3];
-    stakingToken: TAccountMetas[4];
-    jurorTokenAccount: TAccountMetas[5];
-    vault: TAccountMetas[6];
-    tokenProgram: TAccountMetas[7];
   };
   data: RevealInstructionData;
 };
@@ -448,12 +212,12 @@ export function parseRevealInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedRevealInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 8) {
+  if (instruction.accounts.length < 4) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 8,
+        expectedAccountMetas: 4,
       },
     );
   }
@@ -470,10 +234,6 @@ export function parseRevealInstruction<
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
       round: getNextAccount(),
-      stakingToken: getNextAccount(),
-      jurorTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
-      tokenProgram: getNextAccount(),
     },
     data: getRevealInstructionDataDecoder().decode(instruction.data),
   };

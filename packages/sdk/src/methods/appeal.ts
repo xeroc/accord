@@ -135,9 +135,9 @@ export interface AppealAccounts {
   round: Address;
   /** AppealBond PDA for the NEW round (`["bond", dispute, current_round+1]`). */
   appealBond: Address;
-  stakingToken: Address;
+  feeToken: Address;
   appellantTokenAccount: Address;
-  vault: Address;
+  feeVault: Address;
 }
 
 /** Accounts for `claim_appeal_refund`. */
@@ -148,10 +148,10 @@ export interface ClaimRefundAccounts {
   dispute: Address;
   /** AppealBond PDA for `roundIdx` (the round the appeal opened). */
   appealBond: Address;
-  stakingToken: Address;
+  feeToken: Address;
   /** Appellant's ATA — sweep destination (owner checked on-chain). */
   claimantTokenAccount: Address;
-  vault: Address;
+  feeVault: Address;
 }
 
 /**

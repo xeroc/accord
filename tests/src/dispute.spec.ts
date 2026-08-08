@@ -159,7 +159,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
     subaccord: Address;
     vault: Address;
   }> {
-    const args = defaultSubaccordArgs(mint, env.payer.address, {
+    const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
       feePerJuror: FEE_PER_JUROR,
       minStake: 1_000n,
     });
@@ -191,7 +191,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
         jurorStake,
         stakingToken: mint,
         jurorTokenAccount: await ata(mint, juror.address),
-        vault,
+        stakeVault: vault,
       };
       const facade = new Accord({ endpoint: env.rpcUrl, signer: juror });
       const path = await proofFor(tree, i);
@@ -216,9 +216,9 @@ describe("e2e: dispute (requires Surfpool)", () => {
     return {
       filer: env.payer.address,
       subaccord,
-      stakingToken: mint,
+      feeToken: mint,
       filerTokenAccount: filerAta,
-      vault,
+      feeVault: vault,
       pauseState,
     };
   }

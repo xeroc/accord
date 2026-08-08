@@ -1,11 +1,11 @@
 ---
 # accord-edz4
 title: Two-mint/two-vault economics (program + sdk + tests + docs)
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-07T18:07:45Z
-updated_at: 2026-08-07T18:07:45Z
+updated_at: 2026-08-07T20:31:49Z
 parent: accord-vsyq
 ---
 

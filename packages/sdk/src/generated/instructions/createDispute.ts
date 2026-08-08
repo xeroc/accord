@@ -63,11 +63,13 @@ export type CreateDisputeInstruction<
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountPauseState extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
-  TAccountStakingToken extends string | AccountMeta<string> = string,
+  TAccountFeeToken extends string | AccountMeta<string> = string,
   TAccountFilerTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountFeeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountAssociatedTokenProgram extends string | AccountMeta<string> =
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -88,18 +90,21 @@ export type CreateDisputeInstruction<
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
-      TAccountStakingToken extends string
-        ? ReadonlyAccount<TAccountStakingToken>
-        : TAccountStakingToken,
+      TAccountFeeToken extends string
+        ? ReadonlyAccount<TAccountFeeToken>
+        : TAccountFeeToken,
       TAccountFilerTokenAccount extends string
         ? WritableAccount<TAccountFilerTokenAccount>
         : TAccountFilerTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
+      TAccountFeeVault extends string
+        ? WritableAccount<TAccountFeeVault>
+        : TAccountFeeVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountAssociatedTokenProgram extends string
+        ? ReadonlyAccount<TAccountAssociatedTokenProgram>
+        : TAccountAssociatedTokenProgram,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -160,20 +165,26 @@ export type CreateDisputeAsyncInput<
   TAccountSubaccord extends string = string,
   TAccountPauseState extends string = string,
   TAccountDispute extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountFilerTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   filer: TransactionSigner<TAccountFiler>;
   subaccord: Address<TAccountSubaccord>;
   pauseState?: Address<TAccountPauseState>;
   dispute?: Address<TAccountDispute>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   filerTokenAccount?: Address<TAccountFilerTokenAccount>;
-  vault?: Address<TAccountVault>;
+  /**
+   * Subaccord PDA's fee_vault ATA (ADR-0020). Created on first dispute if
+   * it doesn't exist yet.
+   */
+  feeVault?: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   options: CreateDisputeInstructionDataArgs["options"];
   evidenceHash: CreateDisputeInstructionDataArgs["evidenceHash"];
@@ -186,10 +197,11 @@ export async function getCreateDisputeInstructionAsync<
   TAccountSubaccord extends string,
   TAccountPauseState extends string,
   TAccountDispute extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountFilerTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
+  TAccountAssociatedTokenProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -198,10 +210,11 @@ export async function getCreateDisputeInstructionAsync<
     TAccountSubaccord,
     TAccountPauseState,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -212,10 +225,11 @@ export async function getCreateDisputeInstructionAsync<
     TAccountSubaccord,
     TAccountPauseState,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >
 > {
@@ -228,13 +242,17 @@ export async function getCreateDisputeInstructionAsync<
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     pauseState: { value: input.pauseState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
       value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    associatedTokenProgram: {
+      value: input.associatedTokenProgram ?? null,
+      isWritable: false,
+    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -278,15 +296,15 @@ export async function getCreateDisputeInstructionAsync<
         ),
         getAddressEncoder().encode(
           getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
+            "feeToken",
+            accounts.feeToken.value,
           ),
         ),
       ],
     });
   }
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
+  if (!accounts.feeVault.value) {
+    accounts.feeVault.value = await getProgramDerivedAddress({
       programAddress:
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
       seeds: [
@@ -305,8 +323,8 @@ export async function getCreateDisputeInstructionAsync<
         ),
         getAddressEncoder().encode(
           getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
+            "feeToken",
+            accounts.feeToken.value,
           ),
         ),
       ],
@@ -315,6 +333,10 @@ export async function getCreateDisputeInstructionAsync<
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
+  }
+  if (!accounts.associatedTokenProgram.value) {
+    accounts.associatedTokenProgram.value =
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -328,10 +350,11 @@ export async function getCreateDisputeInstructionAsync<
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("pauseState", accounts.pauseState),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getCreateDisputeInstructionDataEncoder().encode(
@@ -344,10 +367,11 @@ export async function getCreateDisputeInstructionAsync<
     TAccountSubaccord,
     TAccountPauseState,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >);
 }
@@ -357,20 +381,26 @@ export type CreateDisputeInput<
   TAccountSubaccord extends string = string,
   TAccountPauseState extends string = string,
   TAccountDispute extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountFilerTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
+  TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   filer: TransactionSigner<TAccountFiler>;
   subaccord: Address<TAccountSubaccord>;
   pauseState: Address<TAccountPauseState>;
   dispute: Address<TAccountDispute>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   filerTokenAccount: Address<TAccountFilerTokenAccount>;
-  vault: Address<TAccountVault>;
+  /**
+   * Subaccord PDA's fee_vault ATA (ADR-0020). Created on first dispute if
+   * it doesn't exist yet.
+   */
+  feeVault: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
+  associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   options: CreateDisputeInstructionDataArgs["options"];
   evidenceHash: CreateDisputeInstructionDataArgs["evidenceHash"];
@@ -383,10 +413,11 @@ export function getCreateDisputeInstruction<
   TAccountSubaccord extends string,
   TAccountPauseState extends string,
   TAccountDispute extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountFilerTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
+  TAccountAssociatedTokenProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -395,10 +426,11 @@ export function getCreateDisputeInstruction<
     TAccountSubaccord,
     TAccountPauseState,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -408,10 +440,11 @@ export function getCreateDisputeInstruction<
   TAccountSubaccord,
   TAccountPauseState,
   TAccountDispute,
-  TAccountStakingToken,
+  TAccountFeeToken,
   TAccountFilerTokenAccount,
-  TAccountVault,
+  TAccountFeeVault,
   TAccountTokenProgram,
+  TAccountAssociatedTokenProgram,
   TAccountSystemProgram
 > {
   // Program address.
@@ -423,13 +456,17 @@ export function getCreateDisputeInstruction<
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     pauseState: { value: input.pauseState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
       value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    associatedTokenProgram: {
+      value: input.associatedTokenProgram ?? null,
+      isWritable: false,
+    },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -445,6 +482,10 @@ export function getCreateDisputeInstruction<
     accounts.tokenProgram.value =
       "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address<"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">;
   }
+  if (!accounts.associatedTokenProgram.value) {
+    accounts.associatedTokenProgram.value =
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">;
+  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
@@ -457,10 +498,11 @@ export function getCreateDisputeInstruction<
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("pauseState", accounts.pauseState),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getCreateDisputeInstructionDataEncoder().encode(
@@ -473,10 +515,11 @@ export function getCreateDisputeInstruction<
     TAccountSubaccord,
     TAccountPauseState,
     TAccountDispute,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountFilerTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram,
+    TAccountAssociatedTokenProgram,
     TAccountSystemProgram
   >);
 }
@@ -491,11 +534,16 @@ export type ParsedCreateDisputeInstruction<
     subaccord: TAccountMetas[1];
     pauseState: TAccountMetas[2];
     dispute: TAccountMetas[3];
-    stakingToken: TAccountMetas[4];
+    feeToken: TAccountMetas[4];
     filerTokenAccount: TAccountMetas[5];
-    vault: TAccountMetas[6];
+    /**
+     * Subaccord PDA's fee_vault ATA (ADR-0020). Created on first dispute if
+     * it doesn't exist yet.
+     */
+    feeVault: TAccountMetas[6];
     tokenProgram: TAccountMetas[7];
-    systemProgram: TAccountMetas[8];
+    associatedTokenProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[9];
   };
   data: CreateDisputeInstructionData;
 };
@@ -508,12 +556,12 @@ export function parseCreateDisputeInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCreateDisputeInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 10) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 10,
       },
     );
   }
@@ -530,10 +578,11 @@ export function parseCreateDisputeInstruction<
       subaccord: getNextAccount(),
       pauseState: getNextAccount(),
       dispute: getNextAccount(),
-      stakingToken: getNextAccount(),
+      feeToken: getNextAccount(),
       filerTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
+      feeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
+      associatedTokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
     },
     data: getCreateDisputeInstructionDataDecoder().decode(instruction.data),

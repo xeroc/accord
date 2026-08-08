@@ -34,6 +34,7 @@ export enum DisputeState {
   Final,
   Closed,
   Failed,
+  RedrawEligible,
 }
 
 export type DisputeStateArgs = DisputeState;

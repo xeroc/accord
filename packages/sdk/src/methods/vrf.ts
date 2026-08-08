@@ -12,10 +12,12 @@
  * (and every appeal round) select against the SAME root.
  *
  * The chain is a dumb verifier: per seat `i`, it derives
- *   vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4)
- *   r_i      = u64_le(sha256(vrf_seed ‖ seat_le4)[0..8]) % frozen_total_stake
- * and checks the submitted leaf's reconstructed prefix range contains `r_i`.
- * Deterministic collision re-rülle (sampling without replacement) is computed
+ *   vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4 ‖ draw_attempt_le4)
+ *   r_i      = u64_le(sha256(vrf_seed ‖ seat_le4 ‖ retry_le4)[0..8]) % frozen_total_stake
+ * and checks the submitted leaf's reconstructed prefix ranges contains `r_i`.
+ * `draw_attempt` (ADR-0021) is orthogonal to `round_idx`: a shortfall redraw
+ * increments it to re-seed the panel at the same size (no appeal consumed).
+ * Deterministic collision re-roll (sampling without replacement) is computed
  * client-side to match the chain — bean accord-tzo0.
  *
  * Sources of truth:
@@ -66,14 +68,16 @@ function leU64At(b: Uint8Array, off = 0): bigint {
 // ---------------------------------------------------------------------------
 
 /**
- * `vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4)` (lib.rs). Binds
- * the committed VRF to this dispute + round. No `draw_attempt` — selection is
- * deterministic per seat (ADR-0012 drops the grind).
+ * `vrf_seed = sha256(committed_vrf ‖ dispute ‖ round_idx_le4 ‖ draw_attempt_le4)`
+ * (lib.rs draw_seat, ADR-0021). Binds the committed VRF to this dispute + round
+ * + redraw attempt. `drawAttempt` defaults to 0 (the initial draw); a shortfall
+ * redraw bumps it so the same panel size yields fresh seats.
  */
 export async function vrfSeed(
   committedVrf: Uint8Array,
   disputeBytes: Uint8Array,
   roundIdx: number,
+  drawAttempt: number = 0,
 ): Promise<Uint8Array> {
   if (committedVrf.length !== 32)
     throw new Error("InvalidVrf: expected 32 bytes");
@@ -81,7 +85,13 @@ export async function vrfSeed(
     throw new Error("InvalidDispute: expected 32 bytes");
   if (!Number.isInteger(roundIdx) || roundIdx < 0 || roundIdx > 0xffffffff)
     throw new Error(`InvalidRoundIdx: expected u32, got ${roundIdx}`);
-  return sha256(committedVrf, disputeBytes, le4(roundIdx));
+  if (
+    !Number.isInteger(drawAttempt) ||
+    drawAttempt < 0 ||
+    drawAttempt > 0xffffffff
+  )
+    throw new Error(`InvalidDrawAttempt: expected u32, got ${drawAttempt}`);
+  return sha256(committedVrf, disputeBytes, le4(roundIdx), le4(drawAttempt));
 }
 
 /**
@@ -99,6 +109,7 @@ export async function seatSlot(
   seat: number,
   frozenTotalStake: bigint,
   retry: number = 0,
+  drawAttempt: number = 0,
 ): Promise<bigint> {
   if (frozenTotalStake <= 0n) throw new Error("InvalidTotalStake: must be > 0");
   if (!Number.isInteger(seat) || seat < 0 || seat > 0xffffffff)
@@ -107,7 +118,7 @@ export async function seatSlot(
     throw new Error(
       `InvalidRetry: expected non-negative integer, got ${retry}`,
     );
-  const seed = await vrfSeed(committedVrf, disputeBytes, roundIdx);
+  const seed = await vrfSeed(committedVrf, disputeBytes, roundIdx, drawAttempt);
   const rHash = await sha256(seed, le4(seat), le4(retry));
   return leU64At(rHash, 0) % frozenTotalStake;
 }
@@ -151,6 +162,7 @@ export async function resolveSeat(
   tree: MerkleAccumulator,
   alreadyDrawn: Uint8Array[],
   maxRetries: number = 1024,
+  drawAttempt: number = 0,
 ): Promise<{
   leaf: LeafClaim;
   index: number;
@@ -168,6 +180,7 @@ export async function resolveSeat(
       seat,
       total,
       retry,
+      drawAttempt,
     );
     const found = await findLeafForSlot(tree, slot);
     if (found && !drawnHex.has(hex(found.leaf.juror))) {

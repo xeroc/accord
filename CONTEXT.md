@@ -11,7 +11,7 @@ The arbitration program — a general-purpose Schelling-point dispute resolution
 _Avoid_: Kleros-clone, arbitration engine, judge program
 
 **Subaccord**:
-A specialized Juror pool within the Accord. Each Subaccord defines its staking token, minimum stake, review window, and dispute parameters. Jurors self-select into Subaccords matching their expertise. Permissionless — anyone can create one.
+A specialized Juror pool within the Accord. Each Subaccord defines its staking token (collateral), fee token (compensation), minimum stake, review window, and dispute parameters. Jurors self-select into Subaccords matching their expertise. Permissionless — anyone can create one.
 _Avoid_: accord branch, tribunal, panel
 
 **Juror**:
@@ -43,15 +43,15 @@ The Accord's verdict on a Dispute — the option that received the majority of J
 _Avoid_: verdict, judgment, decision
 
 **Coherence**:
-Voting with the Ruling majority. Coherent Jurors earn arbitration fees + slashed stake from Incoherent Jurors.
+Voting with the Ruling majority. Coherent Jurors earn arbitration fees (in `fee_token`, via `fees_earned`) + slashed stake (in `staking_token`, via `stake_delta`) from Incoherent Jurors.
 _Avoid_: correct vote, winning vote
 
 **Incoherence**:
-Voting against the Ruling majority. Incoherent Jurors lose a fraction of their stake (the slash) to Coherent Jurors. This is the incentive that makes the Schelling Point work.
+Voting against the Ruling majority. Incoherent Jurors lose a fraction of their stake (the slash, in `staking_token`) to Coherent Jurors. This is the incentive that makes the Schelling Point work.
 _Avoid_: wrong vote, losing vote
 
 **Appeal**:
-Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond. Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
+Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond (in `fee_token`). Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
 _Avoid_: retrial, reconsideration
 
 **Arbitrable**:

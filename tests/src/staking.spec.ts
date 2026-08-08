@@ -207,7 +207,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     mint = (await createMint(env, 6)).mint;
 
     // 3) A Subaccord over `mint`.
-    const args = defaultSubaccordArgs(mint, env.payer.address, {
+    const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
       feePerJuror: FEE_PER_JUROR,
       minStake: MIN_STAKE,
       depth: DEPTH,
@@ -247,7 +247,7 @@ describe("e2e: staking (requires Surfpool)", () => {
       jurorStake,
       stakingToken: mint,
       jurorTokenAccount: jurorAta,
-      vault,
+      stakeVault: vault,
     };
     const facade = new Accord({ endpoint: env.rpcUrl, signer: juror });
     return { juror, jurorAta, jurorStake, accounts, facade };
@@ -277,7 +277,7 @@ describe("e2e: staking (requires Surfpool)", () => {
 
     const js = await readStake(jurorStake);
     expect(js).not.toBeNull();
-    expect(js!.amount).toBe(STAKE_AMT);
+    expect(js!.staked).toBe(STAKE_AMT);
     expect(js!.subaccord).toBe(subaccord);
     expect(js!.juror).toBe(accounts.juror);
     expect(js!.activeDraws).toBe(0);
@@ -299,7 +299,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     );
     const index = await tree.setLeaf(juror.address, STAKE_AMT);
     let js = await readStake(jurorStake);
-    expect(js!.amount).toBe(STAKE_AMT);
+    expect(js!.staked).toBe(STAKE_AMT);
 
     // Phase 1: requestWithdraw — ledger debit (amount → 0, pending_withdrawal banked).
     const unstakePath = await tree.pathFor(index);
@@ -314,7 +314,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     await tree.updateLeaf(index, juror.address, 0n);
 
     js = await readStake(jurorStake);
-    expect(js!.amount).toBe(0n);
+    expect(js!.staked).toBe(0n);
 
     // Phase 2: warp past WITHDRAWAL_DELAY, then withdraw moves tokens.
     await warpForwardSeconds(env, WITHDRAWAL_DELAY_SECS);
@@ -346,7 +346,7 @@ describe("e2e: staking (requires Surfpool)", () => {
       stake(facade.adapter, env.programId, accounts, STAKE_AMT, stakePath),
     );
     const index = await tree.setLeaf(juror.address, STAKE_AMT);
-    expect((await readStake(jurorStake))!.amount).toBe(STAKE_AMT);
+    expect((await readStake(jurorStake))!.staked).toBe(STAKE_AMT);
 
     // Bypass the facade's `assertCanUnstake` pre-check to exercise the on-chain
     // `InsufficientBalance` require, but with a VALID path so the path-verify
@@ -361,7 +361,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     await expect(env.sendIx(ix)).rejects.toThrow();
 
     // stake untouched on revert
-    expect((await readStake(jurorStake))!.amount).toBe(STAKE_AMT);
+    expect((await readStake(jurorStake))!.staked).toBe(STAKE_AMT);
   }, 60_000);
 
   it("withdraw while active_draws>0 reverts on-chain (StakeLocked)", async () => {
@@ -410,10 +410,11 @@ describe("e2e: staking (requires Surfpool)", () => {
 
 describe("canUnstake guard (pure, no chain)", () => {
   const view = (
-    over: Partial<{ amount: bigint; activeDraws: number }> = {},
+    over: Partial<{ staked: bigint; activeDraws: number }> = {},
   ) => ({
     juror: "11111111111111111111111111111111" as Address,
-    amount: 1_000n,
+    staked: 1_000n,
+    feesEarned: 0n,
     activeDraws: 0,
     ...over,
   });
@@ -441,6 +442,6 @@ describe("canUnstake guard (pure, no chain)", () => {
 
   it("approves a valid unstake", () => {
     expect(canUnstake(view(), 500n)).toEqual({ ok: true });
-    expect(canUnstake(view({ amount: 1_000n }), 1_000n)).toEqual({ ok: true });
+    expect(canUnstake(view({ staked: 1_000n }), 1_000n)).toEqual({ ok: true });
   });
 });

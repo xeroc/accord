@@ -19,17 +19,31 @@ pub enum Aggregation {
     Plurality,
 }
 
-/// A specialized Juror pool. Permissionless; `staking_token`, windows, `alpha`,
-/// `min_stake`, `fee_per_juror`, `authority`, and `evidence_operator` are mutable
-/// via propose/execute (ADR-0005); `risk_type` and `evidence_spec` are immutable.
+/// What happens when a round falls short of its reveal quorum (ADR-0021). v1
+/// ships a single variant — `Redraw` reconvenes the same-size panel with fresh
+/// seats (via an orthogonal `draw_attempt`), slashing the no-shows; after
+/// `max_draw_attempts` the dispute transitions to `Failed`. Future variants
+/// (e.g. `Fail`) ship as new enum entries.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
+pub enum ShortfallPolicy {
+    Redraw,
+}
+
+/// A specialized Juror pool. Permissionless; `staking_token`, `fee_token`,
+/// windows, `alpha`, `min_stake`, `fee_per_juror`, `authority`, and
+/// `evidence_operator` are mutable via propose/execute (ADR-0005); `risk_type`
+/// and `evidence_spec` are immutable.
 ///
 /// Seeds: `["subaccord", creator, risk_type]`.
 #[account]
 #[derive(InitSpace)]
 pub struct Subaccord {
     pub creator: Pubkey,
-    pub staking_token: Pubkey, // SPL mint juror capital is staked in (ADR-0002)
-    pub min_stake: u64,        // draw eligibility threshold, in `staking_token`
+    pub staking_token: Pubkey, // SPL mint juror capital is staked in (collateral, ADR-0002/0020)
+    /// Compensation mint — fees + appeal bonds (ADR-0020). Distinct from
+    /// `staking_token` so collateral and compensation are decoupled.
+    pub fee_token: Pubkey,
+    pub min_stake: u64, // draw eligibility threshold, in `staking_token`
     /// Slash factor in basis points (10% = 1000). Incoherent Juror loses
     /// `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
     pub alpha_bps: u16,
@@ -42,7 +56,18 @@ pub struct Subaccord {
     pub max_appeals: u8,
     /// Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`.
     pub aggregation: Aggregation,
-    pub fee_per_juror: u64, // in `staking_token`
+    pub fee_per_juror: u64, // in `fee_token` (ADR-0020)
+    /// Reveal-quorum fraction in basis points (ADR-0021). A round is
+    /// authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
+    /// Default 6666 (= 2/3); the absolute commitment escalates per appeal for
+    /// free via panel growth.
+    pub reveal_threshold_bps: u16,
+    /// What to do on a shortfall (ADR-0021). v1 = `Redraw`.
+    pub shortfall_policy: ShortfallPolicy,
+    /// Maximum same-size redraws per round before the dispute fails (ADR-0021).
+    /// `(round_idx, draw_attempt)` with `draw_attempt` reaching this bound ⇒
+    /// `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
+    pub max_draw_attempts: u8,
     /// `Pubkey::default()` => immutable. Otherwise signs propose/execute updates.
     pub authority: Pubkey,
     pub evidence_operator: Pubkey, // ADR-0006 trusted re-encryption service
@@ -50,7 +75,7 @@ pub struct Subaccord {
     pub risk_type: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
-    /// Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+    /// Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
     /// Maintained O(1) by `stake`/`unstake` (0→positive increments,
     /// positive→0 decrements). This is a *coarse* intake gate for
     /// `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
@@ -89,20 +114,21 @@ pub struct Subaccord {
 pub struct JurorStake {
     pub subaccord: Pubkey,
     pub juror: Pubkey,
-    pub amount: u64,
+    /// Collateral (stake_token). Sortition weight + slash exposure.
+    pub staked: u64,
     pub active_draws: u32, // disputes this juror is currently drawn into
     pub bump: u8,
     /// Leaf position in the Subaccord accumulator (assigned at first stake).
     pub tree_index: u32,
-    /// Net slash(-)/reward(+) accumulated from settlements. Written by
-    /// `settle_round_accounts` instead of mutating `amount` — keeps the
-    /// accumulator root canonical. Folded into `amount` by the permissionless
+    /// Net slash(-)/reward(+) accumulated from settlements, in `stake_token`.
+    /// Written by settlement instead of mutating `staked` — keeps the
+    /// accumulator root canonical. Folded into `staked` by the permissionless
     /// `reconcile_stake` crank (which updates the root via a Merkle proof).
-    pub settlement_delta: i64,
+    pub stake_delta: i64,
     /// Pending slash exposure from all active draws. Incremented by
     /// `draw_seat` (by `α·min_stake` from the dispute's terms), decremented
     /// by settlement or cancel. Ensures the juror can always cover every
-    /// concurrent slash. `amount - slash_reserve` is the truly free stake.
+    /// concurrent slash. `staked - slash_reserve` is the truly free stake.
     pub slash_reserve: u64,
     /// Timestamp of `request_withdraw` (0 = no pending request). The
     /// accumulator root is already updated at request time; `withdraw` just
@@ -111,6 +137,11 @@ pub struct JurorStake {
     /// Tokens locked in the vault pending `withdraw`. Set at `request_withdraw`,
     /// consumed at `withdraw`.
     pub pending_withdrawal: u64,
+    /// Aggregate earned fees (`fee_token`, ADR-0020). Credited at
+    /// `finalize_round` + settlement; withdrawn via the ungated
+    /// `withdraw_fees` instruction. No `active_draws` gate (fees are earned,
+    /// not at-risk capital).
+    pub fees_earned: u64,
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -133,6 +164,13 @@ pub struct CaseTerms {
     pub appeal_window: u64,
     pub max_appeals: u8,
     pub aggregation: Aggregation,
+    /// Frozen reveal-quorum fraction (ADR-0021). Mirrors
+    /// `Subaccord.reveal_threshold_bps` at filing time.
+    pub reveal_threshold_bps: u16,
+    /// Frozen shortfall policy (ADR-0021).
+    pub shortfall_policy: ShortfallPolicy,
+    /// Frozen redraw cap (ADR-0021).
+    pub max_draw_attempts: u8,
 }
 
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
@@ -241,6 +279,13 @@ pub struct Round {
     /// Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
     /// range `[prefix, prefix+stake)` used for deterministic collision checks.
     pub seat_stake: [u64; MAX_JURORS], // total = multiple of 8
+    /// Same-size redraw counter within this round (ADR-0021). Orthogonal to
+    /// `round_idx`: bumping it changes only the sortition seed, never the panel
+    /// size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+    /// new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+    /// Appended (with trailing pad) so existing field offsets are stable.
+    pub draw_attempt: u32,
+    pub _pad_draw_attempt: [u8; 4], // keep struct size a multiple of 8 (Pod)
 }
 
 /// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per
@@ -323,7 +368,11 @@ pub enum DisputeState {
     RoundResolved, // round tallied; appeal window or finalization
     Final,         // final ruling set
     Closed,        // fully settled
-    Failed,        // liveness-escape terminal (cancel_dispute)
+    Failed,        // liveness-escape terminal (cancel_dispute / redraw exhaustion)
+    /// Round fell short of its reveal quorum (ADR-0021). `redraw` reconvenes
+    /// the same-size panel (bumping `draw_attempt`); on `max_draw_attempts`
+    /// exhaustion the dispute transitions to `Failed` instead.
+    RedrawEligible,
 }
 
 /// Grouped args for `create_subaccord`'s non-seed fields (bean accord-sqve).
@@ -334,6 +383,7 @@ pub enum DisputeState {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub struct CreateSubaccordParams {
     pub staking_token: Pubkey,
+    pub fee_token: Pubkey,
     pub min_stake: u64,
     pub alpha_bps: u16,
     pub review_window: u64,
@@ -343,6 +393,12 @@ pub struct CreateSubaccordParams {
     pub max_appeals: u8,
     pub aggregation: Aggregation,
     pub fee_per_juror: u64,
+    /// Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3).
+    pub reveal_threshold_bps: u16,
+    /// Shortfall policy (ADR-0021). v1 = `Redraw`.
+    pub shortfall_policy: ShortfallPolicy,
+    /// Redraw cap per round (ADR-0021). Default 3.
+    pub max_draw_attempts: u8,
     pub authority: Pubkey,
     pub evidence_operator: Pubkey,
     pub depth: u8,

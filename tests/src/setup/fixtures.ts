@@ -5,6 +5,7 @@ import { address, type Address } from "@solana/kit";
 import {
   Aggregation,
   DEFAULT_APPEAL_WINDOW_SECS,
+  ShortfallPolicy,
   type CreateSubaccordArgs,
 } from "@useaccord/sdk";
 
@@ -26,6 +27,7 @@ export function randomBytes32(): Uint8Array {
  */
 export function defaultSubaccordArgs(
   stakingToken: Address,
+  feeToken: Address,
   evidenceOperator: Address,
   overrides: Partial<CreateSubaccordArgs> = {},
 ): CreateSubaccordArgs {
@@ -33,6 +35,7 @@ export function defaultSubaccordArgs(
     riskType: randomBytes32(),
     evidenceSpec: randomBytes32(),
     stakingToken,
+    feeToken,
     minStake: 1_000n,
     alphaBps: 1_000, // 10%
     reviewWindow: 604_800n, // 7 days
@@ -42,6 +45,9 @@ export function defaultSubaccordArgs(
     maxAppeals: 3,
     aggregation: Aggregation.Plurality,
     feePerJuror: 0n,
+    revealThresholdBps: 6_666, // 2/3 (ADR-0021)
+    shortfallPolicy: ShortfallPolicy.Redraw, // ADR-0021
+    maxDrawAttempts: 3, // ADR-0021
     authority: DEFAULT_PUBKEY, // immutable
     evidenceOperator,
     depth: 4, // small for tests (2^4 = 16 seats max)

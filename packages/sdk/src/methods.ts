@@ -36,7 +36,9 @@ import {
   requestWithdraw as pureRequestWithdraw,
   withdraw as pureWithdraw,
   reconcileStake as pureReconcileStake,
+  withdrawFees as pureWithdrawFees,
   type StakingAccounts,
+  type WithdrawFeesAccounts,
 } from "./methods/staking.js";
 import {
   settleRound as pureSettleRound,
@@ -116,6 +118,7 @@ export interface AccordMethods {
   ): Instruction;
   withdraw(accounts: StakingAccounts): Instruction;
   reconcileStake(accounts: StakingAccounts, path: MSTNode[]): Instruction;
+  withdrawFees(accounts: WithdrawFeesAccounts): Instruction;
 
   // settlement (per-round crank + dispute cancellation)
   settleRound(
@@ -147,7 +150,10 @@ export interface AccordMethods {
     args: VoteArgs,
   ): Promise<{ instruction: Instruction; commitment: Uint8Array }>;
   reveal(accounts: VotingAccounts, args: VoteArgs): Instruction;
-  finalizeRound(accounts: VotingAccounts): Instruction;
+  finalizeRound(
+    accounts: VotingAccounts,
+    remainingAccounts?: Address[],
+  ): Instruction;
   finalizeDispute(
     accounts: VotingAccounts,
     remainingAccounts: Address[],
@@ -218,6 +224,7 @@ export function createAccordMethods(
     withdraw: (accounts) => pureWithdraw(adapter, programId, accounts),
     reconcileStake: (accounts, path) =>
       pureReconcileStake(adapter, programId, accounts, path),
+    withdrawFees: (accounts) => pureWithdrawFees(adapter, programId, accounts),
 
     // settlement
     settleRound: (accounts, roundIdx, remainingAccounts) =>
@@ -242,8 +249,8 @@ export function createAccordMethods(
     // voting
     commit: (accounts, args) => pureCommit(adapter, programId, accounts, args),
     reveal: (accounts, args) => pureReveal(adapter, programId, accounts, args),
-    finalizeRound: (accounts) =>
-      pureFinalizeRound(adapter, programId, accounts),
+    finalizeRound: (accounts, remainingAccounts = []) =>
+      pureFinalizeRound(adapter, programId, accounts, remainingAccounts),
     finalizeDispute: (accounts, remainingAccounts) =>
       pureFinalizeDispute(adapter, programId, accounts, remainingAccounts),
 

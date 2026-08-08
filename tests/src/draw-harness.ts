@@ -26,6 +26,7 @@ import {
   type LeafClaim,
   type MSTNode,
   type SeatMembership,
+  type CreateSubaccordArgs,
   findJurorStakePda,
   findRoundPda,
   findPauseStatePda,
@@ -212,16 +213,18 @@ export async function ensurePause(env: TestEnv): Promise<Address> {
 export async function armSubaccordAndJurors(
   env: TestEnv,
   pauseState: Address,
+  subaccordOverrides: Partial<CreateSubaccordArgs> = {},
 ): Promise<Omit<DrawFixture, "env" | "up">> {
   const { mint } = await createMint(env, 6);
 
-  const args = defaultSubaccordArgs(mint, env.payer.address, {
+  const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
     minStake: 1_000n,
     feePerJuror: FEE_PER_JUROR,
     maxAppeals: 3,
     reviewWindow: 604_800n,
     commitWindow: 172_800n,
     revealWindow: 172_800n,
+    ...subaccordOverrides,
   });
   const { instruction: createIx, subaccord } = await createSubaccord(
     env.accord.adapter,
@@ -260,7 +263,7 @@ export async function armSubaccordAndJurors(
         jurorStake: stakePda,
         stakingToken: mint,
         jurorTokenAccount: jurorAta,
-        vault,
+        stakeVault: vault,
       },
       STAKE_AMOUNT,
       path,
@@ -307,9 +310,9 @@ export async function armDispute(
     {
       filer: env.payer.address,
       subaccord,
-      stakingToken: mint,
+      feeToken: mint,
       filerTokenAccount: filerAta,
-      vault,
+      feeVault: vault,
       pauseState,
     },
     {

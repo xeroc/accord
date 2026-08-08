@@ -159,7 +159,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
 
     mint = (await createMint(env, 6)).mint;
 
-    const args = defaultSubaccordArgs(mint, env.payer.address, {
+    const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
       feePerJuror: FEE_PER_JUROR,
       minStake: MIN_STAKE,
       depth: DEPTH,
@@ -201,7 +201,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
       jurorStake: jsPda,
       stakingToken: mint,
       jurorTokenAccount: jurorAta,
-      vault,
+      stakeVault: vault,
     };
     const facade = new Accord({ endpoint: env.rpcUrl, signer: juror });
     return { juror, jurorAta, jurorStakePda: jsPda, accounts, facade };
@@ -232,7 +232,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
     expect(onChain!.nextIndex).toBe(1);
 
     const js = await readStake(jurorStakePda);
-    expect(js!.amount).toBe(STAKE_AMT);
+    expect(js!.staked).toBe(STAKE_AMT);
     expect(js!.treeIndex).toBe(0);
   }, 60_000);
 
@@ -303,7 +303,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
     expect(new Uint8Array(onChain!.rootHash)).toEqual(tree.rootHash);
 
     const js = await readStake(jurorStakePda);
-    expect(js!.amount).toBe(2_500n);
+    expect(js!.staked).toBe(2_500n);
     expect(js!.treeIndex).toBe(2);
   }, 60_000);
 

@@ -11,6 +11,7 @@ pub struct SubaccordCreated {
     pub creator: Pubkey,
     pub subaccord: Pubkey,
     pub staking_token: Pubkey,
+    pub fee_token: Pubkey,
     pub risk_type: [u8; 32],
 }
 
@@ -163,5 +164,34 @@ pub struct Unpaused {
 pub struct DisputeCancelled {
     pub dispute: Pubkey,
     pub filer: Pubkey,
+    pub refund: u64,
+}
+
+/// Emitted when a juror withdraws aggregate earned fees (ADR-0020).
+#[event]
+pub struct FeesWithdrawn {
+    pub subaccord: Pubkey,
+    pub juror: Pubkey,
+    pub amount: u64,
+}
+
+/// Emitted when a shortfall round is redrawn (ADR-0021). The same-size panel is
+/// reconvened with a fresh `draw_attempt` seed; `round_idx` is unchanged.
+#[event]
+pub struct Redrawn {
+    pub dispute: Pubkey,
+    pub round_idx: u32,
+    pub draw_attempt: u32,
+}
+
+/// Emitted when `max_draw_attempts` is exhausted and the dispute transitions to
+/// `Failed` (ADR-0021). `refund` is the filer fee returned from the vault;
+/// no-shows' accumulated slashes stand, outstanding appeal bonds remain claimable
+/// via `claim_appeal_refund`.
+#[event]
+pub struct DisputeFailedShortfall {
+    pub dispute: Pubkey,
+    pub filer: Pubkey,
+    pub draw_attempt: u32,
     pub refund: u64,
 }

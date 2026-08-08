@@ -118,6 +118,14 @@ export const ACCORD_ERROR__DISPUTE_FAILED = 0x17a1; // 6049
 export const ACCORD_ERROR__CANCEL_TOO_EARLY = 0x17a2; // 6050
 /** MaxRetriesExceeded: Sortition retries exceeded the on-chain bound; the pool may be too concentrated. */
 export const ACCORD_ERROR__MAX_RETRIES_EXCEEDED = 0x17a3; // 6051
+/** NoFeesEarned: Juror has no earned fees to withdraw. */
+export const ACCORD_ERROR__NO_FEES_EARNED = 0x17a4; // 6052
+/** NotRedrawEligible: Dispute is not in RedrawEligible state; redraw is not available. */
+export const ACCORD_ERROR__NOT_REDRAW_ELIGIBLE = 0x17a5; // 6053
+/** MaxDrawAttemptsLimitExceeded: Subaccord max_draw_attempts exceeds the program ceiling. */
+export const ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED = 0x17a6; // 6054
+/** InvalidThreshold: Reveal threshold (bps) must be <= 10_000. */
+export const ACCORD_ERROR__INVALID_THRESHOLD = 0x17a7; // 6055
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -145,16 +153,20 @@ export type AccordError =
   | typeof ACCORD_ERROR__INVALID_OPTIONS
   | typeof ACCORD_ERROR__INVALID_PANEL_SIZE
   | typeof ACCORD_ERROR__INVALID_STATE
+  | typeof ACCORD_ERROR__INVALID_THRESHOLD
   | typeof ACCORD_ERROR__INVALID_VOTE
   | typeof ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED
   | typeof ACCORD_ERROR__MAX_APPEALS_REACHED
+  | typeof ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED
   | typeof ACCORD_ERROR__MAX_RETRIES_EXCEEDED
+  | typeof ACCORD_ERROR__NO_FEES_EARNED
   | typeof ACCORD_ERROR__NO_PENDING_UNPAUSE
   | typeof ACCORD_ERROR__NO_PENDING_UPDATE
   | typeof ACCORD_ERROR__NO_PENDING_WITHDRAWAL
   | typeof ACCORD_ERROR__NOT_DRAWN_JUROR
   | typeof ACCORD_ERROR__NOT_PAUSE_AUTHORITY
   | typeof ACCORD_ERROR__NOT_PAUSED
+  | typeof ACCORD_ERROR__NOT_REDRAW_ELIGIBLE
   | typeof ACCORD_ERROR__PENDING_SETTLEMENT
   | typeof ACCORD_ERROR__PROGRAM_PAUSED
   | typeof ACCORD_ERROR__REVEAL_MISMATCH
@@ -201,16 +213,20 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__INVALID_OPTIONS]: `Dispute options are invalid (need 2..=MAX_OPTIONS).`,
     [ACCORD_ERROR__INVALID_PANEL_SIZE]: `Number of juror memberships does not match the required panel size.`,
     [ACCORD_ERROR__INVALID_STATE]: `Dispute is not in the required state for this instruction.`,
+    [ACCORD_ERROR__INVALID_THRESHOLD]: `Reveal threshold (bps) must be <= 10_000.`,
     [ACCORD_ERROR__INVALID_VOTE]: `Revealed vote index is out of range.`,
     [ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED]: `Subaccord max_appeals exceeds the program ceiling.`,
     [ACCORD_ERROR__MAX_APPEALS_REACHED]: `Maximum appeals reached for this dispute.`,
+    [ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED]: `Subaccord max_draw_attempts exceeds the program ceiling.`,
     [ACCORD_ERROR__MAX_RETRIES_EXCEEDED]: `Sortition retries exceeded the on-chain bound; the pool may be too concentrated.`,
+    [ACCORD_ERROR__NO_FEES_EARNED]: `Juror has no earned fees to withdraw.`,
     [ACCORD_ERROR__NO_PENDING_UNPAUSE]: `No pending unpause to execute.`,
     [ACCORD_ERROR__NO_PENDING_UPDATE]: `No pending update to execute.`,
     [ACCORD_ERROR__NO_PENDING_WITHDRAWAL]: `No pending withdrawal to execute.`,
     [ACCORD_ERROR__NOT_DRAWN_JUROR]: `Signer is not a drawn Juror for this round.`,
     [ACCORD_ERROR__NOT_PAUSE_AUTHORITY]: `Signer is not the pause authority.`,
     [ACCORD_ERROR__NOT_PAUSED]: `Program is not paused.`,
+    [ACCORD_ERROR__NOT_REDRAW_ELIGIBLE]: `Dispute is not in RedrawEligible state; redraw is not available.`,
     [ACCORD_ERROR__PENDING_SETTLEMENT]: `Settle pending reward/slash first: call reconcile_stake before request_withdraw.`,
     [ACCORD_ERROR__PROGRAM_PAUSED]: `Program is paused; this instruction is halted.`,
     [ACCORD_ERROR__REVEAL_MISMATCH]: `Reveal does not match the committed hash.`,

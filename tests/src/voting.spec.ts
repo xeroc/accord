@@ -9,7 +9,7 @@
 // Window timing (per Subaccord v1 defaults): commit opens at review_end
 // (draw_time + review_window), reveal at commit_end (+commit_window),
 // finalizable at reveal_end (+reveal_window).
-import { commit, reveal, finalizeRound } from "@useaccord/sdk";
+import { commit, findJurorStakePda, finalizeRound, reveal } from "@useaccord/sdk";
 
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import {
@@ -123,13 +123,26 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     // --- finalize_round (crank; eligible after reveal_end) ---
     mid = await readRound(env, roundPda);
     await warpTo(env, mid!.revealEnd);
+    const jurorStakePdas = await Promise.all(
+      drawnJurors.map((j) =>
+        findJurorStakePda(
+          { subaccord: fx.subaccord, juror: j.signer.address },
+          { programAddress: env.programId },
+        ).then(([address]) => address),
+      ),
+    );
     await env.sendIx(
-      finalizeRound(env.accord.adapter, env.programId, {
-        signer: env.payer.address,
-        subaccord: fx.subaccord,
-        dispute: armed.dispute,
-        round: roundPda,
-      }),
+      finalizeRound(
+        env.accord.adapter,
+        env.programId,
+        {
+          signer: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        jurorStakePdas,
+      ),
     );
 
     const finalRound = await readRound(env, roundPda);

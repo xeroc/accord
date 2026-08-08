@@ -95,6 +95,15 @@ export type Round = {
    * range `[prefix, prefix+stake)` used for deterministic collision checks.
    */
   seatStake: Array<bigint>;
+  /**
+   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
+   * `round_idx`: bumping it changes only the sortition seed, never the panel
+   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+   * Appended (with trailing pad) so existing field offsets are stable.
+   */
+  drawAttempt: number;
+  padDrawAttempt: ReadonlyUint8Array;
 };
 
 export type RoundArgs = {
@@ -138,6 +147,15 @@ export type RoundArgs = {
    * range `[prefix, prefix+stake)` used for deterministic collision checks.
    */
   seatStake: Array<number | bigint>;
+  /**
+   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
+   * `round_idx`: bumping it changes only the sortition seed, never the panel
+   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+   * Appended (with trailing pad) so existing field offsets are stable.
+   */
+  drawAttempt: number;
+  padDrawAttempt: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link RoundArgs} account data. */
@@ -166,6 +184,8 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["pad1", fixEncoderSize(getBytesEncoder(), 4)],
       ["seatPrefix", getArrayEncoder(getU64Encoder(), { size: 31 })],
       ["seatStake", getArrayEncoder(getU64Encoder(), { size: 31 })],
+      ["drawAttempt", getU32Encoder()],
+      ["padDrawAttempt", fixEncoderSize(getBytesEncoder(), 4)],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -196,6 +216,8 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["pad1", fixDecoderSize(getBytesDecoder(), 4)],
     ["seatPrefix", getArrayDecoder(getU64Decoder(), { size: 31 })],
     ["seatStake", getArrayDecoder(getU64Decoder(), { size: 31 })],
+    ["drawAttempt", getU32Decoder()],
+    ["padDrawAttempt", fixDecoderSize(getBytesDecoder(), 4)],
   ]);
 }
 
@@ -258,5 +280,5 @@ export async function fetchAllMaybeRound(
 }
 
 export function getRoundSize(): number {
-  return 2600;
+  return 2608;
 }

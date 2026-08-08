@@ -117,7 +117,7 @@ async function readAppealBond(env: TestEnv, addr: Address) {
 async function readJurorAmount(env: TestEnv, pda: Address): Promise<bigint> {
   const d = await fetchDecoded(env, pda, getJurorStakeDecoder());
   if (!d) throw new Error(`juror_stake missing: ${pda}`);
-  return d.amount;
+  return d.staked;
 }
 
 async function readJurorSettlementDelta(
@@ -126,7 +126,7 @@ async function readJurorSettlementDelta(
 ): Promise<bigint> {
   const d = await fetchDecoded(env, pda, getJurorStakeDecoder());
   if (!d) throw new Error(`juror_stake missing: ${pda}`);
-  return d.settlementDelta;
+  return d.stakeDelta;
 }
 
 async function tokenAmount(env: TestEnv, ata: Address): Promise<bigint> {
@@ -306,12 +306,17 @@ async function resolveRound(
   round = await readRound(env, roundPda);
   await warpTo(env, round.revealEnd);
   await env.sendIx(
-    finalizeRound(env.accord.adapter, env.programId, {
-      signer: env.payer.address,
-      subaccord,
-      dispute,
-      round: roundPda,
-    }),
+    finalizeRound(
+      env.accord.adapter,
+      env.programId,
+      {
+        signer: env.payer.address,
+        subaccord,
+        dispute,
+        round: roundPda,
+      },
+      jurorStakes,
+    ),
   );
 
   return { roundPda, jurorStakes };
@@ -339,7 +344,7 @@ async function buildWorldResolved0(
 
   const { mint } = await createMint(env, 6);
 
-  const args = defaultSubaccordArgs(mint, env.payer.address, {
+  const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
     feePerJuror: FEE_PER_JUROR,
     maxAppeals: opts.maxAppeals,
     depth: DEPTH,
@@ -381,7 +386,7 @@ async function buildWorldResolved0(
           jurorStake,
           stakingToken: mint,
           jurorTokenAccount: jurorAta,
-          vault,
+          stakeVault: vault,
         },
         STAKE_AMOUNT,
         path,
@@ -405,9 +410,9 @@ async function buildWorldResolved0(
     {
       filer: env.payer.address,
       subaccord,
-      stakingToken: mint,
+      feeToken: mint,
       filerTokenAccount: payerAta,
-      vault,
+      feeVault: vault,
       pauseState,
     },
     {
@@ -469,9 +474,9 @@ function appealAccounts(w: World & { round0: Address }, appealBond: Address) {
     dispute: w.dispute,
     round: w.round0,
     appealBond,
-    stakingToken: w.mint,
+    feeToken: w.mint,
     appellantTokenAccount: w.payerAta,
-    vault: w.vault,
+    feeVault: w.vault,
   };
 }
 
@@ -562,9 +567,9 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
           subaccord: w.subaccord,
           dispute: w.dispute,
           appealBond,
-          stakingToken: w.mint,
+          feeToken: w.mint,
           claimantTokenAccount: w.payerAta,
-          vault: w.vault,
+          feeVault: w.vault,
         },
         0,
       ),
@@ -582,9 +587,9 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
             subaccord: w.subaccord,
             dispute: w.dispute,
             appealBond,
-            stakingToken: w.mint,
+            feeToken: w.mint,
             claimantTokenAccount: w.payerAta,
-            vault: w.vault,
+            feeVault: w.vault,
           },
           0,
         ),
@@ -682,9 +687,9 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
             subaccord: w.subaccord,
             dispute: w.dispute,
             appealBond,
-            stakingToken: w.mint,
+            feeToken: w.mint,
             claimantTokenAccount: w.payerAta,
-            vault: w.vault,
+            feeVault: w.vault,
           },
           0,
         ),

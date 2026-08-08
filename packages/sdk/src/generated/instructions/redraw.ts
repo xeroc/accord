@@ -16,8 +16,6 @@ import {
   getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
-  getU32Decoder,
-  getU32Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -39,29 +37,26 @@ import {
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
-  getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findAppealBondPda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
-export const CLAIM_APPEAL_REFUND_DISCRIMINATOR: ReadonlyUint8Array =
-  new Uint8Array([210, 169, 229, 146, 187, 30, 61, 176]);
+export const REDRAW_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  86, 111, 66, 164, 105, 158, 114, 164,
+]);
 
-export function getClaimAppealRefundDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(
-    CLAIM_APPEAL_REFUND_DISCRIMINATOR,
-  );
+export function getRedrawDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(REDRAW_DISCRIMINATOR);
 }
 
-export type ClaimAppealRefundInstruction<
+export type RedrawInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
-  TAccountAppealBond extends string | AccountMeta<string> = string,
+  TAccountRound extends string | AccountMeta<string> = string,
   TAccountFeeToken extends string | AccountMeta<string> = string,
-  TAccountClaimantTokenAccount extends string | AccountMeta<string> = string,
+  TAccountFilerTokenAccount extends string | AccountMeta<string> = string,
   TAccountFeeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -78,17 +73,17 @@ export type ClaimAppealRefundInstruction<
         ? ReadonlyAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
-        ? ReadonlyAccount<TAccountDispute>
+        ? WritableAccount<TAccountDispute>
         : TAccountDispute,
-      TAccountAppealBond extends string
-        ? WritableAccount<TAccountAppealBond>
-        : TAccountAppealBond,
+      TAccountRound extends string
+        ? WritableAccount<TAccountRound>
+        : TAccountRound,
       TAccountFeeToken extends string
         ? ReadonlyAccount<TAccountFeeToken>
         : TAccountFeeToken,
-      TAccountClaimantTokenAccount extends string
-        ? WritableAccount<TAccountClaimantTokenAccount>
-        : TAccountClaimantTokenAccount,
+      TAccountFilerTokenAccount extends string
+        ? WritableAccount<TAccountFilerTokenAccount>
+        : TAccountFilerTokenAccount,
       TAccountFeeVault extends string
         ? WritableAccount<TAccountFeeVault>
         : TAccountFeeVault,
@@ -99,97 +94,89 @@ export type ClaimAppealRefundInstruction<
     ]
   >;
 
-export type ClaimAppealRefundInstructionData = {
-  discriminator: ReadonlyUint8Array;
-  roundIdx: number;
-};
+export type RedrawInstructionData = { discriminator: ReadonlyUint8Array };
 
-export type ClaimAppealRefundInstructionDataArgs = { roundIdx: number };
+export type RedrawInstructionDataArgs = {};
 
-export function getClaimAppealRefundInstructionDataEncoder(): FixedSizeEncoder<ClaimAppealRefundInstructionDataArgs> {
+export function getRedrawInstructionDataEncoder(): FixedSizeEncoder<RedrawInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([
-      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["roundIdx", getU32Encoder()],
-    ]),
-    (value) => ({ ...value, discriminator: CLAIM_APPEAL_REFUND_DISCRIMINATOR }),
+    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    (value) => ({ ...value, discriminator: REDRAW_DISCRIMINATOR }),
   );
 }
 
-export function getClaimAppealRefundInstructionDataDecoder(): FixedSizeDecoder<ClaimAppealRefundInstructionData> {
+export function getRedrawInstructionDataDecoder(): FixedSizeDecoder<RedrawInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["roundIdx", getU32Decoder()],
   ]);
 }
 
-export function getClaimAppealRefundInstructionDataCodec(): FixedSizeCodec<
-  ClaimAppealRefundInstructionDataArgs,
-  ClaimAppealRefundInstructionData
+export function getRedrawInstructionDataCodec(): FixedSizeCodec<
+  RedrawInstructionDataArgs,
+  RedrawInstructionData
 > {
   return combineCodec(
-    getClaimAppealRefundInstructionDataEncoder(),
-    getClaimAppealRefundInstructionDataDecoder(),
+    getRedrawInstructionDataEncoder(),
+    getRedrawInstructionDataDecoder(),
   );
 }
 
-export type ClaimAppealRefundAsyncInput<
+export type RedrawAsyncInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountAppealBond extends string = string,
+  TAccountRound extends string = string,
   TAccountFeeToken extends string = string,
-  TAccountClaimantTokenAccount extends string = string,
+  TAccountFilerTokenAccount extends string = string,
   TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  /** The specific appeal bond being claimed. */
-  appealBond?: Address<TAccountAppealBond>;
+  /** The shortfall round (`dispute.current_round`). */
+  round: Address<TAccountRound>;
   feeToken: Address<TAccountFeeToken>;
   /**
-   * The appellant's ATA — sweep destination. Any caller may pass it; the
-   * handler rejects it unless its owner matches the bond's recorded appellant.
+   * Filer refund destination (Fail branch). Unused on the Redraw branch but
+   * always validated — the cranker passes it regardless.
    */
-  claimantTokenAccount: Address<TAccountClaimantTokenAccount>;
+  filerTokenAccount: Address<TAccountFilerTokenAccount>;
   feeVault?: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  roundIdx: ClaimAppealRefundInstructionDataArgs["roundIdx"];
 };
 
-export async function getClaimAppealRefundInstructionAsync<
+export async function getRedrawInstructionAsync<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountAppealBond extends string,
+  TAccountRound extends string,
   TAccountFeeToken extends string,
-  TAccountClaimantTokenAccount extends string,
+  TAccountFilerTokenAccount extends string,
   TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: ClaimAppealRefundAsyncInput<
+  input: RedrawAsyncInput<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountAppealBond,
+    TAccountRound,
     TAccountFeeToken,
-    TAccountClaimantTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountFeeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  ClaimAppealRefundInstruction<
+  RedrawInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountAppealBond,
+    TAccountRound,
     TAccountFeeToken,
-    TAccountClaimantTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountFeeVault,
     TAccountTokenProgram
   >
@@ -201,11 +188,11 @@ export async function getClaimAppealRefundInstructionAsync<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
-    dispute: { value: input.dispute ?? null, isWritable: false },
-    appealBond: { value: input.appealBond ?? null, isWritable: true },
+    dispute: { value: input.dispute ?? null, isWritable: true },
+    round: { value: input.round ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
-    claimantTokenAccount: {
-      value: input.claimantTokenAccount ?? null,
+    filerTokenAccount: {
+      value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
     feeVault: { value: input.feeVault ?? null, isWritable: true },
@@ -216,19 +203,7 @@ export async function getClaimAppealRefundInstructionAsync<
     ResolvedInstructionAccount
   >;
 
-  // Original args.
-  const args = { ...input };
-
   // Resolve default values.
-  if (!accounts.appealBond.value) {
-    accounts.appealBond.value = await findAppealBondPda({
-      dispute: getAddressFromResolvedInstructionAccount(
-        "dispute",
-        accounts.dispute.value,
-      ),
-      roundIdx: getNonNullResolvedInstructionInput("roundIdx", args.roundIdx),
-    });
-  }
   if (!accounts.feeVault.value) {
     accounts.feeVault.value = await getProgramDerivedAddress({
       programAddress:
@@ -267,85 +242,82 @@ export async function getClaimAppealRefundInstructionAsync<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("appealBond", accounts.appealBond),
+      getAccountMeta("round", accounts.round),
       getAccountMeta("feeToken", accounts.feeToken),
-      getAccountMeta("claimantTokenAccount", accounts.claimantTokenAccount),
+      getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
       getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
-    data: getClaimAppealRefundInstructionDataEncoder().encode(
-      args as ClaimAppealRefundInstructionDataArgs,
-    ),
+    data: getRedrawInstructionDataEncoder().encode({}),
     programAddress,
-  } as ClaimAppealRefundInstruction<
+  } as RedrawInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountAppealBond,
+    TAccountRound,
     TAccountFeeToken,
-    TAccountClaimantTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountFeeVault,
     TAccountTokenProgram
   >);
 }
 
-export type ClaimAppealRefundInput<
+export type RedrawInput<
   TAccountCaller extends string = string,
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
-  TAccountAppealBond extends string = string,
+  TAccountRound extends string = string,
   TAccountFeeToken extends string = string,
-  TAccountClaimantTokenAccount extends string = string,
+  TAccountFilerTokenAccount extends string = string,
   TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
-  /** The specific appeal bond being claimed. */
-  appealBond: Address<TAccountAppealBond>;
+  /** The shortfall round (`dispute.current_round`). */
+  round: Address<TAccountRound>;
   feeToken: Address<TAccountFeeToken>;
   /**
-   * The appellant's ATA — sweep destination. Any caller may pass it; the
-   * handler rejects it unless its owner matches the bond's recorded appellant.
+   * Filer refund destination (Fail branch). Unused on the Redraw branch but
+   * always validated — the cranker passes it regardless.
    */
-  claimantTokenAccount: Address<TAccountClaimantTokenAccount>;
+  filerTokenAccount: Address<TAccountFilerTokenAccount>;
   feeVault: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
-  roundIdx: ClaimAppealRefundInstructionDataArgs["roundIdx"];
 };
 
-export function getClaimAppealRefundInstruction<
+export function getRedrawInstruction<
   TAccountCaller extends string,
   TAccountSubaccord extends string,
   TAccountDispute extends string,
-  TAccountAppealBond extends string,
+  TAccountRound extends string,
   TAccountFeeToken extends string,
-  TAccountClaimantTokenAccount extends string,
+  TAccountFilerTokenAccount extends string,
   TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: ClaimAppealRefundInput<
+  input: RedrawInput<
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountAppealBond,
+    TAccountRound,
     TAccountFeeToken,
-    TAccountClaimantTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountFeeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
-): ClaimAppealRefundInstruction<
+): RedrawInstruction<
   TProgramAddress,
   TAccountCaller,
   TAccountSubaccord,
   TAccountDispute,
-  TAccountAppealBond,
+  TAccountRound,
   TAccountFeeToken,
-  TAccountClaimantTokenAccount,
+  TAccountFilerTokenAccount,
   TAccountFeeVault,
   TAccountTokenProgram
 > {
@@ -356,11 +328,11 @@ export function getClaimAppealRefundInstruction<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
-    dispute: { value: input.dispute ?? null, isWritable: false },
-    appealBond: { value: input.appealBond ?? null, isWritable: true },
+    dispute: { value: input.dispute ?? null, isWritable: true },
+    round: { value: input.round ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
-    claimantTokenAccount: {
-      value: input.claimantTokenAccount ?? null,
+    filerTokenAccount: {
+      value: input.filerTokenAccount ?? null,
       isWritable: true,
     },
     feeVault: { value: input.feeVault ?? null, isWritable: true },
@@ -370,9 +342,6 @@ export function getClaimAppealRefundInstruction<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
-
-  // Original args.
-  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
@@ -386,30 +355,28 @@ export function getClaimAppealRefundInstruction<
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
-      getAccountMeta("appealBond", accounts.appealBond),
+      getAccountMeta("round", accounts.round),
       getAccountMeta("feeToken", accounts.feeToken),
-      getAccountMeta("claimantTokenAccount", accounts.claimantTokenAccount),
+      getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
       getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
-    data: getClaimAppealRefundInstructionDataEncoder().encode(
-      args as ClaimAppealRefundInstructionDataArgs,
-    ),
+    data: getRedrawInstructionDataEncoder().encode({}),
     programAddress,
-  } as ClaimAppealRefundInstruction<
+  } as RedrawInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountSubaccord,
     TAccountDispute,
-    TAccountAppealBond,
+    TAccountRound,
     TAccountFeeToken,
-    TAccountClaimantTokenAccount,
+    TAccountFilerTokenAccount,
     TAccountFeeVault,
     TAccountTokenProgram
   >);
 }
 
-export type ParsedClaimAppealRefundInstruction<
+export type ParsedRedrawInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
@@ -418,28 +385,28 @@ export type ParsedClaimAppealRefundInstruction<
     caller: TAccountMetas[0];
     subaccord: TAccountMetas[1];
     dispute: TAccountMetas[2];
-    /** The specific appeal bond being claimed. */
-    appealBond: TAccountMetas[3];
+    /** The shortfall round (`dispute.current_round`). */
+    round: TAccountMetas[3];
     feeToken: TAccountMetas[4];
     /**
-     * The appellant's ATA — sweep destination. Any caller may pass it; the
-     * handler rejects it unless its owner matches the bond's recorded appellant.
+     * Filer refund destination (Fail branch). Unused on the Redraw branch but
+     * always validated — the cranker passes it regardless.
      */
-    claimantTokenAccount: TAccountMetas[5];
+    filerTokenAccount: TAccountMetas[5];
     feeVault: TAccountMetas[6];
     tokenProgram: TAccountMetas[7];
   };
-  data: ClaimAppealRefundInstructionData;
+  data: RedrawInstructionData;
 };
 
-export function parseClaimAppealRefundInstruction<
+export function parseRedrawInstruction<
   TProgram extends string,
   TAccountMetas extends readonly AccountMeta[],
 >(
   instruction: Instruction<TProgram> &
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
-): ParsedClaimAppealRefundInstruction<TProgram, TAccountMetas> {
+): ParsedRedrawInstruction<TProgram, TAccountMetas> {
   if (instruction.accounts.length < 8) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -461,12 +428,12 @@ export function parseClaimAppealRefundInstruction<
       caller: getNextAccount(),
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
-      appealBond: getNextAccount(),
+      round: getNextAccount(),
       feeToken: getNextAccount(),
-      claimantTokenAccount: getNextAccount(),
+      filerTokenAccount: getNextAccount(),
       feeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
     },
-    data: getClaimAppealRefundInstructionDataDecoder().decode(instruction.data),
+    data: getRedrawInstructionDataDecoder().decode(instruction.data),
   };
 }

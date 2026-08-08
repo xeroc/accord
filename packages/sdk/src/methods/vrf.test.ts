@@ -24,7 +24,7 @@ const pk = (first: number) => {
   return b;
 };
 
-test("vrfSeed: deterministic + round/dispute-bound (no draw_attempt)", async () => {
+test("vrfSeed: deterministic + round/dispute/draw_attempt-bound (ADR-0021)", async () => {
   const s0a = await vrfSeed(VRF, DISPUTE, 0);
   const s0b = await vrfSeed(VRF, DISPUTE, 0);
   assert.deepEqual(
@@ -35,9 +35,26 @@ test("vrfSeed: deterministic + round/dispute-bound (no draw_attempt)", async () 
   assert.equal(s0a.length, 32);
   const sR = await vrfSeed(VRF, DISPUTE, 1);
   assert.notDeepEqual(Array.from(s0a), Array.from(sR), "round binds the seed");
+  // ADR-0021: draw_attempt is an orthogonal seed dimension (default 0). A
+  // shortfall redraw bumps it so the same panel size yields fresh seats.
+  const sD1 = await vrfSeed(VRF, DISPUTE, 0, 1);
+  assert.notDeepEqual(
+    Array.from(s0a),
+    Array.from(sD1),
+    "draw_attempt binds the seed (redraw re-seeds)",
+  );
+  assert.deepEqual(
+    Array.from(sD1),
+    Array.from(await vrfSeed(VRF, DISPUTE, 0, 1)),
+    "draw_attempt is deterministic",
+  );
   await assert.rejects(
     () => vrfSeed(new Uint8Array(31), DISPUTE, 0),
     /InvalidVrf/,
+  );
+  await assert.rejects(
+    () => vrfSeed(VRF, DISPUTE, 0, -1),
+    /InvalidDrawAttempt/,
   );
 });
 

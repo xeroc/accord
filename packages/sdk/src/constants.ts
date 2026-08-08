@@ -44,6 +44,15 @@ export const DEFAULT_REVIEW_WINDOW_SECS = 604_800n; // 7 days
 export const DEFAULT_COMMIT_WINDOW_SECS = 172_800n; // 2 days
 export const DEFAULT_REVEAL_WINDOW_SECS = 172_800n; // 2 days
 export const DEFAULT_MAX_APPEALS = 3;
+/**
+ * Default reveal-quorum fraction in bps (ADR-0021): 6_666 = 2/3. A round is
+ * authoritative only once `reveal_count >= ceil(panel × bps / 10_000)`.
+ */
+export const DEFAULT_REVEAL_THRESHOLD_BPS = 6_666;
+/** Program ceiling on per-round redraw attempts (bounds the redraw ladder). */
+export const MAX_DRAW_ATTEMPTS = 10;
+/** Default same-size redraw cap per round before a dispute fails (ADR-0021). */
+export const DEFAULT_MAX_DRAW_ATTEMPTS = 3;
 export const DEFAULT_MIN_STAKE = 1_000n;
 export const DEFAULT_FEE_PER_JUROR = 0n; // set per-Subaccord
 
