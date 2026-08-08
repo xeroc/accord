@@ -46,7 +46,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi");
+declare_id!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
 
 // ===========================================================================
 // Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
