@@ -7,6 +7,7 @@ import {
   shortAddress,
 } from "../../shared/format";
 import { StateMachine } from "./StateMachine";
+import { getAppealInfo } from "./useAppeal";
 import { useAppealBond, useDispute, useRound } from "./useDispute";
 
 const FINAL_SENTINEL = 255;
@@ -235,24 +236,61 @@ export function DisputeDetail() {
       )}
 
       {/* Appeal action */}
-      {isRoundResolved && (
-        <div className="rounded-lg border border-border-subtle bg-raised p-4">
-          <h2 className="mb-2 font-mono text-sm text-text-secondary">
-            Appeal window
-          </h2>
-          <p className="mb-3 text-sm text-text-secondary">
-            This round has been resolved. You may file an appeal to escalate to
-            a larger jury.
-          </p>
-          {/* ponytail: appeal tx needs wallet — placeholder until ConnectorKit lands */}
-          <button
-            disabled
-            className="rounded-md bg-amber/50 px-4 py-2 font-medium text-ink"
-          >
-            Appeal (connect wallet)
-          </button>
-        </div>
-      )}
+      {isRoundResolved &&
+        (() => {
+          const appealWindowEnd = round
+            ? round.data.revealEnd + d.terms.appealWindow
+            : undefined;
+          const info = getAppealInfo(dispute, appealWindowEnd);
+          if (!info) return null;
+          return (
+            <div className="rounded-lg border border-border-subtle bg-raised p-4">
+              <h2 className="mb-2 font-mono text-sm text-text-secondary">
+                Appeal
+              </h2>
+              {info.eligible ? (
+                <>
+                  <p className="mb-3 text-sm text-text-secondary">
+                    Escalate to round {info.newRound} with a {info.panel}-juror
+                    panel.
+                  </p>
+                  <div className="mb-4 grid grid-cols-2 gap-4">
+                    <InfoRow
+                      label="New fee"
+                      value={formatLamports(info.fee)}
+                      mono
+                    />
+                    <InfoRow
+                      label="Bond"
+                      value={formatLamports(info.bond)}
+                      mono
+                    />
+                    <InfoRow
+                      label="Total cost"
+                      value={formatLamports(info.total)}
+                      mono
+                    />
+                    {appealWindowEnd !== undefined && (
+                      <InfoRow
+                        label="Window closes"
+                        value={formatTimestamp(appealWindowEnd)}
+                      />
+                    )}
+                  </div>
+                  {/* ponytail: appeal tx needs ConnectorKit signer — accord-y5av */}
+                  <button
+                    disabled
+                    className="rounded-md bg-amber/50 px-4 py-2 font-medium text-ink"
+                  >
+                    Appeal — connect wallet
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm text-slash">{info.reason}</p>
+              )}
+            </div>
+          );
+        })()}
 
       {/* Voting placeholder — commit/reveal UI is accord-7mkb */}
       {round && round.data.jurors.length > 0 && (
