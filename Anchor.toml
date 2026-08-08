@@ -9,6 +9,7 @@ accord = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe"
 
 [programs.localnet]
 accord = "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi"
+canon = "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU"
 
 [provider]
 cluster = "localnet"

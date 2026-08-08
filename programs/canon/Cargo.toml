@@ -1,0 +1,21 @@
+[package]
+name = "canon"
+version.workspace = true
+edition.workspace = true
+description = "Accord Canon — curated-list / token-registry Arbitrable that files disputes via the Accord"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "canon"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+# Required by `anchor build` for IDL generation since anchor 0.30 (#2824).
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang.workspace = true

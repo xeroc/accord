@@ -1,5 +1,5 @@
 [workspace]
-members = ["programs/accord"]
+members = ["programs/accord", "programs/canon"]
 resolver = "2"
 
 [workspace.package]
