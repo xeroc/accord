@@ -141,7 +141,7 @@ export function CreateDispute() {
             value={subaccordAddr}
             onChange={(e) => setSubaccordAddr(e.target.value)}
             placeholder="Subaccord PDA address"
-            className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-sm text-text-primary placeholder:text-muted focus:border-amber focus:outline-none"
+            className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-sm text-text-primary placeholder:text-muted-foreground focus:border-amber focus:outline-none"
           />
           {subaccordAddr && !subaccord && (
             <p className="mt-1 text-sm text-slash">Subaccord not found.</p>
@@ -195,7 +195,7 @@ export function CreateDispute() {
                   value={opt}
                   onChange={(e) => updateOption(idx, e.target.value)}
                   placeholder={`${"0".repeat(64)} (64 hex chars)`}
-                  className={`flex-1 rounded-md border bg-raised px-3 py-2 font-mono text-sm placeholder:text-muted focus:outline-none ${
+                  className={`flex-1 rounded-md border bg-raised px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus:outline-none ${
                     opt && !isValidHex32(opt)
                       ? "border-slash"
                       : isValidHex32(opt)

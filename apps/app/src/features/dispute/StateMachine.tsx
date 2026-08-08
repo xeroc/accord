@@ -37,13 +37,13 @@ export function StateMachine({ current }: { current: DisputeState }) {
                     : "text-confirm"
                   : isPast
                     ? "text-text-secondary line-through"
-                    : "text-muted"
+                    : "text-muted-foreground"
               }`}
             >
               {isActive ? "●" : isPast ? "✓" : "○"} {s.label}
             </span>
             {idx < ORDERED_STATES.length - 1 && (
-              <span className="mx-1 text-muted">→</span>
+              <span className="mx-1 text-muted-foreground">→</span>
             )}
           </span>
         );
