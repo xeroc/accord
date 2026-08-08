@@ -43,4 +43,8 @@ pub enum CanonError {
     DisputeNotFinal,
     #[msg("Dispute final_ruling is not a valid Canon option.")]
     InvalidRuling,
+    #[msg("rules_hash must not be the zero hash (would collide with absent criteria).")]
+    InvalidRulesHash,
+    #[msg("challenge_pct exceeds MAX_CHALLENGE_PCT_BPS.")]
+    ChallengePctTooHigh,
 }

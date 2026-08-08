@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 description = "Accord Canon — curated-list / token-registry Arbitrable that files disputes via the Accord"
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "canon"
@@ -15,11 +18,14 @@ no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
 # Required by `anchor build` for IDL generation since anchor 0.30 (#2824).
-idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+idl-build = ["anchor-lang/idl-build", "accord/idl-build"]
 
 [dependencies]
 anchor-lang.workspace = true
 anchor-spl.workspace = true
+# `accord` is used at runtime (state.rs: `accord::ID`, `accord::constants::SEED_SUBACCORD`;
+# CPI into `create_subaccord`/`create_dispute`), not just in tests — must be a normal dep.
+accord = { path = "../accord", features = ["cpi"] }
 
 # LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
 # Mirrors programs/accord/Cargo.toml's dev-dep block.
@@ -33,7 +39,3 @@ spl-associated-token-account = "8"
 spl-token = "9"
 solana-compute-budget = "3"
 litesvm = "0.11"
-# Test-only: needed for fabricating Accord accounts (Subaccord, PauseState,
-# Dispute) in the multi-program LiteSVM harness. NOT linked into the BPF
-# binary — the on-chain CPI uses raw invoke_signed (see challenge_item.rs).
-accord = { path = "../accord", features = ["no-entrypoint"] }

@@ -28,3 +28,21 @@ codegen-units = 1
 opt-level = 3
 incremental = false
 codegen-units = 1
+
+# Anchor's derive macros (#[derive(Accounts)], #[account], #[program])
+# internally emit `#[cfg(feature = "anchor-debug")]`, `#[cfg(feature =
+# "custom-heap")]`, `#[cfg(feature = "custom-panic")]`, and `#[cfg(solana)]`.
+# Rust 1.80+ validates cfg values against the crate's known feature list and
+# warns on unlisted ones — but these cfgs originate inside anchor's macros,
+# not our code, so we can't declare them as features. Whitelisting them as
+# expected keeps check-cfg ON for our own cfgs (catches real typos) while
+# silencing the macro-emitted noise. See rust-lang/rust#216908.
+[workspace.lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(feature, values("anchor-debug", "custom-heap", "custom-panic"))',
+    # `solana` is a BPF target_os value (solana_program_entrypoint's
+    # custom_heap_default / custom_panic_default emit cfg(target_os = "solana")
+    # via anchor's #[program] macro). It's not a bare flag.
+    'cfg(target_os, values("solana"))',
+]

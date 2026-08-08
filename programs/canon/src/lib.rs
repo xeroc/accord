@@ -5,7 +5,6 @@
 //! `create_dispute(options=[list/remove], …)` and reads `get_ruling` to flip
 //! item status. Canon is an Arbitrable, NOT a Subaccord — Accord Core is
 //! unchanged.
-
 use anchor_lang::prelude::*;
 
 pub mod constants;
@@ -21,6 +20,15 @@ pub use instructions::*;
 pub use state::*;
 
 declare_id!("GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU");
+
+// ponytail: `#[derive(Accounts)]` structs MUST live at the crate root (not in
+// submodules like `instructions::`). Anchor's `#[program]` codegen emits
+// `pub use crate::__client_accounts_*::*` at the crate root, and the
+// `#[derive(Accounts)]` macro emits `__client_accounts_*` as a sibling of the
+// struct definition — both only align when the struct is at the crate root.
+// The accord crate follows the same convention (every Accounts struct in
+// lib.rs). See anchor-syn-1.1.2 parser/program/mod.rs:57 (first-segment bug)
+// + codegen/program/accounts.rs:28.
 
 #[program]
 pub mod canon {
@@ -71,5 +79,32 @@ pub mod canon {
     /// either way; `keep` → submitter gets stake (frivolous-block penalty).
     pub fn settle_item(ctx: Context<SettleItem>) -> Result<()> {
         instructions::settle_item::handler(ctx)
+    }
+
+    /// Permissionless creation of a Canon curated list + its backing Accord
+    /// Subaccord. See `instructions::create_list` for the full doc.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_list(
+        ctx: Context<CreateList>,
+        stake_mint: Pubkey,
+        fee_mint: Pubkey,
+        list_program: Pubkey,
+        rules_hash: [u8; 32],
+        submit_deposit: u64,
+        challenge_pct: u16,
+        listing_window: u64,
+        withdrawal_timelock: u64,
+    ) -> Result<()> {
+        instructions::create_list::create_list_handler(
+            ctx,
+            stake_mint,
+            fee_mint,
+            list_program,
+            rules_hash,
+            submit_deposit,
+            challenge_pct,
+            listing_window,
+            withdrawal_timelock,
+        )
     }
 }

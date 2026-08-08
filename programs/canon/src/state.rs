@@ -10,6 +10,58 @@
 
 use anchor_lang::prelude::*;
 
+use crate::SEED_CANON_LIST;
+
+/// Account context for `create_list` (SPEC §Instructions #1).
+///
+/// Inits the `CanonList` PDA `["canon", creator, rules_hash]` and CPIs Accord
+/// `create_subaccord` for the 1:1 backing court with the Canon canonical
+/// dispute-mechanism defaults. `risk_type := rules_hash`. The Subaccord creator
+/// is the list creator (same `Signer`), so the seeds pair naturally:
+///   CanonList  `["canon",     creator, rules_hash]`
+///   Subaccord  `["subaccord", creator, rules_hash]`
+/// and no PDA signing is needed — the creator's signer privilege propagates
+/// through the CPI.
+#[derive(Accounts)]
+// `rules_hash` is the 4th handler arg; anchor requires listing all preceding
+// args positionally (no `_` skip in this anchor version).
+#[instruction(stake_mint: Pubkey, fee_mint: Pubkey, list_program: Pubkey, rules_hash: [u8; 32])]
+pub struct CreateList<'info> {
+    #[account(mut)]
+    pub creator: Signer<'info>,
+
+    /// The new Canon list PDA. Seeds: `["canon", creator, rules_hash]`.
+    /// `rules_hash` + `list_program` are immutable post-init.
+    #[account(
+        init,
+        payer = creator,
+        space = 8 + CanonList::INIT_SPACE,
+        seeds = [SEED_CANON_LIST, creator.key().as_ref(), rules_hash.as_ref()],
+        bump,
+    )]
+    pub list: Account<'info, CanonList>,
+
+    /// The 1:1 backing Accord Subaccord — CPI-created by Accord's
+    /// `create_subaccord`. Seeds: `["subaccord", creator, risk_type]` where
+    /// `risk_type = rules_hash`. `init` is owned by Accord; we declare the PDA
+    /// here only so Anchor passes the right account + verifies the seeds.
+    /// CHECK: created via CPI into Accord; seeds validated against Accord's ID.
+    #[account(
+        mut,
+        seeds = [accord::constants::SEED_SUBACCORD, creator.key().as_ref(), rules_hash.as_ref()],
+        seeds::program = accord::ID,
+        bump,
+    )]
+    pub subaccord: AccountInfo<'info>,
+
+    /// Accord program (CPI target).
+    /// CHECK: constrained by `address = accord::ID`.
+    #[account(address = accord::ID)]
+    pub accord_program: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
 /// Lifecycle of a curated item (SPEC §Item state machine).
 ///
 /// v1 ships five variants. `WithdrawPending` (a submitter-initiated delist) is
