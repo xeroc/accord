@@ -4,7 +4,8 @@
 const endpoint = import.meta.env.PUBLIC_N8N_WEBHOOK_URL ?? "";
 ---
 
-<form data-waitlist data-endpoint={endpoint} class="flex w-full max-w-md flex-col gap-2 sm:flex-row" novalidate>
+<form data-waitlist data-endpoint={endpoint} class="flex w-full max-w-md flex-col gap-2" novalidate>
+  <div class="flex w-full flex-col gap-2 sm:flex-row">
   <input
     type="email"
     name="email"
@@ -21,6 +22,7 @@ const endpoint = import.meta.env.PUBLIC_N8N_WEBHOOK_URL ?? "";
   >
     Join the waitlist
   </button>
+  </div>
   <p data-waitlist-status role="status" aria-live="polite" class="w-full text-left text-xs text-muted"></p>
 </form>
 
