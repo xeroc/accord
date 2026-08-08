@@ -106,6 +106,24 @@ export * from "./methods/settlement.js";
 // bean veridao-yny6).
 export * from "./methods/appeal.js";
 
+// Stake / unstake MST accumulator proof orchestration (ADR-0012, bean
+// accord-bko6). Given a Subaccord's accumulator state + all its JurorStake
+// accounts, builds the canonical tree, verifies the root, and returns the
+// Merkle proof for stake / requestWithdraw / reconcileStake.
+export {
+  prepareStakeProof,
+  type SubaccordAccumulatorView,
+  type JurorStakeLeaf,
+  type StakeProofResult,
+} from "./methods/stakeFlow.js";
+
+// Typed getProgramAccounts wrappers — the frontend must never construct memcmp
+// filters or decode raw bytes (milestone uvru decision).
+export {
+  findJurorStakesBySubaccord,
+  type JurorStakeAccount,
+} from "./queries.js";
+
 // Account codecs — exposed for advanced/test use (e.g. e2e VRF injection via
 // `surfnet_setAccount`: decode → set committedVrf → re-encode). Generated surface.
 export {
