@@ -13,13 +13,31 @@ interface Props {
 }
 
 const {
-  title = "Accord — Mechanize the verdict. Trust-minimized dispute resolution on Solana.",
-  description = "Accord is a composable arbitration primitive on Solana. Two CPI calls — create_dispute() → get_ruling() — and any program gets trust-minimized dispute resolution. Jurors are secret, drawn by VRF, slashed for incoherence. Capture is deterred, not impossible — see the Trust Profile.",
+  title = "Mechanize the verdict — Solana dispute resolution | Accord",
+  description =
+    "Two CPI calls — create_dispute() → get_ruling(). Any Solana program gets trust-minimized dispute resolution. Jurors drawn by VRF, slashed for incoherence.",
 } = Astro.props;
 
 const site = Astro.site ?? new URL("https://useaccord.xyz");
 const canonical = new URL(Astro.url.pathname, site);
-const ogImage = new URL("/og.svg", site);
+const ogImage = new URL("/og.png", site);
+
+const orgSchema = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Accord",
+  url: site.href,
+  description:
+    "Schelling-point arbitration as a composable Solana primitive. Two CPI calls — create_dispute() → get_ruling().",
+  logo: new URL("/favicon.svg", site).href,
+  sameAs: ["https://github.com/xeroc/accord", "https://t.me/useaccord"],
+};
+const siteSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Accord",
+  url: site.href,
+};
 
 import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
@@ -56,6 +74,8 @@ import Footer from "../components/Footer.astro";
         }
       })();
     </script>
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(orgSchema)} />
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(siteSchema)} />
   </head>
   <body class="min-h-screen antialiased">
     <a
