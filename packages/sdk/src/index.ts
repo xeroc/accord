@@ -52,6 +52,13 @@ export {
   fetchSubaccordMaybe,
 } from "./fetch";
 export {
+  findAllSubaccords,
+  findDisputesByFiler,
+  findDisputesBySubaccord,
+  findJurorStakesByJuror,
+  findJurorStakesBySubaccord,
+} from "./query";
+export {
   AccordErrors,
   ACCORD_ERROR_CODE_OFFSET,
   type AccordErrorCode,
