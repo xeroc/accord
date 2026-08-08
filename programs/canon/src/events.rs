@@ -16,3 +16,11 @@ pub struct ItemSubmitted {
     /// Submitter's evidence commitment for this item.
     pub evidence: [u8; 32],
 }
+
+/// Emitted by `advance_pending` when an unchallenged item auto-lists.
+#[event]
+pub struct ItemListed {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    pub account: Pubkey,
+}

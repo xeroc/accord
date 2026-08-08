@@ -33,4 +33,10 @@ pub mod canon {
     pub fn submit_item(ctx: Context<SubmitItem>, evidence: [u8; 32], deposit: u64) -> Result<()> {
         instructions::submit_item::handler(ctx, evidence, deposit)
     }
+
+    /// Permissionless crank (SPEC §Instructions #3): advances a `Pending`
+    /// item to `Listed` once the `listing_window` elapses unchallenged.
+    pub fn advance_pending(ctx: Context<AdvancePending>) -> Result<()> {
+        instructions::advance_pending::handler(ctx)
+    }
 }

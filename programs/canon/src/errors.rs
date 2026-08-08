@@ -11,4 +11,8 @@ pub enum CanonError {
     DepositMismatch,
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
+    #[msg("Item is not in the Pending state.")]
+    NotPending,
+    #[msg("Listing window has not elapsed yet.")]
+    ListingWindowOpen,
 }
