@@ -1,4 +1,5 @@
 import { Routes, Route, Link } from "react-router-dom";
+import { SubaccordListPage } from "./features/subaccord/SubaccordListPage";
 
 /**
  * App shell — routes + layout skeleton.
@@ -21,6 +22,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/subaccords" element={<SubaccordListPage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
@@ -31,11 +33,10 @@ function Home() {
     <main style={{ fontFamily: "ui-monospace, monospace", padding: "2rem" }}>
       <h1>Accord</h1>
       <p>Mechanize the verdict.</p>
-      <p style={{ color: "#7d8590" }}>
-        dApp scaffold ready. Routes and wallet connection land next.
-      </p>
       <nav>
         <Link to="/">Home</Link>
+        {" · "}
+        <Link to="/subaccords">Subaccords</Link>
       </nav>
     </main>
   );

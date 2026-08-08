@@ -1,4 +1,170 @@
-/* @useaccord/app — global styles
- * Tailwind v4 CSS-first config. Brand palette tokens land in accord-qv2h
- * (shadcn init + IBM Plex). For now: the import that activates Tailwind. */
+/* @useaccord/app — global styles.
+ * Tailwind v4 CSS-first import (decision #4). Brand palette tokens below map
+ * BRAND.md → CSS variables; full shadcn theme + IBM Plex fontsource land with
+ * the brand-tokens bean (accord-qv2h). These tokens are the minimum the list
+ * view needs to render on-brand now. */
 @import "tailwindcss";
+
+:root {
+  /* BRAND.md palette — dark-first. */
+  --ink: #0a0e14;
+  --raised: #11161d;
+  --border: #1f2630;
+  --amber: #f0a830; /* Verdict Amber — primary CTA, active states. */
+  --green: #3fb950; /* Confirm — state only. */
+  --red: #f85149; /* Slash — state only. */
+  --muted: #7d8590;
+  --text: #e6edf3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+.mono {
+  font-family:
+    ui-monospace, "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+/* --- list view ----------------------------------------------------------- */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+}
+
+.page-head {
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.35rem;
+}
+
+.lede {
+  color: var(--muted);
+  margin: 0 0 1rem;
+}
+
+.cta {
+  display: inline-block;
+  background: var(--amber);
+  color: var(--ink);
+  font-weight: 650;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.cta:hover {
+  filter: brightness(1.08);
+}
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: block;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.1rem 1.15rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.12s ease;
+}
+.card:hover {
+  border-color: var(--amber);
+}
+
+.card-address {
+  display: block;
+  margin-bottom: 0.85rem;
+}
+
+.card-stats {
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+}
+.stat dt {
+  color: var(--muted);
+  margin: 0;
+}
+.stat dd {
+  margin: 0;
+  text-align: right;
+}
+
+.card-skeleton {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeleton {
+  background: var(--border);
+  border-radius: 4px;
+  animation: accord-pulse 1.4s ease-in-out infinite;
+}
+@keyframes accord-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* --- empty / error ------------------------------------------------------- */
+
+.empty {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+.empty-head {
+  font-size: 1.15rem;
+  font-weight: 650;
+  margin: 0 0 0.5rem;
+}
+.empty-body {
+  color: var(--muted);
+  margin: 0 0 1.25rem;
+}
