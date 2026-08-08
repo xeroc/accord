@@ -1,12 +1,14 @@
 /**
  * format.ts — display helpers for addresses, token amounts, dispute states,
- * and time.
+ * hashes, windows, and time.
  *
  * Merged from two sources:
  *  - Dispute feature helpers (DISPUTE_STATE_LABELS, formatRuling, shortAddress)
  *  - Shared scaffold utilities (shortenAddress, formatBigInt, timeRemaining)
+ *  - Subaccord view helpers (formatTokenAmount, formatHash, formatWindow)
  */
 
+import type { Address, ReadonlyUint8Array } from "@solana/kit";
 import type { DisputeState } from "@useaccord/sdk";
 import { DisputeState as DS } from "@useaccord/sdk";
 
@@ -36,11 +38,16 @@ export function formatRuling(ruling: number): string {
 
 /**
  * Shorten an address with configurable head/tail lengths.
- * Used by dispute feature views.
+ * Used by dispute + subaccord feature views.
  */
-export function shortAddress(addr: string, head = 4, tail = 4): string {
-  if (addr.length <= head + tail + 2) return addr;
-  return `${addr.slice(0, head)}…${addr.slice(-tail)}`;
+export function shortAddress(
+  addr: Address | string,
+  head = 4,
+  tail = 4,
+): string {
+  const s = String(addr);
+  if (s.length <= head + tail + 2) return s;
+  return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
 /**
@@ -84,6 +91,42 @@ export function formatBigInt(
   return fracStr
     ? `${negative ? "-" : ""}${whole.toString()}.${fracStr}`
     : `${negative ? "-" : ""}${whole.toString()}`;
+}
+
+/**
+ * Format an atomic token amount with thousands separators. Used by read-only
+ * list views where the mint decimals are unknown — render the raw amount
+ * grouped. The detail view can use formatBigInt once mint metadata is fetched.
+ */
+export function formatTokenAmount(atom: bigint): string {
+  return atom.toLocaleString("en-US");
+}
+
+// --- Hash formatting ---
+
+/** 32-byte hash → lowercase hex (64 chars), optionally truncated for compact
+ * display (full value in the `title` attribute). */
+export function formatHash(
+  bytes: Uint8Array | ReadonlyUint8Array,
+  truncate = true,
+): string {
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  if (truncate && hex.length > 20) {
+    return `${hex.slice(0, 8)}…${hex.slice(-6)}`;
+  }
+  return hex;
+}
+
+// --- Window formatting ---
+
+/** Render a window length (seconds) as a humanised "Nd / Nh / Nm" string. */
+export function formatWindow(seconds: bigint): string {
+  const s = Number(seconds);
+  if (s >= 86_400 && s % 86_400 === 0) return `${s / 86_400}d`;
+  if (s >= 3_600 && s % 3_600 === 0) return `${s / 3_600}h`;
+  if (s >= 60 && s % 60 === 0) return `${s / 60}m`;
+  return `${s}s`;
 }
 
 // --- Time formatting ---

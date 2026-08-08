@@ -6,10 +6,13 @@
  *
  * This is the only send path in the dApp — feature code builds an
  * `Instruction` via the SDK facade and hands it here.
+ *
+ * ponytail: one instruction per message — every Accord happy path is a single
+ * ix (create/stake/dispute/vote/appeal). Bundle when a multi-ix tx lands.
  */
 
 import {
-  appendTransactionMessageInstruction,
+  appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createTransactionMessage,
   getSignatureFromTransaction,
@@ -39,23 +42,18 @@ export async function sendInstruction(
   instruction: Instruction,
 ): Promise<string> {
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-
-  const transactionMessage = pipe(
+  const message = pipe(
     createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(signer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-    (m) => appendTransactionMessageInstruction(instruction, m),
+    (tx) => setTransactionMessageFeePayerSigner(signer, tx),
+    (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
+    (tx) => appendTransactionMessageInstructions([instruction], tx),
   );
-
-  const signedTransaction =
-    await signTransactionMessageWithSigners(transactionMessage);
-  assertIsTransactionWithBlockhashLifetime(signedTransaction);
-
+  const signed = await signTransactionMessageWithSigners(message);
+  assertIsTransactionWithBlockhashLifetime(signed);
   const sendAndConfirm = sendAndConfirmTransactionFactory({
     rpc,
     rpcSubscriptions,
   });
-  await sendAndConfirm(signedTransaction, { commitment: "confirmed" });
-
-  return getSignatureFromTransaction(signedTransaction);
+  await sendAndConfirm(signed, { commitment: "confirmed" });
+  return getSignatureFromTransaction(signed);
 }

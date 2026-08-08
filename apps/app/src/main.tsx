@@ -7,11 +7,14 @@ import { Providers } from "./providers";
 import { App } from "./App";
 import "./index.css";
 
-const queryClient = new QueryClient();
-
 // HashRouter — GitHub Pages is static; hash routing needs no server config.
+// QueryClient — TanStack Query cache for read hooks (decision #8).
 const container = document.getElementById("root");
 if (!container) throw new Error("#root element missing in index.html");
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+});
 
 createRoot(container).render(
   <StrictMode>
