@@ -1,88 +1,45 @@
 /**
- * Typed account fetchers — thin wrappers over the generated Kit client's
- * account codecs.
+ * Typed account fetchers — thin re-exports of the generated Kit fetchers.
  *
- * Each account type in `programs/accord/src/state.rs` has a pair:
- *   - `fetchX(accord, address)`  — throws if the account doesn't exist
- *   - `fetchXMaybe(accord, address)` — returns null if not found
+ * The generated account modules (`./generated/accounts/*`) already export
+ * `fetchX(rpc, address)` / `fetchMaybeX(rpc, address)` that work over a raw
+ * Kit `Rpc` (e.g. `createSolanaRpc(...)` or `Accord#rpc`). Earlier wrappers
+ * here routed through `accord.client`, which requires a `ClientWithRpc` and
+ * breaks when the facade is built over a bare RPC — so we delegate to the
+ * generated functions directly and pass `rpc` as the first argument.
  *
- * The generated client already provides `fetch`/`fetchMaybe` via
- * `addSelfFetchFunctions`; these wrappers give a single import surface
- * and accept the `Accord` facade directly.
+ * Each returns a fully typed `Account<T>` (or `MaybeAccount<T>`); no raw bytes
+ * leak to the caller. `fetchXMaybe` aliases the generated `fetchMaybeX` name to
+ * keep the public API stable.
  *
  * @see ADR-0010
  */
 
-import type { Address } from "@solana/kit";
-
-import type { Accord } from "./accord";
-
-// --- Subaccord (seeds: ["subaccord", creator, risk_type]) ---
-
-export function fetchSubaccord(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.subaccord.fetch(address);
-}
-
-export function fetchSubaccordMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.subaccord.fetchMaybe(address);
-}
-
-// --- JurorStake (seeds: ["stake", subaccord, juror]) ---
-
-export function fetchJurorStake(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.jurorStake.fetch(address);
-}
-
-export function fetchJurorStakeMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.jurorStake.fetchMaybe(address);
-}
-
-// --- Dispute (seeds: ["dispute", filer, nonce]) ---
-
-export function fetchDispute(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.dispute.fetch(address);
-}
-
-export function fetchDisputeMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.dispute.fetchMaybe(address);
-}
-
-// --- Round (seeds: ["round", dispute, round_idx]; zero-copy) ---
-
-export function fetchRound(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.round.fetch(address);
-}
-
-export function fetchRoundMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.round.fetchMaybe(address);
-}
-
-// --- PendingUpdate (seeds: ["update", subaccord, nonce]) ---
-
-export function fetchPendingUpdate(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.pendingUpdate.fetch(address);
-}
-
-export function fetchPendingUpdateMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.pendingUpdate.fetchMaybe(address);
-}
-
-// --- AppealBond (seeds: ["bond", dispute, round_idx]) ---
-
-export function fetchAppealBond(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.appealBond.fetch(address);
-}
-
-export function fetchAppealBondMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.appealBond.fetchMaybe(address);
-}
-
-// --- PauseState (singleton, seeds: ["pause"]) ---
-
-export function fetchPauseState(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.pauseState.fetch(address);
-}
-
-export function fetchPauseStateMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.pauseState.fetchMaybe(address);
-}
+export {
+  fetchAppealBond,
+  fetchMaybeAppealBond as fetchAppealBondMaybe,
+} from "./generated/accounts/appealBond.js";
+export {
+  fetchDispute,
+  fetchMaybeDispute as fetchDisputeMaybe,
+} from "./generated/accounts/dispute.js";
+export {
+  fetchJurorStake,
+  fetchMaybeJurorStake as fetchJurorStakeMaybe,
+} from "./generated/accounts/jurorStake.js";
+export {
+  fetchPauseState,
+  fetchMaybePauseState as fetchPauseStateMaybe,
+} from "./generated/accounts/pauseState.js";
+export {
+  fetchPendingUpdate,
+  fetchMaybePendingUpdate as fetchPendingUpdateMaybe,
+} from "./generated/accounts/pendingUpdate.js";
+export {
+  fetchRound,
+  fetchMaybeRound as fetchRoundMaybe,
+} from "./generated/accounts/round.js";
+export {
+  fetchSubaccord,
+  fetchMaybeSubaccord as fetchSubaccordMaybe,
+} from "./generated/accounts/subaccord.js";
