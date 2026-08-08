@@ -5,10 +5,11 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-accord = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe"
+accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
 
 [programs.localnet]
-accord = "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi"
+accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
+canon = "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU"
 
 [provider]
 cluster = "localnet"

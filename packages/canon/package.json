@@ -1,0 +1,35 @@
+{
+  "name": "@useaccord/canon",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Accord Canon curated-list Arbitrable on Solana",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test src/**/*.test.ts",
+    "codegen": "codama run js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@solana/kit": "^7.0.0"
+  },
+  "devDependencies": {
+    "@codama/nodes-from-anchor": "^1.5.3",
+    "@codama/renderers-js": "^2.3.1",
+    "codama": "^1.10.0",
+    "typescript": "^5.5.0"
+  }
+}

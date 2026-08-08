@@ -1,10 +1,11 @@
 ---
 # accord-4y4i
 title: Foundation & state
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-07T22:59:52Z
-updated_at: 2026-08-07T22:59:52Z
+updated_at: 2026-08-08T00:41:14Z
 parent: accord-gf0b
 ---
 

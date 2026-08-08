@@ -1,10 +1,11 @@
 ---
 # accord-6vih
 title: Item submission & listing
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-07T22:59:52Z
-updated_at: 2026-08-07T22:59:52Z
+updated_at: 2026-08-08T01:26:45Z
 parent: accord-gf0b
 ---
 

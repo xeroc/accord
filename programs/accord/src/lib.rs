@@ -30,7 +30,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use ephemeral_vrf_sdk::anchor::vrf;
-use ephemeral_vrf_sdk::instructions::{create_request_randomness_ix, RequestRandomnessParams};
+use ephemeral_vrf_sdk::instructions::{
+    create_request_high_priority_scoped_randomness_ix, RequestRandomnessParams,
+};
 use ephemeral_vrf_sdk::types::SerializableAccountMeta;
 
 pub mod constants;
@@ -46,7 +48,7 @@ pub use state::*;
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)
-declare_id!("426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi");
+declare_id!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
 
 // ===========================================================================
 // Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
@@ -872,7 +874,7 @@ pub mod accord {
         let subaccord_key = ctx.accounts.subaccord.key();
         // Forward both the dispute (writable — callback writes VRF + frozen
         // root) and the subaccord (read-only — callback copies its live root).
-        let ix = create_request_randomness_ix(RequestRandomnessParams {
+        let ix = create_request_high_priority_scoped_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.caller.key(),
             oracle_queue: ctx.accounts.oracle_queue.key(),
             callback_program_id: crate::ID,
@@ -3011,7 +3013,7 @@ pub struct RequestVrf<'info> {
     pub dispute: Box<Account<'info, Dispute>>,
     /// CHECK: VRF oracle queue (mainnet default).
     #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
-    pub oracle_queue: AccountInfo<'info>,
+    pub oracle_queue: UncheckedAccount<'info>,
 }
 
 /// Account context for `commit_vrf_callback` (ADR-0009/0012). The

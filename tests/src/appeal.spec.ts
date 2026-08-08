@@ -129,6 +129,15 @@ async function readJurorSettlementDelta(
   return d.stakeDelta;
 }
 
+async function readJurorFeesEarned(
+  env: TestEnv,
+  pda: Address,
+): Promise<bigint> {
+  const d = await fetchDecoded(env, pda, getJurorStakeDecoder());
+  if (!d) throw new Error(`juror_stake missing: ${pda}`);
+  return d.feesEarned;
+}
+
 async function tokenAmount(env: TestEnv, ata: Address): Promise<bigint> {
   const res = await env.rpc.getTokenAccountBalance(ata).send();
   return BigInt(res.value.amount);
@@ -620,8 +629,11 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(r1d.result).toBe(0);
     const coherentPdas = r1.jurorStakes.slice(0, 4);
     const incoherentPdas = r1.jurorStakes.slice(4);
-    const coherentBefore = await Promise.all(
+    const coherentDeltaBefore = await Promise.all(
       coherentPdas.map((p) => readJurorSettlementDelta(env, p)),
+    );
+    const coherentFeesBefore = await Promise.all(
+      coherentPdas.map((p) => readJurorFeesEarned(env, p)),
     );
     const incoherentBefore = await Promise.all(
       incoherentPdas.map((p) => readJurorSettlementDelta(env, p)),
@@ -646,24 +658,38 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
     expect(dFinal.finalRuling).toBe(0);
 
-    // Coherence redistribution (ADR-0004, REVIEW #4): `finalize_dispute` credits
-    // coherent jurors (and debits incoherent ones) via `settlement_delta` — NOT
-    // `amount`, because the accumulator root commits to `amount`; `reconcile_stake`
-    // folds the delta into `amount` later via a Merkle proof. The pool =
-    // slash_total + non-revealer fees + the forfeited (no-flip) appeal bond,
-    // split equally among coherent jurors. All 7 revealed ⇒ non-revealer fee = 0.
-    //   slash   = 3·100 (three incoherent jurors; α·min_stake each)
-    //   forfeit = bond portion = total − fee = 14·fee − 7·fee = 7·fee (= 7_000_000)
-    //   pool    = 300 + 7_000_000 = 7_000_300
-    //   share   = pool / 4 coherent = 1_750_075
+    // Coherence redistribution (ADR-0004 + ADR-0020 two-mint/two-vault split):
+    // `finalize_dispute` settles the final round against the finalized ruling
+    // via `settle_round_accounts`, which distributes TWO distinct pools — never
+    // mixing mints, even when staking_token == fee_token:
+    //
+    // 1. STAKE pool (staking_token → stake_delta, folded into `staked` later
+    //    by `reconcile_stake`; the stake_vault balance is invariant):
+    //    the slash proceeds from incoherent jurors.
+    // 2. FEE pool (fee_token → fees_earned, pulled by `withdraw_fees`; lives
+    //    in fee_vault): non-revealer fees + the forfeited (no-flip) appeal bond.
+    //
+    // The forfeited bond was deposited into fee_vault at `appeal`, so it is
+    // fee_token and MUST route to `fees_earned`, not `stake_delta`.
+    //
+    // All 7 revealed ⇒ non-revealer fee = 0.
+    //   slash_total = 3·100 (three incoherent jurors; α·min_stake each) = 300
+    //   forfeit     = bond portion = total − fee = 14·fee − 7·fee = 7·fee (= 7_000_000)
+    //   stake_pool  = 300  ⇒ stake_share = 300 / 4        = 75
+    //   fee_pool    = 0 + 7_000_000                       = 7_000_000
+    //   fee_share   = 7_000_000 / 4                       = 1_750_000
     const SLASH_PER_JUROR = 100n;
-    const pool = 3n * SLASH_PER_JUROR + 7n * FEE_PER_JUROR; // slash + forfeited bond (== 7·fee)
-    const share = pool / 4n;
+    const STAKE_SHARE = (3n * SLASH_PER_JUROR) / 4n; // 75
+    const FEE_SHARE = (7n * FEE_PER_JUROR) / 4n; // 1_750_000
     for (let i = 0; i < coherentPdas.length; i++) {
       expect(
         (await readJurorSettlementDelta(env, coherentPdas[i]!)) -
-          coherentBefore[i]!,
-      ).toBe(share);
+          coherentDeltaBefore[i]!,
+      ).toBe(STAKE_SHARE);
+      expect(
+        (await readJurorFeesEarned(env, coherentPdas[i]!)) -
+          coherentFeesBefore[i]!,
+      ).toBe(FEE_SHARE);
     }
     for (let i = 0; i < incoherentPdas.length; i++) {
       expect(

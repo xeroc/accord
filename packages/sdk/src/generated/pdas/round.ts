@@ -25,7 +25,7 @@ export async function findRoundPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi" as Address<"426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi">,
+    programAddress = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed" as Address<"cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

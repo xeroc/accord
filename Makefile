@@ -5,7 +5,12 @@
 
 SOLANA_VERSION ?= 3.1.10
 ANCHOR_VERSION ?= 1.0.2
-ACCORD_PROGRAM_ID ?= RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe
+ACCORD_PROGRAM_ID ?= cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed
+
+TODAY := $(shell date +%Y-%m-%d)
+DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
+SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
+SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
 # `--ignore-keys` is MANDATORY on every `anchor build` (all targets below pass it).
 # Anchor.toml has no config-level option for this — the flag is CLI-only.
@@ -76,3 +81,7 @@ lint: ## Lint every workspace that declares a lint script
 clean: ## Remove build artifacts and node_modules
 	anchor clean
 	rm -rf node_modules
+
+devnet_deploy:
+	anchor program deploy --provider.cluster $(SOLANA_API)
+	# solana program write-buffer --keypair $(DEPLOY_KEY_PATH) --ws $(SOLANA_WS) ./target/deploy/accord.so
