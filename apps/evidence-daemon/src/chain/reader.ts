@@ -72,7 +72,7 @@ export async function readSubaccord(
   accord: Accord,
   subaccord: Address,
 ): Promise<SubaccordView | null> {
-  const m = await fetchSubaccordMaybe(accord, subaccord);
+  const m = await fetchSubaccordMaybe(accord.rpc, subaccord);
   if (!m.exists) return null;
   return {
     evidenceOperator: m.data.evidenceOperator,
@@ -86,7 +86,7 @@ export async function readSubaccord(
  * {@link readRound} unchanged.
  */
 export async function readDispute(accord: Accord, dispute: Address): Promise<DisputeView | null> {
-  const m = await fetchDisputeMaybe(accord, dispute);
+  const m = await fetchDisputeMaybe(accord.rpc, dispute);
   if (!m.exists) return null;
   return {
     subaccord: m.data.subaccord,
@@ -108,7 +108,7 @@ export async function readRound(
   roundIdx: number,
 ): Promise<RoundView | null> {
   const [roundAddress] = await findRoundPda({ dispute, roundIdx });
-  const m = await fetchRoundMaybe(accord, roundAddress);
+  const m = await fetchRoundMaybe(accord.rpc, roundAddress);
   if (!m.exists) return null;
   return {
     roundIdx: m.data.roundIdx,
