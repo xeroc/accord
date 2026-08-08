@@ -7,6 +7,7 @@ import {
   shortAddress,
 } from "../../shared/format";
 import { StateMachine } from "./StateMachine";
+import { Voting } from "./Voting";
 import { getAppealInfo } from "./useAppeal";
 import { useAppealBond, useDispute, useRound } from "./useDispute";
 
@@ -292,15 +293,9 @@ export function DisputeDetail() {
           );
         })()}
 
-      {/* Voting placeholder — commit/reveal UI is accord-7mkb */}
-      {round && round.data.jurors.length > 0 && (
-        <div className="rounded-lg border border-border-subtle bg-raised p-4">
-          <h2 className="mb-2 font-mono text-sm text-text-secondary">Voting</h2>
-          <p className="text-sm text-text-secondary">
-            Commit/reveal voting UI will appear here when you are drawn as a
-            juror. (Task accord-7mkb)
-          </p>
-        </div>
+      {/* Commit/reveal voting (inline — accord-7mkb) */}
+      {round && round.data.jurorCount > 0 && (
+        <Voting dispute={dispute} round={round} />
       )}
     </div>
   );
