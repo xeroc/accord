@@ -127,3 +127,7 @@ export {
   getRoundDecoder,
   getSubaccordDecoder,
 } from "./generated/accounts/index.js";
+
+// Typed getProgramAccounts query wrappers — no raw bytes leak to the caller
+// (ADR-0010, bean accord-3f19/accord-bp9y).
+export { findAllDisputes, type QueryConfig } from "./queries.js";
