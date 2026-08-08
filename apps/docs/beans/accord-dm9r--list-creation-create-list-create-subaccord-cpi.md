@@ -1,10 +1,11 @@
 ---
 # accord-dm9r
 title: List creation (create_list + create_subaccord CPI)
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-07T22:59:52Z
-updated_at: 2026-08-07T22:59:52Z
+updated_at: 2026-08-08T01:46:25Z
 parent: accord-gf0b
 ---
 
