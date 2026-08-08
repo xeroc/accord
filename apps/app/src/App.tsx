@@ -2,6 +2,7 @@ import { NavLink, HashRouter, Route, Routes } from "react-router-dom";
 
 import { DisputeDetail } from "./features/dispute/DisputeDetail";
 import { DisputeList } from "./features/dispute/DisputeList";
+import { CreateDispute } from "./features/dispute/CreateDispute";
 
 function Nav() {
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -28,6 +29,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<DisputeList />} />
             <Route path="/disputes" element={<DisputeList />} />
+            <Route path="/disputes/new" element={<CreateDispute />} />
             <Route path="/disputes/:address" element={<DisputeDetail />} />
           </Routes>
         </main>
