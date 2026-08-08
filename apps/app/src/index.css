@@ -250,3 +250,56 @@ body {
   font-size: 0.85rem;
   margin: 0;
 }
+
+/* --- detail view ---------------------------------------------------------- */
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+.cta-ghost {
+  background: transparent;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+}
+.cta-ghost:hover {
+  background: rgba(240, 168, 48, 0.08);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.detail-group {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.1rem 1.15rem;
+}
+.rows {
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+}
+.row dt {
+  color: var(--muted);
+  margin: 0;
+}
+.row dd {
+  margin: 0;
+  text-align: right;
+  word-break: break-all;
+}
+.muted {
+  color: var(--muted);
+  font-style: italic;
+}
