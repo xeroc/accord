@@ -124,14 +124,6 @@ export {
   type StakeProofResult,
 } from "./methods/stakeFlow.js";
 
-// Typed getProgramAccounts wrappers — the frontend must never construct memcmp
-// filters or decode raw bytes (milestone uvru decision).
-export {
-  findJurorStakesBySubaccord,
-  findJurorStakesByJuror,
-  type JurorStakeAccount,
-} from "./queries.js";
-
 // Dispute phase label + countdown for the juror dashboard (bean accord-m4gt).
 export {
   disputePhase,
@@ -151,7 +143,18 @@ export {
 // (`fetchX`) currently require a `ClientWithRpc` and break when the facade is
 // built over a raw `createSolanaRpc`; until that's fixed, read accounts via
 // raw `getAccountInfo` + these decoders.
+//
+// Generated `fetchMaybe*` functions work directly with a raw Kit RPC and return
+// typed `MaybeAccount<T>` — the correct read path for the frontend and tests.
 export {
+  type AppealBond,
+  fetchMaybeAppealBond,
+  fetchMaybeDispute,
+  fetchMaybeJurorStake,
+  fetchMaybePauseState,
+  fetchMaybePendingUpdate,
+  fetchMaybeRound,
+  fetchMaybeSubaccord,
   getAppealBondDecoder,
   getDisputeDecoder,
   getJurorStakeDecoder,
@@ -159,4 +162,11 @@ export {
   getPendingUpdateDecoder,
   getRoundDecoder,
   getSubaccordDecoder,
+  type Dispute,
+  type Round,
+  type Subaccord,
 } from "./generated/accounts/index.js";
+
+// Typed getProgramAccounts query wrappers — no raw bytes leak to the caller
+// (ADR-0010, bean accord-3f19/accord-bp9y).
+export { findAllDisputes, type QueryConfig } from "./queries.js";
