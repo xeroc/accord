@@ -1,0 +1,11 @@
+build output
+dist/
+# generated types / cache
+.vite/
+*.tsbuildinfo
+# env (RPC URLs are private rate-limited endpoints)
+.env
+.env.*
+!.env.example
+# deps
+node_modules/

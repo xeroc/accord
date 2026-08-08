@@ -1,0 +1,4 @@
+/* @useaccord/app — global styles
+ * Tailwind v4 CSS-first config. Brand palette tokens land in accord-qv2h
+ * (shadcn init + IBM Plex). For now: the import that activates Tailwind. */
+@import "tailwindcss";
