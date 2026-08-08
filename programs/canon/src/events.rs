@@ -41,3 +41,22 @@ pub struct ItemChallenged {
     /// The challenger's evidence commitment for this dispute.
     pub evidence: [u8; 32],
 }
+
+/// Emitted by `request_withdrawal` when an item enters `WithdrawPending`.
+#[event]
+pub struct WithdrawalRequested {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    pub submitter: Pubkey,
+    pub withdrawal_requested_at: i64,
+}
+
+/// Emitted by `advance_withdrawal` when the timelock elapses unchallenged and
+/// the accumulated stake is returned to the submitter (item → Removed).
+#[event]
+pub struct Withdrawn {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    pub submitter: Pubkey,
+    pub amount: u64,
+}

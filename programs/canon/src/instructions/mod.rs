@@ -12,7 +12,9 @@
 pub use advance_pending::*;
 pub use challenge_item::*;
 pub use submit_item::*;
+pub use withdrawal::*;
 
 pub mod advance_pending;
 pub mod challenge_item;
 pub mod submit_item;
+pub mod withdrawal;

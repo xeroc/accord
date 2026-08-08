@@ -50,4 +50,17 @@ pub mod canon {
     ) -> Result<()> {
         instructions::challenge_item::handler(ctx, evidence)
     }
+
+    /// Submitter-only (SPEC §Instructions #6): flips a `Listed` item to
+    /// `WithdrawPending` and opens the `withdrawal_timelock` challenge window.
+    pub fn request_withdrawal(ctx: Context<RequestWithdrawal>) -> Result<()> {
+        instructions::withdrawal::request_withdrawal_handler(ctx)
+    }
+
+    /// Permissionless crank (SPEC §Instructions #7): after the
+    /// `withdrawal_timelock` elapses unchallenged, returns `accumulated_stake`
+    /// to the submitter and flips the item to `Removed`.
+    pub fn advance_withdrawal(ctx: Context<AdvanceWithdrawal>) -> Result<()> {
+        instructions::withdrawal::advance_withdrawal_handler(ctx)
+    }
 }

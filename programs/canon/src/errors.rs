@@ -29,4 +29,12 @@ pub enum CanonError {
     MissingRemainingAccounts,
     #[msg("Wrong Accord program account.")]
     WrongAccordProgram,
+    #[msg("Item is not in the Listed state.")]
+    NotListed,
+    #[msg("Item is not in the WithdrawPending state.")]
+    NotWithdrawPending,
+    #[msg("Withdrawal timelock has not elapsed yet.")]
+    WithdrawalTimelockOpen,
+    #[msg("Caller is not the item submitter.")]
+    NotSubmitter,
 }
