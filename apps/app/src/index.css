@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/*
+  Accord brand palette — dark-first.
+  ink #0A0E14 (bg) / raised #11161D (card) / border #1F2630
+  Verdict Amber #F0A830 (primary CTA, active states)
+  Confirm Green #3FB950 / Slash Red #F85149 (state only)
+  IBM Plex Sans (body) + IBM Plex Mono (code/labels/stats)
+*/
+
+@theme {
+  --color-ink: #0a0e14;
+  --color-raised: #11161d;
+  --color-border-subtle: #1f2630;
+  --color-amber: #f0a830;
+  --color-confirm: #3fb950;
+  --color-slash: #f85149;
+  --color-muted: #6e7681;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+
+  --font-sans: "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+body {
+  background-color: var(--color-ink);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+}
