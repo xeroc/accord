@@ -1,11 +1,11 @@
 ---
 # accord-gf0b
 title: Accord Canon v1 — build milestone
-status: in-progress
+status: completed
 type: milestone
 priority: deferred
 created_at: 2026-08-06T03:47:45Z
-updated_at: 2026-08-07T22:59:52Z
+updated_at: 2026-08-08T18:38:14Z
 ---
 
 ## Status: DEFERRED — separate grilling / speccing / planning session
