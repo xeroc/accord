@@ -39,4 +39,15 @@ pub mod canon {
     pub fn advance_pending(ctx: Context<AdvancePending>) -> Result<()> {
         instructions::advance_pending::handler(ctx)
     }
+
+    /// Permissionless challenge (SPEC §Instructions #4): locks
+    /// `challenge_stake + accord_fee` from the challenger, flips the item to
+    /// `Disputed`, and CPIs Accord `create_dispute` as the single filer
+    /// (ADR-0004). Usable from Pending, Listed, or WithdrawPending.
+    pub fn challenge_item<'a>(
+        ctx: Context<'a, ChallengeItem<'a>>,
+        evidence: [u8; 32],
+    ) -> Result<()> {
+        instructions::challenge_item::handler(ctx, evidence)
+    }
 }

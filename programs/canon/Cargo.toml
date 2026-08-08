@@ -31,3 +31,9 @@ solana-program = "3"
 solana-sdk = "3"
 spl-associated-token-account = "8"
 spl-token = "9"
+solana-compute-budget = "3"
+litesvm = "0.11"
+# Test-only: needed for fabricating Accord accounts (Subaccord, PauseState,
+# Dispute) in the multi-program LiteSVM harness. NOT linked into the BPF
+# binary — the on-chain CPI uses raw invoke_signed (see challenge_item.rs).
+accord = { path = "../accord", features = ["no-entrypoint"] }

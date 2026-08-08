@@ -62,3 +62,22 @@ pub const DEFAULT_WITHDRAWAL_TIMELOCK_SECS: u64 = 5 * 24 * 60 * 60;
 /// cannot exceed the item's accumulated stake, so 100% (10_000 bps) is the hard
 /// upper bound.
 pub const MAX_CHALLENGE_PCT_BPS: u16 = 10_000;
+
+// --- Dispute options (SPEC §Instructions #4) ---------------------------------
+//
+// The two rulings Accord jurors choose between for a Canon challenge. The
+// 32-byte values are opaque identifiers — only the index matters (0 = keep,
+// 1 = remove) since `final_ruling` is a `u8` index into `Dispute.options`.
+
+/// Option index 0: the item survives the challenge.
+pub const OPTION_KEEP: [u8; 32] = {
+    let mut a = [0u8; 32];
+    a[0] = b'k';
+    a
+};
+/// Option index 1: the item is removed.
+pub const OPTION_REMOVE: [u8; 32] = {
+    let mut a = [0u8; 32];
+    a[0] = b'r';
+    a
+};

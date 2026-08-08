@@ -15,4 +15,18 @@ pub enum CanonError {
     NotPending,
     #[msg("Listing window has not elapsed yet.")]
     ListingWindowOpen,
+    #[msg("Item is already Disputed.")]
+    AlreadyDisputed,
+    #[msg("Item is not challengeable (must be Pending, Listed, or WithdrawPending).")]
+    InvalidItemState,
+    #[msg("Challenger has insufficient funds for challenge_stake + accord_fee.")]
+    InsufficientFunds,
+    #[msg("Provided Subaccord does not match the list's backing Subaccord.")]
+    SubaccordMismatch,
+    #[msg("Dispute PDA does not match the expected derivation.")]
+    DisputePdaMismatch,
+    #[msg("Missing remaining_accounts for the Accord CPI.")]
+    MissingRemainingAccounts,
+    #[msg("Wrong Accord program account.")]
+    WrongAccordProgram,
 }
