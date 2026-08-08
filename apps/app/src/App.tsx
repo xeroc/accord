@@ -1,5 +1,6 @@
 import { Routes, Route, Link } from "react-router-dom";
 import { SubaccordListPage } from "./features/subaccord/SubaccordListPage";
+import { SubaccordCreatePage } from "./features/subaccord/SubaccordCreatePage";
 
 /**
  * App shell — routes + layout skeleton.
@@ -23,6 +24,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/subaccords" element={<SubaccordListPage />} />
+      <Route path="/subaccords/new" element={<SubaccordCreatePage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

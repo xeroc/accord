@@ -168,3 +168,85 @@ body {
   color: var(--muted);
   margin: 0 0 1.25rem;
 }
+
+/* --- create form ---------------------------------------------------------- */
+
+.back {
+  display: inline-block;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+.back:hover {
+  color: var(--text);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+.form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem 1.25rem 1rem;
+  margin: 0;
+  display: grid;
+  gap: 1rem;
+}
+.section-head {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  font-weight: 650;
+  padding: 0 0.35rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.label {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.label * {
+  color: var(--amber);
+}
+.input {
+  background: var(--ink);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+.help {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.check input {
+  accent-color: var(--amber);
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  margin: 0;
+}
