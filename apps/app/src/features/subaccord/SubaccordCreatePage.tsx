@@ -10,9 +10,9 @@
  * accord.signer` (adapter.ts:144), so the PDA is `[subaccord, signer, riskType]`.
  * `authority` defaults to the signer (governable) or the zero key (immutable).
  *
- * Signer seam: `useSigner()` returns null until ConnectorKit lands (accord-y5av).
- * Until then the form renders a connect-wallet gate; the submit path is wired
- * and activates the moment a real signer is provided.
+ * Signer seam: `useSigner()` resolves the connected wallet via ConnectorKit.
+ * When no wallet is connected the form renders a connect-wallet gate; the
+ * submit path activates the moment a wallet connects in the navbar.
  */
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";

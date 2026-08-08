@@ -8,6 +8,7 @@
  * IBM Plex Mono, ink/raised surfaces, hairline border — per BRAND.md.
  */
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   useAccount,
@@ -17,6 +18,14 @@ import {
   useWalletConnectors,
 } from "@solana/connector";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -32,21 +41,36 @@ export function Navbar() {
   const { connect, isConnecting } = useConnectWallet();
   const { disconnect } = useDisconnectWallet();
   const connectors = useWalletConnectors();
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
 
-  const readyConnectors = connectors.filter((c) => c.ready);
-
-  async function handleConnect() {
-    const first = readyConnectors[0];
-    if (first) {
-      await connect(first.id);
-    }
-  }
+  // Only wallets that advertise a solana:* chain.
+  const solanaWallets = connectors.filter(
+    (c) => c.ready && c.chains.some((chain) => chain.startsWith("solana:")),
+  );
 
   return (
     <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3 font-mono">
       <Link to="/" className="flex items-center gap-2 text-foreground">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 32 32"
+          aria-hidden="true"
+          className="text-amber"
+        >
+          <g
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="square"
+            fill="none"
+          >
+            <line x1="7.5" y1="8.5" x2="16" y2="16" />
+            <line x1="24.5" y1="8.5" x2="16" y2="16" />
+            <line x1="16" y1="25" x2="16" y2="16" />
+          </g>
+          <circle cx="16" cy="16" r="2.6" fill="currentColor" />
+        </svg>
         <span className="text-lg font-bold tracking-tight">ACCORD</span>
-        <span className="text-primary">◇</span>
       </Link>
 
       <div className="flex items-center gap-3">
@@ -84,13 +108,41 @@ export function Navbar() {
             </Button>
           </div>
         ) : (
-          <Button
-            size="sm"
-            onClick={() => void handleConnect()}
-            disabled={isConnecting || readyConnectors.length === 0}
-          >
-            {isConnecting ? "Connecting…" : "Connect wallet."}
-          </Button>
+          <>
+            <Button
+              size="sm"
+              onClick={() => setWalletModalOpen(true)}
+              disabled={isConnecting || solanaWallets.length === 0}
+            >
+              {isConnecting ? "Connecting…" : "Connect wallet."}
+            </Button>
+            <Dialog open={walletModalOpen} onOpenChange={setWalletModalOpen}>
+              <DialogContent className="font-mono">
+                <DialogHeader>
+                  <DialogTitle>Connect a wallet</DialogTitle>
+                  <DialogDescription>
+                    Select a Solana wallet to continue.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-1">
+                  {solanaWallets.map((c) => (
+                    <DialogClose asChild key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void connect(c.id as Parameters<typeof connect>[0])
+                        }
+                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent"
+                      >
+                        <img src={c.icon} alt="" className="size-6" />
+                        <span className="text-sm">{c.name}</span>
+                      </button>
+                    </DialogClose>
+                  ))}
+                </div>
+              </DialogContent>
+            </Dialog>
+          </>
         )}
       </div>
     </header>
