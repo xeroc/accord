@@ -43,7 +43,7 @@ The demand is not hypothetical — it is acute and growing on three fronts:
 ## What
 
 **Accord** is a general-purpose, Schelling-point-based arbitration oracle on
-Solana. Any Solana program can file disputes; the Accord draws jurors, collects
+Solana. Any Solana program — or any regular wallet — can file disputes; the Accord draws jurors, collects
 commit-reveal votes, and emits rulings — governed by game-theoretic incentives
 rather than a hired-judge committee.
 
@@ -59,7 +59,7 @@ rather than a hired-judge committee.
 ### Core mechanism
 
 ```
-1. A program files a Dispute (via CPI): subaccord, options, evidence hash, fee
+1. A filer — a program via CPI, or any wallet directly — files a Dispute: subaccord, options, evidence hash, fee
 2. The Accord randomly draws N Jurors from the Subaccord (VRF, weighted by stake)
 3. Drawn Jurors review encrypted evidence (accessible only to them)
 4. Each Juror Commits hash(vote, salt) — secret, prevents vote-copying
@@ -85,9 +85,13 @@ rather than a hired-judge committee.
   `fee_token` (compensation — fees + appeal bonds, USDC by convention). Stake is
   the anti-sybil mechanism and the coherence-slashing substrate; fees are what
   jurors earn. USDC is the common default, not hard-coded.
-- **Arbitrable interface.** Any Solana program can use the Accord:
-  `create_dispute()` → `get_ruling()`. Two CPI calls. The Accord has no knowledge
-  of the filing program's domain.
+- **Two filing modes — programs and wallets.** The filer is just a signer, so
+  Accord needs no program intermediary. A **wallet** signs `create_dispute`
+  directly and reads the final ruling from on-chain state; a **program
+  (Arbitrable)** files via CPI and reads the ruling back via `get_ruling()` —
+  two CPI calls that let it enforce the verdict automatically (release escrow,
+  flip item status, gate execution). The Accord has no knowledge of the filer's
+  domain in either case.
 - **Commit-reveal voting.** Prevents vote-copying, which is what makes the
   Schelling Point form independently. Without secret votes, Jurors would copy
   the majority instead of reasoning.
@@ -97,9 +101,12 @@ rather than a hired-judge committee.
 
 ### What gets built on top
 
-Accord is a **shared verdict spine**, not an application. Applications are
-separate programs (Arbitrables) that file disputes via CPI, read the ruling, and
-own the consequences — deposit redistribution, execution, status flips. The
+Accord is a **shared verdict spine**, not an application — but it doesn't
+require one. Anyone with a wallet can file a dispute directly and read the
+ruling off-chain. When automation or on-chain enforcement is wanted, that work
+lives in a separate program (an **Arbitrable**) that files disputes via CPI,
+reads the ruling, and owns the consequences — deposit redistribution, execution,
+status flips. The
 Accord never learns what a dispute is _about_. Four concrete shapes illustrate
 the reach; each is an independent program consuming the same two-call interface.
 

@@ -24,7 +24,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 /// Accord program ID (single source of truth: `declare_id!` in
 /// programs/accord/src/lib.rs).
-pub const ACCORD_ID: Pubkey = pubkey!("426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi");
+pub const ACCORD_ID: Pubkey = pubkey!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
 
 /// Anchor instruction discriminator for `global:create_dispute`
 /// (`sha256("global:create_dispute")[..8]`), precomputed to avoid pulling

@@ -52,12 +52,12 @@ pub struct CreateList<'info> {
         seeds::program = accord::ID,
         bump,
     )]
-    pub subaccord: AccountInfo<'info>,
+    pub subaccord: UncheckedAccount<'info>,
 
     /// Accord program (CPI target).
     /// CHECK: constrained by `address = accord::ID`.
     #[account(address = accord::ID)]
-    pub accord_program: AccountInfo<'info>,
+    pub accord_program: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }

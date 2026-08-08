@@ -6,7 +6,7 @@ use crate::{constants::*, errors::CanonError, events::*, state::*};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-const ACCORD_ID: Pubkey = pubkey!("426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi");
+const ACCORD_ID: Pubkey = pubkey!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
 const DISPUTE_STATE_OFFSET: usize = 1137;
 const DISPUTE_RULING_OFFSET: usize = 1198;
 const DISPUTE_STATE_FINAL: u8 = 6;

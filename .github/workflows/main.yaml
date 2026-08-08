@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_call:
   workflow_dispatch:
 
@@ -19,3 +22,10 @@ jobs:
     if: always()
     secrets: inherit
     uses: ./.github/workflows/landing-page.yaml
+
+  # Program test routine: LiteSVM Rust unit tests + jest e2e suite against a
+  # fresh Surfnet (reusable workflow). Gates merges on PR; runs on push to main.
+  program-tests:
+    name: Program Tests
+    secrets: inherit
+    uses: ./.github/workflows/program-tests.yml
