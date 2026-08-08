@@ -1,5 +1,5 @@
 /**
- * dispute.ts — the PRIMARY external surface of @accord/sdk.
+ * dispute.ts — the PRIMARY external surface of @useaccord/sdk.
  *
  * Two methods every Arbitrable integrates against:
  *   - {@link createDispute} — files a Dispute (CPI from an Arbitrable program,
@@ -50,7 +50,7 @@ export interface CreateDisputeArgs {
   evidenceHash: Uint8Array;
   /** Filer-chosen nonce → private dispute namespace. Dispute PDA = `["dispute", filer, nonce]`. */
   nonce: bigint;
-  /** Total fee = `jurors_per_dispute * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
+  /** Total fee = `INITIAL_NUM_JURORS * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
   fee: bigint;
 }
 
@@ -61,11 +61,11 @@ export interface CreateDisputeAccounts {
   /** The Subaccord this dispute is filed against (fee/panel source). */
   subaccord: Address;
   /** The Subaccord's staking_token mint (fee currency). */
-  stakingToken: Address;
-  /** Filer's associated token account of the staking_token (fee source). */
+  feeToken: Address;
+  /** Filer's ATA of the fee token (fee source). */
   filerTokenAccount: Address;
-  /** Subaccord PDA's vault ATA (fee sink). */
-  vault: Address;
+  /** Subaccord PDA's fee_vault ATA (fee sink, ADR-0020). */
+  feeVault: Address;
   /** Circuit-breaker singleton PDA (`["pause"]`); stake/create revert while paused. */
   pauseState: Address;
 }
@@ -105,17 +105,14 @@ export interface AccordDisputeClient {
 }
 
 /**
- * Compute the required `create_dispute` fee for a panel of `jurorsPerDispute`
- * at `feePerJuror` each. Mirrors lib.rs:421-423
- * (`jurors_per_dispute as u64).checked_mul(fee_per_juror)`). Returns `null` on
- * u64 overflow rather than throwing — callers surface a typed error.
+ * Compute the required `create_dispute` round-1 fee. The panel is the fixed
+ * `INITIAL_NUM_JURORS` (=3), so the fee is `3 · fee_per_juror`. Mirrors lib.rs
+ * (`INITIAL_NUM_JURORS as u64).checked_mul(fee_per_juror)`). Returns `null`
+ * on u64 overflow rather than throwing — callers surface a typed error.
  */
-export function requiredFee(
-  jurorsPerDispute: number,
-  feePerJuror: bigint,
-): bigint | null {
-  if (!Number.isInteger(jurorsPerDispute) || jurorsPerDispute < 0) return null;
-  const product = BigInt(jurorsPerDispute) * feePerJuror;
+export function requiredFee(feePerJuror: bigint): bigint | null {
+  if (feePerJuror < 0n) return null;
+  const product = BigInt(3) * feePerJuror;
   if (product < 0n || product > U64_MAX) return null;
   return product;
 }

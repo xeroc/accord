@@ -94,25 +94,15 @@ test("ingest: happy → 201, idempotent:false, stored with server-stamped ingest
     I_SUB,
     I_DISPUTE,
     iBundle(),
-    iDeps(
-      store,
-      iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH }),
-    ),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
   );
   assert.equal(out.status, 201);
   if (out.status !== 201) throw new Error("unreachable");
   assert.equal(out.idempotent, false);
   const stored = store.objects.get(`${hex(I_SUB)}:${hex(I_DISPUTE)}`);
   assert.ok(stored, "bundle stored");
-  assert.ok(
-    stored && stored.ingested_at > 0,
-    "ingested_at stamped server-side",
-  );
-  assert.deepEqual(
-    stored && stored.ct,
-    new Uint8Array([1, 2, 3, 4]),
-    "ct preserved",
-  );
+  assert.ok(stored && stored.ingested_at > 0, "ingested_at stamped server-side");
+  assert.deepEqual(stored && stored.ct, new Uint8Array([1, 2, 3, 4]), "ct preserved");
 });
 
 test("ingest: hash-mismatch (plaintext_hash != evidence_hash) → 400, nothing stored", async () => {
@@ -121,10 +111,7 @@ test("ingest: hash-mismatch (plaintext_hash != evidence_hash) → 400, nothing s
     I_SUB,
     I_DISPUTE,
     iBundle({ plaintext_hash: I_OTHER_HASH }),
-    iDeps(
-      store,
-      iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH }),
-    ),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
   );
   assert.equal(out.status, 400);
   if (out.status !== 400) throw new Error("unreachable");
@@ -160,19 +147,13 @@ test("ingest: conflict (different plaintext_hash for same dispute) → 409", asy
     I_SUB,
     I_DISPUTE,
     iBundle(),
-    iDeps(
-      store,
-      iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH }),
-    ),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
   );
   const out = await ingest(
     I_SUB,
     I_DISPUTE,
     iBundle({ plaintext_hash: I_OTHER_HASH }),
-    iDeps(
-      store,
-      iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_OTHER_HASH }),
-    ),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_OTHER_HASH })),
   );
   assert.equal(out.status, 409);
 });
@@ -180,36 +161,17 @@ test("ingest: conflict (different plaintext_hash for same dispute) → 409", asy
 test("ingest: structural bad bundle (empty ct / bad pub / bad hash / empty wrapped) → 400", async () => {
   const c = iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH });
   const d = iDeps(iMemoryStore(), c);
+  assert.equal((await ingest(I_SUB, I_DISPUTE, iBundle({ ct: new Uint8Array(0) }), d)).status, 400);
   assert.equal(
-    (await ingest(I_SUB, I_DISPUTE, iBundle({ ct: new Uint8Array(0) }), d))
-      .status,
+    (await ingest(I_SUB, I_DISPUTE, iBundle({ claimant_ephem_pub: new Uint8Array(31) }), d)).status,
     400,
   );
   assert.equal(
-    (
-      await ingest(
-        I_SUB,
-        I_DISPUTE,
-        iBundle({ claimant_ephem_pub: new Uint8Array(31) }),
-        d,
-      )
-    ).status,
+    (await ingest(I_SUB, I_DISPUTE, iBundle({ plaintext_hash: new Uint8Array(16) }), d)).status,
     400,
   );
   assert.equal(
-    (
-      await ingest(
-        I_SUB,
-        I_DISPUTE,
-        iBundle({ plaintext_hash: new Uint8Array(16) }),
-        d,
-      )
-    ).status,
-    400,
-  );
-  assert.equal(
-    (await ingest(I_SUB, I_DISPUTE, iBundle({ wrapped: new Uint8Array(0) }), d))
-      .status,
+    (await ingest(I_SUB, I_DISPUTE, iBundle({ wrapped: new Uint8Array(0) }), d)).status,
     400,
   );
 });
@@ -219,10 +181,7 @@ test("ingest: path/bundle subaccord mismatch → 400", async () => {
     I_SUB,
     I_DISPUTE,
     iBundle({ subaccord: new Uint8Array(32).fill(0x7a) }),
-    iDeps(
-      iMemoryStore(),
-      iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH }),
-    ),
+    iDeps(iMemoryStore(), iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
   );
   assert.equal(out.status, 400);
 });
@@ -243,10 +202,7 @@ test("ingest: encrypted-at-rest — stored object has no plaintext field", async
     I_SUB,
     I_DISPUTE,
     iBundle(),
-    iDeps(
-      store,
-      iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH }),
-    ),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
   );
   const stored = store.objects.get(`${hex(I_SUB)}:${hex(I_DISPUTE)}`);
   assert.ok(stored);
@@ -290,14 +246,10 @@ function dChain(opts: {
         : opts.dispute;
     },
     async readSubaccord() {
-      return opts.subaccord === undefined
-        ? { evidence_operator: D_OPERATOR }
-        : opts.subaccord;
+      return opts.subaccord === undefined ? { evidence_operator: D_OPERATOR } : opts.subaccord;
     },
     async readRound() {
-      return opts.round === undefined
-        ? { jurors: [D_JUROR, D_OTHER_JUROR] }
-        : opts.round;
+      return opts.round === undefined ? { jurors: [D_JUROR, D_OTHER_JUROR] } : opts.round;
     },
   };
 }
@@ -324,14 +276,14 @@ function dCrypto(opts: {
   reencryptInput?: { val: Uint8Array };
 }): DeliveryCrypto {
   return {
-    sha256: () => opts.hash ?? D_HASH,
-    unwrap: () =>
+    sha256: async () => opts.hash ?? D_HASH,
+    unwrap: async () =>
       opts.plaintext === undefined
         ? { plaintext: D_PLAINTEXT }
         : opts.plaintext === null
           ? null
           : { plaintext: opts.plaintext },
-    reencryptToJuror: (wm) => {
+    reencryptToJuror: async (wm) => {
       if (opts.reencryptInput) opts.reencryptInput.val = wm;
       return { out: wm, operator_ephem_pub: D_EPH };
     },
@@ -352,62 +304,38 @@ test("deliver: happy (drawn juror) → 200 {out, operator_ephem_pub}", async () 
   const out = await deliver(D_DISPUTE, D_JUROR, dDeps({}));
   assert.equal(out.status, 200);
   if (out.status !== 200) throw new Error("unreachable");
-  assert.deepEqual(
-    out.out,
-    D_PLAINTEXT,
-    "out is the (watermarked) plaintext via stub reencrypt",
-  );
+  assert.deepEqual(out.out, D_PLAINTEXT, "out is the (watermarked) plaintext via stub reencrypt");
   assert.deepEqual(out.operator_ephem_pub, D_EPH);
 });
 
 test("deliver: premature (round missing / not yet drawn) → 404", async () => {
-  const out = await deliver(
-    D_DISPUTE,
-    D_JUROR,
-    dDeps({ chain: dChain({ round: null }) }),
-  );
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ chain: dChain({ round: null }) }));
   assert.equal(out.status, 404);
   if (out.status !== 404) throw new Error("unreachable");
   assert.match(out.reason, /drawn/i);
 });
 
 test("deliver: not-drawn (juror absent from Round.jurors) → 404", async () => {
-  const out = await deliver(
-    D_DISPUTE,
-    new Uint8Array(32).fill(0xff),
-    dDeps({}),
-  );
+  const out = await deliver(D_DISPUTE, new Uint8Array(32).fill(0xff), dDeps({}));
   assert.equal(out.status, 404);
   if (out.status !== 404) throw new Error("unreachable");
   assert.match(out.reason, /juror/i);
 });
 
 test("deliver: unknown evidence operator (keyring null) → 404", async () => {
-  const out = await deliver(
-    D_DISPUTE,
-    D_JUROR,
-    dDeps({ keyring: dKeyring(null) }),
-  );
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ keyring: dKeyring(null) }));
   assert.equal(out.status, 404);
   if (out.status !== 404) throw new Error("unreachable");
   assert.match(out.reason, /operator/i);
 });
 
 test("deliver: missing dispute → 404", async () => {
-  const out = await deliver(
-    D_DISPUTE,
-    D_JUROR,
-    dDeps({ chain: dChain({ dispute: null }) }),
-  );
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ chain: dChain({ dispute: null }) }));
   assert.equal(out.status, 404);
 });
 
 test("deliver: no evidence ingested (store null) → 404", async () => {
-  const out = await deliver(
-    D_DISPUTE,
-    D_JUROR,
-    dDeps({ store: dStoreWith(null) }),
-  );
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ store: dStoreWith(null) }));
   assert.equal(out.status, 404);
 });
 
@@ -430,11 +358,7 @@ test("deliver: gate-fail (sha256(plaintext) != evidence_hash) → 409", async ()
 });
 
 test("deliver: decrypt-failure (undecryptable/tampered bundle) → 409", async () => {
-  const out = await deliver(
-    D_DISPUTE,
-    D_JUROR,
-    dDeps({ crypto: dCrypto({ plaintext: null }) }),
-  );
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ crypto: dCrypto({ plaintext: null }) }));
   assert.equal(out.status, 409);
   if (out.status !== 409) throw new Error("unreachable");
   assert.match(out.reason, /decrypt|tamper/i);

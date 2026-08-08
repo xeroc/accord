@@ -1,11 +1,11 @@
 ---
 # accord-wuzs
 title: Honest trust / positioning profile (CONCEPT-REVIEW Ugly 8)
-status: todo
+status: completed
 type: task
 priority: normal
 created_at: 2026-08-05T15:25:46Z
-updated_at: 2026-08-05T15:26:11Z
+updated_at: 2026-08-05T20:10:03Z
 parent: accord-ukqg
 ---
 
@@ -42,3 +42,58 @@ self-enforcing). Qualify all product/README claims. Accurate one-liner:
 ## References
 
 CONCEPT-REVIEW §Ugly 8; ADR-0001; `CONTEXT.md`.
+
+## Summary of Changes
+
+Docs-only (no program code, no unit tests per acceptance).
+
+**New doc** — `apps/docs/docs/security/trust-profile.md`: the per-Subaccord
+trust profile. States the honest one-liner, a claim-vs-reality table
+("decentralized court" → "capital-weighted Schelling arbitration oracle", etc.),
+a 9-row trust surface (Subaccord authority, upgrade multisig, indexer, VRF
+provider, cranker, large stakeholders, evidence operator, integrating app,
+juror admission), a machine-readable YAML profile (authority, juror_admission,
+stake_concentration, randomness, evidence_operator, enforcement,
+security_value_ceiling), the cheapest-rational-capture math (stake majority +
+bribery), what is genuinely decentralized, the v2 roadmap, and a claim-writing
+style guide.
+
+**Qualified claims** across all product/marketing surfaces:
+
+- `README.md` — "Kleros of Solana" → "inspired by Kleros"; added IMPORTANT
+  callout pointing to the Trust Profile; "no central authority picks judges" →
+  "honest-majority-stake assumed"; "prohibitively expensive" → "deterred, not
+  impossible"; ADR-0011/0012 added to the ADR list; fixed 5 collapsed GitHub
+  admonitions so the qualification callouts render.
+- `PROJECT.md` — "decentralized arbitration accord" → "arbitration oracle";
+  added honest-positioning blockquote; "Kleros of Solana" → "inspired by Kleros,
+  not a port".
+- `BRAND.md` — "resolution without trust" → "resolution with far fewer trusted
+  humans".
+- `apps/docs/docs/index.md` — title + key-features qualified; Trust Profile
+  linked.
+- `apps/landing/.../Layout.astro` — "Trustless" → "Trust-minimized"; "Capture
+  is structurally impossible" → "Capture is deterred, not impossible".
+
+**ADR residual-trust sections** (acceptance criterion 3):
+
+- ADR-0007 — "Residual trust assumptions": multisig trusted with code,
+  "sufficiently audited" is human judgment, freeze irrevocable, pause instant,
+  no on-chain identity.
+- ADR-0009 — "Residual trust assumptions": randomness availability
+  provider-dependent, brute-force only partially closed, stake-weighting ≠
+  stake-independence, honest-majority-stake load-bearing, distinct keys ≠
+  independent humans, snapshot layer superseded by ADR-0012.
+
+**Nav**: `mkdocs.yml` + `security/index.md` wire the Trust Profile into the
+site (listed first under Security); ADR-0011/0012 added to the nav.
+
+**Bug fixes picked up during review**: 5 collapsed `> [!TYPE] > content`
+admonitions in README (would not render as GitHub alerts); a stray `>` mid-quote
+in the snapshot-poster note of trust-profile.md; a broken
+`../../CONCEPT-REVIEW.md` link (file not in repo) downgraded to a plain-text
+reference.
+
+Verified: all internal `.md` links resolve; all mkdocs nav entries exist; no
+remaining unqualified "trustless"/"decentralized court"/"no central authority"
+claims in product-facing docs.

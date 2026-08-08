@@ -1,7 +1,7 @@
 // reader.test.ts — chain/reader.ts under a stubbed RPC.
 //
 // Runs under Bun (the daemon is a Bun app per SPEC.md); Bun resolves the
-// extensionless internal imports of @accord/sdk natively, which lets these
+// extensionless internal imports of @useaccord/sdk natively, which lets these
 // tests load the real reader + SDK fetchers. The SDK fetchers delegate to
 // `accord.client.accord.accounts.<acct>.fetchMaybe`, so a minimal stub on
 // that path yields controlled account data without a validator.
@@ -12,7 +12,7 @@
 // truth; these are its behavioural guarantees.
 import { test, expect } from "bun:test";
 import { address, type Address } from "@solana/kit";
-import { DisputeState, type Accord } from "@accord/sdk";
+import { DisputeState, type Accord } from "@useaccord/sdk";
 import {
   isDeliverable,
   isDrawn,
@@ -27,22 +27,17 @@ import {
 const SYS: Address = address("11111111111111111111111111111112");
 const TOK: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const RENT: Address = address("SysvarRent111111111111111111111111111111111");
-const OPERATOR: Address = address(
-  "Accord1111111111111111111111111111111111111",
-);
+const OPERATOR: Address = address("Accord1111111111111111111111111111111111111");
 const ZERO_PUBKEY: Address = address("11111111111111111111111111111111");
 
 /** Build a minimal `Accord` stub returning controlled maybe-accounts. */
 function stubAccord(accounts: {
-  subaccord?:
-    { exists: true; data: Record<string, unknown> } | { exists: false };
+  subaccord?: { exists: true; data: Record<string, unknown> } | { exists: false };
   dispute?: { exists: true; data: Record<string, unknown> } | { exists: false };
   round?: { exists: true; data: Record<string, unknown> } | { exists: false };
 }): Accord {
-  const mk =
-    (m: { exists: true; data: unknown } | { exists: false } | undefined) =>
-    async () =>
-      m ?? { exists: false };
+  const mk = (m: { exists: true; data: unknown } | { exists: false } | undefined) => async () =>
+    m ?? { exists: false };
   return {
     client: {
       accord: {

@@ -57,16 +57,6 @@ export function fetchRoundMaybe(accord: Accord, address: Address) {
   return accord.client.accord.accounts.round.fetchMaybe(address);
 }
 
-// --- Snapshot (seeds: ["snapshot", dispute, round_idx]) ---
-
-export function fetchSnapshot(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.snapshot.fetch(address);
-}
-
-export function fetchSnapshotMaybe(accord: Accord, address: Address) {
-  return accord.client.accord.accounts.snapshot.fetchMaybe(address);
-}
-
 // --- PendingUpdate (seeds: ["update", subaccord, nonce]) ---
 
 export function fetchPendingUpdate(accord: Accord, address: Address) {

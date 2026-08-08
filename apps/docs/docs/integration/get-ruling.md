@@ -15,7 +15,7 @@ pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>>
 `final_ruling` is set only by `finalize_dispute`, which requires:
 
 - `state == RoundResolved`, and
-- `now ≥ reveal_end + APPEAL_WINDOW_SECS` (no further appeal possible).
+- `now ≥ reveal_end + terms.appeal_window` (no further appeal possible; per-Subaccord, [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)).
 
 So a ruling is final iff the appeal window has elapsed on the last round with no appeal landed. Polling earlier than that returns `None`.
 
@@ -29,7 +29,7 @@ match accord::cpi::get_ruling(cpi_ctx)? {
 ```
 
 ```typescript
-import { fetchDisputeMaybe } from "@accord/sdk";
+import { fetchDisputeMaybe } from "@useaccord/sdk";
 
 const d = await fetchDisputeMaybe(accord, dispute);
 if (d?.exists && d.data.finalRuling !== null) {

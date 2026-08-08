@@ -27,6 +27,8 @@ import {
   getStructEncoder,
   getU32Decoder,
   getU32Encoder,
+  getU64Decoder,
+  getU64Encoder,
   getU8Decoder,
   getU8Encoder,
   transformEncoder,
@@ -72,7 +74,36 @@ export type Round = {
   commits: Array<ReadonlyUint8Array>;
   /** Revealed vote option index per drawn Juror; `u8::MAX` until revealed. */
   reveals: ReadonlyUint8Array;
+  /**
+   * Whether this round's coherence settlement has been applied
+   * (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+   * `finalize_dispute` (final round) or `settle_round` (prior rounds)
+   * processes it; 1 after. Idempotency guard against double-settlement.
+   * (`u8` not `bool` — `bool` is not `Pod`.)
+   */
+  settled: number;
   pad1: ReadonlyUint8Array;
+  /**
+   * Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
+   * when the seat lands; later seats read these to verify that every prior
+   * sortition retry genuinely collided with an already-drawn juror —
+   * eliminating caller choice (no draw_attempt grind).
+   */
+  seatPrefix: Array<bigint>;
+  /**
+   * Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
+   * range `[prefix, prefix+stake)` used for deterministic collision checks.
+   */
+  seatStake: Array<bigint>;
+  /**
+   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
+   * `round_idx`: bumping it changes only the sortition seed, never the panel
+   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+   * Appended (with trailing pad) so existing field offsets are stable.
+   */
+  drawAttempt: number;
+  padDrawAttempt: ReadonlyUint8Array;
 };
 
 export type RoundArgs = {
@@ -95,7 +126,36 @@ export type RoundArgs = {
   commits: Array<ReadonlyUint8Array>;
   /** Revealed vote option index per drawn Juror; `u8::MAX` until revealed. */
   reveals: ReadonlyUint8Array;
+  /**
+   * Whether this round's coherence settlement has been applied
+   * (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
+   * `finalize_dispute` (final round) or `settle_round` (prior rounds)
+   * processes it; 1 after. Idempotency guard against double-settlement.
+   * (`u8` not `bool` — `bool` is not `Pod`.)
+   */
+  settled: number;
   pad1: ReadonlyUint8Array;
+  /**
+   * Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
+   * when the seat lands; later seats read these to verify that every prior
+   * sortition retry genuinely collided with an already-drawn juror —
+   * eliminating caller choice (no draw_attempt grind).
+   */
+  seatPrefix: Array<number | bigint>;
+  /**
+   * Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
+   * range `[prefix, prefix+stake)` used for deterministic collision checks.
+   */
+  seatStake: Array<number | bigint>;
+  /**
+   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
+   * `round_idx`: bumping it changes only the sortition seed, never the panel
+   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+   * Appended (with trailing pad) so existing field offsets are stable.
+   */
+  drawAttempt: number;
+  padDrawAttempt: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link RoundArgs} account data. */
@@ -120,7 +180,12 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
         getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 31 }),
       ],
       ["reveals", fixEncoderSize(getBytesEncoder(), 31)],
-      ["pad1", fixEncoderSize(getBytesEncoder(), 5)],
+      ["settled", getU8Encoder()],
+      ["pad1", fixEncoderSize(getBytesEncoder(), 4)],
+      ["seatPrefix", getArrayEncoder(getU64Encoder(), { size: 31 })],
+      ["seatStake", getArrayEncoder(getU64Encoder(), { size: 31 })],
+      ["drawAttempt", getU32Encoder()],
+      ["padDrawAttempt", fixEncoderSize(getBytesEncoder(), 4)],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -147,7 +212,12 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
       getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 31 }),
     ],
     ["reveals", fixDecoderSize(getBytesDecoder(), 31)],
-    ["pad1", fixDecoderSize(getBytesDecoder(), 5)],
+    ["settled", getU8Decoder()],
+    ["pad1", fixDecoderSize(getBytesDecoder(), 4)],
+    ["seatPrefix", getArrayDecoder(getU64Decoder(), { size: 31 })],
+    ["seatStake", getArrayDecoder(getU64Decoder(), { size: 31 })],
+    ["drawAttempt", getU32Decoder()],
+    ["padDrawAttempt", fixDecoderSize(getBytesDecoder(), 4)],
   ]);
 }
 
@@ -210,5 +280,5 @@ export async function fetchAllMaybeRound(
 }
 
 export function getRoundSize(): number {
-  return 2104;
+  return 2608;
 }

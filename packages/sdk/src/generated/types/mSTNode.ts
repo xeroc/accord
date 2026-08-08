@@ -23,10 +23,10 @@ import {
 } from "@solana/kit";
 
 /**
- * Merkle-Sum Tree proof element (ADR-0009). Each level of the proof carries
- * the sibling's hash AND the sibling's stake sum, allowing the chain to verify
- * both structural integrity (hash) and cumulative-range consistency (sum)
- * along the root path.
+ * Merkle-Sum Tree proof element (ADR-0012 subtree-sum form). Each level of the
+ * proof carries the sibling subtree's hash AND its stake sum. Sums are bound
+ * into every node hash, so stake-weighted ranges are cryptographically
+ * authenticated (CONCEPT-REVIEW Bad 5 fixed by construction).
  */
 export type MSTNode = { siblingHash: ReadonlyUint8Array; siblingSum: bigint };
 

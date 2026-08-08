@@ -11,7 +11,7 @@ The arbitration program — a general-purpose Schelling-point dispute resolution
 _Avoid_: Kleros-clone, arbitration engine, judge program
 
 **Subaccord**:
-A specialized Juror pool within the Accord. Each Subaccord defines its staking token, minimum stake, review window, and dispute parameters. Jurors self-select into Subaccords matching their expertise. Permissionless — anyone can create one.
+A specialized Juror pool within the Accord. Each Subaccord defines its staking token (collateral), fee token (compensation), minimum stake, review window, and dispute parameters. Jurors self-select into Subaccords matching their expertise. Permissionless — anyone can create one.
 _Avoid_: accord branch, tribunal, panel
 
 **Juror**:
@@ -23,12 +23,12 @@ A case filed with the Accord by any program (the Arbitrable). Contains the dispu
 _Avoid_: case, claim (in the Accord context), trial
 
 **Draw**:
-The random selection of distinct Jurors for a Dispute from a Snapshot, weighted by staked capital. Uses VRF for manipulation resistance.
+The random selection of distinct Jurors for a Dispute from the Subaccord's stake Accumulator, weighted by staked capital. Per-seat (`draw_seat`); seeded by a committed VRF. The Accumulator root is frozen at VRF-commit so the Draw is provably fair and manipulation-resistant.
 _Avoid_: jury selection, sortition
 
-**Snapshot**:
-A committed view of a Subaccord's Juror set and stake weights, frozen at Dispute creation so the Draw is provably fair and manipulation-resistant.
-_Avoid_: juror registry, roster
+**Accumulator**:
+A live on-chain Merkle-Sum Tree over a Subaccord's Juror set and stake weights, maintained incrementally on every `stake`/`unstake`. Only the root (`root_hash`, `total_stake`, `next_index`, `depth`) lives on-chain; the full tree is held off-chain by indexers. The root is canonical by construction — there is no posted root to withhold or fabricate, hence no bond, no challenge window, and no fraud predicates (ADR-0012).
+_Avoid_: snapshot, juror registry, roster
 
 **Commit**:
 A Juror's secret submission of `hash(vote, salt)`. Prevents vote-copying so the Schelling Point forms independently.
@@ -43,15 +43,15 @@ The Accord's verdict on a Dispute — the option that received the majority of J
 _Avoid_: verdict, judgment, decision
 
 **Coherence**:
-Voting with the Ruling majority. Coherent Jurors earn arbitration fees + slashed stake from Incoherent Jurors.
+Voting with the Ruling majority. Coherent Jurors earn arbitration fees (in `fee_token`, via `fees_earned`) + slashed stake (in `staking_token`, via `stake_delta`) from Incoherent Jurors.
 _Avoid_: correct vote, winning vote
 
 **Incoherence**:
-Voting against the Ruling majority. Incoherent Jurors lose a fraction of their stake (the slash) to Coherent Jurors. This is the incentive that makes the Schelling Point work.
+Voting against the Ruling majority. Incoherent Jurors lose a fraction of their stake (the slash, in `staking_token`) to Coherent Jurors. This is the incentive that makes the Schelling Point work.
 _Avoid_: wrong vote, losing vote
 
 **Appeal**:
-Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond. Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling.
+Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond (in `fee_token`). Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
 _Avoid_: retrial, reconsideration
 
 **Arbitrable**:

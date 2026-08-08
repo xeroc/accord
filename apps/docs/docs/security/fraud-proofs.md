@@ -1,48 +1,66 @@
-# Snapshot Fraud Proofs
+# Stake Accumulator — why the root is canonical
 
-A posted snapshot root is an optimistic claim. It is final only if unchallenged for `SNAPSHOT_CHALLENGE_WINDOW_SECS` (1 day) OR survives every challenge. Fraud is proven on-chain by one of five predicates in the `FraudProof` enum.
+The juror-set root is a **live on-chain stake accumulator**, not a posted
+claim. There is no poster, no bond, no 1-day challenge window, and no fraud
+predicates — the root cannot be withheld or fabricated because it is maintained
+by the protocol on every `stake`/`unstake` ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md);
+supersedes the optimistic snapshot layer of ADR-0003/0008/0009).
 
-## Bond economics
+## Why no fraud proofs are needed
 
-| Actor                                | Bond                 | Outcome on valid fraud                       | Outcome on false challenge        |
-| ------------------------------------ | -------------------- | -------------------------------------------- | --------------------------------- |
-| Poster (on `post_snapshot`)          | `1 × max-appeal-fee` | forfeited (+ challenger's bond → challenger) | returned (on `finalize_snapshot`) |
-| Challenger (on `challenge_snapshot`) | equal to poster's    | returned + receives poster's bond            | forfeited → poster                |
+ADR-0003/0008 stored only a 32-byte root and trusted an off-chain indexer to
+post it, bonded, with a 1-day fraud-proof window. Two fatal gaps share a root
+cause — the snapshot was a _separate off-chain commitment reconciled with live
+state_, and that reconciliation was trust-dependent:
 
-Both sweeps are PDA-signed out of the Subaccord vault. Wrong root ⇒ `Snapshot.status = Voided` (never drawable). False challenge ⇒ snapshot stays `Posted` (window still open).
+- **Data availability (CONCEPT-REVIEW Bad 4).** The chain stored only the root;
+  nothing forced the poster to publish the tree. A poster could post a fraudulent
+  root and withhold the data — every fraud predicate needed leaves from the
+  _posted_ tree, so none was constructible. Detection was possible but on-chain
+  voiding was impossible; the bond was always returned.
+- **Unauthenticated sums (Bad 5).** The internal node hash excluded child sums,
+  so stake-weighted ranges were not cryptographically bound — a poster could
+  inflate a colluding juror's selection range undetectably.
 
-## Predicates
+The accumulator deletes both problems by construction: there is no posted root
+to withhold (Bad 4), and sums are bound into node hashes (Bad 5).
 
-| #   | Predicate               | What it catches                                                                              | Witness                                                                                                                                                                                                                                    | Resolution                   |
-| --- | ----------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------- |
-| 1   | `Duplicate`             | Two leaves at different indices with the same juror pubkey, both verifying against the root. | `leaf_a, proof_a, index_a`, `leaf_b, proof_b, index_b`                                                                                                                                                                                     | void                         |
-| 2   | `Omission`              | The snapshot dropped a staked juror.                                                         | Two adjacent sorted leaves bracketing `challenger.key()` (`leaf_lo.juror < challenger < leaf_hi.juror`, consecutive indices) + challenger's `JurorStake` (`remaining_accounts[0]`) showing `last_change_slot < anchor_slot && amount > 0`. | void                         |
-| 3   | `WrongStake`            | A leaf's `stake` ≠ the juror's actual anchor-time stake.                                     | `leaf, proof, index` + the juror's `JurorStake` (`remaining_accounts[0]`) with `last_change_slot < anchor_slot` ⇒ live `amount` is the anchor-time amount; require `amount != leaf.stake`.                                                 | void                         |
-| 4   | `Inflation` (at `draw`) | Leaf overstates a juror's stake.                                                             | Enforced in `draw`, not `challenge_snapshot`: `JurorStake.amount ≥ leaf.stake`. Reads live state — race-immune.                                                                                                                            | draw reverts `InflatedStake` |
-| 5   | `NotSorted`             | Tree not sorted by juror pubkey ascending (breaks omission proofs).                          | Two leaves `index_lo < index_hi` with `leaf_lo.juror > leaf_hi.juror`, both verifying against the root.                                                                                                                                    | void                         |
+## How the root stays canonical
 
-Predicates 1, 2, 3, 5 fire in `challenge_snapshot` (window-gated). Predicate 4 fires in `draw` (every draw, every leaf).
-
-## Anchor-slot witness
-
-`JurorStake.last_change_slot` is the slot of the most recent `stake`/`unstake`. If `last_change_slot < Snapshot.anchor_slot`, the **live** `JurorStake.amount` equals the anchor-time amount — the live account is its own historical witness. No ring buffer, no epoch snapshot. Closes the TOCTOU gap for predicates 2 and 3.
-
-```mermaid
-sequenceDiagram
-    participant P as Poster
-    participant V as Vault
-    participant C as Challenger
-    participant S as Snapshot
-    P->>V: post_snapshot (bond 1×max-appeal-fee)
-    S-->>S: status=Posted, anchor_slot=now
-    C->>V: challenge_snapshot (equal bond) + FraudProof
-    alt valid fraud
-        V->>C: 2× bond (poster's + challenger's)
-        S-->>S: status=Voided
-    else false challenge
-        V->>P: challenger's bond
-        S-->>S: status stays Posted
-    end
+```
+Leaf:    (juror: Pubkey, stake: u64)
+Node:    H(left_hash ‖ left_sum ‖ right_hash ‖ right_sum),  node.sum = left_sum + right_sum
+Root:    (root_hash, total_stake)   — stored on Subaccord: + next_index, depth
 ```
 
-Why: [ADR-0003](../adr/0003-accord-draw-merkle-snapshot-distinct-vrf.md), [ADR-0008](../adr/0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md). Sortition consumption: [sortition & VRF](sortition-vrf.md).
+- **Maintained live.** `stake`/`unstake` verify the caller-supplied leaf path
+  against the stored root, read the **live** `JurorStake.amount`, apply the
+  verified vault delta, and recompute the path (O(log N)). A wrong path reverts —
+  it cannot corrupt the root.
+- **Off-chain verifiable.** The program cannot enumerate accounts
+  (`getProgramAccounts` is RPC-only), so the full tree is held by indexers.
+  Any auditor can rebuild the root from `JurorStake` via `getProgramAccounts`
+  and check it against the on-chain value — verifiable, not trusted.
+- **Frozen at VRF-commit.** The live root is copied to `dispute.frozen_root` in
+  `commit_vrf_callback`, atomically with the randomness. Capital stays fully
+  live until the draw; freezing when randomness becomes known closes the
+  manipulation window.
+
+## What was deleted
+
+`post_snapshot`, `challenge_snapshot`, `finalize_snapshot`, the snapshot bond,
+the 1-day window, and all four fraud predicates (Duplicate / Omission /
+WrongStake / NotSorted) are gone. The draw-time **inflation guard**
+(`JurorStake.amount ≥ leaf.stake`, a live read) is retained — it is race-immune
+and never depended on the snapshot.
+
+```mermaid
+graph LR
+  J[JurorStake amount] -->|live read| V[stake/unstake verifies path vs root]
+  V -->|recompute O(log N)| R[Subaccord root_hash + total_stake]
+  R -->|frozen at VRF-commit| F[Dispute.frozen_root]
+  F -->|draw_seat verifies| D[panel]
+  A[Any auditor getProgramAccounts] -.->|rebuild + compare| R
+```
+
+Why: [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Sortition consumption: [sortition & VRF](sortition-vrf.md).

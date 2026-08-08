@@ -48,7 +48,7 @@ Storage (S3/MinIO) holds ciphertext objects only.
 
 ## On-chain interface (read-only)
 
-The daemon writes **nothing** on-chain. It reads via `@accord/sdk`:
+The daemon writes **nothing** on-chain. It reads via `@useaccord/sdk`:
 
 | Account / event   | Field(s) used                           | Purpose                                                             |
 | ----------------- | --------------------------------------- | ------------------------------------------------------------------- |
@@ -199,22 +199,17 @@ interface Keyring {
 ```
 apps/evidence-daemon/
   SPEC.md                      // this file
-  package.json                 // @accord/evidence-daemon (private; bun)
+  package.json                 // @useaccord/evidence-daemon (private; bun)
   tsconfig.json                // extends ../../tsconfig.base.json
   Dockerfile
   src/
-    config.ts                  // env parsing (RPC, program id, keyring, S3, port, limits)
     keys/
-      ed25519.ts               // Ed25519↔X25519 conversion, X25519 ECDH helpers
-      keyring.ts               // Keyring trait + EnvKeyring impl
-    crypto/
-      ecies.ts                 // ingest encryption + delivery re-encryption
-      symmetric.ts             // AES-256-GCM, HKDF-SHA256, sha256
+      keyring.ts               // EnvKeyring impl (Keyring trait + Ed25519Keypair → @useaccord/sdk/evidence)
     store/
       store.ts                 // EvidenceStore trait
       s3.ts                    // v1 S3/MinIO impl
     chain/
-      reader.ts                // @accord/sdk reads (Subaccord/Dispute/Round)
+      reader.ts                // @useaccord/sdk reads (Subaccord/Dispute/Round)
       events.ts                // log subscriber (DisputeCreated/JurorsDrawn/RulingFinalized)
     pipeline/
       ingest.ts                // POST handler: validate + integrity-gate + store.put
@@ -225,10 +220,16 @@ apps/evidence-daemon/
       routes.ts                // /evidence, /healthz
     main.ts                    // wiring; stateless, HA-ready
   tests/
-    crypto.test.ts             // round-trips, Ed↔X25519, integrity gate
+    crypto.test.ts             // EnvKeyring ↔ @useaccord/sdk/evidence integration
     pipeline.test.ts           // ingest/deliver with stub chain reader
     e2e.test.ts                // full flow vs Surfpool (create_dispute → draw → fetch)
 ```
+
+**Crypto protocol home.** The evidence ECIES / AES-256-GCM / HKDF-SHA256 /
+Ed↔X25519 protocol (formerly `src/crypto/` + `src/keys/ed25519.ts`) lives in
+**`@useaccord/sdk/evidence`** (ADR-0015) — shared byte-exact by claimant, operator,
+and juror. The daemon imports it; this app owns only `EnvKeyring`, storage, the
+pipeline, and HTTP.
 
 ## HTTP API (pull, no auth)
 
@@ -344,4 +345,4 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   ADR-0007 (upgrade/multisig)
 - `programs/accord/SPEC.md` (Evidence flow), `programs/accord/src/state.rs:33,265`
 - `CONTEXT.md` — Evidence Operator
-- `packages/sdk` — `@accord/sdk` (chain reader + types)
+- `packages/sdk` — `@useaccord/sdk` (chain reader + types); `@useaccord/sdk/evidence` (evidence crypto protocol, ADR-0015)

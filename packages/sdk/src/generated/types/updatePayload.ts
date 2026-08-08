@@ -18,8 +18,6 @@ import {
   getTupleEncoder,
   getU16Decoder,
   getU16Encoder,
-  getU32Decoder,
-  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -38,11 +36,11 @@ import {
  */
 export type UpdatePayload =
   | { __kind: "MinStake"; fields: readonly [bigint] }
-  | { __kind: "JurorsPerDispute"; fields: readonly [number] }
   | { __kind: "AlphaBps"; fields: readonly [number] }
   | { __kind: "ReviewWindow"; fields: readonly [bigint] }
   | { __kind: "CommitWindow"; fields: readonly [bigint] }
   | { __kind: "RevealWindow"; fields: readonly [bigint] }
+  | { __kind: "AppealWindow"; fields: readonly [bigint] }
   | { __kind: "MaxAppeals"; fields: readonly [number] }
   | { __kind: "FeePerJuror"; fields: readonly [bigint] }
   | { __kind: "Authority"; fields: readonly [Address] }
@@ -50,11 +48,11 @@ export type UpdatePayload =
 
 export type UpdatePayloadArgs =
   | { __kind: "MinStake"; fields: readonly [number | bigint] }
-  | { __kind: "JurorsPerDispute"; fields: readonly [number] }
   | { __kind: "AlphaBps"; fields: readonly [number] }
   | { __kind: "ReviewWindow"; fields: readonly [number | bigint] }
   | { __kind: "CommitWindow"; fields: readonly [number | bigint] }
   | { __kind: "RevealWindow"; fields: readonly [number | bigint] }
+  | { __kind: "AppealWindow"; fields: readonly [number | bigint] }
   | { __kind: "MaxAppeals"; fields: readonly [number] }
   | { __kind: "FeePerJuror"; fields: readonly [number | bigint] }
   | { __kind: "Authority"; fields: readonly [Address] }
@@ -65,10 +63,6 @@ export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
     [
       "MinStake",
       getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
-    ],
-    [
-      "JurorsPerDispute",
-      getStructEncoder([["fields", getTupleEncoder([getU32Encoder()])]]),
     ],
     [
       "AlphaBps",
@@ -84,6 +78,10 @@ export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
     ],
     [
       "RevealWindow",
+      getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
+    ],
+    [
+      "AppealWindow",
       getStructEncoder([["fields", getTupleEncoder([getU64Encoder()])]]),
     ],
     [
@@ -112,10 +110,6 @@ export function getUpdatePayloadDecoder(): Decoder<UpdatePayload> {
       getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
     ],
     [
-      "JurorsPerDispute",
-      getStructDecoder([["fields", getTupleDecoder([getU32Decoder()])]]),
-    ],
-    [
       "AlphaBps",
       getStructDecoder([["fields", getTupleDecoder([getU16Decoder()])]]),
     ],
@@ -129,6 +123,10 @@ export function getUpdatePayloadDecoder(): Decoder<UpdatePayload> {
     ],
     [
       "RevealWindow",
+      getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
+    ],
+    [
+      "AppealWindow",
       getStructDecoder([["fields", getTupleDecoder([getU64Decoder()])]]),
     ],
     [
@@ -167,18 +165,6 @@ export function updatePayload(
   >["fields"],
 ): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "MinStake">;
 export function updatePayload(
-  kind: "JurorsPerDispute",
-  data: GetDiscriminatedUnionVariantContent<
-    UpdatePayloadArgs,
-    "__kind",
-    "JurorsPerDispute"
-  >["fields"],
-): GetDiscriminatedUnionVariant<
-  UpdatePayloadArgs,
-  "__kind",
-  "JurorsPerDispute"
->;
-export function updatePayload(
   kind: "AlphaBps",
   data: GetDiscriminatedUnionVariantContent<
     UpdatePayloadArgs,
@@ -210,6 +196,14 @@ export function updatePayload(
     "RevealWindow"
   >["fields"],
 ): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "RevealWindow">;
+export function updatePayload(
+  kind: "AppealWindow",
+  data: GetDiscriminatedUnionVariantContent<
+    UpdatePayloadArgs,
+    "__kind",
+    "AppealWindow"
+  >["fields"],
+): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "AppealWindow">;
 export function updatePayload(
   kind: "MaxAppeals",
   data: GetDiscriminatedUnionVariantContent<

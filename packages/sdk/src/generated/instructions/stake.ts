@@ -11,6 +11,8 @@ import {
   fixDecoderSize,
   fixEncoderSize,
   getAddressEncoder,
+  getArrayDecoder,
+  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getProgramDerivedAddress,
@@ -24,9 +26,9 @@ import {
   type AccountMeta,
   type AccountSignerMeta,
   type Address,
-  type FixedSizeCodec,
-  type FixedSizeDecoder,
-  type FixedSizeEncoder,
+  type Codec,
+  type Decoder,
+  type Encoder,
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
@@ -43,6 +45,12 @@ import {
 } from "@solana/kit/program-client-core";
 import { findJurorStakePda, findPauseStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
+import {
+  getMSTNodeDecoder,
+  getMSTNodeEncoder,
+  type MSTNode,
+  type MSTNodeArgs,
+} from "../types";
 
 export const STAKE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   206, 176, 202, 18, 200, 209, 179, 108,
@@ -60,7 +68,7 @@ export type StakeInstruction<
   TAccountJurorStake extends string | AccountMeta<string> = string,
   TAccountStakingToken extends string | AccountMeta<string> = string,
   TAccountJurorTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountStakeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TAccountAssociatedTokenProgram extends string | AccountMeta<string> =
@@ -91,9 +99,9 @@ export type StakeInstruction<
       TAccountJurorTokenAccount extends string
         ? WritableAccount<TAccountJurorTokenAccount>
         : TAccountJurorTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
+      TAccountStakeVault extends string
+        ? WritableAccount<TAccountStakeVault>
+        : TAccountStakeVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -110,28 +118,34 @@ export type StakeInstruction<
 export type StakeInstructionData = {
   discriminator: ReadonlyUint8Array;
   amount: bigint;
+  path: Array<MSTNode>;
 };
 
-export type StakeInstructionDataArgs = { amount: number | bigint };
+export type StakeInstructionDataArgs = {
+  amount: number | bigint;
+  path: Array<MSTNodeArgs>;
+};
 
-export function getStakeInstructionDataEncoder(): FixedSizeEncoder<StakeInstructionDataArgs> {
+export function getStakeInstructionDataEncoder(): Encoder<StakeInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["amount", getU64Encoder()],
+      ["path", getArrayEncoder(getMSTNodeEncoder())],
     ]),
     (value) => ({ ...value, discriminator: STAKE_DISCRIMINATOR }),
   );
 }
 
-export function getStakeInstructionDataDecoder(): FixedSizeDecoder<StakeInstructionData> {
+export function getStakeInstructionDataDecoder(): Decoder<StakeInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["amount", getU64Decoder()],
+    ["path", getArrayDecoder(getMSTNodeDecoder())],
   ]);
 }
 
-export function getStakeInstructionDataCodec(): FixedSizeCodec<
+export function getStakeInstructionDataCodec(): Codec<
   StakeInstructionDataArgs,
   StakeInstructionData
 > {
@@ -148,7 +162,7 @@ export type StakeAsyncInput<
   TAccountJurorStake extends string = string,
   TAccountStakingToken extends string = string,
   TAccountJurorTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountStakeVault extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
@@ -161,12 +175,13 @@ export type StakeAsyncInput<
   /** Must be the Subaccord's declared staking token. */
   stakingToken: Address<TAccountStakingToken>;
   jurorTokenAccount?: Address<TAccountJurorTokenAccount>;
-  /** Subaccord PDA's vault ATA; `authority` (wallet) is the Subaccord PDA. */
-  vault?: Address<TAccountVault>;
+  /** Subaccord PDA's stake_vault ATA; `authority` (wallet) is the Subaccord PDA. */
+  stakeVault?: Address<TAccountStakeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   amount: StakeInstructionDataArgs["amount"];
+  path: StakeInstructionDataArgs["path"];
 };
 
 export async function getStakeInstructionAsync<
@@ -176,7 +191,7 @@ export async function getStakeInstructionAsync<
   TAccountJurorStake extends string,
   TAccountStakingToken extends string,
   TAccountJurorTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountStakeVault extends string,
   TAccountTokenProgram extends string,
   TAccountAssociatedTokenProgram extends string,
   TAccountSystemProgram extends string,
@@ -189,7 +204,7 @@ export async function getStakeInstructionAsync<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
     TAccountSystemProgram
@@ -204,7 +219,7 @@ export async function getStakeInstructionAsync<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
     TAccountSystemProgram
@@ -224,7 +239,7 @@ export async function getStakeInstructionAsync<
       value: input.jurorTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    stakeVault: { value: input.stakeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     associatedTokenProgram: {
       value: input.associatedTokenProgram ?? null,
@@ -283,8 +298,8 @@ export async function getStakeInstructionAsync<
       ],
     });
   }
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
+  if (!accounts.stakeVault.value) {
+    accounts.stakeVault.value = await getProgramDerivedAddress({
       programAddress:
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
       seeds: [
@@ -332,7 +347,7 @@ export async function getStakeInstructionAsync<
       getAccountMeta("jurorStake", accounts.jurorStake),
       getAccountMeta("stakingToken", accounts.stakingToken),
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("stakeVault", accounts.stakeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
@@ -349,7 +364,7 @@ export async function getStakeInstructionAsync<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
     TAccountSystemProgram
@@ -363,7 +378,7 @@ export type StakeInput<
   TAccountJurorStake extends string = string,
   TAccountStakingToken extends string = string,
   TAccountJurorTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountStakeVault extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
@@ -376,12 +391,13 @@ export type StakeInput<
   /** Must be the Subaccord's declared staking token. */
   stakingToken: Address<TAccountStakingToken>;
   jurorTokenAccount: Address<TAccountJurorTokenAccount>;
-  /** Subaccord PDA's vault ATA; `authority` (wallet) is the Subaccord PDA. */
-  vault: Address<TAccountVault>;
+  /** Subaccord PDA's stake_vault ATA; `authority` (wallet) is the Subaccord PDA. */
+  stakeVault: Address<TAccountStakeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   amount: StakeInstructionDataArgs["amount"];
+  path: StakeInstructionDataArgs["path"];
 };
 
 export function getStakeInstruction<
@@ -391,7 +407,7 @@ export function getStakeInstruction<
   TAccountJurorStake extends string,
   TAccountStakingToken extends string,
   TAccountJurorTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountStakeVault extends string,
   TAccountTokenProgram extends string,
   TAccountAssociatedTokenProgram extends string,
   TAccountSystemProgram extends string,
@@ -404,7 +420,7 @@ export function getStakeInstruction<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
     TAccountSystemProgram
@@ -418,7 +434,7 @@ export function getStakeInstruction<
   TAccountJurorStake,
   TAccountStakingToken,
   TAccountJurorTokenAccount,
-  TAccountVault,
+  TAccountStakeVault,
   TAccountTokenProgram,
   TAccountAssociatedTokenProgram,
   TAccountSystemProgram
@@ -437,7 +453,7 @@ export function getStakeInstruction<
       value: input.jurorTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    stakeVault: { value: input.stakeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
     associatedTokenProgram: {
       value: input.associatedTokenProgram ?? null,
@@ -476,7 +492,7 @@ export function getStakeInstruction<
       getAccountMeta("jurorStake", accounts.jurorStake),
       getAccountMeta("stakingToken", accounts.stakingToken),
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("stakeVault", accounts.stakeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
       getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
@@ -493,7 +509,7 @@ export function getStakeInstruction<
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
-    TAccountVault,
+    TAccountStakeVault,
     TAccountTokenProgram,
     TAccountAssociatedTokenProgram,
     TAccountSystemProgram
@@ -514,8 +530,8 @@ export type ParsedStakeInstruction<
     /** Must be the Subaccord's declared staking token. */
     stakingToken: TAccountMetas[4];
     jurorTokenAccount: TAccountMetas[5];
-    /** Subaccord PDA's vault ATA; `authority` (wallet) is the Subaccord PDA. */
-    vault: TAccountMetas[6];
+    /** Subaccord PDA's stake_vault ATA; `authority` (wallet) is the Subaccord PDA. */
+    stakeVault: TAccountMetas[6];
     tokenProgram: TAccountMetas[7];
     associatedTokenProgram: TAccountMetas[8];
     systemProgram: TAccountMetas[9];
@@ -555,7 +571,7 @@ export function parseStakeInstruction<
       jurorStake: getNextAccount(),
       stakingToken: getNextAccount(),
       jurorTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
+      stakeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
       associatedTokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),

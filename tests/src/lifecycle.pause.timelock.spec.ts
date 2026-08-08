@@ -17,7 +17,7 @@ import {
   executeUnpause,
   getPauseStateDecoder,
   UNPAUSE_TIMELOCK_SLOTS,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import { warpForwardSlots } from "./setup/cheats.js";

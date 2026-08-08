@@ -111,14 +111,10 @@ test("decodeAccordEvent: unknown / short / malformed → null, never throws", ()
 });
 
 test("parseAccordLog: extracts events; ignores noise + bad base64", () => {
-  expect(parseAccordLog(programData(rulingFinalizedRecord()))!.kind).toBe(
-    "RulingFinalized",
-  );
+  expect(parseAccordLog(programData(rulingFinalizedRecord()))!.kind).toBe("RulingFinalized");
   expect(parseAccordLog("Program log: noise")).toBeNull();
   expect(parseAccordLog("Program data: !!!not-base64!!!")).toBeNull();
-  expect(
-    parseAccordLogs(["a", programData(disputeCreatedRecord()), "b"]),
-  ).toHaveLength(1);
+  expect(parseAccordLogs(["a", programData(disputeCreatedRecord()), "b"])).toHaveLength(1);
 });
 
 // ---------------------------------------------------------------------------
@@ -160,12 +156,7 @@ async function drain(
   handlers: AccordEventHandlers,
 ): Promise<void> {
   const ac = new AbortController();
-  await subscribeAccordEvents(
-    stubSubscriptions(batches),
-    SYS,
-    handlers,
-    ac.signal,
-  );
+  await subscribeAccordEvents(stubSubscriptions(batches), SYS, handlers, ac.signal);
 }
 
 test("subscribe: DisputeCreated fires on the indexing wake-up", async () => {
@@ -199,22 +190,18 @@ test("subscribe: RulingFinalized fires the retention trigger", async () => {
 
 test("subscribe: non-Accord log noise fires nothing", async () => {
   const seen: AccordEvent[] = [];
-  await drain(
-    [["Program log: x", "Program invoke [1]", "Program data: AAAAAA="]],
-    { onDisputeCreated: (e) => seen.push(e) },
-  );
+  await drain([["Program log: x", "Program invoke [1]", "Program data: AAAAAA="]], {
+    onDisputeCreated: (e) => seen.push(e),
+  });
   expect(seen).toHaveLength(0);
 });
 
 test("subscribe: multiple events in one transaction fire in order", async () => {
   const seen: AccordEvent[] = [];
-  await drain(
-    [[programData(disputeCreatedRecord()), programData(jurorsDrawnRecord())]],
-    {
-      onDisputeCreated: (e) => seen.push(e),
-      onJurorsDrawn: (e) => seen.push(e),
-    },
-  );
+  await drain([[programData(disputeCreatedRecord()), programData(jurorsDrawnRecord())]], {
+    onDisputeCreated: (e) => seen.push(e),
+    onJurorsDrawn: (e) => seen.push(e),
+  });
   expect(seen.map((e) => e.kind)).toEqual(["DisputeCreated", "JurorsDrawn"]);
 });
 

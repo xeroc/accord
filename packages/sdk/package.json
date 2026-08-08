@@ -1,5 +1,5 @@
 {
-  "name": "@accord/sdk",
+  "name": "@useaccord/sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for the Accord program on Solana",
   "type": "module",
@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./evidence": {
+      "types": "./dist/evidence/index.d.ts",
+      "import": "./dist/evidence/index.js"
     }
   },
   "files": [
@@ -23,6 +27,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@noble/ciphers": "^1.0.0",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.0.0",
     "@solana/kit": "^7.0.0",
     "bn.js": "^5.2.1"
   },

@@ -1,14 +1,14 @@
 // draw-harness.ts — shared fixtures + helpers for the draw + full-lifecycle e2e
-// specs (M5). Arms the Accord draw pipeline end-to-end against a running
-// Surfpool: pause → subaccord → staked jurors → Merkle-Sum Tree, then per-dispute
-// create_dispute → post_snapshot → (warp) → finalize_snapshot → injectCommittedVrf.
+// specs. Arms the Accord draw pipeline end-to-end against a running Surfpool:
+// pause → subaccord → staked jurors (accumulator paths) → create_dispute →
+// injectCommittedVrf (freezes root) → draw_seat × N.
 //
 // Multi-signer model (ADR-0010): the SDK adapter hardcodes `accord.signer` as the
 // TransactionSigner for every signing account meta. So a juror signs by building
 // its instruction through a per-juror `Accord` facade (`roleAccord`); `env.sendIx`
 // then collects both the fee payer (env.payer) and the juror signer via Kit's
 // `signTransactionMessageWithSigners`. The juror MUST hold SOL — `stake` makes
-// the juror the rent payer for JurorStake + the vault ATA (lib.rs:1728-1752).
+// the juror the rent payer for JurorStake + the vault ATA.
 
 import {
   Accord,
@@ -17,24 +17,24 @@ import {
   stake,
   createDispute,
   requiredFee,
-  postSnapshot,
-  finalizeSnapshot,
-  draw,
-  resolvePanel,
-  drawSlots,
-  isDistinctPanel,
-  buildMst,
-  buildMemberships,
+  drawSeat,
+  resolveSeat,
+  buildAccumulator,
+  proofFor,
+  emptyRoot,
+  type MerkleAccumulator,
+  type LeafClaim,
+  type MSTNode,
+  type SeatMembership,
+  type CreateSubaccordArgs,
   findJurorStakePda,
   findRoundPda,
-  findSnapshotPda,
   findPauseStatePda,
   getDisputeDecoder,
   getRoundDecoder,
   getJurorStakeDecoder,
-  getSnapshotDecoder,
-  type MerkleSumTree,
-} from "@accord/sdk";
+  getSubaccordDecoder,
+} from "@useaccord/sdk";
 import {
   getAddressDecoder,
   getAddressEncoder,
@@ -43,46 +43,34 @@ import {
   type KeyPairSigner,
 } from "@solana/kit";
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { createMint, setTokenBalance, TOKEN_PROGRAM_ID } from "./setup/tokens.js";
+import {
+  createMint,
+  setTokenBalance,
+  TOKEN_PROGRAM_ID,
+} from "./setup/tokens.js";
 
 import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
-import { readClock, warpForwardSeconds } from "./setup/cheats.js";
+import { warpForwardSeconds, readClock } from "./setup/cheats.js";
 import { injectCommittedVrf } from "./setup/vrf.js";
 import { fetchDecoded } from "./setup/assertions.js";
 
-
 // ---------------------------------------------------------------------------
-// Byte-oriented MST membership type
-//
-// `@accord/sdk`'s PUBLIC `JurorMembership` re-exports the generated,
-// Address-oriented variant (`leaf.juror: Address`). But `resolvePanel` /
-// `buildMemberships` / `draw` actually exchange the byte-oriented internal type
-// (`leaf.juror: Uint8Array`) — a name collision. This concrete mirror matches
-// that internal shape so the harness stays structurally compatible without
-// reaching past the public API.
-// ---------------------------------------------------------------------------
-export interface ByteMembership {
-  leaf: { juror: Uint8Array; stake: bigint; cumAfter: bigint };
-  proof: { siblingHash: Uint8Array; siblingSum: bigint }[];
-  index: number;
-}
-// ---------------------------------------------------------------------------
-// Constants — mirror the draw_litesvm blueprint (draw_litesvm.rs:24-30).
+// Constants
 // ---------------------------------------------------------------------------
 
-/** Fixed 32-byte committed VRF (blueprint `COMMITTED_VRF = [42u8; 32]`). */
+/** Fixed 32-byte committed VRF (injected via surfnet_setAccount). */
 export const COMMITTED_VRF = new Uint8Array(32).fill(42);
-/** Per-juror stake (blueprint STAKE_AMOUNT = 5_000; > MIN_STAKE 1_000). */
+/** Per-juror stake (above MIN_STAKE 1_000). */
 export const STAKE_AMOUNT = 5_000n;
-/** Fee per juror (blueprint FEE_PER_JUROR = 1_000_000). */
+/** Fee per juror. */
 export const FEE_PER_JUROR = 1_000_000n;
-/** Panel size for round 0 with jurors_per_dispute=3 → panelSizeForRound(3,0)=3. */
+/** Panel size for round 0 (fixed INITIAL_NUM_JURORS = 3). */
 export const PANEL_SIZE = 3;
 /** Distinct jurors staked per dispute. */
 export const N_JURORS = 3;
 
 // ---------------------------------------------------------------------------
-// Byte/address helpers (used at 3+ call sites; name the encoding once)
+// Byte/address helpers
 // ---------------------------------------------------------------------------
 
 export function toHex(b: Uint8Array): string {
@@ -99,17 +87,10 @@ export function addressBytes(a: Address): Uint8Array {
   return new Uint8Array(getAddressEncoder().encode(a));
 }
 
-/** SPL Associated Token Account program ( ATA PDA program owner). */
+/** SPL Associated Token Account program. */
 const ASSOCIATED_TOKEN_PROGRAM_ID =
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 
-/**
- * Associated token account for (mint, owner). Derived as the canonical ATA PDA
- * `["wallet", token_program, "mint"]` under the Associated Token Program — the
- * same address spl-token's getAssociatedTokenAddress returns, but via Kit's
- * PDA derivation (avoids pulling @solana/web3.js v1 into the jest ESM graph).
- * Works for PDA owners (the Subaccord vault) since PDA derivation is seed-only.
- */
 export async function ataOf(mint: Address, owner: Address): Promise<Address> {
   const [ata] = await getProgramDerivedAddress({
     programAddress: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -122,16 +103,53 @@ export async function ataOf(mint: Address, owner: Address): Promise<Address> {
   return ata;
 }
 
-/** Build a per-signer Accord facade so its keypair is baked into built ixs. */
 export function roleAccord(env: TestEnv, signer: KeyPairSigner): Accord {
   return new Accord({ endpoint: env.rpcUrl, signer });
 }
 
 // ---------------------------------------------------------------------------
-// Clock warp — every warp computed from the LIVE clock (serial suite, global).
+// Off-chain accumulator tree tracker
+// ---------------------------------------------------------------------------
+
+class TreeTracker {
+  tree!: MerkleAccumulator;
+  depth: number;
+
+  constructor(depth: number) {
+    this.depth = depth;
+  }
+
+  async init() {
+    this.tree = await buildAccumulator([], this.depth);
+    return this;
+  }
+
+  async pathFor(index: number): Promise<MSTNode[]> {
+    return proofFor(this.tree, index);
+  }
+
+  async setLeaf(index: number, juror: Address, stake: bigint) {
+    const leaves = [...this.tree.leaves];
+    leaves[index] = { juror: addressBytes(juror), stake };
+    this.tree = await buildAccumulator(leaves, this.depth);
+  }
+
+  get rootHash(): Uint8Array {
+    return this.tree.rootHash;
+  }
+  get totalStake(): bigint {
+    return this.tree.rootSum;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clock warp
 // ---------------------------------------------------------------------------
 
 export async function warpTo(env: TestEnv, targetSec: bigint): Promise<void> {
+  // Read the ON-CHAIN clock — Surfpool's clock is not wall time, so deriving
+  // the delta from Date.now() would no-op the warp and close every commit/
+  // reveal window. See appeal.spec's local warpTo for the same pattern.
   const now = (await readClock(env)).unixTimestamp;
   const delta = BigInt(targetSec) - now + 1n;
   if (delta > 0n) await warpForwardSeconds(env, delta);
@@ -144,7 +162,8 @@ export async function warpTo(env: TestEnv, targetSec: bigint): Promise<void> {
 export interface JurorCtx {
   signer: KeyPairSigner;
   stakePda: Address;
-  /** Per-juror facade (signer baked into stake/commit/reveal ixs). */
+  /** Juror's staking-token ATA — reveal pays the participation fee here. */
+  jurorAta: Address;
   accord: Accord;
 }
 
@@ -156,20 +175,12 @@ export interface DrawFixture {
   subaccord: Address;
   pauseState: Address;
   jurors: JurorCtx[];
-  tree: MerkleSumTree;
-  /** hex(juror pubkey bytes) → JurorStake PDA, for mapping memberships back. */
+  tree: TreeTracker;
   jurorPdaByHex: Map<string, Address>;
 }
 
 const ZERO = "11111111111111111111111111111111" as Address;
-const EMPTY_TREE: MerkleSumTree = {
-  leaves: [],
-  nodes: [],
-  rootHash: new Uint8Array(32),
-  rootSum: 0n,
-};
 
-/** Offline-lane placeholder (env.up === false): specs gate each `it` on `up`. */
 function offlineFixture(env: TestEnv): DrawFixture {
   return {
     env,
@@ -179,15 +190,11 @@ function offlineFixture(env: TestEnv): DrawFixture {
     subaccord: ZERO,
     pauseState: ZERO,
     jurors: [],
-    tree: EMPTY_TREE,
+    tree: null as unknown as TreeTracker,
     jurorPdaByHex: new Map(),
   };
 }
 
-/**
- * Idempotent PauseState init. PauseState is the one singleton (shared across
- * every spec on this Surfnet); the first spec to run inits it, later specs skip.
- */
 export async function ensurePause(env: TestEnv): Promise<Address> {
   const [pausePda] = await findPauseStatePda();
   const acc = await env.rpc
@@ -203,27 +210,21 @@ export async function ensurePause(env: TestEnv): Promise<Address> {
   return pausePda;
 }
 
-/**
- * Arm the subaccord + juror pool + MST core (everything past pause). Reused by
- * the draw spec's beforeAll and the full-lifecycle spec's single `it` so the
- * crown spec can drive the entire state machine — including subaccord + stake —
- * in one test. `pauseState` must already be ensured (call {@link ensurePause}).
- */
 export async function armSubaccordAndJurors(
   env: TestEnv,
   pauseState: Address,
+  subaccordOverrides: Partial<CreateSubaccordArgs> = {},
 ): Promise<Omit<DrawFixture, "env" | "up">> {
   const { mint } = await createMint(env, 6);
 
-  // Subaccord — payer is the creator (immutable: authority = default pubkey).
-  const args = defaultSubaccordArgs(mint, env.payer.address, {
+  const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
     minStake: 1_000n,
-    jurorsPerDispute: N_JURORS,
     feePerJuror: FEE_PER_JUROR,
     maxAppeals: 3,
     reviewWindow: 604_800n,
     commitWindow: 172_800n,
     revealWindow: 172_800n,
+    ...subaccordOverrides,
   });
   const { instruction: createIx, subaccord } = await createSubaccord(
     env.accord.adapter,
@@ -233,16 +234,13 @@ export async function armSubaccordAndJurors(
   );
   await env.sendIx(createIx);
 
-
   const vault = await ataOf(mint, subaccord);
-  // bond (31M, returned on finalize) for multiple disputes in this spec.
   await setTokenBalance(env, env.payer.address, mint, 2_000_000_000n);
 
-  // Stake N distinct jurors. Each juror signs its own stake (per-juror facade)
-  // and is the rent payer for JurorStake + the vault ATA (first staker creates
-  // the vault). fundSigner airdrops SOL so the juror can cover that rent.
+  const tree = await new TreeTracker(4).init();
+
   const jurors: JurorCtx[] = [];
-  const jurorInputs: { juror: Uint8Array; stake: bigint }[] = [];
+  const jurorPdaByHex = new Map<string, Address>();
   for (let i = 0; i < N_JURORS; i++) {
     const signer = await fundSigner(env);
     await setTokenBalance(env, signer.address, mint, STAKE_AMOUNT);
@@ -252,6 +250,9 @@ export async function armSubaccordAndJurors(
       subaccord,
       juror: signer.address,
     });
+
+    // Accumulator path for index i against the current tree.
+    const path = await tree.pathFor(i);
     const stakeIx = stake(
       jurorAccord.adapter,
       env.programId,
@@ -262,31 +263,21 @@ export async function armSubaccordAndJurors(
         jurorStake: stakePda,
         stakingToken: mint,
         jurorTokenAccount: jurorAta,
-        vault,
+        stakeVault: vault,
       },
       STAKE_AMOUNT,
+      path,
     );
     await env.sendIx(stakeIx);
-    jurors.push({ signer, stakePda, accord: jurorAccord });
-    jurorInputs.push({ juror: addressBytes(signer.address), stake: STAKE_AMOUNT });
-  }
+    await tree.setLeaf(i, signer.address, STAKE_AMOUNT);
 
-  const tree = await buildMst(jurorInputs);
-
-  const jurorPdaByHex = new Map<string, Address>();
-  for (const j of jurors) {
-    jurorPdaByHex.set(toHex(addressBytes(j.signer.address)), j.stakePda);
+    jurors.push({ signer, stakePda, jurorAta, accord: jurorAccord });
+    jurorPdaByHex.set(toHex(addressBytes(signer.address)), stakePda);
   }
 
   return { mint, vault, subaccord, pauseState, jurors, tree, jurorPdaByHex };
 }
 
-/**
- * Arm the shared draw fixture (env + pause + subaccord + jurors + MST). Use in
- * a spec's `beforeAll`. For the full-lifecycle crown spec that wants to drive
- * subaccord + stake inside its own `it`, call `createTestEnv` + `ensurePause` +
- * {@link armSubaccordAndJurors} directly instead.
- */
 export async function setupDrawFixture(): Promise<DrawFixture> {
   const env = await createTestEnv();
   if (!env.up) return offlineFixture(env);
@@ -296,28 +287,20 @@ export async function setupDrawFixture(): Promise<DrawFixture> {
 }
 
 // ---------------------------------------------------------------------------
-// Per-dispute arm: create_dispute → post_snapshot → warp → finalize → inject VRF
+// Per-dispute arm: create_dispute → injectCommittedVrf (freezes root)
 // ---------------------------------------------------------------------------
 
 export interface ArmedDispute {
   dispute: Address;
-  snapshot: Address;
-  /** 32-byte encoding of the dispute PDA (input to vrfSeed). */
   disputeBytes: Uint8Array;
 }
 
-/**
- * Arm a fresh dispute on the fixture's subaccord up to (but NOT including) draw:
- * create_dispute (filer=payer) → post_snapshot → warp past the 1-day challenge
- * window → finalize_snapshot → injectCommittedVrf. Returns the dispute + snapshot
- * PDAs ready for resolvePanel + draw.
- */
 export async function armDispute(
   fx: DrawFixture,
   nonce: bigint,
 ): Promise<ArmedDispute> {
-  const { env, subaccord, mint, vault, tree, pauseState } = fx;
-  const fee = requiredFee(N_JURORS, FEE_PER_JUROR);
+  const { env, subaccord, mint, vault, pauseState } = fx;
+  const fee = requiredFee(FEE_PER_JUROR);
   if (fee === null) throw new Error("fee overflow");
 
   const filerAta = await ataOf(mint, env.payer.address);
@@ -327,9 +310,9 @@ export async function armDispute(
     {
       filer: env.payer.address,
       subaccord,
-      stakingToken: mint,
+      feeToken: mint,
       filerTokenAccount: filerAta,
-      vault,
+      feeVault: vault,
       pauseState,
     },
     {
@@ -342,132 +325,111 @@ export async function armDispute(
   );
   await env.sendIx(cdIx);
 
-  const [snapshot] = await findSnapshotPda({ dispute, roundIdx: 0 });
-
-  const postIx = postSnapshot(
-    env.accord.adapter,
-    env.programId,
-    {
-      signer: env.payer.address,
-      subaccord,
-      dispute,
-      snapshot,
-      stakingToken: mint,
-      vault,
-      posterTokenAccount: filerAta,
-    },
-    tree,
+  // Inject VRF + freeze the accumulator root (the Subaccord's live root at
+  // callback time — all draw_seat calls select against this frozen root).
+  await injectCommittedVrf(
+    env,
+    dispute,
+    COMMITTED_VRF,
+    fx.tree.rootHash,
+    fx.tree.totalStake,
   );
-  await env.sendIx(postIx);
 
-  // Warp past the snapshot challenge deadline (read from the posted snapshot).
-  const snap = await fetchDecoded(env, snapshot, getSnapshotDecoder());
-  if (!snap) throw new Error("snapshot not found after post_snapshot");
-  await warpTo(env, snap.challengeDeadline + 1n);
-
-  const finIx = finalizeSnapshot(
-    env.accord.adapter,
-    env.programId,
-    {
-      signer: env.payer.address,
-      subaccord,
-      dispute,
-      snapshot,
-      stakingToken: mint,
-      vault,
-      posterTokenAccount: filerAta,
-    },
-  );
-  await env.sendIx(finIx);
-
-  await injectCommittedVrf(env, dispute, COMMITTED_VRF);
-
-  return { dispute, snapshot, disputeBytes: addressBytes(dispute) };
+  return { dispute, disputeBytes: addressBytes(dispute) };
 }
 
 // ---------------------------------------------------------------------------
-// Draw helpers
+// Draw helpers (accumulator + draw_seat with deterministic collision re-roll)
 // ---------------------------------------------------------------------------
 
-/** Resolve the first distinct-panel draw_attempt over the fixture's MST. */
+/**
+ * Resolve the full N-seat panel using deterministic collision re-roll
+ * (bean accord-tzo0). Returns SeatMembership[] with the correct `retries`
+ * embedded per seat.
+ */
 export async function resolveDistinctPanel(
   fx: DrawFixture,
   armed: ArmedDispute,
-): Promise<{ drawAttempt: number; memberships: ByteMembership[] }> {
-  return resolvePanel(COMMITTED_VRF, armed.disputeBytes, 0, PANEL_SIZE, fx.tree);
-}
+): Promise<SeatMembership[]> {
+  const { tree, jurorPdaByHex } = fx;
+  const memberships: SeatMembership[] = [];
+  const drawnJurors: Uint8Array[] = [];
 
-/** Find the first draw_attempt whose sortition naturally collides (≥2 same juror). */
-export async function findCollisionPanel(
-  fx: DrawFixture,
-  armed: ArmedDispute,
-): Promise<{ drawAttempt: number; memberships: ByteMembership[] }> {
-  for (let attempt = 0; attempt < 4096; attempt++) {
-    const slots = await drawSlots(
+  for (let seat = 0; seat < PANEL_SIZE; seat++) {
+    const resolved = await resolveSeat(
       COMMITTED_VRF,
       armed.disputeBytes,
       0,
-      attempt,
-      PANEL_SIZE,
-      fx.tree.rootSum,
+      seat,
+      tree.tree,
+      drawnJurors,
     );
-    const memberships = buildMemberships(fx.tree, slots);
-    if (!isDistinctPanel(memberships)) return { drawAttempt: attempt, memberships };
+    const pda = jurorPdaByHex.get(toHex(resolved.leaf.juror));
+    if (!pda)
+      throw new Error(
+        `no JurorStake PDA for juror ${toHex(resolved.leaf.juror)}`,
+      );
+
+    memberships.push({
+      leaf: resolved.leaf,
+      index: resolved.index,
+      proof: resolved.proof,
+      jurorStake: pda,
+      retries: resolved.retries,
+    });
+    drawnJurors.push(resolved.leaf.juror);
   }
-  throw new Error("no collision draw_attempt found");
+  return memberships;
 }
 
-/** Map a panel's memberships to their JurorStake PDAs (in membership order). */
 export function jurorStakeAccountsFor(
-  fx: DrawFixture,
-  memberships: ByteMembership[],
+  _fx: DrawFixture,
+  memberships: SeatMembership[],
 ): Address[] {
-  return memberships.map((m) => {
-    const pda = fx.jurorPdaByHex.get(toHex(m.leaf.juror));
-    if (!pda) throw new Error(`no JurorStake PDA for juror ${toHex(m.leaf.juror)}`);
-    return pda;
-  });
+  return memberships.map((m) => m.jurorStake);
 }
 
 /**
- * Submit a `draw` (caller = payer, permissionless). Returns the round-0 PDA.
- * The memberships must already be valid — distinct for success, or colliding
- * for the DuplicateJuror revert case (the SDK rejects mismatched array lengths
- * up front; the chain checks distinctness before touching remaining_accounts).
+ * Submit draw_seat for each seat in the panel. Returns the round PDA.
  */
 export async function submitDraw(
   fx: DrawFixture,
   armed: ArmedDispute,
-  drawAttempt: number,
-  memberships: ByteMembership[],
-  jurorStakeAccounts: Address[],
+  memberships: SeatMembership[],
 ): Promise<Address> {
-  const { env, subaccord } = fx;
-  const [roundPda] = await findRoundPda({ dispute: armed.dispute, roundIdx: 0 });
-  const ix = draw(
-    env.accord.adapter,
-    env.programId,
-    {
-      caller: env.payer.address,
-      subaccord,
-      dispute: armed.dispute,
-      snapshot: armed.snapshot,
-    },
-    roundPda,
-    drawAttempt,
-    memberships,
-    jurorStakeAccounts,
-  );
-  await env.sendIx(ix);
+  const { env } = fx;
+  const [roundPda] = await findRoundPda({
+    dispute: armed.dispute,
+    roundIdx: 0,
+  });
+
+  for (let seat = 0; seat < memberships.length; seat++) {
+    const m = memberships[seat]!;
+    const ix = drawSeat(
+      env.accord.adapter,
+      env.programId,
+      {
+        caller: env.payer.address,
+        subaccord: fx.subaccord,
+        dispute: armed.dispute,
+      },
+      roundPda,
+      seat,
+      m,
+    );
+    await env.sendIx(ix);
+  }
   return roundPda;
 }
 
 // ---------------------------------------------------------------------------
-// Account readers (decoded views for assertions)
+// Account readers
 // ---------------------------------------------------------------------------
 
 export interface RoundView {
   jurorCount: number;
+  commitCount: number;
+  revealCount: number;
   jurors: Address[];
   result: number;
   reviewEnd: bigint;
@@ -483,6 +445,8 @@ export async function readRound(
   if (!d) return null;
   return {
     jurorCount: d.jurorCount,
+    commitCount: d.commitCount,
+    revealCount: d.revealCount,
     jurors: [...d.jurors].slice(0, d.jurorCount) as Address[],
     result: d.result,
     reviewEnd: d.reviewEnd,
@@ -497,7 +461,6 @@ export async function readDisputeState(
 ): Promise<number | null> {
   const d = await fetchDecoded(env, dispute, getDisputeDecoder());
   if (!d) return null;
-  // DisputeState is a numeric enum (getEnumDecoder); the raw value is the tag.
   return Number(d.state as number);
 }
 
@@ -507,8 +470,6 @@ export async function readDisputeFinalRuling(
 ): Promise<number | null> {
   const d = await fetchDecoded(env, dispute, getDisputeDecoder());
   if (!d) return null;
-  // final_ruling is a u8 on-chain (u8::MAX sentinel = no ruling yet, mirroring
-  // Round). The generated decoder yields a plain number.
   const fr = d.finalRuling;
   return fr === 255 ? null : Number(fr);
 }

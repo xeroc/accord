@@ -1,11 +1,12 @@
-// sdk-pipeline.spec.ts — the jest ↔ @solana/kit ↔ @accord/sdk pipeline smoke.
+// sdk-pipeline.spec.ts — the jest ↔ @solana/kit ↔ @useaccord/sdk pipeline smoke.
 //
-// This is the foundational check (ADR-0010) that the integration harness can
-// import the SDK, the SDK's Kit-shaped client resolves under ESM jest, and the
-// Accord facade exposes a wired adapter + bound methods namespace. It does NOT
-// touch a validator — the on-chain pipeline (program deploy, health, lifecycle)
-// is exercised by the sibling lifecycle specs, which are pending the canonical
-// deploy keypair (veridao-mcvw follow-up) + the Surfpool VRF-oracle decision.
+// Foundational check (ADR-0010) that the harness imports the SDK, the Kit
+// client resolves under ESM jest, and the Accord facade exposes a wired
+// adapter + bound methods namespace. Does NOT touch a validator.
+//
+// ADR-0012: the snapshot trio (post/challenge/finalize) and the one-shot
+// `draw` are gone; `stake`/`unstake` thread an accumulator `path`; `drawSeat`
+// fills the panel one seat per tx; `awaitCommittedVrf` polls the frozen root.
 import {
   Accord,
   ACCORD_PROGRAM_ID,
@@ -13,7 +14,7 @@ import {
   createAccordMethods,
   type AccordAdapter,
   type AccordMethods,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import type { Address, TransactionSigner } from "@solana/kit";
 
 /** Minimal offline TransactionSigner — no signing happens in this smoke. */
@@ -27,8 +28,10 @@ function stubSigner(): TransactionSigner {
 
 describe("jest ↔ kit ↔ sdk pipeline", () => {
   it("imports the SDK and exposes the canonical program id", () => {
+    // The keypair (target/deploy/accord-keypair.json) is the deploy truth;
+    // declare_id!, Anchor.toml, and ACCORD_PROGRAM_ID are all synced to it.
     expect(ACCORD_PROGRAM_ID).toBe(
-      "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe",
+      "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi",
     );
   });
 
@@ -50,17 +53,34 @@ describe("jest ↔ kit ↔ sdk pipeline", () => {
       signer: stubSigner(),
     });
     const adapter: AccordAdapter = accord.adapter;
-    // One method per seam group — presence proves the concrete wiring landed.
-    expect(typeof adapter.buildCreateDispute).toBe("function");
-    expect(typeof adapter.fetchDispute).toBe("function");
-    expect(typeof adapter.buildCreateSubaccord).toBe("function");
-    expect(typeof adapter.buildStake).toBe("function");
-    expect(typeof adapter.buildPostSnapshot).toBe("function");
-    expect(typeof adapter.buildRequestVrf).toBe("function");
-    expect(typeof adapter.buildDraw).toBe("function");
-    expect(typeof adapter.buildCommit).toBe("function");
-    expect(typeof adapter.buildAppeal).toBe("function");
-    expect(typeof adapter.encodeAddress).toBe("function");
+    // One builder per instruction group + the fetchers — presence proves the
+    // concrete wiring landed (snapshot trio + one-shot draw removed in ADR-0012).
+    for (const name of [
+      "buildCreateDispute",
+      "fetchDispute",
+      "buildCreateSubaccord",
+      "buildStake",
+      "buildRequestWithdraw",
+      "buildWithdraw",
+      "buildReconcileStake",
+      "buildSettleRound",
+      "buildCancelDispute",
+      "fetchJurorStake",
+      "buildRequestVrf",
+      "buildDrawSeat",
+      "fetchCommittedVrf",
+      "buildCommit",
+      "buildReveal",
+      "buildFinalizeRound",
+      "buildFinalizeDispute",
+      "buildAppeal",
+      "buildClaimAppealRefund",
+      "encodeAddress",
+    ] as const) {
+      expect(typeof (adapter as unknown as Record<string, unknown>)[name]).toBe(
+        "function",
+      );
+    }
   });
 
   it("encodeAddress returns the 32-byte pubkey encoding", () => {
@@ -73,7 +93,7 @@ describe("jest ↔ kit ↔ sdk pipeline", () => {
     expect(bytes.length).toBe(32);
   });
 
-  it("exposes the bound methods namespace covering all eight groups", () => {
+  it("exposes the bound methods namespace (post-ADR-0012 surface)", () => {
     const accord = new Accord({
       endpoint: "http://127.0.0.1:8899",
       signer: stubSigner(),
@@ -84,12 +104,14 @@ describe("jest ↔ kit ↔ sdk pipeline", () => {
       "getRuling",
       "createSubaccord",
       "stake",
-      "unstake",
-      "postSnapshot",
-      "challengeSnapshot",
-      "finalizeSnapshot",
+      "requestWithdraw",
+      "withdraw",
+      "reconcileStake",
+      "settleRound",
+      "cancelDispute",
       "requestVrf",
-      "draw",
+      "awaitCommittedVrf",
+      "drawSeat",
       "commit",
       "reveal",
       "finalizeRound",

@@ -52,15 +52,9 @@ import {
 // Hard-coded (deterministic over the type name) so decode is sync + zero-alloc.
 // ---------------------------------------------------------------------------
 
-const DISCRIM_DISPUTE_CREATED = new Uint8Array([
-  0xfe, 0xca, 0x33, 0x7b, 0x64, 0x98, 0x89, 0x5d,
-]);
-const DISCRIM_JURORS_DRAWN = new Uint8Array([
-  0x98, 0x69, 0x4a, 0xe2, 0xb5, 0xde, 0x89, 0x41,
-]);
-const DISCRIM_RULING_FINALIZED = new Uint8Array([
-  0xbf, 0x58, 0xc2, 0x3f, 0x8e, 0x29, 0xa8, 0x46,
-]);
+const DISCRIM_DISPUTE_CREATED = new Uint8Array([0xfe, 0xca, 0x33, 0x7b, 0x64, 0x98, 0x89, 0x5d]);
+const DISCRIM_JURORS_DRAWN = new Uint8Array([0x98, 0x69, 0x4a, 0xe2, 0xb5, 0xde, 0x89, 0x41]);
+const DISCRIM_RULING_FINALIZED = new Uint8Array([0xbf, 0x58, 0xc2, 0x3f, 0x8e, 0x29, 0xa8, 0x46]);
 
 // ---------------------------------------------------------------------------
 // Typed event payloads — narrow views of the on-chain events. Fields the daemon
@@ -99,8 +93,7 @@ export interface RulingFinalizedEvent {
 }
 
 /** Union of the three events the daemon subscribes to. */
-export type AccordEvent =
-  DisputeCreatedEvent | JurorsDrawnEvent | RulingFinalizedEvent;
+export type AccordEvent = DisputeCreatedEvent | JurorsDrawnEvent | RulingFinalizedEvent;
 
 /**
  * Best-effort handler set. Any handler that throws is swallowed (and reported
@@ -158,9 +151,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
  * tracks (or the payload is malformed). Never throws — a missed hint is a
  * no-op; the reader remains the source of truth.
  */
-export function decodeAccordEvent(
-  record: ReadonlyUint8Array,
-): AccordEvent | null {
+export function decodeAccordEvent(record: ReadonlyUint8Array): AccordEvent | null {
   if (record.length < 8) return null;
   const disc = record.subarray(0, 8) as Uint8Array;
   const payload = record.subarray(8) as Uint8Array;
@@ -214,9 +205,7 @@ export function parseAccordLog(line: string): AccordEvent | null {
  * A single transaction can carry multiple events (e.g. a `draw` that also
  * finalizes a prior round); each is yielded independently, in log order.
  */
-export function parseAccordLogs(
-  logs: readonly string[],
-): readonly AccordEvent[] {
+export function parseAccordLogs(logs: readonly string[]): readonly AccordEvent[] {
   const out: AccordEvent[] = [];
   for (const line of logs) {
     const ev = parseAccordLog(line);
@@ -268,11 +257,7 @@ export async function subscribeAccordEvents(
 }
 
 /** Route one typed event to its handler, swallowing any throw. */
-function dispatch(
-  handlers: AccordEventHandlers,
-  event: AccordEvent,
-  raw: string,
-): void {
+function dispatch(handlers: AccordEventHandlers, event: AccordEvent, raw: string): void {
   try {
     switch (event.kind) {
       case "DisputeCreated":

@@ -69,7 +69,7 @@ export type FinalizeDisputeInstruction<
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
       TAccountRound extends string
-        ? ReadonlyAccount<TAccountRound>
+        ? WritableAccount<TAccountRound>
         : TAccountRound,
       ...TRemainingAccounts,
     ]
@@ -145,7 +145,7 @@ export function getFinalizeDisputeInstruction<
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
-    round: { value: input.round ?? null, isWritable: false },
+    round: { value: input.round ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,

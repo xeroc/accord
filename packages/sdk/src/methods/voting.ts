@@ -34,13 +34,26 @@ const SEED_ROUND = new Uint8Array([114, 111, 117, 110, 100]); // "round"
 /** Commit-hash preimage length: 1 vote byte + 32 salt + 32 juror pubkey. */
 const COMMIT_PREIMAGE_LEN = 1 + 32 + 32;
 
-/** Shared accounts every voting instruction takes (juror or cranker signs). */
+/**
+ * Shared accounts every voting instruction takes (juror or cranker signs).
+ *
+ * `commit`/`finalizeRound`/`finalizeDispute` use only the first four; `reveal`
+ * also needs the token accounts (it pays the participation fee on reveal —
+ * CONCEPT-REVIEW Ugly 5). `stakingToken`/`jurorTokenAccount`/`vault` are
+ * optional for the non-reveal instructions; `tokenProgram` is a fixed constant.
+ */
 export interface VotingAccounts {
   /** Commit/reveal: the drawn juror. finalize_*: any cranker. Always a signer. */
   signer: Address;
   subaccord: Address;
   dispute: Address;
   round: Address;
+  /** reveal only — the staking mint (fee source denomination). */
+  stakingToken?: Address;
+  /** reveal only — juror's ATA (fee destination). */
+  jurorTokenAccount?: Address;
+  /** reveal only — Subaccord PDA's vault ATA (fee source). */
+  vault?: Address;
 }
 
 /** A juror's vote + salt (the reveal preimage). */
@@ -123,9 +136,8 @@ export async function findRoundPda(
   dispute: Address,
   roundIdx: number,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } = await import(
-    "@solana/kit"
-  );
+  const { getAddressEncoder, getProgramDerivedAddress } =
+    await import("@solana/kit");
   const disputeBytes = new Uint8Array(getAddressEncoder().encode(dispute));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -154,12 +166,19 @@ export interface AccordVotingClient {
   buildFinalizeRound(input: {
     programId: Address;
     accounts: VotingAccounts;
+    remainingAccounts?: Address[];
   }): Instruction;
   buildFinalizeDispute(input: {
     programId: Address;
     accounts: VotingAccounts;
     /** remaining_accounts: drawn JurorStake PDAs (+ AppealBond PDAs). */
     remainingAccounts: Address[];
+  }): Instruction;
+  /** `redraw` (ADR-0021) — see {@link redraw}. */
+  buildRedraw(input: {
+    programId: Address;
+    accounts: RedrawAccounts;
+    remainingAccounts?: Address[];
   }): Instruction;
   /** Encode a juror Address to its 32-byte pubkey (Kit `getAddressEncoder`). */
   encodeAddress(address: Address): Uint8Array;
@@ -207,6 +226,16 @@ export function reveal(
     throw new Error(`InvalidVote: vote must fit a u8, got ${args.vote}`);
   }
   assertValidSalt(args.salt);
+  // reveal pays the participation fee (Ugly 5): needs the token accounts.
+  if (
+    !accounts.stakingToken ||
+    !accounts.jurorTokenAccount ||
+    !accounts.vault
+  ) {
+    throw new Error(
+      "InvalidRevealAccounts: reveal requires stakingToken, jurorTokenAccount, vault",
+    );
+  }
   return client.buildReveal({
     programId,
     accounts,
@@ -218,14 +247,17 @@ export function reveal(
 /**
  * Build the permissionless `finalize_round` crank (lib.rs:1136). After the
  * reveal window elapses, anyone can advance the dispute to `RoundResolved` with
- * the plurality winner written to `round.result`.
+ * the plurality winner written to `round.result`. ADR-0020: credits
+ * `fees_earned` to each revealer — pass the panel's JurorStake PDAs as
+ * `remainingAccounts` when `fee_per_juror > 0`.
  */
 export function finalizeRound(
   client: AccordVotingClient,
   programId: Address,
   accounts: VotingAccounts,
+  remainingAccounts: Address[] = [],
 ): Instruction {
-  return client.buildFinalizeRound({ programId, accounts });
+  return client.buildFinalizeRound({ programId, accounts, remainingAccounts });
 }
 
 /**
@@ -249,4 +281,45 @@ export function finalizeDispute(
     accounts,
     remainingAccounts,
   });
+}
+
+// --- Shortfall redraw (ADR-0021) -------------------------------------------
+
+/**
+ * Accounts for `redraw` (lib.rs). The Fail branch refunds the filer from
+ * `feeVault`, so it carries the filer's `feeToken` ATA + the vault (validated
+ * but unused on the Redraw branch).
+ */
+export interface RedrawAccounts {
+  /** Permissionless cranker. */
+  caller: Address;
+  subaccord: Address;
+  dispute: Address;
+  /** The shortfall round (`dispute.current_round`). */
+  round: Address;
+  feeToken: Address;
+  /** Filer's `feeToken` ATA — refund destination on exhaustion. */
+  filerTokenAccount: Address;
+  feeVault: Address;
+  tokenProgram: Address;
+}
+
+/**
+ * Build the permissionless `redraw` crank (lib.rs, ADR-0021). Only callable
+ * from `RedrawEligible`. Slashes no-shows into `stake_delta`, bumps
+ * `round.draw_attempt` (orthogonal to `round_idx` — same panel size, no appeal
+ * consumed), clears the round → `Created`; on `draw_attempt + 1 ≥
+ * max_draw_attempts` → `Failed` (filer `fee_paid` refunded, slashes stand).
+ *
+ * `remainingAccounts` = the round's drawn `JurorStake` PDAs (panel); on the Fail
+ * branch additionally prior-round `Round` PDAs + their `JurorStake` PDAs + the
+ * dispute's `AppealBond` PDAs (same layout as `cancel_dispute`).
+ */
+export function redraw(
+  client: AccordVotingClient,
+  programId: Address,
+  accounts: RedrawAccounts,
+  remainingAccounts: Address[] = [],
+): Instruction {
+  return client.buildRedraw({ programId, accounts, remainingAccounts });
 }

@@ -19,7 +19,7 @@ let dispute = accord::create_dispute(
     vec![option_a_hash, option_b_hash], // 2+ option hashes
     evidence_hash,                       // commitment to the evidence
     nonce,                               // caller-chosen, for PDA uniqueness
-    fee,                                 // jurors_per_dispute * fee_per_juror
+    fee,                                 // INITIAL_NUM_JURORS (3) * fee_per_juror
 )?;
 
 // 2. Read the ruling (lazy — call whenever, after finalization)
@@ -33,7 +33,7 @@ That's it. The Accord handles juror selection, voting, and finalization.
 ## TypeScript SDK
 
 ```typescript
-import { Accord } from "@accord/sdk";
+import { Accord } from "@useaccord/sdk";
 
 // File a dispute
 const { dispute } = await accord.createDispute({
@@ -54,8 +54,8 @@ if (ruling !== null) {
 ## Lifecycle
 
 ```
-create_dispute → post_snapshot → finalize_snapshot → request_vrf
-  → commit_vrf_callback → draw → commit → reveal → finalize_round
+create_dispute → request_vrf → commit_vrf_callback (freezes root)
+  → draw_seat × N → commit → reveal → finalize_round
   → finalize_dispute → get_ruling
 ```
 

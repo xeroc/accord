@@ -25,7 +25,7 @@ export async function findAppealBondPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe" as Address<"RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe">,
+    programAddress = "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi" as Address<"426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi">,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

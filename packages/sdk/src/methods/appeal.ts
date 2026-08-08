@@ -26,7 +26,7 @@ import { MAX_JURORS, panelSizeForRound } from "../constants.js";
 
 export {
   MAX_JURORS,
-  APPEAL_WINDOW_SECS,
+  DEFAULT_APPEAL_WINDOW_SECS,
   panelSizeForRound,
 } from "../constants.js";
 
@@ -72,12 +72,11 @@ export interface AppealCost {
  * `total = fee_new + bond`). Returns `null` if the panel math overflows.
  */
 export function appealCost(
-  jurorsPerDispute: number,
   currentRound: number,
   feePerJuror: bigint,
 ): AppealCost | null {
   const newRound = currentRound + 1;
-  const panel = panelSizeForRound(jurorsPerDispute, newRound);
+  const panel = panelSizeForRound(newRound);
   if (panel === null) return null;
   const fee = BigInt(panel) * feePerJuror;
   const bond = fee;
@@ -136,9 +135,9 @@ export interface AppealAccounts {
   round: Address;
   /** AppealBond PDA for the NEW round (`["bond", dispute, current_round+1]`). */
   appealBond: Address;
-  stakingToken: Address;
+  feeToken: Address;
   appellantTokenAccount: Address;
-  vault: Address;
+  feeVault: Address;
 }
 
 /** Accounts for `claim_appeal_refund`. */
@@ -149,10 +148,10 @@ export interface ClaimRefundAccounts {
   dispute: Address;
   /** AppealBond PDA for `roundIdx` (the round the appeal opened). */
   appealBond: Address;
-  stakingToken: Address;
+  feeToken: Address;
   /** Appellant's ATA — sweep destination (owner checked on-chain). */
   claimantTokenAccount: Address;
-  vault: Address;
+  feeVault: Address;
 }
 
 /**

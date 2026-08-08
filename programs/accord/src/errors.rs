@@ -8,6 +8,8 @@ pub enum AccordError {
     // --- authority / timelock (ADR-0005) ---
     #[msg("Signer is not the Subaccord authority.")]
     Unauthorized,
+    #[msg("Dispute does not belong to this Subaccord (cross-pool substitution rejected).")]
+    SubaccordMismatch,
     #[msg("Subaccord is immutable (authority == default).")]
     ImmutableSubaccord,
     #[msg("Timelock has not elapsed yet.")]
@@ -36,8 +38,14 @@ pub enum AccordError {
     StakeLocked,
     #[msg("Amount must be greater than zero.")]
     InvalidAmount,
-    #[msg("Withdrawal exceeds the Juror's staked balance.")]
+    #[msg("Withdrawal timelock has not elapsed yet.")]
+    WithdrawalTooEarly,
+    #[msg("No pending withdrawal to execute.")]
+    NoPendingWithdrawal,
+    #[msg("Withdrawal exceeds the Juror's free stake (amount - slash_reserve).")]
     InsufficientBalance,
+    #[msg("Settle pending reward/slash first: call reconcile_stake before request_withdraw.")]
+    PendingSettlement,
 
     // --- dispute intake ---
     #[msg("Subaccord has fewer active distinct stakers than the required panel size.")]
@@ -46,20 +54,14 @@ pub enum AccordError {
     InvalidOptions,
     #[msg("Dispute is not in the required state for this instruction.")]
     InvalidState,
-    #[msg("Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror).")]
+    #[msg("Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).")]
     FeeMismatch,
 
-    // --- snapshot (ADR-0003) ---
-    #[msg("Snapshot is not finalized (challenge window still open or voided).")]
-    SnapshotNotFinalized,
-    #[msg("Snapshot was voided by a successful fraud proof.")]
-    SnapshotVoided,
-    #[msg("Snapshot challenge window has not yet elapsed.")]
-    SnapshotChallengeWindowOpen,
-    #[msg("Snapshot challenge window has expired.")]
-    SnapshotChallengeWindowExpired,
-    #[msg("Fraud proof does not invalidate the posted Merkle root.")]
-    FraudProofInvalid,
+    // --- accumulator (ADR-0012) ---
+    #[msg("Accumulator Merkle path does not authenticate against the stored root.")]
+    InvalidMerklePath,
+    #[msg("Accumulator tree is full (no free leaf within the configured depth).")]
+    TreeFull,
 
     // --- draw ---
     #[msg("Draw selected a duplicate Juror.")]
@@ -69,20 +71,14 @@ pub enum AccordError {
     #[msg("Number of juror memberships does not match the required panel size.")]
     InvalidPanelSize,
     #[msg(
-        "Drawn juror's live stake is below the snapshot leaf's claim (inflation guard, ADR-0008)."
+        "Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012)."
     )]
     InflatedStake,
     #[msg("Submitted membership does not match the VRF-derived sortition selection (ADR-0009).")]
     SortitionMismatch,
-    #[msg("Snapshot tree is not sorted by juror pubkey (ADR-0009 predicate 5).")]
-    TreeNotSorted,
-    #[msg(
-        "Omission proof is invalid (non-adjacent leaves, wrong order, or witness stake changed since anchor)."
-    )]
-    OmissionProofInvalid,
     #[msg("VRF result already committed for this dispute.")]
     VrfAlreadyCommitted,
-    #[msg("No VRF result committed for this dispute; call commit_vrf first.")]
+    #[msg("No VRF result committed for this dispute; the root is not yet frozen.")]
     VrfNotCommitted,
 
     // --- voting ---
@@ -114,6 +110,8 @@ pub enum AccordError {
     MaxAppealsLimitExceeded,
     #[msg("Appeal window has closed; the dispute can only be finalized.")]
     AppealWindowClosed,
+    #[msg("Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS).")]
+    AppealWindowTooShort,
 
     // --- finalization ---
     #[msg("Round cannot be finalized yet (window not elapsed).")]
@@ -124,4 +122,32 @@ pub enum AccordError {
     // --- arithmetic ---
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
+
+    // --- multi-round settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti) ---
+    #[msg("Round has already been settled.")]
+    RoundAlreadySettled,
+    #[msg("Round index out of range for settlement (must be < current_round).")]
+    RoundNotSettlable,
+
+    // --- cancel / Failed state (Ugly 4) ---
+    #[msg("Dispute is in terminal Failed state.")]
+    DisputeFailed,
+    #[msg("Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.")]
+    CancelTooEarly,
+
+    // --- draw (bean accord-tzo0) ---
+    #[msg("Sortition retries exceeded the on-chain bound; the pool may be too concentrated.")]
+    MaxRetriesExceeded,
+
+    // --- two-mint economics (ADR-0020) ---
+    #[msg("Juror has no earned fees to withdraw.")]
+    NoFeesEarned,
+
+    // --- reveal quorum + shortfall redraw (ADR-0021) ---
+    #[msg("Dispute is not in RedrawEligible state; redraw is not available.")]
+    NotRedrawEligible,
+    #[msg("Subaccord max_draw_attempts exceeds the program ceiling.")]
+    MaxDrawAttemptsLimitExceeded,
+    #[msg("Reveal threshold (bps) must be <= 10_000.")]
+    InvalidThreshold,
 }

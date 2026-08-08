@@ -60,9 +60,9 @@ export type ClaimAppealRefundInstruction<
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountAppealBond extends string | AccountMeta<string> = string,
-  TAccountStakingToken extends string | AccountMeta<string> = string,
+  TAccountFeeToken extends string | AccountMeta<string> = string,
   TAccountClaimantTokenAccount extends string | AccountMeta<string> = string,
-  TAccountVault extends string | AccountMeta<string> = string,
+  TAccountFeeVault extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -83,15 +83,15 @@ export type ClaimAppealRefundInstruction<
       TAccountAppealBond extends string
         ? WritableAccount<TAccountAppealBond>
         : TAccountAppealBond,
-      TAccountStakingToken extends string
-        ? ReadonlyAccount<TAccountStakingToken>
-        : TAccountStakingToken,
+      TAccountFeeToken extends string
+        ? ReadonlyAccount<TAccountFeeToken>
+        : TAccountFeeToken,
       TAccountClaimantTokenAccount extends string
         ? WritableAccount<TAccountClaimantTokenAccount>
         : TAccountClaimantTokenAccount,
-      TAccountVault extends string
-        ? WritableAccount<TAccountVault>
-        : TAccountVault,
+      TAccountFeeVault extends string
+        ? WritableAccount<TAccountFeeVault>
+        : TAccountFeeVault,
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
@@ -138,9 +138,9 @@ export type ClaimAppealRefundAsyncInput<
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
   TAccountAppealBond extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountClaimantTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
@@ -148,13 +148,13 @@ export type ClaimAppealRefundAsyncInput<
   dispute: Address<TAccountDispute>;
   /** The specific appeal bond being claimed. */
   appealBond?: Address<TAccountAppealBond>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   /**
    * The appellant's ATA — sweep destination. Any caller may pass it; the
    * handler rejects it unless its owner matches the bond's recorded appellant.
    */
   claimantTokenAccount: Address<TAccountClaimantTokenAccount>;
-  vault?: Address<TAccountVault>;
+  feeVault?: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   roundIdx: ClaimAppealRefundInstructionDataArgs["roundIdx"];
 };
@@ -164,9 +164,9 @@ export async function getClaimAppealRefundInstructionAsync<
   TAccountSubaccord extends string,
   TAccountDispute extends string,
   TAccountAppealBond extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountClaimantTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -175,9 +175,9 @@ export async function getClaimAppealRefundInstructionAsync<
     TAccountSubaccord,
     TAccountDispute,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountClaimantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -188,9 +188,9 @@ export async function getClaimAppealRefundInstructionAsync<
     TAccountSubaccord,
     TAccountDispute,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountClaimantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >
 > {
@@ -203,12 +203,12 @@ export async function getClaimAppealRefundInstructionAsync<
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     claimantTokenAccount: {
       value: input.claimantTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -229,8 +229,8 @@ export async function getClaimAppealRefundInstructionAsync<
       roundIdx: getNonNullResolvedInstructionInput("roundIdx", args.roundIdx),
     });
   }
-  if (!accounts.vault.value) {
-    accounts.vault.value = await getProgramDerivedAddress({
+  if (!accounts.feeVault.value) {
+    accounts.feeVault.value = await getProgramDerivedAddress({
       programAddress:
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">,
       seeds: [
@@ -249,8 +249,8 @@ export async function getClaimAppealRefundInstructionAsync<
         ),
         getAddressEncoder().encode(
           getAddressFromResolvedInstructionAccount(
-            "stakingToken",
-            accounts.stakingToken.value,
+            "feeToken",
+            accounts.feeToken.value,
           ),
         ),
       ],
@@ -268,9 +268,9 @@ export async function getClaimAppealRefundInstructionAsync<
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("appealBond", accounts.appealBond),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("claimantTokenAccount", accounts.claimantTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getClaimAppealRefundInstructionDataEncoder().encode(
@@ -283,9 +283,9 @@ export async function getClaimAppealRefundInstructionAsync<
     TAccountSubaccord,
     TAccountDispute,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountClaimantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >);
 }
@@ -295,9 +295,9 @@ export type ClaimAppealRefundInput<
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
   TAccountAppealBond extends string = string,
-  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountClaimantTokenAccount extends string = string,
-  TAccountVault extends string = string,
+  TAccountFeeVault extends string = string,
   TAccountTokenProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
@@ -305,13 +305,13 @@ export type ClaimAppealRefundInput<
   dispute: Address<TAccountDispute>;
   /** The specific appeal bond being claimed. */
   appealBond: Address<TAccountAppealBond>;
-  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   /**
    * The appellant's ATA — sweep destination. Any caller may pass it; the
    * handler rejects it unless its owner matches the bond's recorded appellant.
    */
   claimantTokenAccount: Address<TAccountClaimantTokenAccount>;
-  vault: Address<TAccountVault>;
+  feeVault: Address<TAccountFeeVault>;
   tokenProgram?: Address<TAccountTokenProgram>;
   roundIdx: ClaimAppealRefundInstructionDataArgs["roundIdx"];
 };
@@ -321,9 +321,9 @@ export function getClaimAppealRefundInstruction<
   TAccountSubaccord extends string,
   TAccountDispute extends string,
   TAccountAppealBond extends string,
-  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountClaimantTokenAccount extends string,
-  TAccountVault extends string,
+  TAccountFeeVault extends string,
   TAccountTokenProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
@@ -332,9 +332,9 @@ export function getClaimAppealRefundInstruction<
     TAccountSubaccord,
     TAccountDispute,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountClaimantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -344,9 +344,9 @@ export function getClaimAppealRefundInstruction<
   TAccountSubaccord,
   TAccountDispute,
   TAccountAppealBond,
-  TAccountStakingToken,
+  TAccountFeeToken,
   TAccountClaimantTokenAccount,
-  TAccountVault,
+  TAccountFeeVault,
   TAccountTokenProgram
 > {
   // Program address.
@@ -358,12 +358,12 @@ export function getClaimAppealRefundInstruction<
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
-    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     claimantTokenAccount: {
       value: input.claimantTokenAccount ?? null,
       isWritable: true,
     },
-    vault: { value: input.vault ?? null, isWritable: true },
+    feeVault: { value: input.feeVault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -387,9 +387,9 @@ export function getClaimAppealRefundInstruction<
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("appealBond", accounts.appealBond),
-      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("claimantTokenAccount", accounts.claimantTokenAccount),
-      getAccountMeta("vault", accounts.vault),
+      getAccountMeta("feeVault", accounts.feeVault),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
     ],
     data: getClaimAppealRefundInstructionDataEncoder().encode(
@@ -402,9 +402,9 @@ export function getClaimAppealRefundInstruction<
     TAccountSubaccord,
     TAccountDispute,
     TAccountAppealBond,
-    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountClaimantTokenAccount,
-    TAccountVault,
+    TAccountFeeVault,
     TAccountTokenProgram
   >);
 }
@@ -420,13 +420,13 @@ export type ParsedClaimAppealRefundInstruction<
     dispute: TAccountMetas[2];
     /** The specific appeal bond being claimed. */
     appealBond: TAccountMetas[3];
-    stakingToken: TAccountMetas[4];
+    feeToken: TAccountMetas[4];
     /**
      * The appellant's ATA — sweep destination. Any caller may pass it; the
      * handler rejects it unless its owner matches the bond's recorded appellant.
      */
     claimantTokenAccount: TAccountMetas[5];
-    vault: TAccountMetas[6];
+    feeVault: TAccountMetas[6];
     tokenProgram: TAccountMetas[7];
   };
   data: ClaimAppealRefundInstructionData;
@@ -462,9 +462,9 @@ export function parseClaimAppealRefundInstruction<
       subaccord: getNextAccount(),
       dispute: getNextAccount(),
       appealBond: getNextAccount(),
-      stakingToken: getNextAccount(),
+      feeToken: getNextAccount(),
       claimantTokenAccount: getNextAccount(),
-      vault: getNextAccount(),
+      feeVault: getNextAccount(),
       tokenProgram: getNextAccount(),
     },
     data: getClaimAppealRefundInstructionDataDecoder().decode(instruction.data),

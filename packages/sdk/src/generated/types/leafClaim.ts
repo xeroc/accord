@@ -21,25 +21,20 @@ import {
 } from "@solana/kit";
 
 /**
- * A single leaf claim from the posted Merkle-Sum tree (ADR-0009). The leaf
- * is hashed as `H(juror || stake_le || cum_after_le)`. `cum_after` is the
- * running stake total up to and including this leaf (in pubkey-sorted order),
- * enabling the on-chain sortition check: `cum_before ≤ r_i < cum_after` where
- * `cum_before = cum_after - stake`.
+ * A single leaf of the subtree-sum accumulator (ADR-0012). The leaf is hashed
+ * as `H(juror || stake_le)`. The cumulative-from-left prefix used for
+ * sortition is reconstructed on-chain from the authenticated sibling sums
+ * along the proof path (no `cum_after` carried on the leaf — the subtree-sum
+ * form makes it derivable, unlike ADR-0009's O(N) cumulative form).
  */
-export type LeafClaim = { juror: Address; stake: bigint; cumAfter: bigint };
+export type LeafClaim = { juror: Address; stake: bigint };
 
-export type LeafClaimArgs = {
-  juror: Address;
-  stake: number | bigint;
-  cumAfter: number | bigint;
-};
+export type LeafClaimArgs = { juror: Address; stake: number | bigint };
 
 export function getLeafClaimEncoder(): FixedSizeEncoder<LeafClaimArgs> {
   return getStructEncoder([
     ["juror", getAddressEncoder()],
     ["stake", getU64Encoder()],
-    ["cumAfter", getU64Encoder()],
   ]);
 }
 
@@ -47,7 +42,6 @@ export function getLeafClaimDecoder(): FixedSizeDecoder<LeafClaim> {
   return getStructDecoder([
     ["juror", getAddressDecoder()],
     ["stake", getU64Decoder()],
-    ["cumAfter", getU64Decoder()],
   ]);
 }
 

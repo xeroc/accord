@@ -27,17 +27,21 @@
 import type { Address, Instruction } from "@solana/kit";
 import {
   MAX_APPEALS,
+  MAX_DRAW_ATTEMPTS,
+  MIN_APPEAL_WINDOW_SECS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "../constants.js";
-import type { UpdatePayload } from "../types.js";
+import type { Aggregation, ShortfallPolicy, UpdatePayload } from "../types.js";
 
 export {
   MAX_APPEALS,
+  MAX_DRAW_ATTEMPTS,
+  MIN_APPEAL_WINDOW_SECS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "../constants.js";
-export { type UpdatePayload } from "../types.js";
+export { type ShortfallPolicy, type UpdatePayload } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // PDA seed prefixes + local constants
@@ -66,22 +70,48 @@ export interface CreateSubaccordArgs {
   riskType: Uint8Array; // 32 bytes
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: Uint8Array; // 32 bytes
-  /** SPL mint juror capital is staked in (ADR-0002). */
+  /** SPL mint juror capital is staked in (collateral, ADR-0002/0020). */
   stakingToken: Address;
+  /** Compensation mint — fees + appeal bonds (ADR-0020). Distinct from stakingToken. */
+  feeToken: Address;
   minStake: bigint;
-  jurorsPerDispute: number; // u32
   /** Slash factor in bps (10% = 1000). */
   alphaBps: number; // u16
   reviewWindow: bigint; // seconds
   commitWindow: bigint; // seconds
   revealWindow: bigint; // seconds
-  /** ≤ {@link MAX_APPEALS}; bounded by the program's appeal-bond array. */
+  /** Appeal window after a round resolves before finality (ADR-0022). Per-
+   *  Subaccord, frozen onto `CaseTerms` at filing. ≥ {@link MIN_APPEAL_WINDOW_SECS}. */
+  appealWindow: bigint; // seconds
+  /** ≤ {@link MAX_APPEALS}; the sole per-Subaccord panel-shape knob. The
+   *  round-1 size is the fixed {@link INITIAL_NUM_JURORS} (3); each appeal
+   *  doubles+1 (3 → 7 → 15 → 31 at max_appeals = 3). */
   maxAppeals: number; // u8
+  /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
+  aggregation: Aggregation;
   feePerJuror: bigint;
+  /**
+   * Reveal-quorum fraction in bps (ADR-0021). A round is authoritative only if
+   * `reveal_count >= ceil(panel × bps / 10_000)`. Default 6_666 (2/3); the
+   * absolute commitment escalates per appeal for free via panel growth.
+   */
+  revealThresholdBps: number; // u16, 0..=10_000
+  /** Shortfall policy (ADR-0021). v1 = `Redraw` (same-size redraw via `draw_attempt`). */
+  shortfallPolicy: ShortfallPolicy;
+  /**
+   * Same-size redraw cap per round before the dispute fails (ADR-0021).
+   * Orthogonal to {@link CreateSubaccordArgs.maxAppeals} (which bounds rounds).
+   */
+  maxDrawAttempts: number; // u8, 1..=MAX_DRAW_ATTEMPTS
   /** `Pubkey::default()` => immutable Subaccord; else signs propose/execute. */
   authority: Address;
   /** ADR-0006 trusted re-encryption service. */
   evidenceOperator: Address;
+  /**
+   * Fixed accumulator tree depth (ADR-0012). Bounds the juror pool at
+   * `2^depth`; the tree never grows a level during operation. Default 20.
+   */
+  depth: number; // u8
 }
 
 /**
@@ -129,7 +159,8 @@ export function pauseSeeds(): Uint8Array[] {
   return [SEED_PAUSE];
 }
 
-/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs:168). */
+/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs). The round-1 panel is the
+ * fixed `INITIAL_NUM_JURORS` (=3), so this is the only panel-shape gate. */
 export function assertValidMaxAppeals(maxAppeals: number): void {
   if (
     !Number.isInteger(maxAppeals) ||
@@ -138,6 +169,42 @@ export function assertValidMaxAppeals(maxAppeals: number): void {
   ) {
     throw new Error(
       `MaxAppealsLimitExceeded: expected 0..${MAX_APPEALS}, got ${maxAppeals}`,
+    );
+  }
+}
+
+/** Validate `appeal_window ≥ MIN_APPEAL_WINDOW_SECS` (lib.rs, ADR-0022). A pool
+ * that wants no appeals sets `max_appeals == 0`; a 0 window is rejected. */
+export function assertValidAppealWindow(appealWindow: bigint): void {
+  if (appealWindow < MIN_APPEAL_WINDOW_SECS) {
+    throw new Error(
+      `AppealWindowTooShort: expected >= ${MIN_APPEAL_WINDOW_SECS}, got ${appealWindow}`,
+    );
+  }
+}
+
+/** Validate `reveal_threshold_bps ≤ 10_000` (lib.rs, ADR-0021). */
+export function assertValidRevealThreshold(revealThresholdBps: number): void {
+  if (
+    !Number.isInteger(revealThresholdBps) ||
+    revealThresholdBps < 0 ||
+    revealThresholdBps > 10_000
+  ) {
+    throw new Error(
+      `InvalidThreshold: expected 0..10000 bps, got ${revealThresholdBps}`,
+    );
+  }
+}
+
+/** Validate `1 ≤ max_draw_attempts ≤ MAX_DRAW_ATTEMPTS` (lib.rs, ADR-0021). */
+export function assertValidMaxDrawAttempts(maxDrawAttempts: number): void {
+  if (
+    !Number.isInteger(maxDrawAttempts) ||
+    maxDrawAttempts < 1 ||
+    maxDrawAttempts > MAX_DRAW_ATTEMPTS
+  ) {
+    throw new Error(
+      `MaxDrawAttemptsLimitExceeded: expected 1..${MAX_DRAW_ATTEMPTS}, got ${maxDrawAttempts}`,
     );
   }
 }
@@ -273,6 +340,9 @@ export async function createSubaccord(
   if (args.evidenceSpec.length !== 32)
     throw new Error("InvalidEvidenceSpec: expected 32 bytes");
   assertValidMaxAppeals(args.maxAppeals);
+  assertValidAppealWindow(args.appealWindow);
+  assertValidRevealThreshold(args.revealThresholdBps);
+  assertValidMaxDrawAttempts(args.maxDrawAttempts);
   const { address, bump } = await findSubaccordPda(
     programId,
     creator,

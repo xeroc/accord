@@ -22,11 +22,11 @@ Schelling Point here is **honesty** — Jurors vote truthfully because coherent-
 programs/
   accord/            Accord — Schelling-point arbitration
 packages/
-  sdk/              @accord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers)
-tests/              @accord/tests — jest integration suite (runs vs test-validator / Surfpool)
+  sdk/              @useaccord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @useaccord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
+tests/              @useaccord/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
 apps/docs/          MkDocs documentation site (developer-facing)
-apps/docs/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
+apps/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
 CONTEXT.md          Accord domain language (glossary)
 PROJECT.md          Accord rationale
 Cargo.toml          Rust workspace
@@ -38,7 +38,7 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ```
 
 > **Reading order for new agents:** `CONTEXT.md` (domain language) → `AGENTS.md`
-> (this file — build/test, conventions, gotchas) → `apps/docs/docs/adr/` (the _why_ behind
+> (this file — build/test, conventions, gotchas) → `apps/docs/adr/` (the _why_ behind
 > every locked architectural decision). ADRs are authority on rationale; code is
 > authority on current state.
 
@@ -81,6 +81,28 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - Use PDAs consistently; derive via helper fns in the SDK (`packages/sdk/src/pda.ts`).
 - Prefer `init`/`init_if_needed` with `seeds` + `bump` over manual PDA writes.
 
+## Documentation
+
+- **Docs match reality, always.** Code comments, doc-comments, `SPEC.md`,
+  `security-checklist.md`, ADRs, and bean scope/summary sections must describe
+  the code as it _is_ — not as it was planned, renamed-away, or "will be." A
+  doc that narrates behavior the code doesn't have (e.g. "the tally dispatches
+  off X" when it doesn't, or a struct field listed in an account table that no
+  longer exists) is a bug: fix the doc or fix the code in the same change,
+  never leave them diverged.
+- **Forward-looking comments must be true today.** "Future variants ship as…"
+  is allowed only if the described seam already exists in code (field present,
+  dispatch wired). Otherwise mark it `// TODO` / "not yet implemented" or omit
+  it — aspirational prose rots into lies silently.
+- **Renames/drops are doc changes too.** When you rename or remove a field,
+  instruction, or error, grep the whole docs surface (`SPEC.md`,
+  `security-checklist.md`, `apps/docs/`, `README.md`, beans, ADRs) and update
+  every reference in the same change. The MkDocs site (`apps/docs/docs/`) and
+  `README.md` are part of this surface — stale names there are reality-mismatches.
+- **When behavior and docs disagree, trust the code — then reconcile.** Don't
+  bend a test to match a stale doc; don't rewrite a doc to match a bug. Decide
+  which is correct, fix the wrong one, update the other.
+
 ## Testing Instructions
 
 - **Two harnesses, complementary** (decision veridao-8ys4):
@@ -116,14 +138,14 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 ### e2e suite — `tests/src` (Surfpool + jest + SDK)
 
 The jest suite in `tests/src/` is the **integration proof**: it drives the real
-program through the `@accord/sdk` facade against a live Surfpool instance.
+program through the `@useaccord/sdk` facade against a live Surfpool instance.
 LiteSVM is the fast inner TDD loop; **e2e is the sign-off**, never skipped for a
 feature that touches the chain.
 
 - **Surfpool program deployment — do NOT start `surfpool` bare.** Surfpool does
   not auto-deploy like `solana-test-validator --bpf-program`; it deploys via the
   committed runbook `runbooks/deployment/main.tx` (`instant_surfnet_deployment =
-  true` cheatcode ⇒ direct program-data write, instant + deterministic) when
+true` cheatcode ⇒ direct program-data write, instant + deterministic) when
   started with `--yes` (skips runbook-generation prompts). `make run_surfpool`
   runs `surfpool start --yes --db :memory:` — the `--db :memory:` guarantees a
   fresh Surfnet each start (singleton-PDA specs like `lifecycle.pause` stay
@@ -154,15 +176,15 @@ feature that touches the chain.
     `fetchDecoded(env, pda, getXDecoder())`. **Use `fetchDecoded`**, not the
     facade's `fetchX`/`getRuling`/`fetchJurorStake` — those need a
     `ClientWithRpc` and break over a raw `createSolanaRpc`. Account decoders are
-    re-exported from `@accord/sdk`.
+    re-exported from `@useaccord/sdk`.
   - `setup/fixtures.ts` — `randomBytes32()`, `DEFAULT_PUBKEY`,
     `defaultSubaccordArgs(...)`.
-  One spec file per instruction group (`lifecycle.pause.timelock`,
-  `lifecycle.update`, `lifecycle.subaccord`, `staking`, `dispute`, `snapshot`,
-  `voting`, `appeal`, `draw`, `full-lifecycle`) + `draw-harness.ts` (the shared
-  VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
-  idempotently guards the PauseState singleton, so the **whole suite runs GREEN
-  together on one Surfnet** (`make test_surfpool`).
+    One spec file per instruction group (`lifecycle.pause.timelock`,
+    `lifecycle.update`, `lifecycle.subaccord`, `staking`, `dispute`, `snapshot`,
+    `voting`, `appeal`, `draw`, `full-lifecycle`) + `draw-harness.ts` (the shared
+    VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
+    idempotently guards the PauseState singleton, so the **whole suite runs GREEN
+    together on one Surfnet** (`make test_surfpool`).
 
 - **The green rule (non-negotiable).** A feature/milestone is **not complete**
   until its e2e spec passes against a running Surfpool — not skipped. "Skip if
@@ -170,10 +192,10 @@ feature that touches the chain.
   Surfpool lane the e2e MUST be GREEN:
   1. `make run_surfpool` (terminal 1) — must show the Accord program deployed.
   2. `make test_surfpool` (terminal 2) — every touched spec green.
-  Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
-  change**. Shipping an instruction without a green e2e spec is a blocker, not a
-  follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
-  SDK↔program↔Surfpool integration.
+     Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
+     change**. Shipping an instruction without a green e2e spec is a blocker, not a
+     follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
+     SDK↔program↔Surfpool integration.
 
 ## Accord (Program B — built first)
 
@@ -190,11 +212,13 @@ draw(dispute, vrf, memberships[])                         — VRF; N distinct Ju
 commit / reveal                                           — hash(vote, salt, juror_pubkey) then {vote, salt}
 appeal(dispute)                                           — permissionless; 2N+1; bond forfeited if no flip
 finalize_round / finalize_dispute                         — permissionless crank; redistribution + active_draws--
+redraw(dispute)                                            — permissionless; shortfall redraw (slash no-shows, draw_attempt++) / Failed on exhaustion (ADR-0021)
+withdraw_fees                                              — per-juror earned-fee pull from fee_vault (ADR-0020)
 get_ruling(dispute)                                       — lazy read by the Arbitrable
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/docs/adr/0001` (Schelling), `0002` (per-Subaccord staking token, no token v1), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0022` (per-Subaccord appeal window), `0015` (evidence crypto → `@useaccord/sdk/evidence`), `0020` (two-mint/two-vault economics), `0021` (reveal quorum + shortfall redraw).
 
 ## Build Order
 
@@ -204,15 +228,20 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/docs/adr/0001` (S
 
 ## v1 Defaults (configurable per Subaccord)
 
-| Parameter            | Default               | Notes                                 |
-| -------------------- | --------------------- | ------------------------------------- |
-| Jurors per dispute   | 3                     | Per Subaccord                         |
-| Review window        | 7 days                | Jurors assess evidence                |
-| Commit window        | 2 days                | `hash(vote, salt)`                    |
-| Reveal window        | 2 days                | `{vote, salt}`                        |
-| Alpha (slash factor) | 10%                   | Incoherent juror stake lost           |
-| Min juror stake      | 1,000 (staking_token) | Draw eligibility; per-Subaccord token |
-| Max appeals          | 3                     | 3 → 7 → 15 → 31 jurors                |
+| Parameter            | Default                  | Notes                                                                                |
+| -------------------- | ------------------------ | ------------------------------------------------------------------------------------ |
+| Jurors per dispute   | 3                        | Per Subaccord                                                                        |
+| Review window        | 7 days                   | Jurors assess evidence                                                               |
+| Commit window        | 2 days                   | `hash(vote, salt)`                                                                   |
+| Reveal window        | 2 days                   | `{vote, salt}`                                                                       |
+| Appeal window        | 3 days                   | Per-Subaccord (ADR-0022); floor 1h (`MIN_APPEAL_WINDOW_SECS`)                        |
+| Alpha (slash factor) | 10%                      | Incoherent juror stake lost (staking_token)                                          |
+| Min juror stake      | 1,000 (staking_token)    | Draw eligibility; collateral mint (ADR-0020)                                         |
+| Fee per juror        | Configurable (fee_token) | Compensation mint, separate from collateral (ADR-0020)                               |
+| Max appeals          | 3                        | 3 → 7 → 15 → 31 jurors                                                               |
+| Reveal threshold     | 6,666 bps (2/3)          | Reveal-quorum fraction; absolute commitment escalates per appeal for free (ADR-0021) |
+| Shortfall policy     | `Redraw`                 | Same-size redraw via orthogonal `draw_attempt` (ADR-0021)                            |
+| Max draw attempts    | 3                        | Per-round redraw cap before `Failed`; orthogonal to `max_appeals` (ADR-0021)         |
 
 ## Beans
 
@@ -244,8 +273,15 @@ in `.beans.yml` (prefix `Accord-`).
 
 ## Gotchas
 
-- **Program ID.** `declare_id!` and `Anchor.toml [programs.*]` are kept in sync
-  with `target/deploy/accord-keypair.json` via `anchor keys sync`. The keypair
-  was provisioned by `solana-keygen`; `anchor build` uses it for the `.so`.
-- **Per-Subaccord staking token.** Each Subaccord defines its `staking_token` at
-  creation (ADR-0002); USDC is the common default, not hard-coded.
+- **Program ID — canonical keypair committed; `--ignore-keys` still mandatory.** The deploy keypair lives at `target/deploy/accord-keypair.json` and is **committed** to the repo (it overrides `.gitignore`'s `/target`), so every worktree builds the same program — no random-key drift. `declare_id!` is frozen at `426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi`. ALL `anchor build` invocations MUST still pass `--ignore-keys` (every Makefile target does) — it is the guard that prevents `declare_id!` + the Codama client from being rewritten from the keypair. NEVER run `anchor keys sync` without the canonical keypair provisioned: it would rewrite `declare_id!` + `Anchor.toml`. Anchor.toml has no config-level `ignore-keys` option (verified, anchor 1.0.2); the flag is CLI-only. Security: a committed deploy keypair is acceptable for devnet/localnet — rotate it before any mainnet deploy.
+- **Per-Subaccord staking token (collateral).** Each Subaccord defines its `staking_token` (collateral) at creation (ADR-0002/0020); USDC is the common default, not hard-coded.
+- **Two mints / two vaults (ADR-0020).** Each Subaccord also defines a `fee_token` (compensation — fees + bonds). `stake_vault` (ATA of `staking_token`) holds collateral and is NEVER touched by dispute fee economics. `fee_vault` (ATA of `fee_token`) holds filer fees, appeal bonds, and the reward pool. Slashing is ledger-only (`stake_delta`); the `stake_vault` balance is invariant under slash+redistribution. `fees_earned` on `JurorStake` aggregates compensation across disputes; `withdraw_fees` pulls it (no `active_draws` gate, no timelock). `reveal` is vote-recording only — fees credit at `finalize_round`.
+
+- **Evidence crypto lives in the SDK, not the daemon.** The ECIES / AES-256-GCM
+  / HKDF-SHA256 / Ed↔X25519 evidence protocol is a multi-party wire contract
+  shared by claimant, operator, and juror — it lives in
+  `@useaccord/sdk/evidence` (ADR-0015), **not** `apps/evidence-daemon`. The daemon
+  keeps only `EnvKeyring`, S3 storage, the pipeline, and HTTP; it imports the
+  protocol from the SDK. Don't reimplement crypto primitives in the daemon or an
+  Arbitrable — import `@useaccord/sdk/evidence` (backed by `@noble`; nothing
+  hand-rolled).

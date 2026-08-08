@@ -1,6 +1,6 @@
 # Accord Evidence Format — v1
 
-> **Status:** specified (not yet built). **Authority:** ADR-0013 (decision),
+> **Status:** specified (not yet built). **Authority:** ADR-0017 (decision),
 > ADR-0006 (evidence model), ADR-0011 (evidence operator daemon), `CONTEXT.md`
 > (Evidence Operator). This file is the **format reference** for the data whose
 > hash is the on-chain `evidence_hash` — i.e. everything a Juror needs to rule.
@@ -137,6 +137,14 @@ were an unsalted hash of a short label (`"Yes"`, `"Refund"`), anyone could
 rainbow-table the chain to recover the choices of a dispute that intended to
 keep them confidential. The salt closes that leak.
 
+> **Aggregation-governed (ADR-0019).** This option encoding is
+> **plurality-shaped**: an ordered list of labels, one of which a Juror selects.
+> It matches the v1 `Aggregation::Plurality` variant on the `Subaccord`.
+> Non-Plurality variants — `RankedChoice` (IRV; a Juror commits a permutation)
+> and `Median` (numeric outcomes) — will require an extended option/ballot
+> encoding and a future `accord-evidence/v2` schema. They are out-of-scope v1
+> (parked, bean `accord-ayqq`); `accord-evidence/v1` is plurality-only.
+
 ### Construction
 
 ```
@@ -161,7 +169,7 @@ Dispute.options[i] = sha256( option_salt ‖ utf8(label_i) ) // 32-byte digest, 
 4. Store `option_salt` + labels in the manifest; pass the derived `options[i]`
    to `create_dispute(..., options, evidence_hash, ...)`.
 
-> **Open (ADR-0013):** whether the program *enforces*
+> **Open (ADR-0017):** whether the program *enforces*
 > `options[i] == sha256(option_salt ‖ label)` at `create_dispute`, or leaves it
 > a filer/operator convention. Enforcing is cheap and closes a footgun; the
 > salt is not on-chain either way (enforcement would hash a supplied
@@ -270,7 +278,11 @@ require a new schema version.
 
 ## 10. Open / future
 
-- **On-chain option-hash enforcement** — see §4 open note + ADR-0013.
+- **On-chain option-hash enforcement** — see §4 open note + ADR-0017.
+- **Aggregation-variant option encoding (ADR-0019)** — v1 ships `Plurality`
+  only, so the manifest's option list (§4) is plurality-shaped. `RankedChoice`
+  (IRV) and `Median` variants will extend the option + ballot encoding under a
+  `v2` schema; no change to `accord-evidence/v1`.
 - **Per-Juror watermarking (v1.1)** — `policy.watermark` requests it; the
   daemon embeds the fingerprint inside the Juror-bound encryption (ADR-0011).
 - **Multi-file per-Juror delivery** — the manifest-as-root model already
@@ -286,7 +298,7 @@ require a new schema version.
 
 - ADR-0006 — evidence model (on-chain hash, trusted operator)
 - ADR-0011 — evidence operator daemon (transport)
-- ADR-0013 — this format's decision (manifest-as-Merkle-root, salted options)
+- ADR-0017 — this format's decision (manifest-as-Merkle-root, salted options)
 - `CONTEXT.md` — Dispute, Evidence Operator, options
 - `programs/accord/src/state.rs` — `Dispute.options`, `Dispute.evidence_hash`
 - `apps/evidence-daemon/SPEC.md` — the daemon (transport) build spec

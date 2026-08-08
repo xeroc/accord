@@ -8,8 +8,9 @@ Two CPI calls. The Accord never knows your program's domain.
 use accord::cpi::accounts::CreateDispute as AccordCreateDispute;
 use anchor_lang::solana_program::pubkey::Pubkey;
 
-// fee MUST equal subaccord.jurors_per_dispute * subaccord.fee_per_juror.
-let required_fee = (subaccord.jurors_per_dispute as u64)
+// fee MUST equal INITIAL_NUM_JURORS (3) * subaccord.fee_per_juror.
+//   round-1 panel is the fixed protocol constant (ADR-0019), not a Subaccord field.
+let required_fee = (3u64)
     .checked_mul(subaccord.fee_per_juror)
     .unwrap();
 
@@ -66,8 +67,8 @@ let ruling: Option<u8> = accord::cpi::get_ruling(
 ## Fee formula
 
 ```
-fee_round_0 = jurors_per_dispute × fee_per_juror
+fee_round_0 = INITIAL_NUM_JURORS × fee_per_juror   // round-1 panel = 3 (ADR-0019)
 fee_round_k = panel_k × fee_per_juror     // appeal rounds; see appeals.md
 ```
 
-TypeScript: see [SDK](../sdk.md). Finality = `APPEAL_WINDOW_SECS` after the last round's `reveal_end` ([state machine](../reference/state-machine.md)). Why two calls: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).
+TypeScript: see [SDK](../sdk.md). Finality = `terms.appeal_window` (per-Subaccord, [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)) after the last round's `reveal_end` ([state machine](../reference/state-machine.md)). Why two calls: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).

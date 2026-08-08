@@ -108,166 +108,172 @@ export const AccordErrors = {
   FeeMismatch: err(
     BASE + 17,
     "FeeMismatch",
-    "Tendered fee does not match the required dispute fee (jurors_per_dispute * fee_per_juror).",
+    "Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).",
   ),
 
-  // --- snapshot (ADR-0003) ---
-  SnapshotNotFinalized: err(
+  // --- accumulator (ADR-0012) ---
+  InvalidMerklePath: err(
     BASE + 18,
-    "SnapshotNotFinalized",
-    "Snapshot is not finalized (challenge window still open or voided).",
+    "InvalidMerklePath",
+    "Accumulator Merkle path does not authenticate against the stored root.",
   ),
-  SnapshotVoided: err(
+  TreeFull: err(
     BASE + 19,
-    "SnapshotVoided",
-    "Snapshot was voided by a successful fraud proof.",
-  ),
-  SnapshotChallengeWindowOpen: err(
-    BASE + 20,
-    "SnapshotChallengeWindowOpen",
-    "Snapshot challenge window has not yet elapsed.",
-  ),
-  SnapshotChallengeWindowExpired: err(
-    BASE + 21,
-    "SnapshotChallengeWindowExpired",
-    "Snapshot challenge window has expired.",
-  ),
-  FraudProofInvalid: err(
-    BASE + 22,
-    "FraudProofInvalid",
-    "Fraud proof does not invalidate the posted Merkle root.",
+    "TreeFull",
+    "Accumulator tree is full (no free leaf within the configured depth).",
   ),
 
   // --- draw ---
   DuplicateJuror: err(
-    BASE + 23,
+    BASE + 20,
     "DuplicateJuror",
     "Draw selected a duplicate Juror.",
   ),
   InvalidMembershipProof: err(
-    BASE + 24,
+    BASE + 21,
     "InvalidMembershipProof",
     "Juror Merkle membership/weight proof is invalid.",
   ),
   InvalidPanelSize: err(
-    BASE + 25,
+    BASE + 22,
     "InvalidPanelSize",
     "Number of juror memberships does not match the required panel size.",
   ),
   InflatedStake: err(
-    BASE + 26,
+    BASE + 23,
     "InflatedStake",
-    "Drawn juror's live stake is below the snapshot leaf's claim (inflation guard, ADR-0008).",
+    "Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012).",
   ),
   SortitionMismatch: err(
-    BASE + 27,
+    BASE + 24,
     "SortitionMismatch",
     "Submitted membership does not match the VRF-derived sortition selection (ADR-0009).",
   ),
-  TreeNotSorted: err(
-    BASE + 28,
-    "TreeNotSorted",
-    "Snapshot tree is not sorted by juror pubkey (ADR-0009 predicate 5).",
-  ),
-  OmissionProofInvalid: err(
-    BASE + 29,
-    "OmissionProofInvalid",
-    "Omission proof is invalid (non-adjacent leaves, wrong order, or witness stake changed since anchor).",
-  ),
   VrfAlreadyCommitted: err(
-    BASE + 30,
+    BASE + 25,
     "VrfAlreadyCommitted",
     "VRF result already committed for this dispute.",
   ),
   VrfNotCommitted: err(
-    BASE + 31,
+    BASE + 26,
     "VrfNotCommitted",
-    "No VRF result committed for this dispute; call commit_vrf first.",
+    "No VRF result committed for this dispute; the root is not yet frozen.",
   ),
 
   // --- voting ---
   CommitAlreadyExists: err(
-    BASE + 32,
+    BASE + 27,
     "CommitAlreadyExists",
     "Juror has already committed.",
   ),
   CommitMissing: err(
-    BASE + 33,
+    BASE + 28,
     "CommitMissing",
     "No commit to reveal for this Juror.",
   ),
   RevealMismatch: err(
-    BASE + 34,
+    BASE + 29,
     "RevealMismatch",
     "Reveal does not match the committed hash.",
   ),
   CommitWindowClosed: err(
-    BASE + 35,
+    BASE + 30,
     "CommitWindowClosed",
     "Commit window is closed.",
   ),
   RevealWindowClosed: err(
-    BASE + 36,
+    BASE + 31,
     "RevealWindowClosed",
     "Reveal window is closed.",
   ),
   NotDrawnJuror: err(
-    BASE + 37,
+    BASE + 32,
     "NotDrawnJuror",
     "Signer is not a drawn Juror for this round.",
   ),
   InvalidVote: err(
-    BASE + 38,
+    BASE + 33,
     "InvalidVote",
     "Revealed vote index is out of range.",
   ),
   AlreadyRevealed: err(
-    BASE + 39,
+    BASE + 34,
     "AlreadyRevealed",
     "Juror has already revealed.",
   ),
 
   // --- finalization ---
   AppealWindowOpen: err(
-    BASE + 40,
+    BASE + 35,
     "AppealWindowOpen",
     "Appeal window has not elapsed yet.",
   ),
 
   // --- appeals (ADR-0004) ---
   MaxAppealsReached: err(
-    BASE + 41,
+    BASE + 36,
     "MaxAppealsReached",
     "Maximum appeals reached for this dispute.",
   ),
   MaxAppealsLimitExceeded: err(
-    BASE + 42,
+    BASE + 37,
     "MaxAppealsLimitExceeded",
     "Subaccord max_appeals exceeds the program ceiling.",
   ),
   AppealWindowClosed: err(
-    BASE + 43,
+    BASE + 38,
     "AppealWindowClosed",
     "Appeal window has closed; the dispute can only be finalized.",
   ),
 
   // --- finalization ---
   RoundNotFinalizable: err(
-    BASE + 44,
+    BASE + 39,
     "RoundNotFinalizable",
     "Round cannot be finalized yet (window not elapsed).",
   ),
   DisputeNotFinal: err(
-    BASE + 45,
+    BASE + 40,
     "DisputeNotFinal",
     "Dispute is not in a finalizable state.",
   ),
 
   // --- arithmetic ---
   ArithmeticOverflow: err(
-    BASE + 46,
+    BASE + 41,
     "ArithmeticOverflow",
     "Arithmetic overflow.",
+  ),
+
+  // --- multi-round settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti) ---
+  RoundAlreadySettled: err(
+    BASE + 42,
+    "RoundAlreadySettled",
+    "Round has already been settled.",
+  ),
+  RoundNotSettlable: err(
+    BASE + 43,
+    "RoundNotSettlable",
+    "Round index out of range for settlement (must be < current_round).",
+  ),
+
+  // --- cancel / Failed state (Ugly 4) ---
+  DisputeFailed: err(
+    BASE + 44,
+    "DisputeFailed",
+    "Dispute is in terminal Failed state.",
+  ),
+  CancelTooEarly: err(
+    BASE + 45,
+    "CancelTooEarly",
+    "Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.",
+  ),
+
+  // --- draw (bean accord-tzo0) ---
+  MaxRetriesExceeded: err(
+    BASE + 46,
+    "MaxRetriesExceeded",
+    "Sortition retries exceeded the on-chain bound; the pool may be too concentrated.",
   ),
 } as const;
 

@@ -2,7 +2,7 @@
 // (PDA seeds, fee math, option/evidence/nonce validation).
 //
 // Excluded from the TypeScript build (tsconfig.json exclude); run via:
-//   pnpm --filter @accord/sdk test
+//   pnpm --filter @useaccord/sdk test
 //
 // Kit-dependent paths (findDisputePda / createDispute / getRuling) are exercised
 // by the jest/Surfpool integration suite (bean veridao-7iiv) once the generated
@@ -39,15 +39,15 @@ test("disputeSeeds: [b'dispute', filer[32], nonce_le8]", () => {
   assert.deepEqual(Array.from(sN[2]!), [8, 7, 6, 5, 4, 3, 2, 1]);
 });
 
-test("requiredFee: jurors * fee_per_juror, null on overflow", () => {
-  assert.equal(requiredFee(3, 1_000n), 3_000n);
-  assert.equal(requiredFee(0, 1_000n), 0n);
+test("requiredFee: INITIAL_NUM_JURORS(3) * fee_per_juror, null on overflow", () => {
+  // Round-1 panel is the fixed 3; fee = 3 · fee_per_juror.
+  assert.equal(requiredFee(1_000n), 3_000n);
+  assert.equal(requiredFee(0n), 0n);
   // u64 ceiling: (2^64-1) / 3 per juror fits exactly 3x; +1 tips over.
   const per = U64_MAX / 3n;
-  assert.equal(requiredFee(3, per), per * 3n);
-  assert.equal(requiredFee(3, per + 1n), null); // overflow
-  assert.equal(requiredFee(-1, 1n), null); // negative juror count
-  assert.equal(requiredFee(2.5, 1n), null); // non-integer
+  assert.equal(requiredFee(per), per * 3n);
+  assert.equal(requiredFee(per + 1n), null); // overflow
+  assert.equal(requiredFee(-1n), null); // negative fee
 });
 
 test("assertValidOptions: 2..=MAX_OPTIONS, each 32 bytes", () => {

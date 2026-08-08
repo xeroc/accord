@@ -11,6 +11,7 @@ pub struct SubaccordCreated {
     pub creator: Pubkey,
     pub subaccord: Pubkey,
     pub staking_token: Pubkey,
+    pub fee_token: Pubkey,
     pub risk_type: [u8; 32],
 }
 
@@ -55,36 +56,15 @@ pub struct DisputeCreated {
     pub num_options: u8,
 }
 
-/// Emitted when a Snapshot root is posted (ADR-0003).
-#[event]
-pub struct SnapshotPosted {
-    pub dispute: Pubkey,
-    pub round_idx: u32,
-    pub merkle_root: [u8; 32],
-    pub poster: Pubkey,
-}
-
-/// Emitted when a Snapshot is successfully challenged (fraud proven).
-#[event]
-pub struct SnapshotChallenged {
-    pub dispute: Pubkey,
-    pub round_idx: u32,
-    pub challenger: Pubkey,
-}
-
-/// Emitted when a Snapshot becomes drawable (challenge window passed).
-#[event]
-pub struct SnapshotFinalized {
-    pub dispute: Pubkey,
-    pub round_idx: u32,
-}
-
-/// Emitted when the VRF result is committed for a dispute (ADR-0009).
-/// `commit_vrf_callback` is one-shot; `draw` reads the committed value immutably.
+/// Emitted when the VRF result is committed for a dispute (ADR-0009/0012).
+/// `commit_vrf_callback` is one-shot and atomically freezes the accumulator
+/// root; `draw_seat` reads both immutably.
 #[event]
 pub struct VrfCommitted {
     pub dispute: Pubkey,
     pub vrf_result: [u8; 32],
+    /// Accumulator root frozen atomically with the VRF (ADR-0012).
+    pub frozen_root: [u8; 32],
 }
 
 /// Emitted when a VRF request is submitted to the oracle (ADR-0009/veridao-crbf).
@@ -93,16 +73,15 @@ pub struct VrfRequested {
     pub dispute: Pubkey,
 }
 
-/// Emitted after a draw selects the round's Jurors. `vrf_seed` is the
-/// deterministic hash binding the VRF result to this specific
-/// dispute + round, providing an on-chain audit trail for the off-chain
-/// sortition.
+/// Emitted per seat as the per-seat draw fills the panel (ADR-0012). One event
+/// per `draw_seat` tx; the round's windows open + the dispute transitions to
+/// `Drawn` when the last seat lands.
 #[event]
-pub struct JurorsDrawn {
+pub struct SeatDrawn {
     pub dispute: Pubkey,
     pub round_idx: u32,
-    pub jurors: Vec<Pubkey>,
-    pub vrf_seed: [u8; 32],
+    pub seat: u32,
+    pub juror: Pubkey,
 }
 
 /// Emitted on each Juror commit.
@@ -137,6 +116,15 @@ pub struct RulingFinalized {
     pub ruling: u8,
 }
 
+/// Emitted when a prior round's coherence settlement lands via `settle_round`
+/// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). The final round emits
+/// `RulingFinalized` instead (it carries the ruling write).
+#[event]
+pub struct RoundSettled {
+    pub dispute: Pubkey,
+    pub round_idx: u32,
+}
+
 /// Emitted on appeal (ADR-0004: permissionless). `bond` is the appeal bond
 /// custodied alongside the new round's juror fee (forfeited on no-flip,
 /// returned on flip at `finalize_dispute`).
@@ -145,7 +133,7 @@ pub struct Appealed {
     pub dispute: Pubkey,
     pub new_round_idx: u32,
     pub appellant: Pubkey,
-    pub bond: u64,
+    pub deposit: u64,
 }
 
 // --- circuit breaker (ADR-0007) ---
@@ -167,4 +155,43 @@ pub struct UnpauseProposed {
 #[event]
 pub struct Unpaused {
     pub authority: Pubkey,
+}
+
+/// Emitted when a stalled dispute is cancelled via the liveness-escape crank
+/// (CONCEPT-REVIEW Ugly 4). `refund` is the filer's round-1 fee returned from
+/// the vault; the dispute transitions to the terminal `Failed` state.
+#[event]
+pub struct DisputeCancelled {
+    pub dispute: Pubkey,
+    pub filer: Pubkey,
+    pub refund: u64,
+}
+
+/// Emitted when a juror withdraws aggregate earned fees (ADR-0020).
+#[event]
+pub struct FeesWithdrawn {
+    pub subaccord: Pubkey,
+    pub juror: Pubkey,
+    pub amount: u64,
+}
+
+/// Emitted when a shortfall round is redrawn (ADR-0021). The same-size panel is
+/// reconvened with a fresh `draw_attempt` seed; `round_idx` is unchanged.
+#[event]
+pub struct Redrawn {
+    pub dispute: Pubkey,
+    pub round_idx: u32,
+    pub draw_attempt: u32,
+}
+
+/// Emitted when `max_draw_attempts` is exhausted and the dispute transitions to
+/// `Failed` (ADR-0021). `refund` is the filer fee returned from the vault;
+/// no-shows' accumulated slashes stand, outstanding appeal bonds remain claimable
+/// via `claim_appeal_refund`.
+#[event]
+pub struct DisputeFailedShortfall {
+    pub dispute: Pubkey,
+    pub filer: Pubkey,
+    pub draw_attempt: u32,
+    pub refund: u64,
 }

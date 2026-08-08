@@ -8,13 +8,15 @@
  * or to a generated account fetcher, so a drift in the IDL surfaces here as a
  * compile error — exactly the ADR-0010 guarantee.
  *
- * Signing model: the facade's loaded wallet (`accord.signer`) is the
- * `TransactionSigner` for every instruction's signing account. The seam's
- * `accounts.signer: Address` documents who signs; the adapter supplies the
- * matching `TransactionSigner` object. Multi-party flows construct one Accord
- * instance per signer.
+ * ADR-0012: the snapshot trio (post/challenge/finalize) and the one-shot `draw`
+ * are gone; `stake`/`unstake` thread an accumulator `path`; `draw_seat` fills
+ * the panel one seat per tx against `dispute.frozen_root`; `commit_vrf_callback`
+ * (invoked by the oracle) freezes the root.
  *
- * @see ADR-0010
+ * Signing model: the facade's loaded wallet (`accord.signer`) is the
+ * `TransactionSigner` for every instruction's signing account.
+ *
+ * @see ADR-0010, ADR-0012
  */
 
 import {
@@ -40,16 +42,19 @@ import { getPauseInstruction } from "./generated/instructions/pause.js";
 import { getProposeUnpauseInstruction } from "./generated/instructions/proposeUnpause.js";
 import { getExecuteUnpauseInstruction } from "./generated/instructions/executeUnpause.js";
 import { getStakeInstruction } from "./generated/instructions/stake.js";
-import { getUnstakeInstruction } from "./generated/instructions/unstake.js";
-import { getPostSnapshotInstruction } from "./generated/instructions/postSnapshot.js";
-import { getChallengeSnapshotInstruction } from "./generated/instructions/challengeSnapshot.js";
-import { getFinalizeSnapshotInstruction } from "./generated/instructions/finalizeSnapshot.js";
+import { getRequestWithdrawInstruction } from "./generated/instructions/requestWithdraw.js";
+import { getWithdrawInstruction } from "./generated/instructions/withdraw.js";
+import { getReconcileStakeInstruction } from "./generated/instructions/reconcileStake.js";
+import { getWithdrawFeesInstruction } from "./generated/instructions/withdrawFees.js";
+import { getSettleRoundInstruction } from "./generated/instructions/settleRound.js";
+import { getCancelDisputeInstruction } from "./generated/instructions/cancelDispute.js";
 import { getRequestVrfInstruction } from "./generated/instructions/requestVrf.js";
-import { getDrawInstruction } from "./generated/instructions/draw.js";
+import { getDrawSeatInstruction } from "./generated/instructions/drawSeat.js";
 import { getCommitInstruction } from "./generated/instructions/commit.js";
 import { getRevealInstruction } from "./generated/instructions/reveal.js";
 import { getFinalizeRoundInstruction } from "./generated/instructions/finalizeRound.js";
 import { getFinalizeDisputeInstruction } from "./generated/instructions/finalizeDispute.js";
+import { getRedrawInstruction } from "./generated/instructions/redraw.js";
 import { getAppealInstruction } from "./generated/instructions/appeal.js";
 import { getClaimAppealRefundInstruction } from "./generated/instructions/claimAppealRefund.js";
 
@@ -69,19 +74,23 @@ import type {
   CreateSubaccordArgs,
 } from "./methods/lifecycle.js";
 import type {
-  AccordSnapshotClient,
-  SnapshotAccounts,
-} from "./methods/snapshot.js";
-import type {
   AccordStakingClient,
   JurorStakeView,
   StakingAccounts,
+  WithdrawFeesAccounts,
 } from "./methods/staking.js";
+import type {
+  AccordSettlementClient,
+  CancelDisputeAccounts,
+  SettleRoundAccounts,
+} from "./methods/settlement.js";
+import type { MSTNode } from "./methods/mst.js";
 import type { AccordVotingClient, VotingAccounts } from "./methods/voting.js";
-import type { AccordVrfClient, VrfDrawAccounts } from "./methods/vrf.js";
-
-import type { JurorMembership as SdkJurorMembership } from "./methods/snapshot.js";
-import type { FraudProofArgs, JurorMembershipArgs } from "./generated/types";
+import type {
+  AccordVrfClient,
+  SeatMembership,
+  VrfDrawAccounts,
+} from "./methods/vrf.js";
 
 /** Union of every seam the adapter implements. */
 export interface AccordAdapter
@@ -89,14 +98,14 @@ export interface AccordAdapter
     AccordDisputeClient,
     AccordLifecycleClient,
     AccordStakingClient,
-    AccordSnapshotClient,
+    AccordSettlementClient,
     AccordVrfClient,
     AccordVotingClient,
     AccordAppealClient {}
 
 /**
  * Build the concrete adapter bound to an {@link Accord} facade instance. The
- * returned object satisfies all seven `Accord*Client` seams, so the pure
+ * returned object satisfies all six `Accord*Client` seams, so the pure
  * orchestration functions in `src/methods/*.ts` can drive the chain end-to-end.
  */
 export function createAccordAdapter(accord: Accord): AccordAdapter {
@@ -110,9 +119,9 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           subaccord: accounts.subaccord,
           pauseState: accounts.pauseState,
           dispute: input.disputePda,
-          stakingToken: accounts.stakingToken,
+          feeToken: accounts.feeToken,
           filerTokenAccount: accounts.filerTokenAccount,
-          vault: accounts.vault,
+          feeVault: accounts.feeVault,
           options: args.options as CreateDisputeInstructionDataArgs["options"],
           evidenceHash: args.evidenceHash,
           nonce: args.nonce,
@@ -199,7 +208,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       return m.data.executeAfterSlot;
     },
 
-    // ── staking ────────────────────────────────────────────────────────────
+    // ── staking (ADR-0012: path-verified accumulator update) ───────────────
     buildStake(input) {
       if (!input.accounts.pauseState) {
         throw new Error(
@@ -214,22 +223,51 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           jurorStake: input.accounts.jurorStake,
           stakingToken: input.accounts.stakingToken,
           jurorTokenAccount: input.accounts.jurorTokenAccount,
-          vault: input.accounts.vault,
+          stakeVault: input.accounts.stakeVault,
           amount: input.amount,
+          path: mapPath(input.path),
         },
         { programAddress: input.programId },
       );
     },
-    buildUnstake(input) {
-      return getUnstakeInstruction(
+    buildRequestWithdraw(input) {
+      return getRequestWithdrawInstruction(
         {
           juror: accord.signer,
           subaccord: input.accounts.subaccord,
           jurorStake: input.accounts.jurorStake,
-          stakingToken: input.accounts.stakingToken,
-          jurorTokenAccount: input.accounts.jurorTokenAccount,
-          vault: input.accounts.vault,
           amount: input.amount,
+          path: mapPath(input.path),
+        },
+        { programAddress: input.programId },
+      );
+    },
+    buildWithdraw(input) {
+      const a = input.accounts;
+      if (!a.stakingToken || !a.jurorTokenAccount || !a.stakeVault) {
+        throw new Error(
+          "InvalidWithdrawAccounts: withdraw requires stakingToken, jurorTokenAccount, stakeVault",
+        );
+      }
+      return getWithdrawInstruction(
+        {
+          juror: accord.signer,
+          subaccord: a.subaccord,
+          jurorStake: a.jurorStake,
+          stakingToken: a.stakingToken,
+          jurorTokenAccount: a.jurorTokenAccount,
+          stakeVault: a.stakeVault,
+        },
+        { programAddress: input.programId },
+      );
+    },
+    buildReconcileStake(input) {
+      return getReconcileStakeInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          jurorStake: input.accounts.jurorStake,
+          path: mapPath(input.path),
         },
         { programAddress: input.programId },
       );
@@ -240,87 +278,83 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       if (!m.exists) return null;
       return {
         juror: m.data.juror,
-        amount: m.data.amount,
+        staked: m.data.staked,
+        feesEarned: m.data.feesEarned,
         activeDraws: m.data.activeDraws,
       };
     },
+    buildWithdrawFees(input) {
+      return getWithdrawFeesInstruction(
+        {
+          juror: accord.signer,
+          subaccord: input.accounts.subaccord,
+          jurorStake: input.accounts.jurorStake,
+          feeToken: input.accounts.feeToken,
+          jurorFeeTokenAccount: input.accounts.jurorFeeTokenAccount,
+          feeVault: input.accounts.feeVault,
+        },
+        { programAddress: input.programId },
+      );
+    },
 
-    // ── snapshot trust ─────────────────────────────────────────────────────
-    buildPostSnapshot(input) {
-      return getPostSnapshotInstruction(
-        {
-          poster: accord.signer,
-          subaccord: input.accounts.subaccord,
-          dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
-          stakingToken: input.accounts.stakingToken,
-          posterTokenAccount: input.accounts.posterTokenAccount,
-          vault: input.accounts.vault,
-          merkleRoot: input.merkleRoot,
-          totalStake: input.totalStake,
-        },
-        { programAddress: input.programId },
-      );
-    },
-    buildChallengeSnapshot(input) {
-      return getChallengeSnapshotInstruction(
-        {
-          challenger: accord.signer,
-          subaccord: input.accounts.subaccord,
-          dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
-          stakingToken: input.accounts.stakingToken,
-          challengerTokenAccount: input.challengerTokenAccount,
-          posterTokenAccount: input.accounts.posterTokenAccount,
-          vault: input.accounts.vault,
-          proof: input.proof as FraudProofArgs,
-        },
-        { programAddress: input.programId },
-      );
-    },
-    buildFinalizeSnapshot(input) {
-      return getFinalizeSnapshotInstruction(
+    // ── settlement (per-round crank + dispute cancellation) ───────────────
+    buildSettleRound(input) {
+      const ix = getSettleRoundInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,
           dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
-          stakingToken: input.accounts.stakingToken,
-          posterTokenAccount: input.accounts.posterTokenAccount,
-          vault: input.accounts.vault,
+          round: input.accounts.round,
+          roundIdx: input.roundIdx,
         },
         { programAddress: input.programId },
       );
+      return appendRemaining(ix, input.remainingAccounts);
+    },
+    buildCancelDispute(input) {
+      const ix = getCancelDisputeInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          dispute: input.accounts.dispute,
+          feeToken: input.accounts.feeToken,
+          filerTokenAccount: input.accounts.filerTokenAccount,
+          feeVault: input.accounts.feeVault,
+        },
+        { programAddress: input.programId },
+      );
+      return appendRemaining(ix, input.remainingAccounts);
     },
 
-    // ── VRF + draw ─────────────────────────────────────────────────────────
+    // ── VRF + per-seat draw (ADR-0009/0012) ────────────────────────────────
     buildRequestVrf(input) {
       return getRequestVrfInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,
           dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
           oracleQueue: input.extras.oracleQueue,
           programIdentity: input.extras.programIdentity,
         },
         { programAddress: input.programId },
       );
     },
-    buildDraw(input) {
-      const ix = getDrawInstruction(
+    buildDrawSeat(input) {
+      const ix = getDrawSeatInstruction(
         {
           caller: accord.signer,
-          subaccord: input.accounts.subaccord,
           dispute: input.accounts.dispute,
-          snapshot: input.accounts.snapshot,
           round: input.roundPda,
-          drawAttempt: input.drawAttempt,
-          memberships: input.memberships.map(mapMembership),
+          seat: input.seat,
+          retries: input.retries,
+          leaf: mapLeaf(input.leaf),
+          proof: mapPath(input.proof),
+          index: input.index,
         },
         { programAddress: input.programId },
       );
-      return appendRemaining(ix, input.jurorStakeAccounts);
+      // remaining_accounts[0] = the drawn juror's JurorStake PDA (writable).
+      return appendRemaining(ix, [input.jurorStake]);
     },
     async fetchCommittedVrf(dispute): Promise<Uint8Array | null> {
       const m = await accord.client.accord.accounts.dispute.fetchMaybe(dispute);
@@ -356,7 +390,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       );
     },
     buildFinalizeRound(input) {
-      return getFinalizeRoundInstruction(
+      const ix = getFinalizeRoundInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,
@@ -365,6 +399,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         },
         { programAddress: input.programId },
       );
+      return appendRemaining(ix, input.remainingAccounts ?? []);
     },
     buildFinalizeDispute(input) {
       const ix = getFinalizeDisputeInstruction(
@@ -377,6 +412,22 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         { programAddress: input.programId },
       );
       return appendRemaining(ix, input.remainingAccounts);
+    },
+    buildRedraw(input) {
+      const ix = getRedrawInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          dispute: input.accounts.dispute,
+          round: input.accounts.round,
+          feeToken: input.accounts.feeToken,
+          filerTokenAccount: input.accounts.filerTokenAccount,
+          feeVault: input.accounts.feeVault,
+          tokenProgram: input.accounts.tokenProgram,
+        },
+        { programAddress: input.programId },
+      );
+      return appendRemaining(ix, input.remainingAccounts ?? []);
     },
     encodeAddress(address) {
       return new Uint8Array(getAddressEncoder().encode(address));
@@ -399,9 +450,9 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           subaccord: input.accounts.subaccord,
           dispute: input.accounts.dispute,
           appealBond: input.accounts.appealBond,
-          stakingToken: input.accounts.stakingToken,
+          feeToken: input.accounts.feeToken,
           claimantTokenAccount: input.accounts.claimantTokenAccount,
-          vault: input.accounts.vault,
+          feeVault: input.accounts.feeVault,
           roundIdx: input.roundIdx,
         },
         { programAddress: input.programId },
@@ -412,7 +463,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-/** SDK `CreateSubaccordArgs` → generated instruction-data args (1:1). */
+/** SDK `CreateSubaccordArgs` → generated instruction-data args (1:1, +depth). */
 function mapCreateSubaccordArgs(
   args: CreateSubaccordArgs,
 ): Omit<CreateSubaccordArgs, never> {
@@ -420,16 +471,22 @@ function mapCreateSubaccordArgs(
     riskType: args.riskType,
     evidenceSpec: args.evidenceSpec,
     stakingToken: args.stakingToken,
+    feeToken: args.feeToken,
     minStake: args.minStake,
-    jurorsPerDispute: args.jurorsPerDispute,
     alphaBps: args.alphaBps,
     reviewWindow: args.reviewWindow,
     commitWindow: args.commitWindow,
     revealWindow: args.revealWindow,
+    appealWindow: args.appealWindow,
     maxAppeals: args.maxAppeals,
+    aggregation: args.aggregation,
     feePerJuror: args.feePerJuror,
+    revealThresholdBps: args.revealThresholdBps,
+    shortfallPolicy: args.shortfallPolicy,
+    maxDrawAttempts: args.maxDrawAttempts,
     authority: args.authority,
     evidenceOperator: args.evidenceOperator,
+    depth: args.depth,
   };
 }
 
@@ -441,25 +498,34 @@ function mapAppealAccounts(a: AppealAccounts) {
     dispute: a.dispute,
     round: a.round,
     appealBond: a.appealBond,
-    stakingToken: a.stakingToken,
+    feeToken: a.feeToken,
     appellantTokenAccount: a.appellantTokenAccount,
-    vault: a.vault,
+    feeVault: a.feeVault,
   };
 }
 
-/** SDK MST `JurorMembership` (32-byte juror) → on-chain args (`Address` juror). */
-function mapMembership(m: SdkJurorMembership): JurorMembershipArgs {
+/**
+ * SDK MST `MSTNode` (byte-oriented) → generated args. `siblingHash` is a
+ * `[u8;32]`; `siblingSum` is a u64. Shapes line up 1:1 — this wrapper keeps the
+ * import boundary explicit.
+ */
+function mapPath(
+  path: MSTNode[],
+): { siblingHash: Uint8Array; siblingSum: number | bigint }[] {
+  return path.map((p) => ({
+    siblingHash: p.siblingHash,
+    siblingSum: p.siblingSum,
+  }));
+}
+
+/** SDK `LeafClaim` (byte-oriented juror) → generated args (`Address` juror). */
+function mapLeaf(leaf: { juror: Uint8Array; stake: bigint }): {
+  juror: Address;
+  stake: number | bigint;
+} {
   return {
-    leaf: {
-      juror: getAddressDecoder().decode(m.leaf.juror),
-      stake: m.leaf.stake,
-      cumAfter: m.leaf.cumAfter,
-    },
-    proof: m.proof.map((p) => ({
-      siblingHash: p.siblingHash,
-      siblingSum: p.siblingSum,
-    })),
-    index: m.index,
+    juror: getAddressDecoder().decode(leaf.juror),
+    stake: leaf.stake,
   };
 }
 
@@ -482,3 +548,7 @@ function appendRemaining(
     accounts: Object.freeze([...(ix.accounts ?? []), ...metas]),
   }) as Instruction;
 }
+
+// silence the unused-import lint for `VotingAccounts`/`VrfDrawAccounts`/etc.
+// which are referenced only in the seam composition above.
+export type { SeatMembership, VrfDrawAccounts, VotingAccounts };

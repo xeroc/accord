@@ -8,13 +8,13 @@ skip-lint = false
 accord = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe"
 
 [programs.localnet]
-accord = "RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe"
+accord = "426cSh3qNCAKsRznY3agfUKE5CKWoiaYtnBPsVpGoRmi"
 
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm --filter @accord/tests test"
+test = "pnpm --filter @useaccord/tests test"
 
 [hooks]

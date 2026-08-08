@@ -38,7 +38,7 @@ export interface DeliveryPayload {
 
 export type IngestResult =
   | { readonly ok: true; readonly status: 201; readonly location: string }
-  | { readonly ok: false; readonly status: 400 | 409; readonly error: string };
+  | { readonly ok: false; readonly status: 400 | 404 | 409; readonly error: string };
 
 export type DeliverResult =
   | { readonly ok: true; readonly status: 200; readonly body: DeliveryPayload }
@@ -62,10 +62,7 @@ export type IngestHandler = (
  * Returns 200+payload, or 404 (not drawn / not deliverable / unknown operator)
  * / 409 (integrity-gate failure — alerts).
  */
-export type DeliverHandler = (
-  dispute: string,
-  juror: string,
-) => Promise<DeliverResult>;
+export type DeliverHandler = (dispute: string, juror: string) => Promise<DeliverResult>;
 
 /**
  * Liveness/readiness = GET /healthz. ok iff Storage + RPC reachable; LB drains

@@ -42,6 +42,16 @@ import {
   type MaybeEncodedAccount,
   type ReadonlyUint8Array,
 } from "@solana/kit";
+import {
+  getAggregationDecoder,
+  getAggregationEncoder,
+  getShortfallPolicyDecoder,
+  getShortfallPolicyEncoder,
+  type Aggregation,
+  type AggregationArgs,
+  type ShortfallPolicy,
+  type ShortfallPolicyArgs,
+} from "../types";
 
 export const SUBACCORD_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   210, 63, 193, 190, 9, 166, 89, 170,
@@ -55,8 +65,12 @@ export type Subaccord = {
   discriminator: ReadonlyUint8Array;
   creator: Address;
   stakingToken: Address;
+  /**
+   * Compensation mint — fees + appeal bonds (ADR-0020). Distinct from
+   * `staking_token` so collateral and compensation are decoupled.
+   */
+  feeToken: Address;
   minStake: bigint;
-  jurorsPerDispute: number;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
    * `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
@@ -65,8 +79,30 @@ export type Subaccord = {
   reviewWindow: bigint;
   commitWindow: bigint;
   revealWindow: bigint;
+  /**
+   * Appeal window after a round resolves before the dispute goes final
+   * (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
+   */
+  appealWindow: bigint;
   maxAppeals: number;
+  /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
+  aggregation: Aggregation;
   feePerJuror: bigint;
+  /**
+   * Reveal-quorum fraction in basis points (ADR-0021). A round is
+   * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
+   * free via panel growth.
+   */
+  revealThresholdBps: number;
+  /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
+  shortfallPolicy: ShortfallPolicy;
+  /**
+   * Maximum same-size redraws per round before the dispute fails (ADR-0021).
+   * `(round_idx, draw_attempt)` with `draw_attempt` reaching this bound ⇒
+   * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
+   */
+  maxDrawAttempts: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
@@ -75,7 +111,7 @@ export type Subaccord = {
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
-   * Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+   * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
    * positive→0 decrements). This is a *coarse* intake gate for
    * `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
@@ -86,14 +122,34 @@ export type Subaccord = {
    * finalized Merkle Snapshot.
    */
   stakerCount: number;
+  /**
+   * On-chain stake accumulator root (ADR-0012). Maintained incrementally on
+   * every `stake`/`unstake` via client-supplied Merkle paths; canonical by
+   * construction — there is no posted root to withhold or fabricate.
+   */
+  rootHash: ReadonlyUint8Array;
+  /** Total stake committed to by the accumulator tree (= root node sum). */
+  totalStake: bigint;
+  /**
+   * Next free leaf index in the append-only tree. Incremented once per
+   * first-time staker; never reused (full unstake zeros the leaf weight but
+   * keeps its `tree_index`).
+   */
+  nextIndex: number;
+  /** Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`. */
+  depth: number;
   bump: number;
 };
 
 export type SubaccordArgs = {
   creator: Address;
   stakingToken: Address;
+  /**
+   * Compensation mint — fees + appeal bonds (ADR-0020). Distinct from
+   * `staking_token` so collateral and compensation are decoupled.
+   */
+  feeToken: Address;
   minStake: number | bigint;
-  jurorsPerDispute: number;
   /**
    * Slash factor in basis points (10% = 1000). Incoherent Juror loses
    * `alpha_bps * min_stake / 10_000` (flat — ADR-0003 consequence).
@@ -102,8 +158,30 @@ export type SubaccordArgs = {
   reviewWindow: number | bigint;
   commitWindow: number | bigint;
   revealWindow: number | bigint;
+  /**
+   * Appeal window after a round resolves before the dispute goes final
+   * (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
+   */
+  appealWindow: number | bigint;
   maxAppeals: number;
+  /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
+  aggregation: AggregationArgs;
   feePerJuror: number | bigint;
+  /**
+   * Reveal-quorum fraction in basis points (ADR-0021). A round is
+   * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
+   * free via panel growth.
+   */
+  revealThresholdBps: number;
+  /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
+  shortfallPolicy: ShortfallPolicyArgs;
+  /**
+   * Maximum same-size redraws per round before the dispute fails (ADR-0021).
+   * `(round_idx, draw_attempt)` with `draw_attempt` reaching this bound ⇒
+   * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
+   */
+  maxDrawAttempts: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
@@ -112,7 +190,7 @@ export type SubaccordArgs = {
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
-   * Count of **distinct Jurors with any stake** (`JurorStake.amount > 0`).
+   * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
    * positive→0 decrements). This is a *coarse* intake gate for
    * `create_dispute`/`appeal` (SPEC edge case: revert if fewer active
@@ -123,6 +201,22 @@ export type SubaccordArgs = {
    * finalized Merkle Snapshot.
    */
   stakerCount: number;
+  /**
+   * On-chain stake accumulator root (ADR-0012). Maintained incrementally on
+   * every `stake`/`unstake` via client-supplied Merkle paths; canonical by
+   * construction — there is no posted root to withhold or fabricate.
+   */
+  rootHash: ReadonlyUint8Array;
+  /** Total stake committed to by the accumulator tree (= root node sum). */
+  totalStake: number | bigint;
+  /**
+   * Next free leaf index in the append-only tree. Incremented once per
+   * first-time staker; never reused (full unstake zeros the leaf weight but
+   * keeps its `tree_index`).
+   */
+  nextIndex: number;
+  /** Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`. */
+  depth: number;
   bump: number;
 };
 
@@ -133,19 +227,28 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["creator", getAddressEncoder()],
       ["stakingToken", getAddressEncoder()],
+      ["feeToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
-      ["jurorsPerDispute", getU32Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
       ["commitWindow", getU64Encoder()],
       ["revealWindow", getU64Encoder()],
+      ["appealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
+      ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
+      ["revealThresholdBps", getU16Encoder()],
+      ["shortfallPolicy", getShortfallPolicyEncoder()],
+      ["maxDrawAttempts", getU8Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["stakerCount", getU32Encoder()],
+      ["rootHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["totalStake", getU64Encoder()],
+      ["nextIndex", getU32Encoder()],
+      ["depth", getU8Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBACCORD_DISCRIMINATOR }),
@@ -158,19 +261,28 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["creator", getAddressDecoder()],
     ["stakingToken", getAddressDecoder()],
+    ["feeToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
-    ["jurorsPerDispute", getU32Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
     ["commitWindow", getU64Decoder()],
     ["revealWindow", getU64Decoder()],
+    ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
+    ["revealThresholdBps", getU16Decoder()],
+    ["shortfallPolicy", getShortfallPolicyDecoder()],
+    ["maxDrawAttempts", getU8Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["stakerCount", getU32Decoder()],
+    ["rootHash", fixDecoderSize(getBytesDecoder(), 32)],
+    ["totalStake", getU64Decoder()],
+    ["nextIndex", getU32Decoder()],
+    ["depth", getU8Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -234,5 +346,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 252;
+  return 338;
 }

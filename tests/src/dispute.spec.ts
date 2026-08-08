@@ -8,7 +8,7 @@
 //  - too-few options     : on-chain InvalidOptions revert (bypass facade guard)
 //  - fee mismatch        : on-chain FeeMismatch revert (extra faithful case)
 //
-// Arming: a Subaccord needs `staker_count >= jurors_per_dispute` distinct
+// Arming: a Subaccord needs `staker_count >= INITIAL_NUM_JURORS` distinct
 // staked Jurors before `create_dispute` passes its coarse intake gate. Each
 // juror stakes from its own `new Accord({ endpoint, signer: jurorKp })` facade
 // (the adapter pins `juror = accord.signer`); the filer reuses `env.accord`
@@ -24,10 +24,12 @@ import {
   initializePause,
   createSubaccord,
   getDisputeDecoder,
+  buildAccumulator,
+  proofFor,
   type CreateDisputeAccounts,
   type CreateDisputeArgs,
   type StakingAccounts,
-} from "@accord/sdk";
+} from "@useaccord/sdk";
 import {
   getProgramDerivedAddress,
   getAddressEncoder,
@@ -35,7 +37,11 @@ import {
 } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { createMint, setTokenBalance, TOKEN_PROGRAM_ID } from "./setup/tokens.js";
+import {
+  createMint,
+  setTokenBalance,
+  TOKEN_PROGRAM_ID,
+} from "./setup/tokens.js";
 import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
 import { expectAccordAccount, fetchDecoded } from "./setup/assertions.js";
 
@@ -47,9 +53,9 @@ const ATA_PROGRAM_ID =
 const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 const SEED_DISPUTE = new Uint8Array([100, 105, 115, 112, 117, 116, 101]); // "dispute"
 
-const JURORS_PER_DISPUTE = 3;
+const INITIAL_NUM_JURORS = 3; // fixed round-1 panel size (ADR-0019)
 const FEE_PER_JUROR = 1_000_000n;
-const REQUIRED_FEE = requiredFee(JURORS_PER_DISPUTE, FEE_PER_JUROR)!; // 3_000_000
+const REQUIRED_FEE = requiredFee(FEE_PER_JUROR)!; // 3_000_000
 // DisputeState::Created is the first variant of the numeric enum (state.rs) = 0.
 const STATE_CREATED = 0;
 
@@ -113,7 +119,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
   let env: TestEnv;
   let mint!: Address;
   let pauseState!: Address;
-  // A fully-armed Subaccord (≥ jurors_per_dispute stakers) + its vault.
+  // A fully-armed Subaccord (≥ INITIAL_NUM_JURORS stakers) + its vault.
   let mainSub!: Address;
   let mainVault!: Address;
   let filerAta!: Address;
@@ -137,8 +143,8 @@ describe("e2e: dispute (requires Surfpool)", () => {
     // 2) Staking / fee-currency mint.
     mint = (await createMint(env, 6)).mint;
 
-    // 3) Main Subaccord over `mint`, armed with `jurors_per_dispute` stakers.
-    const armed = await createArmedSubaccord(JURORS_PER_DISPUTE);
+    // 3) Main Subaccord over `mint`, armed with `INITIAL_NUM_JURORS` stakers.
+    const armed = await createArmedSubaccord(INITIAL_NUM_JURORS);
     mainSub = armed.subaccord;
     mainVault = armed.vault;
 
@@ -153,10 +159,9 @@ describe("e2e: dispute (requires Surfpool)", () => {
     subaccord: Address;
     vault: Address;
   }> {
-    const args = defaultSubaccordArgs(mint, env.payer.address, {
+    const args = defaultSubaccordArgs(mint, mint, env.payer.address, {
       feePerJuror: FEE_PER_JUROR,
       minStake: 1_000n,
-      jurorsPerDispute: JURORS_PER_DISPUTE,
     });
     const sub = await createSubaccord(
       env.accord.adapter,
@@ -167,6 +172,10 @@ describe("e2e: dispute (requires Surfpool)", () => {
     await env.sendIx(sub.instruction);
     const vault = await ata(mint, sub.subaccord);
 
+    // ADR-0012: each stake carries a Merkle membership `path` the program
+    // re-verifies against the live root, so track the off-chain tree here.
+    let tree = await buildAccumulator([], 4);
+    const leaves: { juror: Uint8Array; stake: bigint }[] = [];
     for (let i = 0; i < nJurors; i++) {
       const juror = await fundSigner(env);
       await setTokenBalance(env, juror.address, mint, 10_000n);
@@ -182,11 +191,19 @@ describe("e2e: dispute (requires Surfpool)", () => {
         jurorStake,
         stakingToken: mint,
         jurorTokenAccount: await ata(mint, juror.address),
-        vault,
+        stakeVault: vault,
       };
       const facade = new Accord({ endpoint: env.rpcUrl, signer: juror });
+      const path = await proofFor(tree, i);
       // any amount > 0 bumps the distinct-staker counter once (first stake)
-      await env.sendIx(stake(facade.adapter, env.programId, accounts, 5_000n));
+      await env.sendIx(
+        stake(facade.adapter, env.programId, accounts, 5_000n, path),
+      );
+      leaves[i] = {
+        juror: new Uint8Array(getAddressEncoder().encode(juror.address)),
+        stake: 5_000n,
+      };
+      tree = await buildAccumulator(leaves, 4);
     }
     return { subaccord: sub.subaccord, vault };
   }
@@ -199,9 +216,9 @@ describe("e2e: dispute (requires Surfpool)", () => {
     return {
       filer: env.payer.address,
       subaccord,
-      stakingToken: mint,
+      feeToken: mint,
       filerTokenAccount: filerAta,
-      vault,
+      feeVault: vault,
       pauseState,
     };
   }
@@ -253,8 +270,8 @@ describe("e2e: dispute (requires Surfpool)", () => {
 
   it("insufficient stakers reverts on-chain (InsufficientJurors)", async () => {
     if (!env.up) return;
-    // A separate Subaccord with only jurors_per_dispute − 1 stakers.
-    const thin = await createArmedSubaccord(JURORS_PER_DISPUTE - 1);
+    // A separate Subaccord with only INITIAL_NUM_JURORS − 1 stakers.
+    const thin = await createArmedSubaccord(INITIAL_NUM_JURORS - 1);
     const nonce = nextNonce();
     const args: CreateDisputeArgs = {
       options: [randomBytes32(), randomBytes32()],

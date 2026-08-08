@@ -18,10 +18,14 @@ import {
 /**
  * Dispute lifecycle (SPEC state machine). A permissionless crank advances
  * states when their windows elapse.
+ *
+ * `Failed` is the liveness-escape terminal state (CONCEPT-REVIEW Ugly 4 /
+ * bean accord-18fb): `cancel_dispute` transitions a stalled dispute here,
+ * refunds the filer's round-1 fee, and releases the current round's
+ * `active_draws`. It is terminal — no lifecycle instruction accepts it.
  */
 export enum DisputeState {
   Created,
-  SnapshotPosted,
   Drawn,
   Review,
   Commit,
@@ -29,6 +33,8 @@ export enum DisputeState {
   RoundResolved,
   Final,
   Closed,
+  Failed,
+  RedrawEligible,
 }
 
 export type DisputeStateArgs = DisputeState;

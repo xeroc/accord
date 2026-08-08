@@ -12,7 +12,7 @@
 // the store's `instanceof NotFound` / `instanceof NoSuchKey` branches are
 // exercised against the genuine SDK identity (ESM module singleton).
 //
-// Run: `pnpm --filter @accord/evidence-daemon test` (→ bun test).
+// Run: `pnpm --filter @useaccord/evidence-daemon test` (→ bun test).
 
 import { describe, expect, test } from "bun:test";
 import {
@@ -61,12 +61,10 @@ class MockS3 {
   async send(cmd: unknown): Promise<unknown> {
     // HeadObject — metadata only.
     if (cmd instanceof HeadObjectCommand) {
-      const { Bucket, Key } = (
-        cmd as unknown as { input: { Bucket?: string; Key?: string } }
-      ).input;
+      const { Bucket, Key } = (cmd as unknown as { input: { Bucket?: string; Key?: string } })
+        .input;
       const obj = this.objects.get(this.k(Bucket!, Key!));
-      if (obj === undefined)
-        throw new NotFound({ $metadata: {}, message: "Not Found" });
+      if (obj === undefined) throw new NotFound({ $metadata: {}, message: "Not Found" });
       return { Metadata: { ...obj.meta } };
     }
     // PutObject — lowercases metadata keys (real S3 normalisation).
@@ -93,25 +91,21 @@ class MockS3 {
     }
     // GetObject — Body.transformToString("utf-8").
     if (cmd instanceof GetObjectCommand) {
-      const { Bucket, Key } = (
-        cmd as unknown as { input: { Bucket?: string; Key?: string } }
-      ).input;
+      const { Bucket, Key } = (cmd as unknown as { input: { Bucket?: string; Key?: string } })
+        .input;
       const obj = this.objects.get(this.k(Bucket!, Key!));
-      if (obj === undefined)
-        throw new NoSuchKey({ $metadata: {}, message: "Not Found" });
+      if (obj === undefined) throw new NoSuchKey({ $metadata: {}, message: "Not Found" });
       const body = obj.body;
       return {
         Body: {
-          transformToString: async (_encoding?: string): Promise<string> =>
-            body,
+          transformToString: async (): Promise<string> => body,
         },
       };
     }
     // DeleteObject — idempotent (no error on missing), real S3 returns 204.
     if (cmd instanceof DeleteObjectCommand) {
-      const { Bucket, Key } = (
-        cmd as unknown as { input: { Bucket?: string; Key?: string } }
-      ).input;
+      const { Bucket, Key } = (cmd as unknown as { input: { Bucket?: string; Key?: string } })
+        .input;
       this.objects.delete(this.k(Bucket!, Key!));
       return {};
     }
@@ -155,9 +149,7 @@ describe("S3Store — put/get round-trip", () => {
     expect(got!.subaccord).toBe(SUBACCORD);
     expect(got!.dispute).toBe(DISPUTE);
     expect(Array.from(got!.ct)).toEqual(Array.from(b.ct));
-    expect(Array.from(got!.claimantEphemPub)).toEqual(
-      Array.from(b.claimantEphemPub),
-    );
+    expect(Array.from(got!.claimantEphemPub)).toEqual(Array.from(b.claimantEphemPub));
     expect(Array.from(got!.wrapped)).toEqual(Array.from(b.wrapped));
     expect(Array.from(got!.plaintextHash)).toEqual(Array.from(b.plaintextHash));
     expect(got!.ingestedAt).toBe(b.ingestedAt);
@@ -207,9 +199,7 @@ describe("S3Store — idempotency on plaintextHash", () => {
     await store.put(mkBundle({ plaintextHash: existing }));
     let caught: EvidenceConflictError | undefined;
     try {
-      await store.put(
-        mkBundle({ plaintextHash: new Uint8Array(32).fill(0x22) }),
-      );
+      await store.put(mkBundle({ plaintextHash: new Uint8Array(32).fill(0x22) }));
     } catch (e) {
       if (e instanceof EvidenceConflictError) caught = e;
     }
@@ -226,9 +216,7 @@ describe("S3Store — idempotency on plaintextHash", () => {
       body: '{"v":1}',
       meta: { "some-other-key": "x" }, // no plaintext-hash
     });
-    await expect(store.put(mkBundle())).rejects.toBeInstanceOf(
-      EvidenceConflictError,
-    );
+    await expect(store.put(mkBundle())).rejects.toBeInstanceOf(EvidenceConflictError);
   });
 });
 
@@ -287,9 +275,7 @@ describe("S3Store — never-plaintext invariant", () => {
 
   test("base64 helpers round-trip (sanity for the byte fields above)", () => {
     const bytes = new Uint8Array([0, 1, 2, 3, 250, 251, 252]);
-    expect(Array.from(base64ToBytes(bytesToBase64(bytes)))).toEqual(
-      Array.from(bytes),
-    );
+    expect(Array.from(base64ToBytes(bytesToBase64(bytes)))).toEqual(Array.from(bytes));
   });
 });
 

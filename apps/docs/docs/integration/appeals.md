@@ -2,15 +2,17 @@
 
 Permissionless escalation to a larger panel. Anyone may appeal a resolved round within the appeal window.
 
+> The appeal window is **per-Subaccord** (`dispute.terms.appeal_window`, frozen at filing; default 3 days, floor 1 hour — [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)). Set `max_appeals == 0` to disable appeals entirely.
+
 ## `appeal()`
 
-| Gate                                    | Error                |
-| --------------------------------------- | -------------------- |
-| `!pause_state.paused`                   | `ProgramPaused`      |
-| `state == RoundResolved`                | `InvalidState`       |
-| `current_round < max_appeals`           | `MaxAppealsReached`  |
-| `now < reveal_end + APPEAL_WINDOW_SECS` | `AppealWindowClosed` |
-| `subaccord.staker_count ≥ new_panel`    | `InsufficientJurors` |
+| Gate                                     | Error                |
+| ---------------------------------------- | -------------------- |
+| `!pause_state.paused`                    | `ProgramPaused`      |
+| `state == RoundResolved`                 | `InvalidState`       |
+| `current_round < max_appeals`            | `MaxAppealsReached`  |
+| `now < reveal_end + terms.appeal_window` | `AppealWindowClosed` |
+| `subaccord.staker_count ≥ new_panel`     | `InsufficientJurors` |
 
 ## Panel ladder
 
@@ -39,7 +41,7 @@ total   = fee_new + bond                  // appellant ATA → vault
 
 ## Round reset
 
-`appeal` increments `current_round` and resets `state → Created`, so the snapshot → draw → vote cycle reruns for the larger panel.
+`appeal` increments `current_round` and resets `state → Created`, so the VRF → draw → vote cycle reruns for the larger panel. The same `committed_vrf` and `frozen_root` are reused — appeals draw a larger panel from the same fixed pool (no new VRF, no re-grind; [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ```rust
 accord::appeal(ctx.contexts)?;
@@ -48,7 +50,7 @@ accord::claim_appeal_refund(ctx.contexts, round_idx)?;  // round_idx = appealed 
 ```
 
 ```typescript
-import { appeal, claimAppealRefund } from "@accord/sdk";
+import { appeal, claimAppealRefund } from "@useaccord/sdk";
 
 await appeal(accord.adapter, accord.PROGRAM_ID, { dispute });
 // after finalize_dispute:
