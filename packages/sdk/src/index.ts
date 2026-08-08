@@ -121,8 +121,16 @@ export {
 // filters or decode raw bytes (milestone uvru decision).
 export {
   findJurorStakesBySubaccord,
+  findJurorStakesByJuror,
   type JurorStakeAccount,
 } from "./queries.js";
+
+// Dispute phase label + countdown for the juror dashboard (bean accord-m4gt).
+export {
+  disputePhase,
+  type RoundPhaseWindows,
+  type PhaseInfo,
+} from "./methods/disputePhase.js";
 
 // Account codecs — exposed for advanced/test use (e.g. e2e VRF injection via
 // `surfnet_setAccount`: decode → set committedVrf → re-encode). Generated surface.
