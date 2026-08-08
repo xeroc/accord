@@ -1,5 +1,6 @@
 import { NavLink, HashRouter, Route, Routes } from "react-router-dom";
 
+import { DisputeDetail } from "./features/dispute/DisputeDetail";
 import { DisputeList } from "./features/dispute/DisputeList";
 
 function Nav() {
@@ -27,7 +28,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<DisputeList />} />
             <Route path="/disputes" element={<DisputeList />} />
-            <Route path="/disputes/:address" element={<DisputeList />} />
+            <Route path="/disputes/:address" element={<DisputeDetail />} />
           </Routes>
         </main>
       </div>
