@@ -37,4 +37,10 @@ pub enum CanonError {
     WithdrawalTimelockOpen,
     #[msg("Caller is not the item submitter.")]
     NotSubmitter,
+    #[msg("Item is not in the Disputed state.")]
+    NotDisputed,
+    #[msg("Accord dispute has not reached the Final state.")]
+    DisputeNotFinal,
+    #[msg("Dispute final_ruling is not a valid Canon option.")]
+    InvalidRuling,
 }

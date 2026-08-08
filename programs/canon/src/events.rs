@@ -60,3 +60,18 @@ pub struct Withdrawn {
     pub submitter: Pubkey,
     pub amount: u64,
 }
+
+/// Emitted by `settle_item` when a dispute resolves and funds are redistributed.
+#[event]
+pub struct ItemSettled {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    /// 0 = keep, 1 = remove (index into Accord options).
+    pub ruling: u8,
+    /// True if the item was in WithdrawPending when challenged.
+    pub is_withdrawal: bool,
+    /// The challenger's locked stake.
+    pub challenge_stake: u64,
+    /// accumulated_stake before settlement (for indexer reconciliation).
+    pub accumulated_before_settlement: u64,
+}

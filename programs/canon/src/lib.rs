@@ -63,4 +63,13 @@ pub mod canon {
     pub fn advance_withdrawal(ctx: Context<AdvanceWithdrawal>) -> Result<()> {
         instructions::withdrawal::advance_withdrawal_handler(ctx)
     }
+
+    /// Permissionless crank (SPEC §Instructions #5): reads the Accord dispute's
+    /// `final_ruling` and redistributes. `keep` → progressive protection
+    /// (challenge_stake folds into accumulated_stake, → Listed). `remove` →
+    /// bounty to challenger (→ Removed). Withdrawal-challenge: item Removed
+    /// either way; `keep` → submitter gets stake (frivolous-block penalty).
+    pub fn settle_item(ctx: Context<SettleItem>) -> Result<()> {
+        instructions::settle_item::handler(ctx)
+    }
 }
