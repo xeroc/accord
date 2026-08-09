@@ -1,11 +1,11 @@
 ---
 # accord-9cmb
 title: Ingest + store per-round support (round>0 bundles)
-status: draft
+status: todo
 type: task
 priority: high
 created_at: 2026-08-09T17:45:05Z
-updated_at: 2026-08-09T17:45:16Z
+updated_at: 2026-08-09T20:19:48Z
 parent: accord-w9sg
 ---
 
