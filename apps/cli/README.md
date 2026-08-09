@@ -5,9 +5,10 @@ Thin wrapper over [`@useaccord/sdk`](../../packages/sdk) (the `Accord` facade);
 built on [`oclif`](https://oclif.io) v4 (ESM/bun).
 
 > **Status:** shared infrastructure + the first commands landed. The remaining
-> leaf commands (`staking:*`, `dispute:*`, `draw:*`, `vote:*`, `appeal:*`,
+> leaf commands (`staking:*`, `dispute:*`, `draw:*`, `vote:*`,
 > `settle:*`, `accumulator:*`, `read:*`) plug into the base classes below and are
-> implemented in parallel. Interface spec: `.agents/skills/useaccord/CLI.md`.
+> implemented in parallel. `config:*`, `lifecycle:init-pause`, and `appeal:*` are
+> landed. Interface spec: `.agents/skills/useaccord/CLI.md`.
 
 ## Run
 
@@ -26,15 +27,15 @@ bun run apps/cli/bin/run.js <command>
 
 Resolved in priority order (flag → env → default):
 
-| Flag / Env | Default | Meaning |
-|---|---|---|
+| Flag / Env        | Default                                                                | Meaning                                             |
+| ----------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
 | `--keypair`, `-k` | `$ANCHOR_WALLET` → `$ACCORD_KEYPAIR_PATH` → `~/.config/solana/id.json` | Fee payer **and** on-chain signer for every command |
-| `--rpc`, `-r` | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899` | JSON-RPC endpoint |
-| `--ws`, `-w` | `$ACCORD_WS_URL` (else derived from `--rpc`) | WebSocket (confirmations) |
-| `--commitment` | `confirmed` | `processed`/`confirmed`/`finalized` |
-| `--json` | off | One JSON object on stdout (for `jq`) |
-| `--quiet`, `-q` | off | Only the signature (send) or address (create/read) |
-| `--dry-run` | off | Build + print the instruction; do not sign/send |
+| `--rpc`, `-r`     | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899`                            | JSON-RPC endpoint                                   |
+| `--ws`, `-w`      | `$ACCORD_WS_URL` (else derived from `--rpc`)                           | WebSocket (confirmations)                           |
+| `--commitment`    | `confirmed`                                                            | `processed`/`confirmed`/`finalized`                 |
+| `--json`          | off                                                                    | One JSON object on stdout (for `jq`)                |
+| `--quiet`, `-q`   | off                                                                    | Only the signature (send) or address (create/read)  |
+| `--dry-run`       | off                                                                    | Build + print the instruction; do not sign/send     |
 
 **Single-signer model:** the `--keypair` wallet is the fee payer **and** the
 instruction's signing account for every command (the SDK adapter pins
@@ -47,6 +48,7 @@ instruction's signing account for every command (the SDK adapter pins
 ```bash
 useaccord config:show
 ```
+
 ```
 rpc        : http://127.0.0.1:8899
 keypair    : ~/.config/solana/id.json
@@ -69,11 +71,50 @@ wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 ```bash
 useaccord lifecycle:init-pause
 ```
+
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
   pauseState: AaNWS…XVG9
 ```
+
+### `appeal:cost --current-round <n> --fee-per-juror <base> [--json]`
+
+**Pure (offline, no chain).** Quote the panel + fee + bond for opening round
+`--current-round + 1`. Panel follows the 2N+1 ladder (3 → 7 → 15 → 31);
+`total` = new-round fee + equal bond, and is exactly what `appeal:open`
+transfers.
+
+```bash
+useaccord appeal:cost --current-round 0 --fee-per-juror 1000000
+```
+
+```
+new round    : 1
+panel        : 7 jurors
+new-round fee: 7_000_000
+bond         : 7_000_000  (== fee; forfeit if no flip, refund if flip)
+total payable: 14_000_000
+```
+
+### `appeal:open --dispute <addr> [--appellant <addr>] [--dry-run]`
+
+Permissionless: open the next appeal round on a resolved dispute
+(`methods.appeal`). The loaded wallet is the appellant (override with
+`--appellant`) and pays `fee_new + bond`. Only `--dispute` is required; the
+prior round, AppealBond, fee token, and both token accounts are derived from
+the dispute + its Subaccord.
+
+> **AppealBond PDA:** seeded by the round **being** appealed (`current_round`,
+> before the increment) — `["bond", dispute, current_round]` (lib.rs:3361).
+> `appeal:open` derives this automatically.
+
+### `appeal:claim-refund --dispute <addr> --round-idx <n> [--claimant-token-account <ata>]`
+
+Permissionless crank: sweep a flipped appeal bond back to its appellant after
+`finalize_dispute` (`methods.claimAppealRefund`). `--round-idx` is the round
+that was appealed (the AppealBond PDA seed). The refund lands in the
+appellant's `feeToken` ATA (defaults to the loaded wallet's ATA). Idempotent.
 
 ## Infrastructure (for future commands)
 
@@ -84,7 +125,7 @@ Every command extends one of two base classes in `src/lib/base-command.ts`:
   (`accumulator:*`, `commit-hash`, `required-fee`).
 - **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
   facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)
-  + `--dry-run` instruction dump.
+  - `--dry-run` instruction dump.
 
 Shared helpers: `src/lib/{format,output,errors,wallet}.ts` (address truncation,
 bigint grouping, json/quiet renderers, AccordError mapping, keypair/env
