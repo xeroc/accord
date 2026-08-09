@@ -1,10 +1,7 @@
 import { Link } from "react-router-dom";
 
-import {
-  DISPUTE_STATE_LABELS,
-  formatRuling,
-  shortAddress,
-} from "../../shared/format";
+import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { useDisputes } from "./useDisputes";
 
 export function DisputeList() {
@@ -68,16 +65,16 @@ export function DisputeList() {
               <td className="py-2 pr-4">
                 <Link
                   to={`/disputes/${d.address}`}
-                  className="font-mono text-sm text-amber hover:underline"
+                  className="text-amber hover:underline"
                 >
-                  {shortAddress(d.address)}
+                  <Copyable value={d.address} />
                 </Link>
               </td>
-              <td className="py-2 pr-4 font-mono text-sm">
-                {shortAddress(d.data.filer)}
+              <td className="py-2 pr-4">
+                <Copyable value={d.data.filer} />
               </td>
-              <td className="py-2 pr-4 font-mono text-sm">
-                {shortAddress(d.data.subaccord)}
+              <td className="py-2 pr-4">
+                <Copyable value={d.data.subaccord} />
               </td>
               <td className="py-2 pr-4 text-sm">
                 {DISPUTE_STATE_LABELS[d.data.state]}

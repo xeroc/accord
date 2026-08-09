@@ -1,37 +1,43 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { INITIAL_NUM_JURORS, MAX_OPTIONS, requiredFee } from "@useaccord/sdk";
+import {
+  Accord,
+  INITIAL_NUM_JURORS,
+  MAX_OPTIONS,
+  findPauseStatePda,
+  requiredFee,
+} from "@useaccord/sdk";
 
+import { useClusterRpc } from "../../shared/rpc";
+import { sendInstruction } from "../../shared/transaction";
+import { useSigner } from "../../shared/wallet";
+import { getAtaAddress } from "../../shared/tokens";
+import { useTokenMeta } from "../../shared/useTokenMeta";
+import { formatBigInt } from "../../shared/format";
 import { useSubaccord } from "./useSubaccord";
-
-function hexToBytes(hex: string): Uint8Array | null {
-  if (hex.length !== 64) return null;
-  try {
-    const bytes = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-      bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-    }
-    return bytes;
-  } catch {
-    return null;
-  }
-}
+import { useFeeTokenBalance } from "./useFeeTokenBalance";
 
 function isValidHex32(s: string): boolean {
   return /^[0-9a-fA-F]{64}$/.test(s);
+}
+
+function hexToBytes32(hex: string): Uint8Array {
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
 }
 
 function randomNonce(): string {
   return BigInt(Math.floor(Math.random() * 0xffffffff)).toString();
 }
 
-function formatFee(fee: bigint): string {
-  return `${(Number(fee) / 1e9).toFixed(4)} SOL`;
-}
-
 const MIN_OPTIONS = 2;
 
 export function CreateDispute() {
+  const { signer } = useSigner();
+  const crpc = useClusterRpc();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -50,12 +56,23 @@ export function CreateDispute() {
 
   const feePerJuror = subaccord?.data.feePerJuror ?? 0n;
   const fee = feePerJuror > 0n ? requiredFee(feePerJuror) : null;
+  const feeToken = subaccord?.data.feeToken;
+  const { data: feeMeta } = useTokenMeta(feeToken);
+  const decimals = feeMeta?.decimals;
+  const symbol =
+    feeMeta?.symbol ?? (feeToken ? `${feeToken.slice(0, 4)}…` : "???");
+  const { data: balance, isLoading: balanceLoading } = useFeeTokenBalance(
+    signer?.address,
+    feeToken,
+  );
+  const sufficient = balance !== undefined && fee !== null && balance >= fee;
   const validOptions = options.filter(isValidHex32);
   const canSubmit =
     validOptions.length >= MIN_OPTIONS &&
     validOptions.length <= MAX_OPTIONS &&
     isValidHex32(evidenceHash) &&
     !!subaccord &&
+    sufficient &&
     !submitting;
 
   function addOption() {
@@ -82,6 +99,14 @@ export function CreateDispute() {
       setError("Select a valid subaccord.");
       return;
     }
+    if (!signer) {
+      setError("Connect a wallet to sign the create_dispute transaction.");
+      return;
+    }
+    if (!crpc) {
+      setError("No RPC cluster active.");
+      return;
+    }
 
     const validOpts = options.filter(isValidHex32);
     if (validOpts.length < MIN_OPTIONS) {
@@ -99,17 +124,46 @@ export function CreateDispute() {
       return;
     }
 
-    setSubmitting(true);
+    if (balance === undefined) {
+      setError("Fee-token balance not loaded yet.");
+      return;
+    }
+    if (balance < fee) {
+      setError("Insufficient fee-token balance to file this dispute.");
+      return;
+    }
 
+    setSubmitting(true);
     try {
-      // ponytail: actual tx build + send requires ConnectorKit signer.
-      // When wired: createDispute(client, accounts, { options, evidenceHash,
-      // nonce, fee }) → instruction → sendInstruction → redirect.
-      // For now: show the prepared tx info.
-      setError(
-        "Wallet connection required to sign the create_dispute transaction. " +
-          "(ConnectorKit — accord-y5av)",
+      const feeToken = subaccord.data.feeToken;
+      const [pauseState] = await findPauseStatePda();
+      const feeVault = await getAtaAddress(subaccord.address, feeToken);
+      const filerTokenAccount = await getAtaAddress(signer.address, feeToken);
+
+      const accord = new Accord({ endpoint: crpc.endpoint, signer });
+      const { instruction, dispute } = await accord.methods.createDispute(
+        {
+          filer: signer.address,
+          subaccord: subaccord.address,
+          feeToken,
+          filerTokenAccount,
+          feeVault,
+          pauseState,
+        },
+        {
+          options: validOpts.map(hexToBytes32),
+          evidenceHash: hexToBytes32(evidenceHash),
+          nonce: BigInt(nonce),
+          fee,
+        },
       );
+      await sendInstruction(
+        crpc.rpc,
+        crpc.rpcSubscriptions,
+        signer,
+        instruction,
+      );
+      navigate(`/disputes/${dispute}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -154,7 +208,9 @@ export function CreateDispute() {
                     Fee per juror
                   </span>
                   <p className="font-mono">
-                    {formatFee(subaccord.data.feePerJuror)}
+                    {decimals !== undefined
+                      ? `${formatBigInt(subaccord.data.feePerJuror, decimals)} ${symbol}`
+                      : `${subaccord.data.feePerJuror.toString()} (raw)`}
                   </p>
                 </div>
                 <div>
@@ -174,7 +230,35 @@ export function CreateDispute() {
             <span className="font-mono text-xs text-text-secondary">
               Required fee ({INITIAL_NUM_JURORS} × fee per juror)
             </span>
-            <p className="font-mono text-lg text-amber">{formatFee(fee)}</p>
+            <p className="font-mono text-lg text-amber">
+              {fee && decimals !== undefined
+                ? `${formatBigInt(fee, decimals)} ${symbol}`
+                : `${fee?.toString() ?? 0n} (raw)`}
+            </p>
+            {signer && feeToken && (
+              <div className="mt-2 border-t border-amber/20 pt-2">
+                <span className="font-mono text-xs text-text-secondary">
+                  Your fee-token balance
+                </span>
+                <p
+                  className={`font-mono ${
+                    balanceLoading
+                      ? "text-text-secondary"
+                      : sufficient
+                        ? "text-confirm"
+                        : "text-slash"
+                  }`}
+                >
+                  {balanceLoading
+                    ? "loading…"
+                    : (balance ?? 0n) === 0n
+                      ? `0 ${symbol} (no ATA)`
+                      : decimals !== undefined
+                        ? `${formatBigInt(balance ?? 0n, decimals)} ${symbol}`
+                        : `${(balance ?? 0n).toString()} (raw)`}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

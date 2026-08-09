@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { findAllDisputes } from "@useaccord/sdk";
 
-import { createRpc, getCluster } from "../../shared/cluster";
+import { useClusterRpc } from "../../shared/rpc";
 
 export function useDisputes() {
+  const crpc = useClusterRpc();
   return useQuery({
-    queryKey: ["disputes", getCluster()],
-    queryFn: () => findAllDisputes(createRpc()),
+    queryKey: ["disputes", crpc?.endpoint],
+    queryFn: () => findAllDisputes(crpc!.rpc),
+    enabled: !!crpc,
     staleTime: 30_000,
   });
 }

@@ -17,12 +17,8 @@ import type { Address, ReadonlyUint8Array } from "@solana/kit";
 
 import { useClusterRpc } from "../../shared/rpc";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
-import {
-  formatHash,
-  formatTokenAmount,
-  formatWindow,
-  shortAddress,
-} from "../../shared/format";
+import { formatTokenAmount, formatWindow } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
 
 export function SubaccordDetailPage() {
@@ -41,7 +37,9 @@ export function SubaccordDetailPage() {
         <Link to="/subaccords" className="back">
           ← Subaccords.
         </Link>
-        <h1 className="title mono">{shortAddress(address)}</h1>
+        <h1 className="title">
+          <Copyable value={address} />
+        </h1>
       </header>
 
       {isLoading ? (
@@ -116,23 +114,16 @@ function SubaccordDetail({
           />
           <Row
             label="Root hash"
-            value={
-              <span className="mono" title={fullHex(d.rootHash)}>
-                {formatHash(d.rootHash)}
-              </span>
-            }
+            value={<Copyable value={fullHex(d.rootHash)} />}
           />
         </Group>
 
         <Group head="Tokens.">
           <Row
             label="Staking token"
-            value={<span className="mono">{shortAddress(d.stakingToken)}</span>}
+            value={<Copyable value={d.stakingToken} />}
           />
-          <Row
-            label="Fee token"
-            value={<span className="mono">{shortAddress(d.feeToken)}</span>}
-          />
+          <Row label="Fee token" value={<Copyable value={d.feeToken} />} />
           <Row
             label="Min stake"
             value={
@@ -203,10 +194,7 @@ function SubaccordDetail({
         </Group>
 
         <Group head="Identity.">
-          <Row
-            label="Creator"
-            value={<span className="mono">{shortAddress(d.creator)}</span>}
-          />
+          <Row label="Creator" value={<Copyable value={d.creator} />} />
           <Row label="Authority" value={<Authority value={d.authority} />} />
           <Row
             label="Evidence operator"
@@ -214,19 +202,11 @@ function SubaccordDetail({
           />
           <Row
             label="Risk type"
-            value={
-              <span className="mono" title={fullHex(d.riskType)}>
-                {formatHash(d.riskType)}
-              </span>
-            }
+            value={<Copyable value={fullHex(d.riskType)} />}
           />
           <Row
             label="Evidence spec"
-            value={
-              <span className="mono" title={fullHex(d.evidenceSpec)}>
-                {formatHash(d.evidenceSpec)}
-              </span>
-            }
+            value={<Copyable value={fullHex(d.evidenceSpec)} />}
           />
         </Group>
       </section>
@@ -234,11 +214,10 @@ function SubaccordDetail({
   );
 }
 
-/** Show the zero key as "Immutable / none" rather than an address. */
 function Authority({ value }: { value: Address }) {
   const zero = "11111111111111111111111111111111";
   if (value === zero) return <span className="muted">None (immutable).</span>;
-  return <span className="mono">{shortAddress(value)}</span>;
+  return <Copyable value={value} />;
 }
 
 function Group({

@@ -7,3 +7,4 @@ export {
   getAtaAddress,
 } from "./tokens";
 export { useAccord, type AccordEnv } from "./rpc";
+export { unwrapError } from "./errors";
