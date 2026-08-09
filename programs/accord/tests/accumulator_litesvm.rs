@@ -1924,7 +1924,10 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
         .unwrap();
     r.assert_success();
 
-    // Filer should have received vault_balance - total_deposit.
+    // C-1: filer gets exactly dispute.fee_paid (per-dispute), NOT
+    // vault_balance minus bonds. The shared vault also holds juror
+    // collateral (staking_token == fee_token here); draining it would
+    // steal stake.
     let filer_after = u64::from_le_bytes(
         env.ctx.svm.get_account(&fata).unwrap().data[64..72]
             .try_into()
@@ -1932,16 +1935,18 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
     );
     assert_eq!(
         filer_after - filer_before,
-        vault_balance - total_deposit,
-        "filer gets vault minus reserved appeal deposits"
+        round_0_fee,
+        "filer gets exactly dispute.fee_paid (C-1: per-dispute, not shared vault)"
     );
 
-    // Vault should now hold exactly total_deposit (for the appeal refund).
+    // Vault retains the appeal deposit + juror collateral.
+    let stake_collateral = vault_balance - round_0_fee - total_deposit;
     let vault_after = env.ctx.svm.get_account(&vault).unwrap();
     let vault_remaining = u64::from_le_bytes(vault_after.data[64..72].try_into().unwrap());
     assert_eq!(
-        vault_remaining, total_deposit,
-        "vault retains exactly the deposit"
+        vault_remaining,
+        total_deposit + stake_collateral,
+        "vault retains appeal deposit + juror stake collateral"
     );
 
     // claim_appeal_refund: appellant gets the full deposit back.
@@ -1972,13 +1977,138 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
         "appellant recovers full fee+bond on cancel"
     );
 
-    // Vault is now empty (both filer refund and appeal refund paid out).
+    // Vault retains only juror stake collateral (staking_token == fee_token;
+    // collateral was never at risk — C-1 ensures cancel doesn't drain it).
     let vault_final = env.ctx.svm.get_account(&vault).unwrap();
     let vault_final_balance = u64::from_le_bytes(vault_final.data[64..72].try_into().unwrap());
     assert_eq!(
-        vault_final_balance, 0,
-        "vault fully drained after both refunds"
+        vault_final_balance, stake_collateral,
+        "vault retains only juror stake collateral after both refunds"
     );
+}
+
+// ─── C-1 regression: shared fee_vault drain ─────────────────────────────────
+
+#[test]
+fn cancel_dispute_does_not_drain_shared_vault() {
+    // C-1 regression: two disputes in the same Subaccord share one fee_vault.
+    // Canceling one must refund only that dispute's fee_paid, not the entire
+    // vault balance (which would steal the other dispute's fees + juror
+    // collateral). Before the fix, cancel computed filer_fee as
+    // `vault_balance - reserved`, draining everything.
+    let mut env = setup_accumulator();
+
+    // File dispute A (stakes 3 jurors + deposits 3 × fee_per_juror).
+    let (dispute_a, _filer_a) = create_dispute_under_a(&mut env);
+    let fee_per_dispute = 3u64 * 1_000_000;
+
+    // File dispute B under the same Subaccord (different filer, same vault).
+    let filer_b = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer_b.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata_b = juror_ata(&filer_b.pubkey(), &env.mint);
+    create_token_account(
+        &mut env.ctx,
+        &fata_b,
+        &env.mint,
+        &filer_b.pubkey(),
+        100_000_000,
+    );
+    let dispute_b = dispute_pda(&filer_b.pubkey(), 1u64);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer_b.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute: dispute_b,
+            fee_token: env.mint,
+            filer_token_account: fata_b,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce: 1,
+            fee: fee_per_dispute,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer_b])
+        .unwrap()
+        .assert_success();
+
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let vault_before = u64::from_le_bytes(
+        env.ctx.svm.get_account(&vault).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    // vault_before = juror_collateral (15_000) + 2 disputes × fee_per_dispute.
+
+    // Warp past the pre-draw cancel timeout.
+    warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 1);
+
+    // Cancel dispute B (pre-draw Created; no remaining_accounts needed).
+    let filer_b_before = u64::from_le_bytes(
+        env.ctx.svm.get_account(&fata_b).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute: dispute_b,
+            fee_token: env.mint,
+            filer_token_account: fata_b,
+            fee_vault: vault,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
+    r.assert_success();
+
+    // Filer B received exactly dispute B's fee_paid — not the entire vault.
+    let filer_b_after = u64::from_le_bytes(
+        env.ctx.svm.get_account(&fata_b).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    assert_eq!(
+        filer_b_after - filer_b_before,
+        fee_per_dispute,
+        "filer B gets only their own fee_paid — not the shared vault"
+    );
+
+    // Vault retains dispute A's fees + juror collateral (was: fully drained).
+    let vault_after = u64::from_le_bytes(
+        env.ctx.svm.get_account(&vault).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    assert_eq!(
+        vault_after,
+        vault_before - fee_per_dispute,
+        "vault retains dispute A's fees + juror collateral after canceling B"
+    );
+
+    // Dispute A is untouched.
+    let d_a = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute_a).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d_a.fee_paid, fee_per_dispute, "dispute A fee_paid intact");
+    assert_eq!(d_a.state, DisputeState::Created, "dispute A still Created");
 }
 
 // ─── partial-panel cancel test (REVIEW #3) ───────────────────────────────────

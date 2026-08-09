@@ -1774,9 +1774,9 @@ pub mod accord {
     ///   drawn `JurorStake` PDAs follow (`[1..=panel]`).
     ///
     /// `Final`/`Closed`/`Failed` are terminal and revert. The filer refund is
-    /// exactly the round-1 fee (`INITIAL_NUM_JURORS · terms.fee_per_juror`);
-    /// appeal-round fees/bonds are multi-round settlement concerns
-    /// (bean accord-r6ti) and are intentionally not swept here.
+    /// exactly `dispute.fee_paid` (C-1: the per-dispute fee pool — NOT the
+    /// shared vault balance; the fee_vault is one ATA for the entire
+    /// Subaccord). Appeal bonds stay claimable via `claim_appeal_refund`.
     pub fn cancel_dispute(ctx: Context<CancelDispute>) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         let now = Clock::get()?.unix_timestamp;
@@ -1797,8 +1797,6 @@ pub mod accord {
                 | DisputeState::Reveal
                 | DisputeState::RoundResolved
         );
-
-        let reserved: u64;
 
         if post_draw {
             // remaining_accounts = [current Round, ...JurorStake PDAs,
@@ -1892,9 +1890,11 @@ pub mod accord {
                 AccordError::InvalidPanelSize
             );
 
-            // Read appeal bonds for vault-reserved computation.
-            reserved =
-                read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
+            // C-1: validate appeal-bond PDAs (needed for later
+            // claim_appeal_refund). Their total is NOT used for the filer refund
+            // — the fee_vault is shared across all disputes; using its balance
+            // would steal other disputes' deposits.
+            read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         } else {
             // Pre-draw stall (Created). Terminal states are rejected here.
             require!(state == DisputeState::Created, AccordError::InvalidState);
@@ -1983,13 +1983,16 @@ pub mod accord {
                 AccordError::InvalidPanelSize
             );
 
-            reserved =
-                read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
+            // C-1: validate appeal-bond PDAs (same as post-draw branch).
+            read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         }
 
-        // --- Refund: fee_vault balance minus appeal-bond reserves (PDA-signed). ---
-        let vault_balance = ctx.accounts.fee_vault.amount;
-        let filer_fee = vault_balance.saturating_sub(reserved);
+        // --- Refund: per-dispute fee_paid only (C-1). The fee_vault is one
+        // shared ATA for the entire Subaccord; using vault_balance would drain
+        // other disputes' deposits. Appeal bonds stay claimable via
+        // claim_appeal_refund — not swept here. ---
+        let filer_fee = dispute.fee_paid;
+        dispute.fee_paid = 0;
 
         let sub = &ctx.accounts.subaccord;
         let bump = [sub.bump];
