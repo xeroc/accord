@@ -11,8 +11,9 @@
 that realizes the Evidence Operator role (ADR-0006). It is the trusted component
 that receives a claimant's encrypted evidence, decrypts it, and re-encrypts it
 for each **drawn** Juror on demand. The Accord program stores only
-`evidence_hash` on-chain; the daemon holds the only copy of the decryption key
-and the ciphertext.
+`evidence_hash` on-chain (round 0; the per-round `evidence_hashes[]` array is
+ADR-0023, §"Per-round delivery"); the daemon holds the only copy of the
+decryption key and the ciphertext.
 
 The daemon is **evidence-only**. It signs no governance. The Subaccord
 `authority` is a Squads multisig operated via the Squads UI (ADR-0005/0007/0011).
@@ -50,14 +51,14 @@ Storage (S3/MinIO) holds ciphertext objects only.
 
 The daemon writes **nothing** on-chain. It reads via `@useaccord/sdk`:
 
-| Account / event   | Field(s) used                           | Purpose                                                             |
-| ----------------- | --------------------------------------- | ------------------------------------------------------------------- |
-| `Subaccord`       | `evidence_operator`, `evidence_spec`    | Resolve the per-Subaccord key; pin evidence/watermark scheme.       |
-| `Dispute`         | `subaccord`, `evidence_hash`, `state`   | Locate key; integrity-gate cleartext; gate delivery on state.       |
-| `Round`           | `jurors[]`, `round_idx`                 | Authoritative source of the drawn set; re-encrypt target pubkeys.   |
-| `DisputeCreated`  | `dispute`, `subaccord`, `evidence_hash` | Indexing wake-up (ciphertext already ingested at file time).        |
-| `JurorsDrawn`     | `dispute`, `round`, `jurors`            | Mark dispute as deliverable (cache hint; `Round` is authoritative). |
-| `RulingFinalized` | `dispute`                               | Retention sweep trigger.                                            |
+| Account / event   | Field(s) used                           | Purpose                                                                                                           |
+| ----------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Subaccord`       | `evidence_operator`, `evidence_spec`    | Resolve the per-Subaccord key; pin evidence/watermark scheme.                                                     |
+| `Dispute`         | `subaccord`, `evidence_hash`, `state`   | Locate key; integrity-gate cleartext; gate delivery on state. Per-round: `evidence_hashes[0..=round]` (ADR-0023). |
+| `Round`           | `jurors[]`, `round_idx`                 | Authoritative source of the drawn set; re-encrypt target pubkeys.                                                 |
+| `DisputeCreated`  | `dispute`, `subaccord`, `evidence_hash` | Indexing wake-up (ciphertext already ingested at file time).                                                      |
+| `JurorsDrawn`     | `dispute`, `round`, `jurors`            | Mark dispute as deliverable (cache hint; `Round` is authoritative).                                               |
+| `RulingFinalized` | `dispute`                               | Retention sweep trigger.                                                                                          |
 
 The drawn-set check is a **live `Round` account read**, not the event — events
 are cache/wake-up hints only.
@@ -124,6 +125,43 @@ it cannot read. Per-Juror watermarking (step 3, v1.1) embeds the fingerprint in
 `watermarked` _before_ the Juror-bound encryption, so only the Juror key can
 ever surface the fingerprint — attribution holds without request auth.
 
+### Per-round delivery (ADR-0023 — in flight, milestone `accord-qp7c`)
+
+Round 0 carries the filer's evidence; each appeal round may carry a new
+rebuttal package. On-chain this is `Dispute.evidence_hashes:
+[[u8;32]; MAX_APPEALS + 1]` (ADR-0023); `[0u8;32]` at a slot means "no new
+evidence this round." Delivery becomes a loop over the array rather than a
+single re-encryption:
+
+```
+// per drawn juror in round N
+for k in 0..=N {
+    let h = dispute.evidence_hashes[k];
+    if h == [0u8; 32] { continue; }                  // sentinel: reuse prior rounds
+    let bundle = store.get(subaccord, dispute, k);   // one bundle per round (below)
+    let plaintext_k = decrypt(bundle);               // in-memory only
+    require!(sha256(plaintext_k) == h);              // integrity-gate EACH round
+    deliver(reencrypt(plaintext_k, juror_pubkey));   // separate package per round
+}
+```
+
+- **One bundle per round** (Data model below): `(subaccord, dispute, round)` is
+  the storage key; round 0 is today's single bundle.
+- **Independent integrity gates:** each round's plaintext is gated against its
+  own `evidence_hashes[k]`; a tampered round-k package fails its gate without
+  poisoning rounds `0..k-1`.
+- **Separate packages, not concatenated:** each round is delivered as its own
+  re-encrypted package (matches the per-hash verification model in
+  `EVIDENCE-FORMAT.md` §9.4). The juror verifies each independently.
+- **Sentinel skip:** a zero slot delivers nothing for that round; the juror
+  reuses the accumulated packages from earlier rounds.
+- **Round-ascending order:** delivery is ordered claim → rebuttal so the juror
+  reads them in sequence.
+- **Backward compatibility:** until ADR-0023's on-chain array lands,
+  `Dispute.evidence_hash` is a single `[u8;32]` and the loop degenerates to the
+  single-hash flow above (round 0 only) — no daemon change required to keep
+  round-0 delivery working today.
+
 ## Data model
 
 ### Evidence bundle (stored — ciphertext only)
@@ -131,31 +169,36 @@ ever surface the fingerprint — attribution holds without request auth.
 ```ts
 interface EvidenceBundle {
   subaccord: PublicKey; // key selector (also S3 key prefix)
-  dispute: PublicKey; // primary index (S3 key suffix)
+  dispute: PublicKey; // primary index (S3 key component)
+  round: u8; // evidence round: 0 = filer; 1..MAX_APPEALS = appeal rounds (ADR-0023)
   ct: Uint8Array; // AES-GCM(plaintext) under DEK  — ciphertext
   claimant_ephem_pub: Uint8Array; // X25519, 32 bytes
   wrapped: Uint8Array; // AES-GCM(DEK) under claimant↔operator ECDH — ciphertext
-  plaintext_hash: [u8, 32]; // == Dispute.evidence_hash (metadata, not secret)
+  plaintext_hash: [u8, 32]; // == Dispute.evidence_hashes[round] (metadata, not secret)
   ingested_at: number; // unix ms
 }
 ```
 
-No plaintext field exists. Idempotency key: `plaintext_hash`.
+No plaintext field exists. Idempotency key: `(round, plaintext_hash)`. Round 0
+is today's single bundle; rounds `1..MAX_APPEALS` exist only when ADR-0023's
+on-chain array is live and an appeal posts a non-sentinel `new_evidence_hash`.
 
 ### Storage trait (pluggable) — v1: S3/MinIO
 
 ```ts
 interface EvidenceStore {
-  put(b: EvidenceBundle): Promise<void>; // idempotent on plaintext_hash
-  get(subaccord: PublicKey, dispute: PublicKey): Promise<EvidenceBundle | null>;
-  delete(subaccord: PublicKey, dispute: PublicKey): Promise<void>;
-  exists(subaccord: PublicKey, dispute: PublicKey): Promise<boolean>;
+  put(b: EvidenceBundle): Promise<void>; // idempotent on (round, plaintext_hash)
+  get(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<EvidenceBundle | null>;
+  delete(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<void>;
+  exists(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<boolean>;
 }
 ```
 
 **v1 impl — S3/MinIO (`S3Store`):**
 
-- Object key: `{subaccord}/{dispute}` (URL-safe base58). One object per dispute.
+- Object key: `{subaccord}/{dispute}/{round}` (URL-safe base58). One object per
+  `(dispute, round)` — round 0 is the filer's package, appeal rounds append
+  `{1..MAX_APPEALS}` only when ADR-0023 is live (ADR-0023).
 - Object body: the serialized `EvidenceBundle` (CBOR/JSON) — **ciphertext only**.
 - Object user-metadata: `x-amz-meta-plaintext-hash`, `x-amz-meta-subaccord`,
   `x-amz-meta-ingested-at`.
@@ -237,15 +280,16 @@ All routes TLS-only. Rate-limited per peer IP. An optional `X-Account-Key`
 header is accepted for **accounting only** — it never grants or denies access
 (security rests on the Juror-bound re-encryption, not on auth).
 
-| Method | Path                              | Body / Result                                                                                                              |
-| ------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/evidence/{subaccord}/{dispute}` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists.                                       |
-| GET    | `/evidence/{dispute}/for/{juror}` | → `200` `{ out, operator_ephem_pub }`. `404` if juror not drawn / not deliverable. `409` if integrity gate fails (alerts). |
-| GET    | `/healthz`                        | `200` if Storage + RPC reachable, else `503`.                                                                              |
+| Method | Path                                        | Body / Result                                                                                                                                                                                                                                                                                                |
+| ------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/evidence/{subaccord}/{dispute}[/{round}]` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists for that `(dispute, round)`. `round` defaults to `0` (filer); appeal rounds `1..MAX_APPEALS` post under ADR-0023.                                                                                                        |
+| GET    | `/evidence/{dispute}/for/{juror}`           | → `200` `{ rounds: [{ round, out, operator_ephem_pub }] }` — every non-zero `evidence_hashes[0..=N]` package for the juror's round `N` (ADR-0023). `404` if juror not drawn / not deliverable. `409` if any round's integrity gate fails (alerts). Round-0-only (today) returns a single-element `rounds[]`. |
+| GET    | `/healthz`                                  | `200` if Storage + RPC reachable, else `503`.                                                                                                                                                                                                                                                                |
 
 Delivery preconditions (enforced via live account reads): `Dispute.state` is at
 or past Drawn for the current round; `{juror}` ∈ `Round.jurors[]` for that
-round; a bundle exists for `(dispute.subaccord, dispute)`.
+round; a bundle exists for each `(dispute.subaccord, dispute, round)` where
+`evidence_hashes[round]` is non-zero and `round ≤ juror's round` (ADR-0023).
 
 ## Configuration
 
@@ -342,7 +386,8 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
 ## References
 
 - ADR-0011 (this daemon's decision), ADR-0006 (evidence), ADR-0005 (authority),
-  ADR-0007 (upgrade/multisig)
+  ADR-0007 (upgrade/multisig), ADR-0023 (per-round evidence hashes)
+- `apps/evidence-daemon/EVIDENCE-FORMAT.md` §9 (per-round data format)
 - `programs/accord/SPEC.md` (Evidence flow), `programs/accord/src/state.rs:33,265`
 - `CONTEXT.md` — Evidence Operator
 - `packages/sdk` — `@useaccord/sdk` (chain reader + types); `@useaccord/sdk/evidence` (evidence crypto protocol, ADR-0015)
