@@ -1,0 +1,59 @@
+{
+  "name": "@useaccord/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accord CLI — operator tooling for the Accord arbitration program",
+  "type": "module",
+  "bin": {
+    "useaccord": "./bin/run.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "bun run bin/dev.js",
+    "start": "bun run bin/run.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@oclif/core": "^4.2.0",
+    "@oclif/plugin-help": "^6.2.0",
+    "@solana/kit": "^7.0.0",
+    "@useaccord/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/bun": "^1.3.0",
+    "@noble/curves": "^1.9.7",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "prettier": "^3.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0"
+  },
+  "oclif": {
+    "bin": "useaccord",
+    "dirname": "useaccord",
+    "commands": "./dist/commands",
+    "plugins": ["@oclif/plugin-help"],
+    "topicSeparator": " ",
+    "topics": {
+      "pause_state": {
+        "description": "Accord PauseState singleton lifecycle"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ]
+}
