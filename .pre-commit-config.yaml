@@ -29,10 +29,10 @@ repos:
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/ljnsn/cz-conventional-gitmoji
-    rev: v0.7.0
-    hooks:
-      - id: conventional-gitmoji
+  # - repo: https://github.com/ljnsn/cz-conventional-gitmoji
+  #   rev: v0.7.0
+  #   hooks:
+  #     - id: conventional-gitmoji
 
   ######################################
   # docs and other markdown files
