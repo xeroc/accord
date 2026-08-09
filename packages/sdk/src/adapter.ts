@@ -143,6 +143,8 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         {
           creator: accord.signer,
           subaccord: input.subaccordPda,
+          stakingToken: input.args.stakingToken,
+          feeToken: input.args.feeToken,
           ...mapCreateSubaccordArgs(input.args),
         },
         { programAddress: input.programId },
@@ -463,15 +465,15 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
-/** SDK `CreateSubaccordArgs` → generated instruction-data args (1:1, +depth). */
+/** SDK `CreateSubaccordArgs` → generated instruction-data args. L-4: mints are
+ * accounts (not instruction data) — extracted by the caller in
+ * `buildCreateSubaccord`. */
 function mapCreateSubaccordArgs(
   args: CreateSubaccordArgs,
-): Omit<CreateSubaccordArgs, never> {
+): Omit<CreateSubaccordArgs, "stakingToken" | "feeToken"> {
   return {
     riskType: args.riskType,
     evidenceSpec: args.evidenceSpec,
-    stakingToken: args.stakingToken,
-    feeToken: args.feeToken,
     minStake: args.minStake,
     alphaBps: args.alphaBps,
     reviewWindow: args.reviewWindow,

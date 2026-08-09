@@ -72,6 +72,8 @@ export type CreateSubaccordInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountCreator extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
+  TAccountStakingToken extends string | AccountMeta<string> = string,
+  TAccountFeeToken extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -86,6 +88,12 @@ export type CreateSubaccordInstruction<
       TAccountSubaccord extends string
         ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
+      TAccountStakingToken extends string
+        ? ReadonlyAccount<TAccountStakingToken>
+        : TAccountStakingToken,
+      TAccountFeeToken extends string
+        ? ReadonlyAccount<TAccountFeeToken>
+        : TAccountFeeToken,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -97,8 +105,6 @@ export type CreateSubaccordInstructionData = {
   discriminator: ReadonlyUint8Array;
   riskType: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
-  stakingToken: Address;
-  feeToken: Address;
   minStake: bigint;
   alphaBps: number;
   reviewWindow: bigint;
@@ -122,8 +128,6 @@ export type CreateSubaccordInstructionData = {
 export type CreateSubaccordInstructionDataArgs = {
   riskType: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
-  stakingToken: Address;
-  feeToken: Address;
   minStake: number | bigint;
   alphaBps: number;
   reviewWindow: number | bigint;
@@ -150,8 +154,6 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
-      ["stakingToken", getAddressEncoder()],
-      ["feeToken", getAddressEncoder()],
       ["minStake", getU64Encoder()],
       ["alphaBps", getU16Encoder()],
       ["reviewWindow", getU64Encoder()],
@@ -177,8 +179,6 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
-    ["stakingToken", getAddressDecoder()],
-    ["feeToken", getAddressDecoder()],
     ["minStake", getU64Decoder()],
     ["alphaBps", getU16Decoder()],
     ["reviewWindow", getU64Decoder()],
@@ -210,15 +210,22 @@ export function getCreateSubaccordInstructionDataCodec(): FixedSizeCodec<
 export type CreateSubaccordAsyncInput<
   TAccountCreator extends string = string,
   TAccountSubaccord extends string = string,
+  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   creator: TransactionSigner<TAccountCreator>;
   subaccord?: Address<TAccountSubaccord>;
+  /**
+   * L-4: validated as a real legacy SPL Mint — `Account<Mint>` from
+   * `anchor_spl::token` checks ownership against the Token Program ID,
+   * rejecting Token-2022 mints (owned by Token-2022 Program) by construction.
+   */
+  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   systemProgram?: Address<TAccountSystemProgram>;
   riskType: CreateSubaccordInstructionDataArgs["riskType"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
-  stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
-  feeToken: CreateSubaccordInstructionDataArgs["feeToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
@@ -239,12 +246,16 @@ export type CreateSubaccordAsyncInput<
 export async function getCreateSubaccordInstructionAsync<
   TAccountCreator extends string,
   TAccountSubaccord extends string,
+  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
   input: CreateSubaccordAsyncInput<
     TAccountCreator,
     TAccountSubaccord,
+    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -253,6 +264,8 @@ export async function getCreateSubaccordInstructionAsync<
     TProgramAddress,
     TAccountCreator,
     TAccountSubaccord,
+    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountSystemProgram
   >
 > {
@@ -263,6 +276,8 @@ export async function getCreateSubaccordInstructionAsync<
   const originalAccounts = {
     creator: { value: input.creator ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
+    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -293,6 +308,8 @@ export async function getCreateSubaccordInstructionAsync<
     accounts: [
       getAccountMeta("creator", accounts.creator),
       getAccountMeta("subaccord", accounts.subaccord),
+      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getCreateSubaccordInstructionDataEncoder().encode(
@@ -303,6 +320,8 @@ export async function getCreateSubaccordInstructionAsync<
     TProgramAddress,
     TAccountCreator,
     TAccountSubaccord,
+    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountSystemProgram
   >);
 }
@@ -310,15 +329,22 @@ export async function getCreateSubaccordInstructionAsync<
 export type CreateSubaccordInput<
   TAccountCreator extends string = string,
   TAccountSubaccord extends string = string,
+  TAccountStakingToken extends string = string,
+  TAccountFeeToken extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   creator: TransactionSigner<TAccountCreator>;
   subaccord: Address<TAccountSubaccord>;
+  /**
+   * L-4: validated as a real legacy SPL Mint — `Account<Mint>` from
+   * `anchor_spl::token` checks ownership against the Token Program ID,
+   * rejecting Token-2022 mints (owned by Token-2022 Program) by construction.
+   */
+  stakingToken: Address<TAccountStakingToken>;
+  feeToken: Address<TAccountFeeToken>;
   systemProgram?: Address<TAccountSystemProgram>;
   riskType: CreateSubaccordInstructionDataArgs["riskType"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
-  stakingToken: CreateSubaccordInstructionDataArgs["stakingToken"];
-  feeToken: CreateSubaccordInstructionDataArgs["feeToken"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
   reviewWindow: CreateSubaccordInstructionDataArgs["reviewWindow"];
@@ -339,12 +365,16 @@ export type CreateSubaccordInput<
 export function getCreateSubaccordInstruction<
   TAccountCreator extends string,
   TAccountSubaccord extends string,
+  TAccountStakingToken extends string,
+  TAccountFeeToken extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
   input: CreateSubaccordInput<
     TAccountCreator,
     TAccountSubaccord,
+    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -352,6 +382,8 @@ export function getCreateSubaccordInstruction<
   TProgramAddress,
   TAccountCreator,
   TAccountSubaccord,
+  TAccountStakingToken,
+  TAccountFeeToken,
   TAccountSystemProgram
 > {
   // Program address.
@@ -361,6 +393,8 @@ export function getCreateSubaccordInstruction<
   const originalAccounts = {
     creator: { value: input.creator ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
+    stakingToken: { value: input.stakingToken ?? null, isWritable: false },
+    feeToken: { value: input.feeToken ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -382,6 +416,8 @@ export function getCreateSubaccordInstruction<
     accounts: [
       getAccountMeta("creator", accounts.creator),
       getAccountMeta("subaccord", accounts.subaccord),
+      getAccountMeta("stakingToken", accounts.stakingToken),
+      getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getCreateSubaccordInstructionDataEncoder().encode(
@@ -392,6 +428,8 @@ export function getCreateSubaccordInstruction<
     TProgramAddress,
     TAccountCreator,
     TAccountSubaccord,
+    TAccountStakingToken,
+    TAccountFeeToken,
     TAccountSystemProgram
   >);
 }
@@ -404,7 +442,14 @@ export type ParsedCreateSubaccordInstruction<
   accounts: {
     creator: TAccountMetas[0];
     subaccord: TAccountMetas[1];
-    systemProgram: TAccountMetas[2];
+    /**
+     * L-4: validated as a real legacy SPL Mint — `Account<Mint>` from
+     * `anchor_spl::token` checks ownership against the Token Program ID,
+     * rejecting Token-2022 mints (owned by Token-2022 Program) by construction.
+     */
+    stakingToken: TAccountMetas[2];
+    feeToken: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
   };
   data: CreateSubaccordInstructionData;
 };
@@ -417,12 +462,12 @@ export function parseCreateSubaccordInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCreateSubaccordInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 5) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 3,
+        expectedAccountMetas: 5,
       },
     );
   }
@@ -437,6 +482,8 @@ export function parseCreateSubaccordInstruction<
     accounts: {
       creator: getNextAccount(),
       subaccord: getNextAccount(),
+      stakingToken: getNextAccount(),
+      feeToken: getNextAccount(),
       systemProgram: getNextAccount(),
     },
     data: getCreateSubaccordInstructionDataDecoder().decode(instruction.data),
