@@ -182,6 +182,42 @@ activeDraws: 2
 reason     : StakeLocked
 ```
 
+### `accumulator:*` — offline MST helpers (pure)
+
+The subtree-sum accumulator toolkit (ADR-0012). Four are pure (`BaseCommand`,
+no signer/rpc); `prepare-stake-proof` reads chain. `build`→`proof`→`verify`
+round-trips; output is byte-exact with the on-chain verifier.
+
+```bash
+# root for a stake set (deterministic, matches Subaccord.root_hash)
+useaccord accumulator:build --leaves leaves.json --depth 16
+# → rootHash / rootSum
+
+# Merkle path for a leaf → the proof file `staking --path-from` consumes
+useaccord accumulator:proof --leaves leaves.json --depth 16 --index 3 --json > proof.json
+
+# verify a leaf+path against a known root; returns the sortition prefix
+useaccord accumulator:verify --leaf '{"juror":"..","stake":"1000"}' \
+  --index 3 --path proof.json --root ab12… --root-sum 9000
+
+# all-zero (never-staked) tree root
+useaccord accumulator:empty-root --depth 16
+
+# fetch Subaccord + JurorStakes on-chain, build the canonical proof for a juror
+useaccord accumulator:prepare-stake-proof --subaccord 7Nq.. --juror 3vbY..
+```
+
+**Proof file schema** (`accumulator:proof` / `prepare-stake-proof` emit;
+`accumulator:verify --path` / `staking --path-from` consume):
+
+```json
+{
+  "version": 1,
+  "index": 3,
+  "path": [{ "siblingHash": "<64 hex>", "siblingSum": "<u64 decimal>" }, …]
+}
+```
+
 ## Infrastructure (for future commands)
 
 Every command extends one of two base classes in `src/lib/base-command.ts`:
