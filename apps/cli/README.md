@@ -26,15 +26,15 @@ bun run apps/cli/bin/run.js <command>
 
 Resolved in priority order (flag → env → default):
 
-| Flag / Env | Default | Meaning |
-|---|---|---|
+| Flag / Env        | Default                                                                | Meaning                                             |
+| ----------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
 | `--keypair`, `-k` | `$ANCHOR_WALLET` → `$ACCORD_KEYPAIR_PATH` → `~/.config/solana/id.json` | Fee payer **and** on-chain signer for every command |
-| `--rpc`, `-r` | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899` | JSON-RPC endpoint |
-| `--ws`, `-w` | `$ACCORD_WS_URL` (else derived from `--rpc`) | WebSocket (confirmations) |
-| `--commitment` | `confirmed` | `processed`/`confirmed`/`finalized` |
-| `--json` | off | One JSON object on stdout (for `jq`) |
-| `--quiet`, `-q` | off | Only the signature (send) or address (create/read) |
-| `--dry-run` | off | Build + print the instruction; do not sign/send |
+| `--rpc`, `-r`     | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899`                            | JSON-RPC endpoint                                   |
+| `--ws`, `-w`      | `$ACCORD_WS_URL` (else derived from `--rpc`)                           | WebSocket (confirmations)                           |
+| `--commitment`    | `confirmed`                                                            | `processed`/`confirmed`/`finalized`                 |
+| `--json`          | off                                                                    | One JSON object on stdout (for `jq`)                |
+| `--quiet`, `-q`   | off                                                                    | Only the signature (send) or address (create/read)  |
+| `--dry-run`       | off                                                                    | Build + print the instruction; do not sign/send     |
 
 **Single-signer model:** the `--keypair` wallet is the fee payer **and** the
 instruction's signing account for every command (the SDK adapter pins
@@ -47,6 +47,7 @@ instruction's signing account for every command (the SDK adapter pins
 ```bash
 useaccord config:show
 ```
+
 ```
 rpc        : http://127.0.0.1:8899
 keypair    : ~/.config/solana/id.json
@@ -69,10 +70,37 @@ wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 ```bash
 useaccord lifecycle:init-pause
 ```
+
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
   pauseState: AaNWS…XVG9
+```
+
+### `draw:*` — VRF + per-seat draw (methods/vrf.ts)
+
+Six commands forming the draw pipeline (`request-vrf` → `await-vrf` →
+`resolve-seat`/`resolve-panel` → `seat`/`submit-panel`). The resolvers are
+read-only and emit the JSON membership artifacts the senders consume
+(pipeline-composable per CLI.md §1.6).
+
+| Command              | Sends? | SDK fn              | Purpose                                                                                                                                       |
+| -------------------- | ------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `draw:request-vrf`   | ✓      | `requestVrf`        | One-shot VRF oracle CPI; freezes the accumulator root. ⚠ **Reverts on Surfpool** (no oracle) — inject `committed_vrf` directly for local e2e. |
+| `draw:await-vrf`     | read   | `awaitCommittedVrf` | Poll `committed_vrf` until the callback lands (`--timeout`, `--poll`).                                                                        |
+| `draw:resolve-seat`  | read   | `resolveSeat` + MST | Resolve one seat's `(leaf, proof, retries)` off-chain → JSON to `--out`.                                                                      |
+| `draw:seat`          | ✓      | `drawSeat`          | Submit one `draw_seat` for `--seat` from `--membership` JSON.                                                                                 |
+| `draw:resolve-panel` | read   | `resolveSeat` × N   | Resolve the full panel (default size from the round ladder) → `SeatMembership[]` JSON.                                                        |
+| `draw:submit-panel`  | ✓      | `drawSeat` × N      | Submit the whole panel, one tx per seat (from `--membership` or inline resolve).                                                              |
+
+```bash
+# resolve → submit pipeline (3-seat round-0 panel)
+useaccord draw:resolve-panel --dispute <addr> --out panel.json
+useaccord draw:submit-panel  --subaccord <a> --dispute <a> --membership panel.json
+
+# or pipe a single seat straight through
+useaccord draw:resolve-seat --dispute <addr> --seat 0 | \
+  useaccord draw:seat --subaccord <a> --dispute <a> --seat 0 --membership -
 ```
 
 ## Infrastructure (for future commands)
@@ -84,7 +112,7 @@ Every command extends one of two base classes in `src/lib/base-command.ts`:
   (`accumulator:*`, `commit-hash`, `required-fee`).
 - **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
   facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)
-  + `--dry-run` instruction dump.
+  - `--dry-run` instruction dump.
 
 Shared helpers: `src/lib/{format,output,errors,wallet}.ts` (address truncation,
 bigint grouping, json/quiet renderers, AccordError mapping, keypair/env
