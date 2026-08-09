@@ -74,7 +74,13 @@ export type Dispute = {
   nonce: bigint;
   numOptions: number;
   options: Array<ReadonlyUint8Array>;
-  evidenceHash: ReadonlyUint8Array;
+  /**
+   * Per-round evidence commitments (ADR-0006 / milestone accord-qp7c).
+   * Index 0 = round-0 (filing); each appeal round may optionally bring new
+   * evidence at `[current_round + 1]`. `[0u8; 32]` sentinel = no new
+   * evidence that round (jurors reuse prior rounds').
+   */
+  evidenceHashes: Array<ReadonlyUint8Array>;
   state: DisputeState;
   currentRound: number;
   /**
@@ -139,7 +145,13 @@ export type DisputeArgs = {
   nonce: number | bigint;
   numOptions: number;
   options: Array<ReadonlyUint8Array>;
-  evidenceHash: ReadonlyUint8Array;
+  /**
+   * Per-round evidence commitments (ADR-0006 / milestone accord-qp7c).
+   * Index 0 = round-0 (filing); each appeal round may optionally bring new
+   * evidence at `[current_round + 1]`. `[0u8; 32]` sentinel = no new
+   * evidence that round (jurors reuse prior rounds').
+   */
+  evidenceHashes: Array<ReadonlyUint8Array>;
   state: DisputeStateArgs;
   currentRound: number;
   /**
@@ -211,7 +223,10 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
         "options",
         getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 32 }),
       ],
-      ["evidenceHash", fixEncoderSize(getBytesEncoder(), 32)],
+      [
+        "evidenceHashes",
+        getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 4 }),
+      ],
       ["state", getDisputeStateEncoder()],
       ["currentRound", getU32Encoder()],
       ["terms", getCaseTermsEncoder()],
@@ -240,7 +255,10 @@ export function getDisputeDecoder(): Decoder<Dispute> {
       "options",
       getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 32 }),
     ],
-    ["evidenceHash", fixDecoderSize(getBytesDecoder(), 32)],
+    [
+      "evidenceHashes",
+      getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 4 }),
+    ],
     ["state", getDisputeStateDecoder()],
     ["currentRound", getU32Decoder()],
     ["terms", getCaseTermsDecoder()],

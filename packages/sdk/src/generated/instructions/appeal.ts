@@ -113,13 +113,19 @@ export type AppealInstruction<
     ]
   >;
 
-export type AppealInstructionData = { discriminator: ReadonlyUint8Array };
+export type AppealInstructionData = {
+  discriminator: ReadonlyUint8Array;
+  newEvidenceHash: ReadonlyUint8Array;
+};
 
-export type AppealInstructionDataArgs = {};
+export type AppealInstructionDataArgs = { newEvidenceHash: ReadonlyUint8Array };
 
 export function getAppealInstructionDataEncoder(): FixedSizeEncoder<AppealInstructionDataArgs> {
   return transformEncoder(
-    getStructEncoder([["discriminator", fixEncoderSize(getBytesEncoder(), 8)]]),
+    getStructEncoder([
+      ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
+      ["newEvidenceHash", fixEncoderSize(getBytesEncoder(), 32)],
+    ]),
     (value) => ({ ...value, discriminator: APPEAL_DISCRIMINATOR }),
   );
 }
@@ -127,6 +133,7 @@ export function getAppealInstructionDataEncoder(): FixedSizeEncoder<AppealInstru
 export function getAppealInstructionDataDecoder(): FixedSizeDecoder<AppealInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
+    ["newEvidenceHash", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 
@@ -171,6 +178,7 @@ export type AppealAsyncInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
+  newEvidenceHash: AppealInstructionDataArgs["newEvidenceHash"];
 };
 
 export async function getAppealInstructionAsync<
@@ -248,6 +256,9 @@ export async function getAppealInstructionAsync<
     keyof typeof originalAccounts,
     ResolvedInstructionAccount
   >;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.pauseState.value) {
@@ -336,7 +347,9 @@ export async function getAppealInstructionAsync<
       getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getAppealInstructionDataEncoder().encode({}),
+    data: getAppealInstructionDataEncoder().encode(
+      args as AppealInstructionDataArgs,
+    ),
     programAddress,
   } as AppealInstruction<
     TProgramAddress,
@@ -386,6 +399,7 @@ export type AppealInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
+  newEvidenceHash: AppealInstructionDataArgs["newEvidenceHash"];
 };
 
 export function getAppealInstruction<
@@ -462,6 +476,9 @@ export function getAppealInstruction<
     ResolvedInstructionAccount
   >;
 
+  // Original args.
+  const args = { ...input };
+
   // Resolve default values.
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -492,7 +509,9 @@ export function getAppealInstruction<
       getAccountMeta("associatedTokenProgram", accounts.associatedTokenProgram),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
-    data: getAppealInstructionDataEncoder().encode({}),
+    data: getAppealInstructionDataEncoder().encode(
+      args as AppealInstructionDataArgs,
+    ),
     programAddress,
   } as AppealInstruction<
     TProgramAddress,

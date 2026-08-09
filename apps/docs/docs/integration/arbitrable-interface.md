@@ -30,12 +30,18 @@ accord::cpi::create_dispute(
         },
     ),
     options,         // Vec<[u8; 32]>, 2..=32 hashes
-    evidence_hash,   // [u8; 32], ADR-0006 commitment
+    evidence_hash,   // [u8; 32], ADR-0006 commitment → stored at dispute.evidence_hashes[0]
     nonce,           // u64, caller-chosen for PDA uniqueness
     required_fee,    // u64, exact match required
 )?;
 // dispute PDA = ["dispute", filer, nonce]
 ```
+
+`evidence_hash` is the round-0 commitment — the filer's evidence package
+([ADR-0006](../adr/0006-evidence-onchain-hash-trusted-re-encryption-operator.md),
+[ADR-0017](../adr/0017-evidence-data-format-manifest-yaml.md)). Appeals may add per-round
+hashes into `dispute.evidence_hashes[1..=MAX_APPEALS]` ([ADR-0023](../adr/0023-per-round-evidence-hashes.md));
+the Arbitrable does not pass those — `appeal` does.
 
 ## 2. Read the ruling
 

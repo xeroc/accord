@@ -11,6 +11,14 @@ pub const MAX_JURORS: usize = 31;
 /// `create_subaccord` validation.
 pub const MAX_APPEALS: usize = 3;
 
+/// Number of per-round evidence slots on `Dispute.evidence_hashes` (milestone
+/// accord-qp7c): slot 0 = filing, slots 1..=MAX_APPEALS = one per appeal round.
+/// Declared as a named const (not `MAX_APPEALS + 1` inline) because anchor's
+/// `InitSpace` + borsh derives require a single ident as the array length — a
+/// binary const expression silently undercounts the declared size vs the real
+/// borsh size and the account fails to deserialize after `init`.
+pub const NUM_EVIDENCE_SLOTS: usize = MAX_APPEALS + 1;
+
 /// Maximum vote options on a single Dispute. Bounds `Dispute.options` and the
 /// per-round tally. Disputes need at least 2; 32 covers realistic multiple-choice.
 pub const MAX_OPTIONS: usize = 32;

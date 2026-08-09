@@ -316,8 +316,8 @@ fn set_disputed(
 /// Sets `state` and `final_ruling` at the correct Borsh offsets.
 fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling: u8) {
     let mut data = vec![0u8; 1300]; // large enough
-    data[1137] = if is_final { 6 } else { 0 }; // DisputeState::Final = 6, Created = 0
-    data[1198] = ruling;
+    data[1233] = if is_final { 6 } else { 0 }; // DisputeState::Final = 6, Created = 0
+    data[1294] = ruling;
     env.ctx
         .svm
         .set_account(
@@ -585,7 +585,11 @@ fn dispute_borsh_offsets_are_correct() {
             o[0][0] = 0xAA;
             o
         },
-        evidence_hash: [0xFF; 32],
+        evidence_hashes: {
+            let mut e = [[0u8; 32]; accord::constants::MAX_APPEALS + 1];
+            e[0] = [0xFF; 32];
+            e
+        },
         state: accord::state::DisputeState::Final,
         current_round: 7,
         terms: accord::state::CaseTerms {
@@ -613,6 +617,6 @@ fn dispute_borsh_offsets_are_correct() {
     };
     let mut buf = Vec::new();
     d.try_serialize(&mut buf).unwrap();
-    assert_eq!(buf[1137], 6, "DisputeState::Final = 6 at offset 1137");
-    assert_eq!(buf[1198], 1, "final_ruling = 1 at offset 1198");
+    assert_eq!(buf[1233], 6, "DisputeState::Final = 6 at offset 1233");
+    assert_eq!(buf[1294], 1, "final_ruling = 1 at offset 1294");
 }

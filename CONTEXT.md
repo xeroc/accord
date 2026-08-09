@@ -19,7 +19,7 @@ A participant who stakes capital into a Subaccord and is eligible to be drawn to
 _Avoid_: judge, arbitrator, voter
 
 **Dispute**:
-A case filed with the Accord by any program (the Arbitrable). Contains the disputed question, evidence commitment hash, and vote options. Progresses through Draw → Commit → Reveal → Ruling, with optional Appeals.
+A case filed with the Accord by any program (the Arbitrable). Contains the disputed question, a per-round evidence commitment (`evidence_hashes[0..=MAX_APPEALS]`, one ADR-0017 manifest hash per round; `[0u8;32]` = reuse prior round's), and vote options. Progresses through Draw → Commit → Reveal → Ruling, with optional Appeals.
 _Avoid_: case, claim (in the Accord context), trial
 
 **Draw**:
@@ -51,7 +51,7 @@ Voting against the Ruling majority. Incoherent Jurors lose a fraction of their s
 _Avoid_: wrong vote, losing vote
 
 **Appeal**:
-Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond (in `fee_token`). Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
+Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond (in `fee_token`). An appeal may introduce new evidence: the appellant passes a `new_evidence_hash` written to the new round's slot of `evidence_hashes` (`[0u8;32]` = appeal on the existing evidence; ADR-0023). Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
 _Avoid_: retrial, reconsideration
 
 **Arbitrable**:

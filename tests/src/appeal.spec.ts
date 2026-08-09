@@ -513,7 +513,12 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     const appellantBefore = await tokenAmount(env, w.payerAta);
 
     await env.sendIx(
-      appeal(env.accord.adapter, env.programId, appealAccounts(w, appealBond)),
+      appeal(
+        env.accord.adapter,
+        env.programId,
+        appealAccounts(w, appealBond),
+        new Uint8Array(32),
+      ),
     );
 
     const d = await readDispute(env, w.dispute);
@@ -618,7 +623,12 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
       roundIdx: 0,
     });
     await env.sendIx(
-      appeal(env.accord.adapter, env.programId, appealAccounts(w, appealBond)),
+      appeal(
+        env.accord.adapter,
+        env.programId,
+        appealAccounts(w, appealBond),
+        new Uint8Array(32),
+      ),
     );
 
     // Round 1 does NOT flip (result 0 == prior 0). votes [0,0,0,0,1,1,1]:
@@ -744,6 +754,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
           env.accord.adapter,
           env.programId,
           appealAccounts(w, appealBond),
+          new Uint8Array(32),
         ),
       ),
     ).rejects.toThrow();
@@ -765,6 +776,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
           env.accord.adapter,
           env.programId,
           appealAccounts(w, appealBond),
+          new Uint8Array(32),
         ),
       ),
     ).rejects.toThrow();

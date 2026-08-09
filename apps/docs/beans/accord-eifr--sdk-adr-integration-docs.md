@@ -1,11 +1,11 @@
 ---
 # accord-eifr
 title: SDK + ADR + integration docs
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-09T16:56:08Z
-updated_at: 2026-08-09T16:56:08Z
+updated_at: 2026-08-09T18:25:58Z
 parent: accord-qp7c
 blocked_by:
     - accord-hoaj

@@ -420,7 +420,7 @@ fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
     assert_eq!(dispute.num_options, 2);
     assert_eq!(dispute.options[0], OPTION_KEEP);
     assert_eq!(dispute.options[1], OPTION_REMOVE);
-    assert_eq!(dispute.evidence_hash, evidence);
+    assert_eq!(dispute.evidence_hashes[0], evidence);
 }
 
 /// Revert: item already Disputed.
