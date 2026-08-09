@@ -78,6 +78,40 @@ useaccord lifecycle:init-pause
   pauseState: AaNWS…XVG9
 ```
 
+### `dispute:*` — Arbitrable intake (4 commands)
+
+| Command                | SDK fn                  | Sends?    |
+| ---------------------- | ----------------------- | --------- |
+| `dispute:create`       | `methods.createDispute` | yes       |
+| `dispute:ruling`       | `methods.getRuling`     | no (read) |
+| `dispute:required-fee` | `requiredFee`           | no (pure) |
+| `dispute:cancel`       | `methods.cancelDispute` | yes       |
+
+```bash
+# Pure fee check (no chain): 3 × fee-per-juror
+useaccord dispute:required-fee --fee-per-juror 1_000_000
+```
+
+```
+fee-per-juror : 1_000_000 lamports
+fee          : 3_000_000 lamports
+```
+
+```bash
+# File a dispute; --fee auto derives 3 × the Subaccord's feePerJuror
+useaccord dispute:create --subcord <pda> --options <hex32>,<hex32>
+```
+
+```
+address : <dispute-pda>
+bump    : 254
+fee     : 3_000_000
+```
+
+`dispute:ruling <pda>` reads `null` until the dispute reaches `Final`, then the
+winning option index. `dispute:cancel <pda>` is the permissionless timeout exit
+(`--remaining-accounts auto` derives the Round/JurorStake/AppealBond set).
+
 ### `settle:round --subaccord <addr> --dispute <addr> --round-idx <n> [--remaining-accounts auto|list] [--juror-stake <pda>...] [--dry-run]`
 
 Permissionless per-round settlement crank (`methods.settleRound`). After a
