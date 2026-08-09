@@ -2489,6 +2489,49 @@ fn two_phase_request_then_withdraw_after_timelock() {
 }
 
 #[test]
+fn request_withdraw_rejects_second_call_while_pending() {
+    // M-1: a second request_withdraw while one is pending must be rejected,
+    // not silently reset the timelock.
+    let mut env = setup_accumulator();
+
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let stake_amt = 5_000u64;
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, stake_amt, path).assert_success();
+
+    warp_seconds(&mut env, 1);
+
+    // First request_withdraw: succeeds.
+    let half = stake_amt / 2;
+    let leaves = vec![(juror.pubkey(), stake_amt)];
+    let (_, _, proof1) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &juror, half, proof1).assert_success();
+
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.pending_withdrawal, half);
+    let first_ts = js.withdraw_requested_at;
+
+    // Second request_withdraw: must fail (WithdrawalPending).
+    let leaves_after = vec![(juror.pubkey(), stake_amt - half)];
+    let (_, _, proof2) = build_root_and_path(&leaves_after, TEST_DEPTH, 0);
+    let r = do_request_withdraw(&mut env, &juror, half, proof2);
+    assert!(
+        !r.is_success(),
+        "second request_withdraw while pending must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // State unchanged — pending_withdrawal and withdraw_requested_at not reset.
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.pending_withdrawal, half, "pending unchanged");
+    assert_eq!(
+        js.withdraw_requested_at, first_ts,
+        "timelock timestamp not reset"
+    );
+}
+
+#[test]
 fn request_withdraw_blocked_by_slash_reserve() {
     let mut env = setup_accumulator();
 

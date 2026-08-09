@@ -530,6 +530,12 @@ pub mod accord {
         path: Vec<MSTNode>,
     ) -> Result<()> {
         require!(amount > 0, AccordError::InvalidAmount);
+        // M-1: reject repeated calls while a withdrawal is pending — forces the
+        // juror to complete the two-phase flow (withdraw) before requesting again.
+        require!(
+            ctx.accounts.juror_stake.pending_withdrawal == 0,
+            AccordError::WithdrawalPending
+        );
 
         let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;

@@ -46,6 +46,8 @@ pub enum AccordError {
     InsufficientBalance,
     #[msg("Settle pending reward/slash first: call reconcile_stake before request_withdraw.")]
     PendingSettlement,
+    #[msg("A withdrawal is already pending — complete it via withdraw before requesting another.")]
+    WithdrawalPending,
 
     // --- dispute intake ---
     #[msg("Subaccord has fewer active distinct stakers than the required panel size.")]
