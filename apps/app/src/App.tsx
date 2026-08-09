@@ -9,12 +9,16 @@ import { CreateDispute } from "./features/dispute/CreateDispute";
 import { SubaccordListPage } from "./features/subaccord/SubaccordListPage";
 import { SubaccordCreatePage } from "./features/subaccord/SubaccordCreatePage";
 import { SubaccordDetailPage } from "./features/subaccord/SubaccordDetailPage";
+import { JurorDashboardPage } from "./features/juror/JurorDashboardPage";
+import { StakePage } from "./features/juror/StakePage";
 
 /**
  * App shell — routes + Navbar + Toaster.
  *
  * Routes:
  *   /                      → home (option cards landing)
+ *   /juror                 → juror dashboard (my stakes across subaccords)
+ *   /juror/stake           → stake form + per-stake management actions
  *   /disputes              → dispute list
  *   /disputes/new          → create dispute form
  *   /disputes/:address     → dispute detail + state machine + appeal + ruling
@@ -29,6 +33,8 @@ export function App() {
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/juror" element={<JurorDashboardPage />} />
+          <Route path="/juror/stake" element={<StakePage />} />
           <Route path="/disputes" element={<DisputeList />} />
           <Route path="/disputes/new" element={<CreateDispute />} />
           <Route path="/disputes/:address" element={<DisputeDetail />} />

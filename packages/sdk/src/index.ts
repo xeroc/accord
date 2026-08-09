@@ -163,6 +163,9 @@ export {
   getRoundDecoder,
   getSubaccordDecoder,
   type Dispute,
+  type JurorStake,
+  type PauseState,
+  type PendingUpdate,
   type Round,
   type Subaccord,
 } from "./generated/accounts/index.js";

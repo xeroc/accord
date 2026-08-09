@@ -10,6 +10,13 @@ import { Link } from "react-router-dom";
 
 const OPTIONS = [
   {
+    to: "/juror",
+    title: "Juror dashboard",
+    description:
+      "Your stakes, active draws, and earned fees across every subaccord.",
+    action: "Manage stakes",
+  },
+  {
     to: "/disputes",
     title: "Disputes",
     description:
