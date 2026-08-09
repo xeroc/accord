@@ -8,6 +8,7 @@
 import { test, expect } from "bun:test";
 import { address, type Account } from "@solana/kit";
 import {
+  Accord,
   Aggregation,
   DisputeState,
   ShortfallPolicy,
@@ -15,9 +16,8 @@ import {
   type Round,
 } from "@useaccord/sdk";
 
-import { createCrankDispatch, type CrankContext } from "./dispatch.js";
+import { createCrankDispatch, type CrankAction, type CrankContext } from "./dispatch.js";
 import { reconcileOnce, type ReconcilerConfig } from "./reconciler.js";
-import type { CrankAction } from "./state.js";
 import type { CrankerWallet } from "./wallet.js";
 
 const Z32 = new Uint8Array(32);
@@ -113,9 +113,11 @@ function config(
     Pick<ReconcilerConfig, "dispatch" | "fetchDisputes" | "fetchRound">,
 ): ReconcilerConfig {
   return {
-    rpc: {} as ReconcilerConfig["rpc"],
+    accord: {} as unknown as Accord,
     rpcSubscriptions: {} as ReconcilerConfig["rpcSubscriptions"],
     wallet: FAKE_WALLET,
+    oracleQueue: D_ADDR,
+    programIdentity: D_ADDR,
     now: () => 1n,
     ...over,
   };
@@ -136,7 +138,7 @@ test("Created dispute without VRF → request_vrf dispatched + logged", async ()
     }),
   );
   expect(fired).toBe(1);
-  expect(calls).toEqual([{ kind: "request_vrf" }]);
+  expect(calls).toEqual([{ kind: "request_vrf", dispute: D_ADDR }]);
   expect(logs.some((l) => l.includes("crank action") && l.includes("request_vrf"))).toBe(true);
 });
 
@@ -180,7 +182,7 @@ test("Final dispute settles its prior unsettled round after the current round yi
     }),
   );
   expect(fired).toBe(1);
-  expect(calls).toEqual([{ kind: "settle_round", roundIdx: 1 }]);
+  expect(calls).toEqual([{ kind: "settle_round", roundIdx: 1, dispute: D_ADDR }]);
 });
 
 test("One action per dispute per cycle — current round wins over prior rounds", async () => {
@@ -203,7 +205,7 @@ test("One action per dispute per cycle — current round wins over prior rounds"
     }),
   );
   expect(fired).toBe(1);
-  expect(calls).toEqual([{ kind: "finalize_round" }]);
+  expect(calls).toEqual([{ kind: "finalize_round", dispute: D_ADDR }]);
 });
 
 test("Unhandled action kind is logged + skipped (fired stays 0)", async () => {

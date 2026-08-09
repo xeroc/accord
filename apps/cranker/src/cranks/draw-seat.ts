@@ -23,8 +23,6 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import {
-  ACCORD_PROGRAM_ID,
-  Accord,
   drawSeat,
   findJurorStakePda,
   findRoundPda,
@@ -105,23 +103,13 @@ export async function resolvePanel(opts: {
   return result;
 }
 
-// --- module-level singletons (one RPC + wallet for the process lifetime) ----
+// --- module-level singleton (one RPC for the process lifetime) --------------
 
 let _treeCache: TreeCache | null = null;
-let _accord: Accord | null = null;
 
 function getTreeCache(ctx: CrankContext): TreeCache {
   if (!_treeCache) _treeCache = new TreeCache(ctx.rpc);
   return _treeCache;
-}
-
-function getAccord(ctx: CrankContext): Accord {
-  if (!_accord) {
-    const endpoint = process.env.ACCORD_RPC_URL;
-    if (!endpoint) throw new Error("ACCORD_RPC_URL not set");
-    _accord = new Accord({ endpoint, signer: ctx.wallet.signer });
-  }
-  return _accord;
 }
 
 /** The draw_seat handler. Draws all remaining seats from `action.seat`. */
@@ -150,7 +138,6 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
   const alreadyDrawn = jurorsDrawn(round?.data ?? null);
 
   // 5. Resolve each remaining seat + send one tx per seat.
-  const accord = getAccord(ctx);
   const drawn: Uint8Array[] = [...alreadyDrawn];
   for (let seat = action.seat; seat < panel; seat++) {
     const r = await resolveSeat(
@@ -181,13 +168,13 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
       retries: r.retries,
     };
     const accounts: VrfDrawAccounts = {
-      caller: ctx.wallet.address,
+      caller: ctx.cranker,
       subaccord: d.subaccord,
       dispute: dispute.address,
     };
-    const ix = drawSeat(accord.adapter, ACCORD_PROGRAM_ID, accounts, roundPda, seat, membership);
+    const ix = drawSeat(ctx.accord.adapter, ctx.programId, accounts, roundPda, seat, membership);
     try {
-      await ctx.send(ix);
+      await ctx.sendIx(ix);
     } catch (e) {
       if (e instanceof SimulationError) return; // state moved — next cycle retries
       throw e;

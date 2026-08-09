@@ -20,6 +20,7 @@ import type {
   SolanaRpcSubscriptionsApi,
 } from "@solana/kit";
 import {
+  Accord,
   DisputeState,
   fetchMaybeRound,
   findAllDisputes,
@@ -28,7 +29,8 @@ import {
   type Round,
 } from "@useaccord/sdk";
 
-import type { CrankContext, CrankDispatch } from "./dispatch.js";
+import type { CrankAction, CrankContext, CrankKind } from "./dispatch.js";
+import type { CrankAction as ResolveAction } from "./state.js";
 import { sendIx } from "./send.js";
 import { resolveNextAction } from "./state.js";
 import type { CrankerWallet } from "./wallet.js";
@@ -37,10 +39,14 @@ import type { CrankerWallet } from "./wallet.js";
 const TERMINAL = new Set<DisputeState>([DisputeState.Closed, DisputeState.Failed]);
 
 export interface ReconcilerConfig {
-  rpc: Rpc<SolanaRpcApi>;
+  /** SDK facade — owns the RPC, signer, and adapter the cranks build with. */
+  accord: Accord;
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   wallet: CrankerWallet;
-  dispatch: CrankDispatch;
+  dispatch: import("./dispatch.js").CrankDispatch;
+  /** VRF oracle accounts (request_vrf CPI extras). */
+  oracleQueue: Address;
+  programIdentity: Address;
   /** Poll interval. Default 60_000ms. */
   intervalMs?: number;
   /** Wall clock returning Unix seconds. Default `Date.now()/1000`. */
@@ -66,20 +72,28 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
   const {
     dispatch,
     wallet,
+    accord,
+    oracleQueue,
+    programIdentity,
     log = defaultLog,
     now = defaultNow,
-    fetchDisputes = () => findAllDisputes(config.rpc),
-    fetchRound = (dispute, roundIdx) => fetchRoundAccount(config.rpc, dispute, roundIdx),
+    fetchDisputes = () => findAllDisputes(accord.rpc),
+    fetchRound = (dispute, roundIdx) => fetchRoundAccount(accord.rpc, dispute, roundIdx),
   } = config;
 
+  const rpc = accord.rpc;
+  const programId = Accord.PROGRAM_ID;
   const t = now();
   const send = (instruction: Instruction): Promise<string> =>
     sendIx(instruction, {
-      rpc: config.rpc,
+      rpc,
       rpcSubscriptions: config.rpcSubscriptions,
       feePayer: wallet.signer,
       log,
     });
+  /** Adapt the reconciler's `(msg, fields)` logger to the cranks' per-kind sink. */
+  const ctxLog = (kind: CrankKind, dispute: Address | null, msg: string): void =>
+    log(`crank ${kind}`, { dispute, msg });
 
   let fired = 0;
   const disputes = await fetchDisputes();
@@ -88,16 +102,19 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
 
     // 1) Resolve against the current round.
     const currentRound = await fetchRound(dispute.address, dispute.data.currentRound);
-    let action = resolveNextAction(dispute.data, currentRound?.data ?? null, t);
+    const resolved = resolveNextAction(dispute.data, currentRound?.data ?? null, t);
+    let action: CrankAction | null = null;
     let round = currentRound;
 
-    // 2) No current-round action and Final? Scan prior rounds for settlement.
-    if (action === null && dispute.data.state === DisputeState.Final) {
+    if (resolved !== null) {
+      action = stampDispute(resolved, dispute.address);
+    } else if (dispute.data.state === DisputeState.Final) {
+      // 2) No current-round action and Final? Scan prior rounds for settlement.
       for (let i = 0; i < dispute.data.currentRound; i++) {
         const prior = await fetchRound(dispute.address, i);
         const a = resolveNextAction(dispute.data, prior?.data ?? null, t);
         if (a !== null) {
-          action = a;
+          action = stampDispute(a, dispute.address);
           round = prior;
           break;
         }
@@ -106,12 +123,17 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     if (action === null) continue;
 
     const ctx: CrankContext = {
+      accord,
+      programId,
+      cranker: wallet.address,
+      oracleQueue,
+      programIdentity,
+      sendIx: send,
+      log: ctxLog,
       dispute,
       round,
-      wallet,
-      rpc: config.rpc,
+      rpc,
       rpcSubscriptions: config.rpcSubscriptions,
-      send,
     };
     const handled = await dispatch.execute(ctx, action);
     log("crank action", {
@@ -157,6 +179,28 @@ async function fetchRoundAccount(
   const maybe = await fetchMaybeRound(rpc, pda);
   if (maybe.exists) return maybe;
   return null;
+}
+
+/**
+ * Stamp the dispute address onto a resolver-emitted action. The state resolver
+ * (state.ts) is pure over `Dispute` data and doesn't know the account address;
+ * the reconciler does, and the dispatch contract ({@link CrankAction}) carries
+ * it so every crank reads `action.dispute` uniformly. Type-safe exhaustive
+ * switch over the resolver's 7-kind output union.
+ */
+function stampDispute(action: ResolveAction, dispute: Address): CrankAction {
+  switch (action.kind) {
+    case "draw_seat":
+      return { kind: "draw_seat", seat: action.seat, dispute };
+    case "settle_round":
+      return { kind: "settle_round", roundIdx: action.roundIdx, dispute };
+    case "request_vrf":
+    case "finalize_round":
+    case "finalize_dispute":
+    case "cancel_dispute":
+    case "redraw":
+      return { kind: action.kind, dispute };
+  }
 }
 
 function defaultNow(): bigint {
