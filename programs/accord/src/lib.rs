@@ -2661,6 +2661,19 @@ fn settle_round_accounts(
         .checked_add(pool_extra)
         .ok_or(AccordError::ArithmeticOverflow)?;
 
+    // H-3: when no juror is coherent (rare — typically a prior round whose
+    // result was overturned on appeal), the fee pool would be permanently
+    // trapped in the vault. Credit it to ALL drawn jurors equally as a
+    // consolation fee (fee_pool / panel) instead. The stake pool is NOT
+    // redistributed (dividing by panel would nullify the slash). Ideally
+    // this surplus would go to the Subaccord authority as protocol revenue,
+    // but the ledger-only settlement architecture doesn't have the
+    // authority's JurorStake in context — see H-3 report, Option A.
+    let consolation_fee = if coherent_count > 0 {
+        0
+    } else {
+        fee_pool / panel as u64
+    };
     let stake_share = if coherent_count > 0 {
         slash_total / coherent_count as u64
     } else {
@@ -2669,7 +2682,7 @@ fn settle_round_accounts(
     let fee_share = if coherent_count > 0 {
         fee_pool / coherent_count as u64
     } else {
-        0 // no coherent jurors: pools stay (accepted edge case)
+        0
     };
 
     // --- Second pass: apply slashes/rewards to stake_delta + fees_earned + decrement draws ---
@@ -2727,7 +2740,11 @@ fn settle_round_accounts(
         } else {
             (
                 existing_delta.saturating_add(-(slash_per_juror.min(staked) as i64)),
-                existing_fees,
+                // H-3: consolation fee when no juror is coherent (0 in the
+                // normal case — avoids trapping the fee pool).
+                existing_fees
+                    .checked_add(consolation_fee)
+                    .ok_or(AccordError::ArithmeticOverflow)?,
             )
         };
         let new_draws = active_draws.saturating_sub(1);

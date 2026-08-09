@@ -3194,6 +3194,248 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
 }
 
 #[test]
+fn settle_round_no_coherent_jurors_redistributes_fee_pool() {
+    // H-3: when no juror in a prior round is coherent against the final ruling
+    // (e.g., an appeal flipped the ruling), the fee pool must not be trapped.
+    // It is credited to ALL drawn jurors equally as a consolation fee.
+    let mut env = setup_accumulator();
+    let stakes = [5_000u64, 3_000, 2_000];
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+
+    // Create dispute + fund vault.
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let dispute = dispute_pda(&filer.pubkey(), 1u64);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce: 1,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    // Find VRF + draw all 3 seats.
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut a = 0u64;
+        for (_, s) in &leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let vrf = {
+        let mut c = [0u8; 32];
+        loop {
+            c[0] = c[0].wrapping_add(1);
+            if c[0] == 0 {
+                c[1] = c[1].wrapping_add(1);
+            }
+            let seed = hashv(&[
+                &c,
+                dispute.as_ref(),
+                &0u32.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
+            let seats: Vec<usize> = (0..3u32)
+                .map(|seat| {
+                    let rh = hashv(&[&seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+                    let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+                    leaves
+                        .iter()
+                        .position(|(i, s)| {
+                            ri >= prefixes[leaves.iter().position(|x| x.0 == *i).unwrap()]
+                                && ri - prefixes[leaves.iter().position(|x| x.0 == *i).unwrap()]
+                                    < *s
+                        })
+                        .unwrap_or(0)
+                })
+                .collect();
+            if seats.iter().collect::<std::collections::HashSet<_>>().len() == 3 {
+                break c;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+    let vrf_seed = hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &0u32.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
+    let mut drawn: Vec<(u32, usize)> = Vec::new();
+    for seat in 0..3u32 {
+        let rh = hashv(&[&vrf_seed, &seat.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+        let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+        let mut f = None;
+        for (i, &(_, st)) in leaves.iter().enumerate() {
+            if ri >= prefixes[i] && ri - prefixes[i] < st {
+                f = Some(i);
+                break;
+            }
+        }
+        drawn.push((seat, f.unwrap()));
+    }
+    let rnd = round_pda(&dispute, 0);
+    for &(seat, leaf_idx) in &drawn {
+        submit_draw_seat(&mut env, dispute, rnd, seat, 0, leaf_idx, &leaves).assert_success();
+    }
+
+    // Simulate: dispute is Final, final_ruling = 1 (round-0 result was 0 →
+    // an appeal flipped it). current_round = 1 so round 0 is a prior round.
+    {
+        let acc = env.ctx.svm.get_account(&dispute).unwrap();
+        let mut d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+        d.state = DisputeState::Final;
+        d.final_ruling = 1; // ← different from round-0 result (0)
+        d.current_round = 1;
+        let mut data = acc.data[..8].to_vec();
+        AnchorSerialize::serialize(&d, &mut data).unwrap();
+        env.ctx
+            .svm
+            .set_account(
+                dispute,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    // Write round 0: 2 revealers voted option 0, 1 non-revealer (u8::MAX).
+    // reveal_count = 2, result = 0 (plurality). Against final_ruling = 1,
+    // coherent_count = 0.
+    {
+        let acc = env.ctx.svm.get_account(&rnd).unwrap();
+        let mut data = acc.data.clone();
+        data[20..24].copy_from_slice(&2u32.to_le_bytes()); // reveal_count = 2
+        data[48] = 0; // result = 0 (plurality winner of the reveals)
+        data[2068] = 0; // reveals[0] = option 0
+        data[2069] = 0; // reveals[1] = option 0
+                        // reveals[2] stays u8::MAX (255, non-revealer) from draw_seat init
+        env.ctx
+            .svm
+            .set_account(
+                rnd,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
+
+    // Settle round 0 (prior round against final_ruling = 1).
+    let js_pdhas: Vec<Pubkey> = drawn
+        .iter()
+        .map(|&(_, li)| juror_stake_pda(&env.subaccord, &leaves[li].0))
+        .collect();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::SettleRound {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::SettleRound { round_idx: 0u32 })
+        .instruction()
+        .unwrap();
+    let ix_meta = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut a = ix.accounts;
+            for k in &js_pdhas {
+                a.push(solana_program::instruction::AccountMeta {
+                    pubkey: *k,
+                    is_signer: false,
+                    is_writable: true,
+                });
+            }
+            a
+        },
+        data: ix.data,
+    };
+    let r = env
+        .ctx
+        .execute_instruction(ix_meta, &[&env.creator])
+        .unwrap();
+    assert!(
+        r.is_success(),
+        "settle_round must succeed; logs={:?}",
+        r.logs()
+    );
+
+    // H-3 assertions: no coherent jurors → all slashed, fee pool consoled.
+    // fee_pool = (3-2) × 1_000_000 = 1_000_000 (1 non-revealer).
+    // consolation_fee = 1_000_000 / 3 = 333_333 per juror.
+    // slash_per_juror = 1000 × 1000 / 10_000 = 100.
+    for &(seat, leaf_idx) in &drawn {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        assert_eq!(js.active_draws, 0, "seat {seat}: active_draws released");
+        assert_eq!(js.slash_reserve, 0, "seat {seat}: slash_reserve released");
+        assert_eq!(
+            js.stake_delta, -100,
+            "seat {seat}: slashed (no coherent jurors → no stake redistribution)"
+        );
+        assert_eq!(
+            js.fees_earned, 333_333,
+            "seat {seat}: consolation fee = fee_pool / panel"
+        );
+    }
+
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    assert_eq!(round.settled, 1);
+}
+
+#[test]
 fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
     let mut env = setup_accumulator();
     // Stake 3 jurors (panel gate). Juror 0 at exactly min_stake.
