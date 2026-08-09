@@ -5,7 +5,7 @@
 //! `Box<>`-wrapped at the instruction site to fit the BPF stack frame — the
 //! structs themselves are plain `#[account]` types.
 
-use crate::constants::{MAX_APPEALS, MAX_JURORS, MAX_OPTIONS};
+use crate::constants::{MAX_JURORS, MAX_OPTIONS, NUM_EVIDENCE_SLOTS};
 use anchor_lang::prelude::*;
 
 /// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
@@ -189,7 +189,7 @@ pub struct Dispute {
     /// Index 0 = round-0 (filing); each appeal round may optionally bring new
     /// evidence at `[current_round + 1]`. `[0u8; 32]` sentinel = no new
     /// evidence that round (jurors reuse prior rounds').
-    pub evidence_hashes: [[u8; 32]; MAX_APPEALS + 1],
+    pub evidence_hashes: [[u8; 32]; NUM_EVIDENCE_SLOTS],
     pub state: DisputeState,
     pub current_round: u32,
     /// Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
