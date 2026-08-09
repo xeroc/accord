@@ -26,15 +26,15 @@ bun run apps/cli/bin/run.js <command>
 
 Resolved in priority order (flag → env → default):
 
-| Flag / Env | Default | Meaning |
-|---|---|---|
+| Flag / Env        | Default                                                                | Meaning                                             |
+| ----------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
 | `--keypair`, `-k` | `$ANCHOR_WALLET` → `$ACCORD_KEYPAIR_PATH` → `~/.config/solana/id.json` | Fee payer **and** on-chain signer for every command |
-| `--rpc`, `-r` | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899` | JSON-RPC endpoint |
-| `--ws`, `-w` | `$ACCORD_WS_URL` (else derived from `--rpc`) | WebSocket (confirmations) |
-| `--commitment` | `confirmed` | `processed`/`confirmed`/`finalized` |
-| `--json` | off | One JSON object on stdout (for `jq`) |
-| `--quiet`, `-q` | off | Only the signature (send) or address (create/read) |
-| `--dry-run` | off | Build + print the instruction; do not sign/send |
+| `--rpc`, `-r`     | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899`                            | JSON-RPC endpoint                                   |
+| `--ws`, `-w`      | `$ACCORD_WS_URL` (else derived from `--rpc`)                           | WebSocket (confirmations)                           |
+| `--commitment`    | `confirmed`                                                            | `processed`/`confirmed`/`finalized`                 |
+| `--json`          | off                                                                    | One JSON object on stdout (for `jq`)                |
+| `--quiet`, `-q`   | off                                                                    | Only the signature (send) or address (create/read)  |
+| `--dry-run`       | off                                                                    | Build + print the instruction; do not sign/send     |
 
 **Single-signer model:** the `--keypair` wallet is the fee payer **and** the
 instruction's signing account for every command (the SDK adapter pins
@@ -47,6 +47,7 @@ instruction's signing account for every command (the SDK adapter pins
 ```bash
 useaccord config:show
 ```
+
 ```
 rpc        : http://127.0.0.1:8899
 keypair    : ~/.config/solana/id.json
@@ -69,10 +70,31 @@ wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 ```bash
 useaccord lifecycle:init-pause
 ```
+
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
   pauseState: AaNWS…XVG9
+```
+
+### `settle:round --subaccord <addr> --dispute <addr> --round-idx <n> [--remaining-accounts auto|list] [--juror-stake <pda>...] [--dry-run]`
+
+Permissionless per-round settlement crank (`methods.settleRound`). After a
+dispute is `Final`, settles one prior round against the final ruling — slashes
+incoherent jurors, redistributes the fee pool, releases the drawn seats.
+`--remaining-accounts auto` (default) derives the panel `JurorStake` PDAs from
+the fetched round; `list` takes explicit `--juror-stake` addresses. The `Round`
+PDA is derived from `dispute + round-idx` unless `--round` overrides it.
+
+```bash
+useaccord settle:round --subaccord 6Lm… --dispute EKj… --round-idx 0
+```
+
+```
+✓ confirmed: 3Fq9…
+  round: 9by1…rhMf
+  roundIdx: 0
+  panel: 3
 ```
 
 ## Infrastructure (for future commands)
@@ -84,7 +106,7 @@ Every command extends one of two base classes in `src/lib/base-command.ts`:
   (`accumulator:*`, `commit-hash`, `required-fee`).
 - **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
   facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)
-  + `--dry-run` instruction dump.
+  - `--dry-run` instruction dump.
 
 Shared helpers: `src/lib/{format,output,errors,wallet}.ts` (address truncation,
 bigint grouping, json/quiet renderers, AccordError mapping, keypair/env
