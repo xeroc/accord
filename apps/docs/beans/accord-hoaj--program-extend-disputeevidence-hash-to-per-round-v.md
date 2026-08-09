@@ -1,11 +1,11 @@
 ---
 # accord-hoaj
 title: Program — extend Dispute.evidence_hash to per-round vector
-status: todo
+status: completed
 type: epic
 priority: critical
 created_at: 2026-08-09T16:56:01Z
-updated_at: 2026-08-09T16:56:01Z
+updated_at: 2026-08-09T18:01:05Z
 parent: accord-qp7c
 ---
 
