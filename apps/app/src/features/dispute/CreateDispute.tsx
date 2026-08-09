@@ -12,6 +12,8 @@ import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { useSigner } from "../../shared/wallet";
 import { getAtaAddress } from "../../shared/tokens";
+import { useTokenMeta } from "../../shared/useTokenMeta";
+import { formatBigInt, shortAddress } from "../../shared/format";
 import { useSubaccord } from "./useSubaccord";
 import { useFeeTokenBalance } from "./useFeeTokenBalance";
 
@@ -29,10 +31,6 @@ function hexToBytes32(hex: string): Uint8Array {
 
 function randomNonce(): string {
   return BigInt(Math.floor(Math.random() * 0xffffffff)).toString();
-}
-
-function formatFee(fee: bigint): string {
-  return `${(Number(fee) / 1e9).toFixed(4)} SOL`;
 }
 
 const MIN_OPTIONS = 2;
@@ -59,6 +57,9 @@ export function CreateDispute() {
   const feePerJuror = subaccord?.data.feePerJuror ?? 0n;
   const fee = feePerJuror > 0n ? requiredFee(feePerJuror) : null;
   const feeToken = subaccord?.data.feeToken;
+  const { data: feeMeta } = useTokenMeta(feeToken);
+  const decimals = feeMeta?.decimals;
+  const symbol = feeMeta?.symbol ?? (feeToken ? shortAddress(feeToken) : "???");
   const { data: balance, isLoading: balanceLoading } = useFeeTokenBalance(
     signer?.address,
     feeToken,
@@ -206,7 +207,9 @@ export function CreateDispute() {
                     Fee per juror
                   </span>
                   <p className="font-mono">
-                    {formatFee(subaccord.data.feePerJuror)}
+                    {decimals !== undefined
+                      ? `${formatBigInt(subaccord.data.feePerJuror, decimals)} ${symbol}`
+                      : `${subaccord.data.feePerJuror.toString()} (raw)`}
                   </p>
                 </div>
                 <div>
@@ -226,7 +229,11 @@ export function CreateDispute() {
             <span className="font-mono text-xs text-text-secondary">
               Required fee ({INITIAL_NUM_JURORS} × fee per juror)
             </span>
-            <p className="font-mono text-lg text-amber">{formatFee(fee)}</p>
+            <p className="font-mono text-lg text-amber">
+              {fee && decimals !== undefined
+                ? `${formatBigInt(fee, decimals)} ${symbol}`
+                : `${fee?.toString() ?? 0n} (raw)`}
+            </p>
             {signer && feeToken && (
               <div className="mt-2 border-t border-amber/20 pt-2">
                 <span className="font-mono text-xs text-text-secondary">
@@ -244,8 +251,10 @@ export function CreateDispute() {
                   {balanceLoading
                     ? "loading…"
                     : (balance ?? 0n) === 0n
-                      ? "0 (no ATA)"
-                      : (balance ?? 0n).toString()}
+                      ? `0 ${symbol} (no ATA)`
+                      : decimals !== undefined
+                        ? `${formatBigInt(balance ?? 0n, decimals)} ${symbol}`
+                        : `${(balance ?? 0n).toString()} (raw)`}
                 </p>
               </div>
             )}
