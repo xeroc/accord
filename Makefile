@@ -50,7 +50,7 @@ docs: ## Build the MkDocs site into apps/docs/site/
 docs-serve: ## Live-reload MkDocs dev server
 	$(MAKE) -C apps/docs serve
 
-test: ## Build + run jest suite (offline smoke). For on-chain tests: `make run_validator` first, then `make test`
+test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Surfpool)
 	anchor build --ignore-keys
 	anchor test --skip-build
 
@@ -65,11 +65,9 @@ test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .s
 	# manifests). `make prep` installs Solana 3.1.10, which drops this flag.
 	# `anchor build` is unaffected — it manages its own toolchain.
 
-test_surfpool: ## Run the full suite against a running Surfpool instance
-	pnpm --filter @useaccord/tests test
+test_surfpool: ## Run jest e2e suite only (against an already-running Surfpool/validator)
 
-run_surfpool: ## Start a fresh Surfpool Surfnet (auto-deploys accord.so via runbook; separate terminal)
-	surfpool start --yes --db :memory:
+run_surfpool: ## Start a Surfpool Surfnet manually (for isolated e2e debugging; `anchor test` starts its own)
 
 run_validator: ## Start a local test-validator with the Accord .so at its declared address (no keypair needed)
 	solana-test-validator --reset \

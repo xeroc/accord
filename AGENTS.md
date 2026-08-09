@@ -48,15 +48,19 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 > orchestrates builds, and lint/test fan out via pnpm's recursive filter.
 > Don't add root scripts; they'd duplicate the Makefile.
 
-- `make prep` — install Solana (v1.18.20) + Anchor (0.31.0) via avm, then `pnpm install`
+- `make prep` — install Solana (3.1.10) + Anchor (1.0.2) via avm, then `pnpm install`
 - `make build` — `anchor build` (programs) then `pnpm -r run build` (packages/apps)
 - `make lint` — `pnpm -r run lint` across every workspace that declares a lint script
 - `pnpm --filter <pkg> run lint:fix` — auto-fix lint in one package (not all packages define `lint:fix`)
-- `anchor test` — Rust unit tests + the `tests/` jest suite against a local validator
-- `make test_unit` — LiteSVM Rust unit/TDD tests (fast, no validator): builds the `.so` then runs `cargo test --features no-entrypoint` in `programs/accord`
-- `make run_surfpool` — start a Surfpool local fork (separate terminal)
-- `make test_surfpool` — full suite (Rust + jest) against a running Surfpool instance
-- `cd tests && npx jest` — run only the `tests/` TypeScript integration suite (needs Surfpool: `make run_surfpool`)
+- `anchor test` — full suite: Rust unit tests + LiteSVM + jest e2e. Anchor
+  auto-starts a Surfpool instance, deploys the `.so`, and runs everything. No
+  separate validator terminal needed.
+- `make test` — `anchor build --ignore-keys` + `anchor test --skip-build`
+  (same as `anchor test` but with the canonical-keypair guard)
+- `make test_unit` — LiteSVM Rust unit/TDD tests only (fast, no validator): builds the `.so` then runs `cargo test --features no-entrypoint` in `programs/accord`
+- `make run_surfpool` — start a Surfpool Surfnet manually (for isolated e2e debugging; `anchor test` starts its own)
+- `make test_surfpool` — jest e2e suite only (needs a running Surfpool/validator)
+- `cd tests && npx jest` — run only the `tests/` TypeScript integration suite (needs a validator at `127.0.0.1:8899`)
 - `cd tests && npx jest -t "<name>"` — run a single test by name
 - `cd packages/sdk && pnpm run build` — build the SDK
 - `cd programs/accord && cargo test` — Rust unit tests for the Accord in isolation
@@ -142,16 +146,17 @@ program through the `@useaccord/sdk` facade against a live Surfpool instance.
 LiteSVM is the fast inner TDD loop; **e2e is the sign-off**, never skipped for a
 feature that touches the chain.
 
-- **Surfpool program deployment — do NOT start `surfpool` bare.** Surfpool does
-  not auto-deploy like `solana-test-validator --bpf-program`; it deploys via the
-  committed runbook `runbooks/deployment/main.tx` (`instant_surfnet_deployment =
-true` cheatcode ⇒ direct program-data write, instant + deterministic) when
-  started with `--yes` (skips runbook-generation prompts). `make run_surfpool`
-  runs `surfpool start --yes --db :memory:` — the `--db :memory:` guarantees a
-  fresh Surfnet each start (singleton-PDA specs like `lifecycle.pause` stay
-  restart-safe). It airdrops `~/.config/solana/id.json`. If the program is
-  missing, `setup/env.ts` throws a clear `make run_surfpool` hint instead of
-  cascading red tests.
+- **Surfpool program deployment.** `anchor test` (and thus `make test`)
+  auto-starts a Surfpool instance, deploys the `.so` via the committed runbook
+  (`runbooks/deployment/main.tx` — `instant_surfnet_deployment = true`), and
+  tears it down when the suite finishes. No separate terminal needed.
+  For **isolated e2e debugging**, start Surfpool manually:
+  `make run_surfpool` runs `surfpool start --yes --db :memory:` — the
+  `--db :memory:` guarantees a fresh Surfnet each start (singleton-PDA specs
+  like `lifecycle.pause` stay restart-safe). It airdrops
+  `~/.config/solana/id.json`. Then `make test_surfpool` to run jest against it.
+  If the program is missing, `setup/env.ts` throws a clear
+  `make run_surfpool` hint instead of cascading red tests.
 
 - **Modular harness (mandatory — no copy-paste of RPC/payer/send boilerplate).**
   Shared setup lives in `tests/src/setup/`, imported by every spec:
@@ -185,17 +190,18 @@ true` cheatcode ⇒ direct program-data write, instant + deterministic) when
     VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
     idempotently guards the PauseState singleton, so the **whole suite runs GREEN
     together on one Surfnet** (`make test_surfpool`).
-
 - **The green rule (non-negotiable).** A feature/milestone is **not complete**
   until its e2e spec passes against a running Surfpool — not skipped. "Skip if
   validator down" is permitted only for the offline CI lane; for local + the
   Surfpool lane the e2e MUST be GREEN:
-  1. `make run_surfpool` (terminal 1) — must show the Accord program deployed.
-  2. `make test_surfpool` (terminal 2) — every touched spec green.
-     Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
-     change**. Shipping an instruction without a green e2e spec is a blocker, not a
-     follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
-     SDK↔program↔Surfpool integration.
+  - Primary: `make test` — runs the full suite (Rust + LiteSVM + jest e2e).
+    `anchor test` auto-starts Surfpool, deploys, and runs everything.
+  - Isolated debugging: `make run_surfpool` (terminal 1), then
+    `make test_surfpool` (terminal 2) — every touched spec green.
+  Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
+  change**. Shipping an instruction without a green e2e spec is a blocker, not a
+  follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
+  SDK↔program↔Surfpool integration.
 
 ## Accord (Program B — built first)
 
