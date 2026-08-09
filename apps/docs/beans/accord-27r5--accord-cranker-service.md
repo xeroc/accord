@@ -1,10 +1,11 @@
 ---
 # accord-27r5
 title: Accord Cranker Service
-status: todo
+status: completed
 type: milestone
+priority: normal
 created_at: 2026-08-09T20:13:41Z
-updated_at: 2026-08-09T20:13:41Z
+updated_at: 2026-08-09T23:21:55Z
 ---
 
 ## Overview
