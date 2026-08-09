@@ -136,6 +136,52 @@ Permissionless crank: sweep a flipped appeal bond back to its appellant after
 that was appealed (the AppealBond PDA seed). The refund lands in the
 appellant's `feeToken` ATA (defaults to the loaded wallet's ATA). Idempotent.
 
+### `staking:*` — juror capital (stake / unstake / reconcile / fees)
+
+| Command                    | SDK fn                    | Notes                                                                |
+| -------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| `staking:stake`            | `methods.stake`           | Auto-builds the MST proof; `--path-from <file>` for offline          |
+| `staking:request-withdraw` | `methods.requestWithdraw` | Phase 1 — banks `pending_withdrawal` (ledger-only)                   |
+| `staking:withdraw`         | `methods.withdraw`        | Phase 2 — moves tokens (gated by delay + `active_draws==0`)          |
+| `staking:reconcile`        | `methods.reconcileStake`  | Permissionless crank — folds `settlement_delta` into `staked`        |
+| `staking:withdraw-fees`    | `methods.withdrawFees`    | Pull aggregate `fees_earned` from the `fee_vault` (ADR-0020)         |
+| `staking:can-unstake`      | `canUnstake`              | **Pure pre-check** (offline) — `{ canUnstake, activeDraws, reason }` |
+
+Common flags: `--subaccord <pda>` (required), `--juror <addr>` (default signer),
+`--amount <u64>` (stake/request-withdraw), `--pause-state <pda>` (stake; auto-derived),
+`--path-from <file>` (stake/request-withdraw/reconcile). Chain commands also take
+the global `--rpc/--keypair/--dry-run/--json/--quiet`.
+
+**Auto vs manual MST path** — by default `stake`/`request-withdraw`/`reconcile`
+fetch all `JurorStake`s for the Subaccord and call `prepareStakeProof`; a stale
+local view throws `AccumulatorRootMismatch` (retry the read). `--path-from`
+reads a proof JSON (`{path: [{siblingHash, siblingSum}]}` or a bare array) —
+round-trips `accumulator:prepare-stake-proof` output — and is parsed before any
+network call, so a bad file fails fast.
+
+```bash
+useaccord staking:stake --subaccord 7vrF… --amount 1_000_000
+```
+
+```
+✓ confirmed: 4k2N…
+  subaccord: 7vrF…zK9u
+  jurorStake: Gd5P…r8Qa
+  amount: 1_000_000
+  leafIndex: 3
+  mode: auto
+```
+
+```bash
+useaccord staking:can-unstake --staked 1000 --active-draws 2 --amount 500
+```
+
+```
+canUnstake : no
+activeDraws: 2
+reason     : StakeLocked
+```
+
 ## Infrastructure (for future commands)
 
 Every command extends one of two base classes in `src/lib/base-command.ts`:
