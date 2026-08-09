@@ -5,7 +5,7 @@ status: completed
 type: milestone
 priority: normal
 created_at: 2026-08-09T18:03:21Z
-updated_at: 2026-08-09T18:04:10Z
+updated_at: 2026-08-09T20:13:38Z
 ---
 
 Foundational oclif v4 (ESM/bun) CLI at apps/cli as @useaccord/cli. Implements the base-command + facade send pipeline and the first command: `useaccord pause_state initialize` (one-time PauseState singleton init via the @useaccord/sdk Accord facade). Loads the signer from $ANCHOR_WALLET (64-byte uint8 keypair JSON); fee payer + on-chain authority = the wallet. Verified e2e against a Surfpool with the deployed program.
@@ -37,3 +37,31 @@ owner = Accord program; second call correctly rejected by the one-time guard).
 
 Note: the CLI runs under bun because the SDK's compiled `dist` has extensionless
 internal imports that only bun resolves at runtime (matches the monorepo idiom).
+
+## Summary of Changes — shared infrastructure phase
+
+Built the cross-command foundation so the remaining leaf commands
+(`staking:*`, `dispute:*`, `draw:*`, `vote:*`, `appeal:*`, `settle:*`,
+`accumulator:*`, `read:*`) can be implemented in parallel. Decisions applied from
+the §7 red-line: **single-signer model** (dropped `--as`/`--signer-pays` — the
+`--keypair` wallet is fee payer + on-chain signer for every command), **colon**
+command notation, **no `flow:*` composites**, wallet env `ANCHOR_WALLET` →
+`ACCORD_KEYPAIR_PATH` → default.
+
+- **src/lib/format.ts** — `truncateAddress`, `groupBigInt`, `isoFromUnixSeconds`,
+  `accountRoleLabel`.
+- **src/lib/output.ts** — `renderSend`/`renderCreated`/`renderRead` (json/quiet/
+  human) + bigint-safe `jsonStringify` (Kit returns lamports as bigint).
+- **src/lib/errors.ts** — `toCliError`: maps `AccordErrors` via message `#0xNN`
+  and nested `{Custom:n}` (recursive, depth-bounded); RPC-reachability hints.
+- **src/lib/base-command.ts** — `BaseCommand` (output modes + `catch()` error
+  hook via managed `this.exit`) and `ChainCommand` (chain flags, `loadChain`,
+  `sendInstruction`, `emitDryRun`).
+- **Commands:** migrated `pause_state initialize` → `lifecycle:init-pause`
+  (`--skip-if-exists`); added `config:show` + `config:balance`.
+- **package.json:** `topicSeparator: ":"`, full topic tree; `@noble/curves` devDep
+  for keypair fixtures.
+
+Verification: `tsc` + `eslint` clean, `bun test` 15/15, and e2e against Surfpool
+(`config:show` json/quiet/human; `lifecycle:init-pause` dry-run + confirmed real
+send with PauseState created on-chain; idempotency + error mapping).

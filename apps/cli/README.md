@@ -1,64 +1,104 @@
 # @useaccord/cli
 
-`useaccord` — operator CLI for the [Accord](../../) arbitration program on
-Solana. Built on [`@useaccord/sdk`](../../packages/sdk) (the `Accord` facade) +
-[`oclif`](https://oclif.io).
+`useaccord` — operator CLI for the [Accord](../../) arbitration program on Solana.
+Thin wrapper over [`@useaccord/sdk`](../../packages/sdk) (the `Accord` facade);
+built on [`oclif`](https://oclif.io) v4 (ESM/bun).
 
-## Install (workspace)
+> **Status:** shared infrastructure + the first commands landed. The remaining
+> leaf commands (`staking:*`, `dispute:*`, `draw:*`, `vote:*`, `appeal:*`,
+> `settle:*`, `accumulator:*`, `read:*`) plug into the base classes below and are
+> implemented in parallel. Interface spec: `.agents/skills/useaccord/CLI.md`.
+
+## Run
+
+This is a bun-first workspace. The CLI imports `@useaccord/sdk`'s compiled
+output (which bun resolves natively), so run it via bun:
 
 ```bash
-pnpm install        # links @useaccord/sdk + @useaccord/cli
-```
+# dev (loads TypeScript from src/)
+bun run apps/cli/bin/dev.js <command>
 
-The binary is `useaccord`. In this bun-based monorepo, run it from source:
-
-```bash
-pnpm --filter @useaccord/cli run dev -- pause_state initialize
-# or directly:
-bun run apps/cli/bin/dev.js pause_state initialize
+# production (loads compiled JS from dist/, after `pnpm --filter @useaccord/cli build`)
+bun run apps/cli/bin/run.js <command>
 ```
 
 ## Configuration
 
-| Flag / Env | Description | Default |
+Resolved in priority order (flag → env → default):
+
+| Flag / Env | Default | Meaning |
 |---|---|---|
-| `--wallet`, `-k` / `ANCHOR_WALLET` | Path to a Solana keypair JSON file (a `[..64 uint8..]` array). **Required.** The keypair is the fee payer **and** becomes the on-chain pause authority. | — |
-| `--rpc`, `-r` / `ACCORD_RPC_URL` | Solana JSON-RPC endpoint. | `http://127.0.0.1:8899` |
-| `--ws`, `-w` / `ACCORD_WS_URL` | Solana WebSocket endpoint. | derived from `--rpc` (`8899→8900`, `http→ws`) |
+| `--keypair`, `-k` | `$ANCHOR_WALLET` → `$ACCORD_KEYPAIR_PATH` → `~/.config/solana/id.json` | Fee payer **and** on-chain signer for every command |
+| `--rpc`, `-r` | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899` | JSON-RPC endpoint |
+| `--ws`, `-w` | `$ACCORD_WS_URL` (else derived from `--rpc`) | WebSocket (confirmations) |
+| `--commitment` | `confirmed` | `processed`/`confirmed`/`finalized` |
+| `--json` | off | One JSON object on stdout (for `jq`) |
+| `--quiet`, `-q` | off | Only the signature (send) or address (create/read) |
+| `--dry-run` | off | Build + print the instruction; do not sign/send |
 
-## Commands
+**Single-signer model:** the `--keypair` wallet is the fee payer **and** the
+instruction's signing account for every command (the SDK adapter pins
+`accord.signer`). Multi-signer choreography stays in the SDK/tests.
 
-### `useaccord pause_state initialize`
+## Commands implemented
 
-One-time initialization of the PauseState singleton PDA (seeds `["pause"]`),
-recording the wallet as the pause authority. Must run exactly once per program
-deployment, before any `pause` / `propose_unpause` / `execute_unpause`.
+### `config:show` — resolved config + payer balance
 
 ```bash
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ACCORD_RPC_URL=http://127.0.0.1:8899
-
-useaccord pause_state initialize
+useaccord config:show
+```
+```
+rpc        : http://127.0.0.1:8899
+keypair    : ~/.config/solana/id.json
+authority  : 3vbYr…hzP3
+programId  : cordh…yKed
+commitment : confirmed
+balance    : 10_000_000_000_000 lamports (◎ 10000)
 ```
 
-```
-authority : 9aJb2…
-pauseState: 3hQYw…
+### `config:balance [--address <addr>] [--token-mint <mint>]`
 
-sending initialize_pause…
-✓ confirmed: 4xFoo…baz
+SOL balance (default) or SPL balance (via the derived ATA). Defaults to the
+loaded wallet.
+
+### `lifecycle:init-pause [--skip-if-exists] [--dry-run]`
+
+One-time init of the PauseState singleton PDA (`methods.initializePause`); the
+wallet becomes the pause authority. `--skip-if-exists` is idempotent.
+
+```bash
+useaccord lifecycle:init-pause
+```
+```
+✓ confirmed: Lu4kfssBXDQn…
+  authority: 3vbYr…hzP3
+  pauseState: AaNWS…XVG9
 ```
 
-`--dry-run` resolves the PauseState PDA and builds the instruction without
-sending, useful for verifying wiring against a new deployment.
+## Infrastructure (for future commands)
+
+Every command extends one of two base classes in `src/lib/base-command.ts`:
+
+- **`BaseCommand`** — output modes (`--json`/`--quiet`) + error mapping
+  (`AccordErrors` → `{ error, message, hint }`). For pure/offline commands
+  (`accumulator:*`, `commit-hash`, `required-fee`).
+- **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
+  facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)
+  + `--dry-run` instruction dump.
+
+Shared helpers: `src/lib/{format,output,errors,wallet}.ts` (address truncation,
+bigint grouping, json/quiet renderers, AccordError mapping, keypair/env
+resolution). A new leaf command is one file under
+`src/commands/<topic>/<name>.ts` spreading `chainFlags` and calling one SDK
+method.
 
 ## Development
 
 ```bash
-pnpm --filter @useaccord/cli run lint     # eslint
-pnpm --filter @useaccord/cli run build    # tsc → dist/
-pnpm --filter @useaccord/cli run test     # bun test
+pnpm --filter @useaccord/cli run lint      # eslint
+pnpm --filter @useaccord/cli run build     # tsc → dist/  (clean first: rm -rf dist)
+pnpm --filter @useaccord/cli run test      # bun test (infra unit + command smoke)
 ```
 
-- `bin/dev.js` — loads TypeScript commands from `src/commands` (bun native).
-- `bin/run.js` — loads compiled commands from `dist/commands` (after `build`).
+> `tsc` does not prune `dist/` — run `rm -rf dist && pnpm build` after
+> renaming/moving command files, or stale entries confuse oclif's command scan.

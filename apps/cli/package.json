@@ -41,11 +41,18 @@
     "dirname": "useaccord",
     "commands": "./dist/commands",
     "plugins": ["@oclif/plugin-help"],
-    "topicSeparator": " ",
+    "topicSeparator": ":",
     "topics": {
-      "pause_state": {
-        "description": "Accord PauseState singleton lifecycle"
-      }
+      "config": { "description": "Environment + wallet (resolved config, balances)" },
+      "lifecycle": { "description": "Subaccord + circuit breaker (methods/lifecycle.ts)" },
+      "staking": { "description": "Juror capital (methods/staking.ts)" },
+      "dispute": { "description": "Arbitrable CPI intake (methods/dispute.ts)" },
+      "draw": { "description": "VRF + per-seat draw (methods/vrf.ts)" },
+      "vote": { "description": "Commit/reveal/finalize (methods/voting.ts)" },
+      "appeal": { "description": "Appeal + refund (methods/appeal.ts)" },
+      "settle": { "description": "Per-round settlement (methods/settlement.ts)" },
+      "accumulator": { "description": "Offline MST helpers (methods/mst.ts) — pure, no chain" },
+      "read": { "description": "Account fetches + queries + phase — read-only" }
     }
   },
   "engines": {
