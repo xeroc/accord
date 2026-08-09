@@ -252,6 +252,32 @@ useaccord accumulator:prepare-stake-proof --subaccord 7Nq.. --juror 3vbY..
 }
 ```
 
+### `draw:*` — VRF + per-seat draw (methods/vrf.ts)
+
+Six commands forming the draw pipeline (`request-vrf` → `await-vrf` →
+`resolve-seat`/`resolve-panel` → `seat`/`submit-panel`). The resolvers are
+read-only and emit the JSON membership artifacts the senders consume
+(pipeline-composable per CLI.md §1.6).
+
+| Command              | Sends? | SDK fn              | Purpose                                                                                                                                        |
+| -------------------- | ------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `draw:request-vrf`   | ✓      | `requestVrf`        | One-shot VRF oracle CPI; freezes the accumulator root. ⚠ **Reverts on Surfpool** (no oracle) — inject `committed_vrf` directly for local e2e. |
+| `draw:await-vrf`     | read   | `awaitCommittedVrf` | Poll `committed_vrf` until the callback lands (`--timeout`, `--poll`).                                                                         |
+| `draw:resolve-seat`  | read   | `resolveSeat` + MST | Resolve one seat's `(leaf, proof, retries)` off-chain → JSON to `--out`.                                                                       |
+| `draw:seat`          | ✓      | `drawSeat`          | Submit one `draw_seat` for `--seat` from `--membership` JSON.                                                                                  |
+| `draw:resolve-panel` | read   | `resolveSeat` × N   | Resolve the full panel (default size from the round ladder) → `SeatMembership[]` JSON.                                                         |
+| `draw:submit-panel`  | ✓      | `drawSeat` × N      | Submit the whole panel, one tx per seat (from `--membership` or inline resolve).                                                               |
+
+```bash
+# resolve → submit pipeline (3-seat round-0 panel)
+useaccord draw:resolve-panel --dispute <addr> --out panel.json
+useaccord draw:submit-panel  --subaccord <a> --dispute <a> --membership panel.json
+
+# or pipe a single seat straight through
+useaccord draw:resolve-seat --dispute <addr> --seat 0 | \
+  useaccord draw:seat --subaccord <a> --dispute <a> --seat 0 --membership -
+```
+
 ## Infrastructure (for future commands)
 
 Every command extends one of two base classes in `src/lib/base-command.ts`:
