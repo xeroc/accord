@@ -29,6 +29,9 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
+/** Solana serialized transaction size limit (bytes). */
+const MAX_TX_SIZE = 1232;
+
 /**
  * Send a single instruction, signed by `signer` (fee payer), and wait for
  * confirmation.
@@ -48,6 +51,7 @@ export async function sendInstruction(
     (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
     (tx) => appendTransactionMessageInstructions([instruction], tx),
   );
+
   const signed = await signTransactionMessageWithSigners(message);
   assertIsTransactionWithBlockhashLifetime(signed);
   const sendAndConfirm = sendAndConfirmTransactionFactory({

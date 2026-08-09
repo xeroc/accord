@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import { useClusterRpc } from "../../shared/rpc";
 import { useSigner } from "../../shared/wallet";
 import { sendInstruction } from "../../shared/transaction";
+import { unwrapError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { formatTokenAmount, shortAddress } from "../../shared/format";
 import { useSubaccord } from "../dispute/useSubaccord";
@@ -271,7 +272,7 @@ function StakeForm({
       toast.success(`Staked ${amount}.`);
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(unwrapError(err));
     } finally {
       setSending(false);
     }
@@ -320,7 +321,7 @@ function RequestWithdrawForm({
       toast.success(`Withdrawal requested: ${amount}. Timelock applies.`);
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(unwrapError(err));
     } finally {
       setSending(false);
     }
@@ -372,7 +373,7 @@ function WithdrawForm({
       toast.success("Withdrawal claimed.");
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(unwrapError(err));
     } finally {
       setSending(false);
     }
@@ -420,7 +421,7 @@ function ReconcileForm({
       toast.success("Stake reconciled.");
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(unwrapError(err));
     } finally {
       setSending(false);
     }
@@ -476,7 +477,7 @@ function WithdrawFeesForm({
       toast.success("Fees withdrawn.");
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(unwrapError(err));
     } finally {
       setSending(false);
     }
