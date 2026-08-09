@@ -382,8 +382,6 @@ pub enum DisputeState {
 /// a single named object instead of 14 positional scalars.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub struct CreateSubaccordParams {
-    pub staking_token: Pubkey,
-    pub fee_token: Pubkey,
     pub min_stake: u64,
     pub alpha_bps: u16,
     pub review_window: u64,

@@ -301,8 +301,6 @@ pub mod accord {
         params: CreateSubaccordParams,
     ) -> Result<()> {
         let CreateSubaccordParams {
-            staking_token,
-            fee_token,
             min_stake,
             alpha_bps,
             review_window,
@@ -352,8 +350,8 @@ pub mod accord {
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
-        acc.staking_token = staking_token;
-        acc.fee_token = fee_token;
+        acc.staking_token = ctx.accounts.staking_token.key();
+        acc.fee_token = ctx.accounts.fee_token.key();
         acc.min_stake = min_stake;
         acc.alpha_bps = alpha_bps;
         acc.review_window = review_window;
@@ -380,8 +378,8 @@ pub mod accord {
         emit!(SubaccordCreated {
             creator: ctx.accounts.creator.key(),
             subaccord: acc.key(),
-            staking_token,
-            fee_token,
+            staking_token: ctx.accounts.staking_token.key(),
+            fee_token: ctx.accounts.fee_token.key(),
             risk_type,
         });
         Ok(())
@@ -2827,6 +2825,11 @@ pub struct CreateSubaccord<'info> {
         bump,
     )]
     pub subaccord: Account<'info, Subaccord>,
+    /// L-4: validated as a real legacy SPL Mint — `Account<Mint>` from
+    /// `anchor_spl::token` checks ownership against the Token Program ID,
+    /// rejecting Token-2022 mints (owned by Token-2022 Program) by construction.
+    pub staking_token: Account<'info, Mint>,
+    pub fee_token: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
 }
 

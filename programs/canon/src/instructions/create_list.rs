@@ -40,6 +40,8 @@ pub fn create_list_handler(
     let cpi_accounts = accord::cpi::accounts::CreateSubaccord {
         creator: ctx.accounts.creator.to_account_info(),
         subaccord: ctx.accounts.subaccord.to_account_info(),
+        staking_token: ctx.accounts.stake_mint_acc.to_account_info(),
+        fee_token: ctx.accounts.fee_mint_acc.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
     };
     let cpi_ctx = CpiContext::new(ctx.accounts.accord_program.key(), cpi_accounts);
@@ -49,8 +51,6 @@ pub fn create_list_handler(
         rules_hash, // risk_type
         [0u8; 32],  // evidence_spec — no canonical evidence spec yet (ADR-0006)
         CreateSubaccordParams {
-            staking_token: stake_mint,
-            fee_token: fee_mint,
             min_stake: DEFAULT_MIN_STAKE,
             alpha_bps: DEFAULT_ALPHA_BPS,
             review_window: DEFAULT_REVIEW_WINDOW_SECS,

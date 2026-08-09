@@ -272,14 +272,14 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: sub,
+            staking_token: mint,
+            fee_token: mint,
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
             risk_type,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
-                staking_token: mint,
-                fee_token: mint,
                 min_stake: 1_000,
                 alpha_bps: 1_000,
                 review_window: 60,
@@ -1448,14 +1448,14 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
         .accounts(accounts::CreateSubaccord {
             creator: env.creator.pubkey(),
             subaccord: sub_b,
+            staking_token: env.mint,
+            fee_token: env.mint,
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
             risk_type: risk_type_b,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
-                staking_token: env.mint,
-                fee_token: env.mint,
                 min_stake: 1_000,
                 alpha_bps: 1_000,
                 review_window: 60,
@@ -4374,20 +4374,21 @@ fn try_create_subaccord(
         rt
     };
     let sub = subaccord_pda(&creator.pubkey(), &risk_type);
-    let mint = Pubkey::new_unique(); // create_subaccord stores but does not validate the mint
+    let mint = Pubkey::new_unique();
+    create_mint(&mut ctx, &mint); // L-4: create_subaccord validates the mint
     let ix = ctx
         .program()
         .accounts(accounts::CreateSubaccord {
             creator: creator.pubkey(),
             subaccord: sub,
+            staking_token: mint,
+            fee_token: mint,
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
             risk_type,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
-                staking_token: mint,
-                fee_token: mint,
                 min_stake: 1_000,
                 alpha_bps: 1_000,
                 review_window: 60,
