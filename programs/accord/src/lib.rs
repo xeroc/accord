@@ -2041,15 +2041,27 @@ pub mod accord {
         Ok((r != u8::MAX).then_some(r))
     }
 
-    /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls the entire
-    /// `fees_earned` balance from the Subaccord's `fee_vault` → the juror's
-    /// `fee_token` ATA, then zeroes `fees_earned`. No `active_draws` gate, no
-    /// timelock — earned fees are not at-risk capital.
+    /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls earned fees
+    /// from the Subaccord's `fee_vault` → the juror's `fee_token` ATA. No
+    /// `active_draws` gate, no timelock — earned fees are not at-risk capital.
+    ///
+    /// H-2: the withdrawal is capped at the vault balance as defense-in-depth.
+    /// With C-1 fixed (`cancel_dispute` refunds `fee_paid`, not the shared
+    /// vault), the invariant `fee_vault.balance ≥ Σ fees_earned` holds under
+    /// normal operation, so the cap never truncates. If it ever does (future
+    /// bug, fee-on-transfer drift), the juror's unpaid remainder stays in
+    /// `fees_earned` rather than being zeroed without payment.
     pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()> {
         let js = &mut ctx.accounts.juror_stake;
         let amt = js.fees_earned;
         require!(amt > 0, AccordError::NoFeesEarned);
-        js.fees_earned = 0;
+
+        let vault_bal = ctx.accounts.fee_vault.amount;
+        let withdrawable = amt.min(vault_bal);
+        require!(withdrawable > 0, AccordError::NoFeesEarned);
+        js.fees_earned = amt
+            .checked_sub(withdrawable)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         let sub = &ctx.accounts.subaccord;
         let bump = [sub.bump];
@@ -2069,13 +2081,13 @@ pub mod accord {
                 },
                 &[signer_seeds],
             ),
-            amt,
+            withdrawable,
         )?;
 
         emit!(FeesWithdrawn {
             subaccord: sub.key(),
             juror: ctx.accounts.juror.key(),
-            amount: amt,
+            amount: withdrawable,
         });
         Ok(())
     }

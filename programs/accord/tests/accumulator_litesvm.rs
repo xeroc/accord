@@ -4390,3 +4390,145 @@ fn propose_update_accepts_valid_params() {
     );
     r.assert_success();
 }
+
+// ─── H-2 regression: withdraw_fees vault-balance cap ────────────────────────
+
+/// Directly set `fees_earned` on a JurorStake PDA (same raw-write pattern as
+/// `stamp_filed_at` / `add_vault_tokens`). Used by H-2 tests to simulate
+/// settlement credits without running a full dispute lifecycle.
+fn set_fees_earned(env: &mut AccEnv, pda: &Pubkey, amount: u64) {
+    let acc = env.ctx.svm.get_account(pda).unwrap();
+    let mut js = JurorStake::try_deserialize(&mut &acc.data[..]).unwrap();
+    js.fees_earned = amount;
+    let mut data = acc.data[..8].to_vec();
+    AnchorSerialize::serialize(&js, &mut data).unwrap();
+    env.ctx
+        .svm
+        .set_account(
+            *pda,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
+/// Send `withdraw_fees` for `juror`. Returns the transaction result.
+fn do_withdraw_fees(env: &mut AccEnv, juror: &Keypair) -> TransactionResult {
+    let js = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let jata = juror_ata(&juror.pubkey(), &env.mint);
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::WithdrawFees {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js,
+            fee_token: env.mint,
+            juror_fee_token_account: jata,
+            fee_vault: vault,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::WithdrawFees {})
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[juror]).unwrap()
+}
+
+#[test]
+fn withdraw_fees_pays_full_amount_when_vault_has_enough() {
+    let mut env = setup_accumulator();
+
+    // Stake a juror (creates JurorStake + vault ATA).
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, 5_000, path).assert_success();
+
+    // Fund the vault with fee tokens (simulates a dispute fee deposit).
+    let fee_amount = 3_000_000u64;
+    add_vault_tokens(&mut env, fee_amount);
+
+    // Simulate a settlement credit: set fees_earned on the juror's stake.
+    let js_pda = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    set_fees_earned(&mut env, &js_pda, fee_amount);
+
+    // Create the juror's fee ATA (withdraw destination).
+    let jata = juror_ata(&juror.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &jata, &env.mint, &juror.pubkey(), 0);
+
+    // Withdraw fees.
+    do_withdraw_fees(&mut env, &juror).assert_success();
+
+    // Juror received the full amount.
+    let juror_bal = u64::from_le_bytes(
+        env.ctx.svm.get_account(&jata).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    assert_eq!(juror_bal, fee_amount, "juror receives full fees_earned");
+
+    // fees_earned zeroed.
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(
+        js.fees_earned, 0,
+        "fees_earned zeroed after full withdrawal"
+    );
+}
+
+#[test]
+fn withdraw_fees_caps_at_vault_balance_preserving_remainder() {
+    // H-2 defense-in-depth: if the vault has less than fees_earned, the
+    // withdrawal is capped and the unpaid remainder stays in fees_earned.
+    let mut env = setup_accumulator();
+
+    // Stake a juror.
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, 5_000, path).assert_success();
+
+    // Set fees_earned to MORE than the vault balance. The vault has 5_000
+    // (the juror's stake collateral — same mint for stake + fee in this setup).
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let vault_before = u64::from_le_bytes(
+        env.ctx.svm.get_account(&vault).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    // fees_earned exceeds the vault balance.
+    let fees_earned = vault_before + 1_000_000;
+    let js_pda = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    set_fees_earned(&mut env, &js_pda, fees_earned);
+
+    // Juror fee ATA.
+    let jata = juror_ata(&juror.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &jata, &env.mint, &juror.pubkey(), 0);
+
+    // Withdraw: capped at vault balance.
+    do_withdraw_fees(&mut env, &juror).assert_success();
+
+    // Juror received the vault balance (capped), not the full fees_earned.
+    let juror_bal = u64::from_le_bytes(
+        env.ctx.svm.get_account(&jata).unwrap().data[64..72]
+            .try_into()
+            .unwrap(),
+    );
+    assert_eq!(
+        juror_bal, vault_before,
+        "juror receives only what the vault held"
+    );
+
+    // Unpaid remainder stays in fees_earned (not zeroed).
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(
+        js.fees_earned,
+        fees_earned - vault_before,
+        "unpaid remainder preserved in fees_earned"
+    );
+}
