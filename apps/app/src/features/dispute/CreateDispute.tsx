@@ -13,7 +13,7 @@ import { sendInstruction } from "../../shared/transaction";
 import { useSigner } from "../../shared/wallet";
 import { getAtaAddress } from "../../shared/tokens";
 import { useTokenMeta } from "../../shared/useTokenMeta";
-import { formatBigInt, shortAddress } from "../../shared/format";
+import { formatBigInt } from "../../shared/format";
 import { useSubaccord } from "./useSubaccord";
 import { useFeeTokenBalance } from "./useFeeTokenBalance";
 
@@ -59,7 +59,8 @@ export function CreateDispute() {
   const feeToken = subaccord?.data.feeToken;
   const { data: feeMeta } = useTokenMeta(feeToken);
   const decimals = feeMeta?.decimals;
-  const symbol = feeMeta?.symbol ?? (feeToken ? shortAddress(feeToken) : "???");
+  const symbol =
+    feeMeta?.symbol ?? (feeToken ? `${feeToken.slice(0, 4)}…` : "???");
   const { data: balance, isLoading: balanceLoading } = useFeeTokenBalance(
     signer?.address,
     feeToken,

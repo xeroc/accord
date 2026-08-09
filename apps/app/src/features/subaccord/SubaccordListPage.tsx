@@ -14,7 +14,8 @@ import { Link } from "react-router-dom";
 import { findAllSubaccords } from "@useaccord/sdk";
 
 import { useClusterRpc } from "../../shared/rpc";
-import { shortAddress, formatTokenAmount } from "../../shared/format";
+import { formatTokenAmount } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
 
 /** `Account<Subaccord>` derived from the SDK query fn (Subaccord type isn't on
@@ -65,17 +66,14 @@ function SubaccordCard({ subaccord }: { subaccord: SubaccordAccount }) {
   return (
     <li>
       <Link to={`/subaccords/${subaccord.address}`} className="card">
-        <span className="card-address mono">
-          {shortAddress(subaccord.address)}
+        <span className="card-address">
+          <Copyable value={subaccord.address} />
         </span>
         <dl className="card-stats">
-          <Stat
-            label="Creator"
-            value={<span className="mono">{shortAddress(d.creator)}</span>}
-          />
+          <Stat label="Creator" value={<Copyable value={d.creator} />} />
           <Stat
             label="Staking token"
-            value={<span className="mono">{shortAddress(d.stakingToken)}</span>}
+            value={<Copyable value={d.stakingToken} />}
           />
           <Stat label="Stakers" value={d.stakerCount.toString()} />
           <Stat label="Total stake" value={formatTokenAmount(d.totalStake)} />

@@ -1,11 +1,8 @@
 import { Link, useParams } from "react-router-dom";
 import { type ReadonlyUint8Array } from "@solana/kit";
 
-import {
-  DISPUTE_STATE_LABELS,
-  formatRuling,
-  shortAddress,
-} from "../../shared/format";
+import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { StateMachine } from "./StateMachine";
 import { Voting } from "./Voting";
 import { getAppealInfo } from "./useAppeal";
@@ -76,11 +73,8 @@ export function DisputeDetail() {
 
       <div className="space-y-2">
         <h1 className="text-xl font-semibold">
-          Dispute {shortAddress(dispute.address, 6, 6)}
+          Dispute <Copyable value={dispute.address} head={6} tail={6} />
         </h1>
-        <p className="font-mono text-sm text-text-secondary">
-          {dispute.address}
-        </p>
       </div>
 
       {/* State machine */}
@@ -93,7 +87,10 @@ export function DisputeDetail() {
 
       {/* Dispute info */}
       <div className="grid grid-cols-2 gap-4 rounded-lg border border-border-subtle bg-raised p-4">
-        <InfoRow label="Filer" value={shortAddress(d.filer, 6, 6)} mono />
+        <InfoRow
+          label="Filer"
+          value={<Copyable value={d.filer} head={6} tail={6} />}
+        />
         <InfoRow
           label="Subaccord"
           value={
@@ -101,10 +98,9 @@ export function DisputeDetail() {
               to={`/subaccords/${d.subaccord}`}
               className="text-amber hover:underline"
             >
-              {shortAddress(d.subaccord, 6, 6)}
+              <Copyable value={d.subaccord} head={6} tail={6} />
             </Link>
           }
-          mono
         />
         <InfoRow label="State" value={DISPUTE_STATE_LABELS[d.state]} />
         <InfoRow label="Current round" value={`${d.currentRound}`} mono />
@@ -112,8 +108,13 @@ export function DisputeDetail() {
         <InfoRow label="VRF" value={d.committedVrf ? "Committed" : "Pending"} />
         <InfoRow
           label="Frozen root"
-          value={d.frozenRoot.every((b) => b === 0) ? "—" : hex(d.frozenRoot)}
-          mono
+          value={
+            d.frozenRoot.every((b) => b === 0) ? (
+              "—"
+            ) : (
+              <Copyable value={hex(d.frozenRoot)} />
+            )
+          }
         />
         <InfoRow label="Filed at" value={formatTimestamp(d.filedAt)} />
       </div>
@@ -136,7 +137,7 @@ export function DisputeDetail() {
                 <span className="font-mono text-sm text-text-secondary">
                   {idx}
                 </span>
-                <span className="font-mono text-sm">{hex(opt)}</span>
+                <Copyable value={hex(opt)} />
                 {isWinner && (
                   <span className="font-mono text-sm text-amber">
                     ← Verdict
@@ -197,12 +198,7 @@ export function DisputeDetail() {
               </h3>
               <div className="flex flex-wrap gap-2">
                 {round.data.jurors.map((juror, idx) => (
-                  <span
-                    key={idx}
-                    className="font-mono text-xs text-text-secondary"
-                  >
-                    {shortAddress(juror)}
-                  </span>
+                  <Copyable key={idx} value={juror} />
                 ))}
               </div>
             </div>
@@ -219,8 +215,9 @@ export function DisputeDetail() {
           <div className="grid grid-cols-2 gap-4">
             <InfoRow
               label="Appellant"
-              value={shortAddress(appealBond.data.appellant, 6, 6)}
-              mono
+              value={
+                <Copyable value={appealBond.data.appellant} head={6} tail={6} />
+              }
             />
             <InfoRow
               label="Amount"

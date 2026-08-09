@@ -423,7 +423,7 @@ const DEPTH_OPTIONS = [
   { depth: 10, note: "1,024 seats" },
   { depth: 12, note: "4,096 seats — recommended" },
   { depth: 14, note: "16,384 seats — large" },
-  { depth: MAX_SAFE_TREE_DEPTH, note: "65,536 seats — max (browser tx limit)" },
+  { depth: MAX_SAFE_TREE_DEPTH, note: "65,536 seats — max" },
 ] as const;
 
 function DepthPicker({

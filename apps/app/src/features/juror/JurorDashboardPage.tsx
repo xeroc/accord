@@ -9,7 +9,8 @@
 import { Link } from "react-router-dom";
 
 import { useSigner } from "../../shared/wallet";
-import { formatTokenAmount, shortAddress } from "../../shared/format";
+import { formatTokenAmount } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { useJurorStakes } from "./useJurorStakes";
 
 export function JurorDashboardPage() {
@@ -83,8 +84,8 @@ export function JurorDashboardPage() {
                   to={`/juror/stake?subaccord=${s.data.subaccord}`}
                   className="card"
                 >
-                  <span className="card-address mono">
-                    {shortAddress(s.data.subaccord)}
+                  <span className="card-address">
+                    <Copyable value={s.data.subaccord} />
                   </span>
                   <dl className="card-stats">
                     <Stat

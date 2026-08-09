@@ -35,7 +35,8 @@ import { useSigner } from "../../shared/wallet";
 import { sendInstruction } from "../../shared/transaction";
 import { unwrapError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
-import { formatTokenAmount, shortAddress } from "../../shared/format";
+import { formatTokenAmount } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { useSubaccord } from "../dispute/useSubaccord";
 import { useStakingProof } from "./useStakingProof";
 
@@ -288,7 +289,11 @@ function StakeForm({
         label="Amount (atomic units)"
         value={amount}
         onChange={setAmount}
-        help={`Staking token: ${shortAddress(subaccord.data.stakingToken)}`}
+        help={
+          <>
+            Staking token: <Copyable value={subaccord.data.stakingToken} />
+          </>
+        }
       />
       <SubmitRow sending={sending} onClose={onClose} label="Stake" />
     </form>
@@ -555,7 +560,7 @@ function AmountInput({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  help?: string;
+  help?: React.ReactNode;
 }) {
   return (
     <label className="block">

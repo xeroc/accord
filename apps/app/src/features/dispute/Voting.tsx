@@ -11,7 +11,7 @@ import {
   NO_VOTE,
 } from "@useaccord/sdk";
 
-import { shortAddress } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 
 // --- localStorage salt persistence (commit → reveal bridge) ---
 
@@ -167,9 +167,7 @@ export function Voting({
       <div className="flex items-center justify-between">
         <h2 className="font-mono text-sm text-text-secondary">Voting</h2>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-text-secondary">
-            {shortAddress(wallet, 4, 4)}
-          </span>
+          <Copyable value={wallet} />
           <button
             onClick={() => {
               setWallet("");

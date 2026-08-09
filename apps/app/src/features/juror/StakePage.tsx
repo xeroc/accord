@@ -21,7 +21,8 @@ import { useSigner } from "../../shared/wallet";
 import { sendInstruction } from "../../shared/transaction";
 import { unwrapError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
-import { formatTokenAmount, shortAddress } from "../../shared/format";
+import { formatTokenAmount } from "../../shared/format";
+import { Copyable } from "../../components/Copyable";
 import { useSubaccord } from "../dispute/useSubaccord";
 import { useJurorStake } from "./useJurorStakes";
 import { useStakingProof } from "./useStakingProof";
@@ -130,7 +131,9 @@ function SubaccordStakingTerms({ subaccordAddr }: { subaccordAddr: Address }) {
     <div className="mb-6 grid grid-cols-2 gap-3 rounded-lg border border-border-subtle bg-raised p-4 font-mono text-sm sm:grid-cols-4">
       <div>
         <dt className="text-xs text-text-secondary">Staking token</dt>
-        <dd>{shortAddress(d.stakingToken)}</dd>
+        <dd>
+          <Copyable value={d.stakingToken} />
+        </dd>
       </div>
       <div>
         <dt className="text-xs text-text-secondary">Min stake</dt>
@@ -244,7 +247,7 @@ function InitialStakeForm({
         />
         <span className="mt-1 block text-xs text-text-secondary">
           Minimum stake: {formatTokenAmount(minStake)} (staking token{" "}
-          {shortAddress(subaccord.data.stakingToken)})
+          <Copyable value={subaccord.data.stakingToken} />)
         </span>
         {amount && !meetsMin && (
           <span className="mt-1 block text-xs text-slash">
