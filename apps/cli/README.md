@@ -26,15 +26,15 @@ bun run apps/cli/bin/run.js <command>
 
 Resolved in priority order (flag → env → default):
 
-| Flag / Env | Default | Meaning |
-|---|---|---|
+| Flag / Env        | Default                                                                | Meaning                                             |
+| ----------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
 | `--keypair`, `-k` | `$ANCHOR_WALLET` → `$ACCORD_KEYPAIR_PATH` → `~/.config/solana/id.json` | Fee payer **and** on-chain signer for every command |
-| `--rpc`, `-r` | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899` | JSON-RPC endpoint |
-| `--ws`, `-w` | `$ACCORD_WS_URL` (else derived from `--rpc`) | WebSocket (confirmations) |
-| `--commitment` | `confirmed` | `processed`/`confirmed`/`finalized` |
-| `--json` | off | One JSON object on stdout (for `jq`) |
-| `--quiet`, `-q` | off | Only the signature (send) or address (create/read) |
-| `--dry-run` | off | Build + print the instruction; do not sign/send |
+| `--rpc`, `-r`     | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899`                            | JSON-RPC endpoint                                   |
+| `--ws`, `-w`      | `$ACCORD_WS_URL` (else derived from `--rpc`)                           | WebSocket (confirmations)                           |
+| `--commitment`    | `confirmed`                                                            | `processed`/`confirmed`/`finalized`                 |
+| `--json`          | off                                                                    | One JSON object on stdout (for `jq`)                |
+| `--quiet`, `-q`   | off                                                                    | Only the signature (send) or address (create/read)  |
+| `--dry-run`       | off                                                                    | Build + print the instruction; do not sign/send     |
 
 **Single-signer model:** the `--keypair` wallet is the fee payer **and** the
 instruction's signing account for every command (the SDK adapter pins
@@ -47,6 +47,7 @@ instruction's signing account for every command (the SDK adapter pins
 ```bash
 useaccord config:show
 ```
+
 ```
 rpc        : http://127.0.0.1:8899
 keypair    : ~/.config/solana/id.json
@@ -69,10 +70,47 @@ wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 ```bash
 useaccord lifecycle:init-pause
 ```
+
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
   pauseState: AaNWS…XVG9
+```
+
+### `accumulator:*` — offline MST helpers (pure)
+
+The subtree-sum accumulator toolkit (ADR-0012). Four are pure (`BaseCommand`,
+no signer/rpc); `prepare-stake-proof` reads chain. `build`→`proof`→`verify`
+round-trips; output is byte-exact with the on-chain verifier.
+
+```bash
+# root for a stake set (deterministic, matches Subaccord.root_hash)
+useaccord accumulator:build --leaves leaves.json --depth 16
+# → rootHash / rootSum
+
+# Merkle path for a leaf → the proof file `staking --path-from` consumes
+useaccord accumulator:proof --leaves leaves.json --depth 16 --index 3 --json > proof.json
+
+# verify a leaf+path against a known root; returns the sortition prefix
+useaccord accumulator:verify --leaf '{"juror":"..","stake":"1000"}' \
+  --index 3 --path proof.json --root ab12… --root-sum 9000
+
+# all-zero (never-staked) tree root
+useaccord accumulator:empty-root --depth 16
+
+# fetch Subaccord + JurorStakes on-chain, build the canonical proof for a juror
+useaccord accumulator:prepare-stake-proof --subaccord 7Nq.. --juror 3vbY..
+```
+
+**Proof file schema** (`accumulator:proof` / `prepare-stake-proof` emit;
+`accumulator:verify --path` / `staking --path-from` consume):
+
+```json
+{
+  "version": 1,
+  "index": 3,
+  "path": [{ "siblingHash": "<64 hex>", "siblingSum": "<u64 decimal>" }, …]
+}
 ```
 
 ## Infrastructure (for future commands)
@@ -84,7 +122,7 @@ Every command extends one of two base classes in `src/lib/base-command.ts`:
   (`accumulator:*`, `commit-hash`, `required-fee`).
 - **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
   facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)
-  + `--dry-run` instruction dump.
+  - `--dry-run` instruction dump.
 
 Shared helpers: `src/lib/{format,output,errors,wallet}.ts` (address truncation,
 bigint grouping, json/quiet renderers, AccordError mapping, keypair/env
