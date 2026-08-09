@@ -26,15 +26,15 @@ bun run apps/cli/bin/run.js <command>
 
 Resolved in priority order (flag → env → default):
 
-| Flag / Env | Default | Meaning |
-|---|---|---|
+| Flag / Env        | Default                                                                | Meaning                                             |
+| ----------------- | ---------------------------------------------------------------------- | --------------------------------------------------- |
 | `--keypair`, `-k` | `$ANCHOR_WALLET` → `$ACCORD_KEYPAIR_PATH` → `~/.config/solana/id.json` | Fee payer **and** on-chain signer for every command |
-| `--rpc`, `-r` | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899` | JSON-RPC endpoint |
-| `--ws`, `-w` | `$ACCORD_WS_URL` (else derived from `--rpc`) | WebSocket (confirmations) |
-| `--commitment` | `confirmed` | `processed`/`confirmed`/`finalized` |
-| `--json` | off | One JSON object on stdout (for `jq`) |
-| `--quiet`, `-q` | off | Only the signature (send) or address (create/read) |
-| `--dry-run` | off | Build + print the instruction; do not sign/send |
+| `--rpc`, `-r`     | `$ACCORD_RPC_URL` → `http://127.0.0.1:8899`                            | JSON-RPC endpoint                                   |
+| `--ws`, `-w`      | `$ACCORD_WS_URL` (else derived from `--rpc`)                           | WebSocket (confirmations)                           |
+| `--commitment`    | `confirmed`                                                            | `processed`/`confirmed`/`finalized`                 |
+| `--json`          | off                                                                    | One JSON object on stdout (for `jq`)                |
+| `--quiet`, `-q`   | off                                                                    | Only the signature (send) or address (create/read)  |
+| `--dry-run`       | off                                                                    | Build + print the instruction; do not sign/send     |
 
 **Single-signer model:** the `--keypair` wallet is the fee payer **and** the
 instruction's signing account for every command (the SDK adapter pins
@@ -47,6 +47,7 @@ instruction's signing account for every command (the SDK adapter pins
 ```bash
 useaccord config:show
 ```
+
 ```
 rpc        : http://127.0.0.1:8899
 keypair    : ~/.config/solana/id.json
@@ -69,11 +70,46 @@ wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 ```bash
 useaccord lifecycle:init-pause
 ```
+
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
   pauseState: AaNWS…XVG9
 ```
+
+### `dispute:*` — Arbitrable intake (4 commands)
+
+| Command                | SDK fn                  | Sends?    |
+| ---------------------- | ----------------------- | --------- |
+| `dispute:create`       | `methods.createDispute` | yes       |
+| `dispute:ruling`       | `methods.getRuling`     | no (read) |
+| `dispute:required-fee` | `requiredFee`           | no (pure) |
+| `dispute:cancel`       | `methods.cancelDispute` | yes       |
+
+```bash
+# Pure fee check (no chain): 3 × fee-per-juror
+useaccord dispute:required-fee --fee-per-juror 1_000_000
+```
+
+```
+fee-per-juror : 1_000_000 lamports
+fee          : 3_000_000 lamports
+```
+
+```bash
+# File a dispute; --fee auto derives 3 × the Subaccord's feePerJuror
+useaccord dispute:create --subcord <pda> --options <hex32>,<hex32>
+```
+
+```
+address : <dispute-pda>
+bump    : 254
+fee     : 3_000_000
+```
+
+`dispute:ruling <pda>` reads `null` until the dispute reaches `Final`, then the
+winning option index. `dispute:cancel <pda>` is the permissionless timeout exit
+(`--remaining-accounts auto` derives the Round/JurorStake/AppealBond set).
 
 ## Infrastructure (for future commands)
 
@@ -84,7 +120,7 @@ Every command extends one of two base classes in `src/lib/base-command.ts`:
   (`accumulator:*`, `commit-hash`, `required-fee`).
 - **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
   facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)
-  + `--dry-run` instruction dump.
+  - `--dry-run` instruction dump.
 
 Shared helpers: `src/lib/{format,output,errors,wallet}.ts` (address truncation,
 bigint grouping, json/quiet renderers, AccordError mapping, keypair/env
