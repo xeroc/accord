@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { type Address } from "@solana/kit";
+import { Loader2Icon } from "lucide-react";
 import { Accord, findJurorStakePda, findPauseStatePda } from "@useaccord/sdk";
 import { toast } from "sonner";
 
@@ -157,13 +158,17 @@ function InitialStakeForm({
   const crpc = useClusterRpc();
   const { signer } = useSigner();
   const { data: subaccord } = useSubaccord(subaccordAddr);
-  const proof = useStakingProof(subaccordAddr, juror);
   const [amount, setAmount] = useState("");
+  // Only build the MST proof once the user starts typing an amount — avoids
+  // burning CPU on the accumulator rebuild before there's intent to stake.
+  // Kicks in on the first digit, ahead of reaching the minimum.
+  const proof = useStakingProof(subaccordAddr, amount ? juror : undefined);
   const [sending, setSending] = useState(false);
 
   if (!subaccord || !signer || !crpc) return null;
   const minStake = subaccord.data.minStake;
   const meetsMin = amount && BigInt(amount) >= minStake;
+  const proofLoading = proof.isLoading;
   const ready = !!amount && meetsMin && proof.data && !sending;
 
   async function submit(e: React.FormEvent) {
@@ -250,8 +255,9 @@ function InitialStakeForm({
       <button
         type="submit"
         disabled={!ready}
-        className="rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
       >
+        {proofLoading ? <Loader2Icon className="size-4 animate-spin" /> : null}
         {sending ? "Signing…" : "Stake."}
       </button>
     </form>

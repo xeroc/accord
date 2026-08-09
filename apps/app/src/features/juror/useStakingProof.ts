@@ -3,9 +3,11 @@
  * MST accumulator Merkle proof for `stake` / `requestWithdraw` / `reconcileStake`.
  *
  * The on-chain instructions require a path that authenticates against the
- * stored accumulator root (ADR-0012). `prepareStakeProof` rebuilds the tree
- * locally, verifies the root matches, and returns the proof for the juror's
- * leaf. A root mismatch means stale data — the caller refetches.
+ * stored accumulator root (ADR-0012). The RPC fetch (`findJurorStakesBySubaccord`)
+ * runs on the main thread; the CPU-bound `prepareStakeProof` (tree rebuild +
+ * proof) runs in a Web Worker (`stakingProofWorker.ts`) so typing into the
+ * amount field never blocks on proof computation. A root mismatch means stale
+ * data — the caller refetches.
  */
 import { useQuery } from "@tanstack/react-query";
 import { type Address, type ReadonlyUint8Array } from "@solana/kit";
@@ -14,11 +16,55 @@ import {
   type JurorStakeLeaf,
   type StakeProofResult,
   findJurorStakesBySubaccord,
-  prepareStakeProof,
 } from "@useaccord/sdk";
 
 import { useClusterRpc } from "../../shared/rpc";
 import { useSubaccord } from "../dispute/useSubaccord";
+import type { ProofRequest, ProofResponse } from "./stakingProofWorker";
+
+// --- Web Worker client (singleton, promise-correlated) -----------------------
+
+let worker: Worker | null = null;
+let nextReqId = 1;
+const pending = new Map<
+  number,
+  { resolve: (v: StakeProofResult) => void; reject: (e: Error) => void }
+>();
+
+function getWorker(): Worker {
+  if (!worker) {
+    worker = new Worker(new URL("./stakingProofWorker.ts", import.meta.url), {
+      type: "module",
+    });
+    worker.onmessage = (e: MessageEvent<ProofResponse>) => {
+      const { id, ok, result, error } = e.data;
+      const p = pending.get(id);
+      if (!p) return;
+      pending.delete(id);
+      if (ok && result) p.resolve(result);
+      else p.reject(new Error(error ?? "Proof worker failed"));
+    };
+    worker.onerror = (e) => {
+      const msg = e.message || "Proof worker crashed";
+      for (const p of pending.values()) p.reject(new Error(msg));
+      pending.clear();
+    };
+  }
+  return worker;
+}
+
+/** Run `prepareStakeProof` in the worker; resolves with the proof or throws. */
+function computeProof(
+  req: Omit<ProofRequest, "id">,
+): Promise<StakeProofResult> {
+  const id = nextReqId++;
+  return new Promise<StakeProofResult>((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    getWorker().postMessage({ id, ...req });
+  });
+}
+
+// --- view + leaf mappers (data crosses the worker boundary via structured clone) ---
 
 /** View of the on-chain accumulator fields prepareStakeProof consumes.
  *  `rootHash` is `ReadonlyUint8Array` on the decoded account but the proof
@@ -43,6 +89,8 @@ function leaf(js: {
 }): JurorStakeLeaf {
   return { juror: js.juror, staked: js.staked, treeIndex: js.treeIndex };
 }
+
+// --- hook --------------------------------------------------------------------
 
 /**
  * Build the stake/unstake/reconcile Merkle proof for `juror` within `subaccord`.
@@ -69,12 +117,14 @@ export function useStakingProof(
       if (!subaccordAddr || !juror || !crpc || !subaccord) {
         throw new Error("Missing subaccord or juror.");
       }
+      // RPC fetch stays on the main thread (network-bound, not CPU-bound).
       const stakes = await findJurorStakesBySubaccord(crpc.rpc, subaccordAddr);
-      return prepareStakeProof(
-        subaccordView(subaccord.data),
-        stakes.map((s) => leaf(s.data)),
+      // CPU-bound tree rebuild + proof runs in the worker.
+      return computeProof({
+        subaccord: subaccordView(subaccord.data),
+        jurorStakes: stakes.map((s) => leaf(s.data)),
         juror,
-      );
+      });
     },
     enabled: !!subaccordAddr && !!juror && !!subaccord && !!crpc,
     // The proof is derived from the on-chain root — refetch when subaccord
