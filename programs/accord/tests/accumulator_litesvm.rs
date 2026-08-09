@@ -16,12 +16,12 @@
 //! no-entrypoint`). One fresh `AnchorLiteSVM` context per test.
 
 use accord::constants::{
-    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD,
-    WITHDRAWAL_DELAY,
+    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PAUSE,
+    SEED_PENDING_UPDATE, SEED_SUBACCORD, WITHDRAWAL_DELAY,
 };
 use accord::state::{
     Aggregation, CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode,
-    ShortfallPolicy, Subaccord,
+    PendingUpdate, ShortfallPolicy, Subaccord, UpdatePayload,
 };
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
@@ -199,6 +199,18 @@ fn dispute_pda(filer: &Pubkey, nonce: u64) -> Pubkey {
 
 fn round_pda(dispute: &Pubkey, round_idx: u32) -> Pubkey {
     Pubkey::find_program_address(&[b"round", dispute.as_ref(), &round_idx.to_le_bytes()], &ID).0
+}
+
+fn update_pda(subaccord: &Pubkey, nonce: u64) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            SEED_PENDING_UPDATE,
+            subaccord.as_ref(),
+            &nonce.to_le_bytes(),
+        ],
+        &ID,
+    )
+    .0
 }
 
 // ─── shared setup ────────────────────────────────────────────────────────────
@@ -4259,4 +4271,122 @@ fn create_subaccord_rejects_appeal_window_below_floor() {
         "appeal_window below floor must be rejected; logs={:?}",
         r.logs()
     );
+}
+
+// ─── H-1 regression: update parameter validation ────────────────────────────
+
+/// Try to propose a subaccord update. Returns the transaction result.
+fn do_propose_update(env: &mut AccEnv, nonce: u64, payload: UpdatePayload) -> TransactionResult {
+    let pu = update_pda(&env.subaccord, nonce);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ProposeSubaccordUpdate {
+            authority: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            pending_update: pu,
+            system_program: system_program::ID,
+        })
+        .args(instruction::ProposeSubaccordUpdate { nonce, payload })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[&env.creator]).unwrap()
+}
+
+#[test]
+fn propose_update_rejects_invalid_params() {
+    // H-1: execute_subaccord_update (and propose) must validate parameter bounds,
+    // not just create_subaccord. Each case is a value that create_subaccord
+    // would reject — execute/propose must too (§29.3).
+
+    // AlphaBps > 10_000 (200% slash factor).
+    let mut env = setup_accumulator();
+    let r = do_propose_update(&mut env, 1, UpdatePayload::AlphaBps(20_000));
+    assert!(
+        !r.is_success(),
+        "AlphaBps(20_000) must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // AppealWindow below the floor.
+    let mut env = setup_accumulator();
+    let r = do_propose_update(&mut env, 1, UpdatePayload::AppealWindow(0));
+    assert!(
+        !r.is_success(),
+        "AppealWindow(0) < MIN_APPEAL_WINDOW_SECS must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // MaxAppeals above the program ceiling.
+    let mut env = setup_accumulator();
+    let r = do_propose_update(&mut env, 1, UpdatePayload::MaxAppeals(255));
+    assert!(
+        !r.is_success(),
+        "MaxAppeals(255) > MAX_APPEALS must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // MinStake(0) — breaks sybil resistance.
+    let mut env = setup_accumulator();
+    let r = do_propose_update(&mut env, 1, UpdatePayload::MinStake(0));
+    assert!(
+        !r.is_success(),
+        "MinStake(0) must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // Zero windows — state machine unreachable.
+    for payload in [
+        UpdatePayload::ReviewWindow(0),
+        UpdatePayload::CommitWindow(0),
+        UpdatePayload::RevealWindow(0),
+    ] {
+        let mut env = setup_accumulator();
+        let r = do_propose_update(&mut env, 1, payload.clone());
+        assert!(
+            !r.is_success(),
+            "{:?}(0) must be rejected; logs={:?}",
+            payload,
+            r.logs()
+        );
+    }
+
+    // FeePerJuror that overflows INITIAL_NUM_JURORS × v.
+    let mut env = setup_accumulator();
+    let r = do_propose_update(&mut env, 1, UpdatePayload::FeePerJuror(u64::MAX));
+    assert!(
+        !r.is_success(),
+        "FeePerJuror(u64::MAX) must be rejected (overflow); logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn propose_update_accepts_valid_params() {
+    // H-1: valid updates must still pass — the validation is a floor, not a
+    // ceiling that rejects legitimate changes.
+    let mut env = setup_accumulator();
+
+    let r = do_propose_update(&mut env, 1, UpdatePayload::MinStake(2_000));
+    r.assert_success();
+
+    // Verify the PendingUpdate was written.
+    let pu_pda = update_pda(&env.subaccord, 1);
+    let acc = env.ctx.svm.get_account(&pu_pda).unwrap();
+    let pu = PendingUpdate::try_deserialize(&mut &acc.data[..]).unwrap();
+    assert_eq!(pu.proposed, UpdatePayload::MinStake(2_000));
+
+    // Also test a valid AlphaBps change.
+    let mut env = setup_accumulator();
+    let r = do_propose_update(&mut env, 1, UpdatePayload::AlphaBps(500));
+    r.assert_success();
+
+    // Valid AppealWindow at exactly the floor.
+    let mut env = setup_accumulator();
+    let r = do_propose_update(
+        &mut env,
+        1,
+        UpdatePayload::AppealWindow(accord::constants::MIN_APPEAL_WINDOW_SECS),
+    );
+    r.assert_success();
 }

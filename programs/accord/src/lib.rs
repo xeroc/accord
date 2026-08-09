@@ -692,6 +692,9 @@ pub mod accord {
             ctx.accounts.authority.key() == sub.authority,
             AccordError::Unauthorized
         );
+        // H-1: reject invalid updates at propose time so the authority gets
+        // immediate feedback instead of wasting the 48h timelock period.
+        validate_update_payload(&payload)?;
 
         let slot = Clock::get()?.slot;
         let execute_after = slot
@@ -724,6 +727,9 @@ pub mod accord {
         let execute_after = ctx.accounts.pending_update.execute_after_slot;
         let slot = Clock::get()?.slot;
         require!(slot >= execute_after, AccordError::TimelockNotElapsed);
+        // H-1: defense-in-depth — re-validate at execute even though propose
+        // already checked (§29.3: validate in every write path).
+        validate_update_payload(&ctx.accounts.pending_update.proposed)?;
 
         let sub = &mut ctx.accounts.subaccord;
         match &ctx.accounts.pending_update.proposed {
@@ -2264,6 +2270,41 @@ pub mod accord {
         }
         Ok(())
     }
+}
+
+/// Validate a single `UpdatePayload` variant against the same domain bounds
+/// enforced at `create_subaccord` (H-1 / shared-base §29.3: validate in every
+/// write path). Called from both `propose_subaccord_update` (early rejection)
+/// and `execute_subaccord_update` (defense-in-depth).
+fn validate_update_payload(payload: &UpdatePayload) -> Result<()> {
+    match payload {
+        UpdatePayload::AlphaBps(v) => require!(*v <= 10_000, AccordError::InvalidThreshold),
+        UpdatePayload::MaxAppeals(v) => {
+            require!(
+                *v as usize <= MAX_APPEALS,
+                AccordError::MaxAppealsLimitExceeded
+            )
+        }
+        UpdatePayload::AppealWindow(v) => {
+            require!(
+                *v >= MIN_APPEAL_WINDOW_SECS,
+                AccordError::AppealWindowTooShort
+            )
+        }
+        UpdatePayload::MinStake(v) => require!(*v > 0, AccordError::InvalidAmount),
+        UpdatePayload::FeePerJuror(v) => {
+            (INITIAL_NUM_JURORS as u64)
+                .checked_mul(*v)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
+        // Windows must be > 0 to keep the state machine reachable (§29.2).
+        UpdatePayload::ReviewWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
+        UpdatePayload::CommitWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
+        UpdatePayload::RevealWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
+        // Authority / EvidenceOperator are arbitrary Pubkeys — no domain bound.
+        UpdatePayload::Authority(_) | UpdatePayload::EvidenceOperator(_) => {}
+    }
+    Ok(())
 }
 
 // --- Accumulator MST helpers (ADR-0012) ---------------------------------------
