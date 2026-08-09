@@ -278,6 +278,33 @@ useaccord draw:resolve-seat --dispute <addr> --seat 0 | \
   useaccord draw:seat --subaccord <a> --dispute <a> --seat 0 --membership -
 ```
 
+### `read:*` — account fetches + queries + phase (read-only)
+
+All read-only (extend `ChainCommand`, no send). Missing account → `{exists:false}`
+(exit 0), not an error. Found → decoded JSON (`--json`) or a human table
+(truncated addrs, grouped bigints, ISO timestamps). `--out <file>` writes the
+JSON payload for piping.
+
+| Command                                           | What it reads                  |
+| ------------------------------------------------- | ------------------------------ |
+| `read:subaccord <addr>`                           | One Subaccord                  |
+| `read:dispute <addr>`                             | One Dispute                    |
+| `read:round <addr>`                               | One Round                      |
+| `read:juror-stake <addr>`                         | One JurorStake                 |
+| `read:pause-state`                                | PauseState singleton (no arg)  |
+| `read:pending-update <addr>`                      | One PendingUpdate              |
+| `read:appeal-bond --dispute <a> --round-idx <n>`  | AppealBond PDA (derived)       |
+| `read:disputes --by-subaccord\|--by-filer\|--all` | Bulk Dispute query             |
+| `read:juror-stakes --by-subaccord\|--by-juror`    | Bulk JurorStake query          |
+| `read:subaccords`                                 | Every Subaccord on the program |
+| `read:phase --dispute <a> [--round <n>]`          | Phase label + window countdown |
+
+```bash
+useaccord read:pause-state --json
+useaccord read:phase --dispute AaNWS…XVG9
+useaccord read:disputes --by-subaccord <addr> --out disputes.json
+```
+
 ## Infrastructure (for future commands)
 
 Every command extends one of two base classes in `src/lib/base-command.ts`:
