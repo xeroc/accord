@@ -78,6 +78,48 @@ useaccord lifecycle:init-pause
   pauseState: AaNWS…XVG9
 ```
 
+### `lifecycle:create-subaccord [flags] [--random-risk-type] [--dry-run]`
+
+Permissionlessly create a Subaccord (dispute pool). The loaded wallet becomes
+the Subaccord authority and the fee payer. All `CaseTerms` params are frozen at
+creation; later changes go through `propose-update`/`execute-update`.
+
+```bash
+useaccord lifecycle:create-subaccord --random-risk-type \
+  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \
+  --min-stake 1000 --alpha-bps 1000 --review-window 604800 --commit-window 172800 \
+  --reveal-window 172800 --appeal-window 259200 --max-appeals 3 \
+  --fee-per-juror 0 --reveal-threshold-bps 6666 --max-draw-attempts 3 \
+  --evidence-operator <addr>
+```
+
+### `lifecycle:propose-update --subaccord <pda> --payload <Kind:value> [--nonce <n>] [--dry-run]`
+
+Authority-gated proposal to update one mutable Subaccord parameter; arms the
+48h (`UPDATE_TIMELOCK_SLOTS`) timelock. `--payload` is `Kind:value` where Kind
+is one of `MinStake`, `AlphaBps`, `ReviewWindow`, `CommitWindow`, `RevealWindow`,
+`AppealWindow`, `MaxAppeals`, `FeePerJuror`, `Authority`, `EvidenceOperator`.
+After sending, the exact `executeAfterSlot` is read back from the PendingUpdate
+account and emitted.
+
+### `lifecycle:execute-update --subaccord <pda> --pending-update <pda> [--dry-run]`
+
+Permissionless crank that lands a pending update once the timelock elapses.
+
+### `lifecycle:pause [--dry-run]`
+
+Instant emergency freeze (pause authority only). The PauseState PDA is derived
+from the canonical program id.
+
+### `lifecycle:propose-unpause [--dry-run]`
+
+Arm the 24h (`UNPAUSE_TIMELOCK_SLOTS`) unpause timelock (pause authority only).
+
+### `lifecycle:execute-unpause [--dry-run]`
+
+Permissionless crank that clears the paused flag once the unpause timelock
+elapses.
+
 ### `dispute:*` — Arbitrable intake (4 commands)
 
 | Command                | SDK fn                  | Sends?    |
