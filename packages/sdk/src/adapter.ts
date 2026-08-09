@@ -439,6 +439,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         {
           appellant: accord.signer,
           ...mapAppealAccounts(input.accounts),
+          newEvidenceHash: input.newEvidenceHash,
         },
         { programAddress: input.programId },
       );

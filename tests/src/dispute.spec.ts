@@ -264,7 +264,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
     expect(d!.nonce).toBe(nonce);
     expect(Array.from(d!.options[0]!)).toEqual(Array.from(opt0));
     expect(Array.from(d!.options[1]!)).toEqual(Array.from(opt1));
-    expect(Array.from(d!.evidenceHash)).toEqual(Array.from(evidence));
+    expect(Array.from(d!.evidenceHashes[0]!)).toEqual(Array.from(evidence));
     expect(d!.feePaid).toBe(REQUIRED_FEE);
     expect(d!.currentRound).toBe(0);
     // final_ruling: read straight off the decoded Dispute (the `getRuling` facade
