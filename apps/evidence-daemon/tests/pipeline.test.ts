@@ -44,6 +44,7 @@ function iBundle(overrides: Partial<EvidenceBundle> = {}): EvidenceBundle {
   return {
     subaccord: I_SUB,
     dispute: I_DISPUTE,
+    round: 0,
     ct: new Uint8Array([1, 2, 3, 4]),
     claimant_ephem_pub: new Uint8Array(32).fill(0xcc),
     wrapped: new Uint8Array([9, 9, 9]),
@@ -57,24 +58,24 @@ function iMemoryStore(): IngestStore & {
   objects: Map<string, EvidenceBundle>;
 } {
   const objects = new Map<string, EvidenceBundle>();
-  const key = (s: Uint8Array, d: Uint8Array) => `${hex(s)}:${hex(d)}`;
+  const key = (s: Uint8Array, d: Uint8Array, r: number) => `${hex(s)}:${hex(d)}:${r}`;
   return {
     objects,
-    async exists(s, d) {
-      return objects.has(key(s, d));
+    async exists(s, d, r) {
+      return objects.has(key(s, d, r));
     },
-    async get(s, d) {
-      return objects.get(key(s, d)) ?? null;
+    async get(s, d, r) {
+      return objects.get(key(s, d, r)) ?? null;
     },
     async put(b) {
-      objects.set(key(b.subaccord, b.dispute), b);
+      objects.set(key(b.subaccord, b.dispute, b.round), b);
     },
   };
 }
 
 function iChain(
   dispute: Uint8Array,
-  view: { subaccord: Uint8Array; evidence_hash: Uint8Array } | null,
+  view: { subaccord: Uint8Array; evidence_hashes: Uint8Array[] } | null,
 ): IngestChainReader {
   return {
     async readDispute(d) {
@@ -93,25 +94,27 @@ test("ingest: happy → 201, idempotent:false, stored with server-stamped ingest
   const out = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle(),
-    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] })),
   );
   assert.equal(out.status, 201);
   if (out.status !== 201) throw new Error("unreachable");
   assert.equal(out.idempotent, false);
-  const stored = store.objects.get(`${hex(I_SUB)}:${hex(I_DISPUTE)}`);
+  const stored = store.objects.get(`${hex(I_SUB)}:${hex(I_DISPUTE)}:0`);
   assert.ok(stored, "bundle stored");
   assert.ok(stored && stored.ingested_at > 0, "ingested_at stamped server-side");
   assert.deepEqual(stored && stored.ct, new Uint8Array([1, 2, 3, 4]), "ct preserved");
 });
 
-test("ingest: hash-mismatch (plaintext_hash != evidence_hash) → 400, nothing stored", async () => {
+test("ingest: hash-mismatch (plaintext_hash != evidence_hashes[round]) → 400, nothing stored", async () => {
   const store = iMemoryStore();
   const out = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle({ plaintext_hash: I_OTHER_HASH }),
-    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] })),
   );
   assert.equal(out.status, 400);
   if (out.status !== 400) throw new Error("unreachable");
@@ -121,16 +124,18 @@ test("ingest: hash-mismatch (plaintext_hash != evidence_hash) → 400, nothing s
 
 test("ingest: idempotent re-put (same plaintext_hash) → 201 idempotent:true, no duplicate", async () => {
   const store = iMemoryStore();
-  const chain = iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH });
+  const chain = iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] });
   const first = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle({ ingested_at: 12345 }),
     iDeps(store, chain),
   );
   const second = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle({ ingested_at: 99999 }),
     iDeps(store, chain),
   );
@@ -141,37 +146,43 @@ test("ingest: idempotent re-put (same plaintext_hash) → 201 idempotent:true, n
   assert.equal(store.objects.size, 1, "exactly one object stored");
 });
 
-test("ingest: conflict (different plaintext_hash for same dispute) → 409", async () => {
+test("ingest: conflict (different plaintext_hash for same dispute+round) → 409", async () => {
   const store = iMemoryStore();
   await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle(),
-    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] })),
   );
   const out = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle({ plaintext_hash: I_OTHER_HASH }),
-    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_OTHER_HASH })),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_OTHER_HASH] })),
   );
   assert.equal(out.status, 409);
 });
 
 test("ingest: structural bad bundle (empty ct / bad pub / bad hash / empty wrapped) → 400", async () => {
-  const c = iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH });
+  const c = iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] });
   const d = iDeps(iMemoryStore(), c);
-  assert.equal((await ingest(I_SUB, I_DISPUTE, iBundle({ ct: new Uint8Array(0) }), d)).status, 400);
   assert.equal(
-    (await ingest(I_SUB, I_DISPUTE, iBundle({ claimant_ephem_pub: new Uint8Array(31) }), d)).status,
+    (await ingest(I_SUB, I_DISPUTE, 0, iBundle({ ct: new Uint8Array(0) }), d)).status,
     400,
   );
   assert.equal(
-    (await ingest(I_SUB, I_DISPUTE, iBundle({ plaintext_hash: new Uint8Array(16) }), d)).status,
+    (await ingest(I_SUB, I_DISPUTE, 0, iBundle({ claimant_ephem_pub: new Uint8Array(31) }), d))
+      .status,
     400,
   );
   assert.equal(
-    (await ingest(I_SUB, I_DISPUTE, iBundle({ wrapped: new Uint8Array(0) }), d)).status,
+    (await ingest(I_SUB, I_DISPUTE, 0, iBundle({ plaintext_hash: new Uint8Array(16) }), d)).status,
+    400,
+  );
+  assert.equal(
+    (await ingest(I_SUB, I_DISPUTE, 0, iBundle({ wrapped: new Uint8Array(0) }), d)).status,
     400,
   );
 });
@@ -180,8 +191,9 @@ test("ingest: path/bundle subaccord mismatch → 400", async () => {
   const out = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle({ subaccord: new Uint8Array(32).fill(0x7a) }),
-    iDeps(iMemoryStore(), iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
+    iDeps(iMemoryStore(), iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] })),
   );
   assert.equal(out.status, 400);
 });
@@ -190,6 +202,7 @@ test("ingest: dispute not found → 404", async () => {
   const out = await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle(),
     iDeps(iMemoryStore(), iChain(I_DISPUTE, null)),
   );
@@ -201,10 +214,11 @@ test("ingest: encrypted-at-rest — stored object has no plaintext field", async
   await ingest(
     I_SUB,
     I_DISPUTE,
+    0,
     iBundle(),
-    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hash: I_HASH })),
+    iDeps(store, iChain(I_DISPUTE, { subaccord: I_SUB, evidence_hashes: [I_HASH] })),
   );
-  const stored = store.objects.get(`${hex(I_SUB)}:${hex(I_DISPUTE)}`);
+  const stored = store.objects.get(`${hex(I_SUB)}:${hex(I_DISPUTE)}:0`);
   assert.ok(stored);
   const keys = Object.keys(stored as object);
   assert.ok(!keys.includes("plaintext"), "no plaintext field on stored bundle");
@@ -226,6 +240,7 @@ function dBundle(): EvidenceBundle {
   return {
     subaccord: D_SUB,
     dispute: D_DISPUTE,
+    round: 0,
     ct: new Uint8Array([1, 2, 3]),
     claimant_ephem_pub: new Uint8Array(32).fill(0xcc),
     wrapped: new Uint8Array([9, 9]),
@@ -304,7 +319,7 @@ test("deliver: happy (drawn juror) → 200 {rounds:[{out, operator_ephem_pub}]}"
   const out = await deliver(D_DISPUTE, D_JUROR, dDeps({}));
   assert.equal(out.status, 200);
   if (out.status !== 200) throw new Error("unreachable");
-  assert.equal(out.rounds.length, 1, "round-0 only today (single evidence_hash)");
+  assert.equal(out.rounds.length, 1, "single evidence_hashes entry → one round-0 package");
   assert.equal(out.rounds[0]!.round, 0);
   assert.deepEqual(
     out.rounds[0]!.out,
@@ -456,10 +471,11 @@ function multiCrypto(): DeliveryCrypto {
 }
 
 /** Bundle whose stub-plaintext (== ct) is `pt`; gated via the identity sha256. */
-function rBundle(pt: Uint8Array): EvidenceBundle {
+function rBundle(pt: Uint8Array, round = 0): EvidenceBundle {
   return {
     subaccord: D_SUB,
     dispute: D_DISPUTE,
+    round,
     ct: pt,
     claimant_ephem_pub: new Uint8Array(32).fill(0xcc),
     wrapped: new Uint8Array([9, 9]),
@@ -615,4 +631,101 @@ test("deliver: bounded by current_round — round-1 juror does not receive round
     [0, 1],
     "future-round evidence withheld",
   );
+});
+
+// ============================================ INGEST (per-round, ADR-0023) ===
+// Round 0 = filer; round 1..MAX_APPEALS = appeal evidence. Each round's bundle
+// is gated against evidence_hashes[round] and stored under its own key. The
+// [0u8;32] sentinel means "no new evidence this round" — a claimant cannot
+// ingest against a sentinel slot (the hash can never match).
+
+const APPEAL_HASH = new Uint8Array(32).fill(0x5a);
+const ZERO_HASH = new Uint8Array(32); // ADR-0023 sentinel
+
+/** evidence_hashes fixture: round 0 = I_HASH, round k = given, else zero. */
+function iHashes(
+  round: number,
+  hash: Uint8Array,
+): { subaccord: Uint8Array; evidence_hashes: Uint8Array[] } {
+  const arr = [I_HASH, ZERO_HASH, ZERO_HASH, ZERO_HASH];
+  arr[round] = hash;
+  return { subaccord: I_SUB, evidence_hashes: arr };
+}
+
+test("ingest: round 1 appeal evidence stored at its own key, gated against evidence_hashes[1]", async () => {
+  const store = iMemoryStore();
+  const out = await ingest(
+    I_SUB,
+    I_DISPUTE,
+    1,
+    iBundle({ round: 1, plaintext_hash: APPEAL_HASH }),
+    iDeps(store, iChain(I_DISPUTE, iHashes(1, APPEAL_HASH))),
+  );
+  assert.equal(out.status, 201);
+  // Stored under the round-1 key, NOT round 0.
+  assert.ok(store.objects.has(`${hex(I_SUB)}:${hex(I_DISPUTE)}:1`));
+  assert.ok(!store.objects.has(`${hex(I_SUB)}:${hex(I_DISPUTE)}:0`));
+});
+
+test("ingest: round>0 + round 0 coexist as distinct keys", async () => {
+  const store = iMemoryStore();
+  const chain = iChain(I_DISPUTE, iHashes(1, APPEAL_HASH));
+  await ingest(I_SUB, I_DISPUTE, 0, iBundle(), iDeps(store, chain));
+  await ingest(
+    I_SUB,
+    I_DISPUTE,
+    1,
+    iBundle({ round: 1, plaintext_hash: APPEAL_HASH }),
+    iDeps(store, chain),
+  );
+  assert.equal(store.objects.size, 2, "round 0 and round 1 stored independently");
+});
+
+test("ingest: path/bundle round mismatch → 400", async () => {
+  const out = await ingest(
+    I_SUB,
+    I_DISPUTE,
+    1, // path says round 1
+    iBundle({ round: 0 }), // bundle says round 0
+    iDeps(iMemoryStore(), iChain(I_DISPUTE, iHashes(1, APPEAL_HASH))),
+  );
+  assert.equal(out.status, 400);
+  if (out.status !== 400) throw new Error("unreachable");
+  assert.match(out.reason, /round/);
+});
+
+test("ingest: out-of-bounds round (no evidence_hashes slot) → 400", async () => {
+  const out = await ingest(
+    I_SUB,
+    I_DISPUTE,
+    9, // beyond the 4-slot array
+    iBundle({ round: 9 }),
+    iDeps(iMemoryStore(), iChain(I_DISPUTE, iHashes(1, APPEAL_HASH))),
+  );
+  assert.equal(out.status, 400);
+});
+
+test("ingest: sentinel slot ([0u8;32]) rejects a real plaintext_hash → 400", async () => {
+  // Round 2 is the sentinel (no new evidence) — a claimant cannot ingest for it.
+  const out = await ingest(
+    I_SUB,
+    I_DISPUTE,
+    2,
+    iBundle({ round: 2, plaintext_hash: APPEAL_HASH }),
+    iDeps(iMemoryStore(), iChain(I_DISPUTE, iHashes(1, APPEAL_HASH))),
+  );
+  assert.equal(out.status, 400);
+  if (out.status !== 400) throw new Error("unreachable");
+  assert.match(out.reason, /evidence_hashes\[2\]/);
+});
+
+test("ingest: negative round → 400", async () => {
+  const out = await ingest(
+    I_SUB,
+    I_DISPUTE,
+    -1,
+    iBundle({ round: -1 }),
+    iDeps(iMemoryStore(), iChain(I_DISPUTE, iHashes(0, I_HASH))),
+  );
+  assert.equal(out.status, 400);
 });

@@ -22,7 +22,7 @@ export interface EvidenceBundleInput {
   claimant_ephem_pub: string;
   /** AES-GCM(DEK) envelope, base64. */
   wrapped: string;
-  /** sha256(plaintext) — must equal the on-chain Dispute.evidence_hash. */
+  /** sha256(plaintext) — must equal the on-chain Dispute.evidence_hashes[round]. */
   plaintext_hash: Hash;
   /** Unix ms. */
   ingested_at?: number;
@@ -59,14 +59,17 @@ export type DeliverResult =
   | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
 
 /**
- * Ingest = POST /evidence/{subaccord}/{dispute}. Validates, integrity-gates
- * against the on-chain evidence_hash, stores the ciphertext bundle (idempotent
- * on plaintext_hash). Returns 201+location, or 400 (bad bundle) / 409 (a
- * different plaintext_hash already exists for this dispute).
+ * Ingest = POST /evidence/{subaccord}/{dispute}[/{round}]. Validates,
+ * integrity-gates against the on-chain evidence_hashes[round], stores the
+ * ciphertext bundle (idempotent on plaintext_hash). `round` defaults to 0
+ * (filer); 1..MAX_APPEALS = appeal evidence (ADR-0023). Returns 201+location,
+ * or 400 (bad bundle / bad round) / 409 (a different plaintext_hash already
+ * exists for this dispute+round).
  */
 export type IngestHandler = (
   subaccord: string,
   dispute: string,
+  round: number,
   body: unknown,
 ) => Promise<IngestResult>;
 

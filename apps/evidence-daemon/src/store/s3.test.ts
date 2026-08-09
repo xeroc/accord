@@ -120,6 +120,7 @@ function mkBundle(over: Partial<EvidenceBundle> = {}): EvidenceBundle {
   return {
     subaccord: SUBACCORD,
     dispute: DISPUTE,
+    round: 0,
     ct: new Uint8Array([1, 2, 3, 4, 5]),
     claimantEphemPub: new Uint8Array(32).fill(9),
     wrapped: new Uint8Array(32).fill(7),
@@ -144,10 +145,11 @@ describe("S3Store — put/get round-trip", () => {
     const { store } = setup();
     const b = mkBundle();
     await store.put(b);
-    const got = await store.get(SUBACCORD, DISPUTE);
+    const got = await store.get(SUBACCORD, DISPUTE, 0);
     expect(got).not.toBeNull();
     expect(got!.subaccord).toBe(SUBACCORD);
     expect(got!.dispute).toBe(DISPUTE);
+    expect(got!.round).toBe(0);
     expect(Array.from(got!.ct)).toEqual(Array.from(b.ct));
     expect(Array.from(got!.claimantEphemPub)).toEqual(Array.from(b.claimantEphemPub));
     expect(Array.from(got!.wrapped)).toEqual(Array.from(b.wrapped));
@@ -157,7 +159,7 @@ describe("S3Store — put/get round-trip", () => {
 
   test("get on a missing key returns null", async () => {
     const { store } = setup();
-    const got = await store.get(SUBACCORD, DISPUTE);
+    const got = await store.get(SUBACCORD, DISPUTE, 0);
     expect(got).toBeNull();
   });
 
@@ -165,8 +167,22 @@ describe("S3Store — put/get round-trip", () => {
     const { store } = setup();
     await store.put(mkBundle());
     const other = address("Stake11111111111111111111111111111111111111");
-    const got = await store.get(SUBACCORD, other);
+    const got = await store.get(SUBACCORD, other, 0);
     expect(got).toBeNull();
+  });
+
+  test("per-round isolation — round 0 and round 1 are distinct keys", async () => {
+    const { store, mock } = setup();
+    const b0 = mkBundle({ round: 0, plaintextHash: new Uint8Array(32).fill(0x01) });
+    const b1 = mkBundle({ round: 1, plaintextHash: new Uint8Array(32).fill(0x02) });
+    await store.put(b0);
+    await store.put(b1);
+    expect(mock.objects.has(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0`)).toBe(true);
+    expect(mock.objects.has(`${BUCKET}/${SUBACCORD}/${DISPUTE}/1`)).toBe(true);
+    const got0 = await store.get(SUBACCORD, DISPUTE, 0);
+    const got1 = await store.get(SUBACCORD, DISPUTE, 1);
+    expect(Array.from(got0!.plaintextHash)).toEqual(Array.from(b0.plaintextHash));
+    expect(Array.from(got1!.plaintextHash)).toEqual(Array.from(b1.plaintextHash));
   });
 });
 
@@ -175,10 +191,10 @@ describe("S3Store — idempotency on plaintextHash", () => {
     const { store, mock } = setup();
     const b = mkBundle({ ingestedAt: 1_700_000_000_000 });
     await store.put(b);
-    const before = mock.objects.get(`${BUCKET}/${SUBACCORD}/${DISPUTE}`);
+    const before = mock.objects.get(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0`);
     // Second PUT with the same hash but a different ingestedAt — must NOT overwrite.
     await store.put(mkBundle({ ingestedAt: 9_999_999_999_999 }));
-    const after = mock.objects.get(`${BUCKET}/${SUBACCORD}/${DISPUTE}`);
+    const after = mock.objects.get(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0`);
     expect(after).toBeDefined();
     expect(after!.body).toBe(before!.body); // byte-identical, not rewritten
     // The original ingestedAt is what survives (proves the no-op path).
@@ -206,17 +222,32 @@ describe("S3Store — idempotency on plaintextHash", () => {
     expect(caught).toBeDefined();
     expect(caught!.subaccord).toBe(SUBACCORD);
     expect(caught!.dispute).toBe(DISPUTE);
+    expect(caught!.round).toBe(0);
     expect(Array.from(caught!.existingHash)).toEqual(Array.from(existing));
   });
 
   test("an object present WITHOUT our plaintext-hash metadata is treated as a conflict", async () => {
     const { store, mock } = setup();
     // Foreign object (not written by us) — simulates a colliding key / tamper.
-    mock.objects.set(`${BUCKET}/${SUBACCORD}/${DISPUTE}`, {
+    mock.objects.set(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0`, {
       body: '{"v":1}',
       meta: { "some-other-key": "x" }, // no plaintext-hash
     });
     await expect(store.put(mkBundle())).rejects.toBeInstanceOf(EvidenceConflictError);
+  });
+
+  test("rounds are independent — a round-1 conflict does not touch round 0", async () => {
+    const { store, mock } = setup();
+    const h0 = new Uint8Array(32).fill(0x01);
+    const h1 = new Uint8Array(32).fill(0x02);
+    await store.put(mkBundle({ round: 0, plaintextHash: h0 }));
+    await store.put(mkBundle({ round: 1, plaintextHash: h1 }));
+    // Different hash at round 1 → conflict at round 1 only.
+    await expect(
+      store.put(mkBundle({ round: 1, plaintextHash: new Uint8Array(32).fill(0x03) })),
+    ).rejects.toBeInstanceOf(EvidenceConflictError);
+    // Round 0 object is untouched.
+    expect(mock.objects.has(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0`)).toBe(true);
   });
 });
 
@@ -232,6 +263,7 @@ describe("S3Store — never-plaintext invariant", () => {
     const b: EvidenceBundle = {
       subaccord: SUBACCORD,
       dispute: DISPUTE,
+      round: 0,
       ct: new Uint8Array([0xde, 0xad, 0xbe, 0xef]), // ciphertext, not plaintext
       claimantEphemPub: new Uint8Array(32).fill(1),
       wrapped: new Uint8Array(32).fill(2),
@@ -241,7 +273,7 @@ describe("S3Store — never-plaintext invariant", () => {
     void plaintextBytes;
     await store.put(b);
 
-    const stored = mock.objects.get(`${BUCKET}/${SUBACCORD}/${DISPUTE}`);
+    const stored = mock.objects.get(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0`);
     expect(stored).toBeDefined();
 
     // 1. Body is byte-identical to serializeBundle — the store writes only this.
@@ -261,6 +293,7 @@ describe("S3Store — never-plaintext invariant", () => {
         "dispute",
         "ingested_at",
         "plaintext_hash",
+        "round",
         "subaccord",
         "v",
         "wrapped",
@@ -282,25 +315,34 @@ describe("S3Store — never-plaintext invariant", () => {
 describe("S3Store — exists / delete", () => {
   test("exists is false before put and true after", async () => {
     const { store } = setup();
-    expect(await store.exists(SUBACCORD, DISPUTE)).toBe(false);
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(false);
     await store.put(mkBundle());
-    expect(await store.exists(SUBACCORD, DISPUTE)).toBe(true);
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(true);
   });
 
   test("exists is false for a missing key", async () => {
     const { store } = setup();
-    expect(await store.exists(SUBACCORD, DISPUTE)).toBe(false);
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(false);
   });
 
   test("delete is idempotent: deleting a missing key is a no-op", async () => {
     const { store } = setup();
-    await expect(store.delete(SUBACCORD, DISPUTE)).resolves.toBeUndefined();
+    await expect(store.delete(SUBACCORD, DISPUTE, 0)).resolves.toBeUndefined();
     // delete after put, then get returns null and exists false.
     await store.put(mkBundle());
-    await store.delete(SUBACCORD, DISPUTE);
-    expect(await store.exists(SUBACCORD, DISPUTE)).toBe(false);
-    expect(await store.get(SUBACCORD, DISPUTE)).toBeNull();
+    await store.delete(SUBACCORD, DISPUTE, 0);
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(false);
+    expect(await store.get(SUBACCORD, DISPUTE, 0)).toBeNull();
     // delete again — still no error.
-    await expect(store.delete(SUBACCORD, DISPUTE)).resolves.toBeUndefined();
+    await expect(store.delete(SUBACCORD, DISPUTE, 0)).resolves.toBeUndefined();
+  });
+
+  test("delete round 1 leaves round 0 intact", async () => {
+    const { store } = setup();
+    await store.put(mkBundle({ round: 0 }));
+    await store.put(mkBundle({ round: 1, plaintextHash: new Uint8Array(32).fill(0x99) }));
+    await store.delete(SUBACCORD, DISPUTE, 1);
+    expect(await store.exists(SUBACCORD, DISPUTE, 1)).toBe(false);
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(true);
   });
 });
