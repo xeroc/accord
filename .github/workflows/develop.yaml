@@ -1,0 +1,22 @@
+name: develop pipeline
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  program-tests:
+    name: Program Tests
+    secrets: inherit
+    uses: ./.github/workflows/program-tests.yml
+    with:
+      program: accord
