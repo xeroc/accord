@@ -1113,6 +1113,10 @@ pub mod accord {
             js_info.key == &expected_pda,
             AccordError::InvalidMembershipProof
         );
+        require!(
+            js_info.owner == &crate::ID,
+            AccordError::InvalidMembershipProof
+        );
         let slash_per_juror = (dispute.terms.alpha_bps as u64)
             .checked_mul(dispute.terms.min_stake)
             .and_then(|v| v.checked_div(10_000))
@@ -1371,6 +1375,10 @@ pub mod accord {
                     js_info.key == &expected_pda,
                     AccordError::InvalidMembershipProof
                 );
+                require!(
+                    js_info.owner == &crate::ID,
+                    AccordError::InvalidMembershipProof
+                );
                 let mut data = js_info.try_borrow_mut_data()?;
                 let existing = u64::from_le_bytes(
                     data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
@@ -1473,6 +1481,10 @@ pub mod accord {
             let bond_info = &ctx.remaining_accounts[panel + i];
             require!(
                 bond_info.key == &expected_pda,
+                AccordError::InvalidMembershipProof
+            );
+            require!(
+                bond_info.owner == &crate::ID,
                 AccordError::InvalidMembershipProof
             );
             let (bond_portion, prior_result) = {
@@ -1860,6 +1872,10 @@ pub mod accord {
                     acct_info.key == &expected_pda,
                     AccordError::InvalidMembershipProof
                 );
+                require!(
+                    acct_info.owner == &crate::ID,
+                    AccordError::InvalidMembershipProof
+                );
                 let mut data = acct_info.try_borrow_mut_data()?;
                 let draws = u32::from_le_bytes(
                     data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
@@ -1949,6 +1965,10 @@ pub mod accord {
                     .0;
                     require!(
                         acct_info.key == &expected_pda,
+                        AccordError::InvalidMembershipProof
+                    );
+                    require!(
+                        acct_info.owner == &crate::ID,
                         AccordError::InvalidMembershipProof
                     );
                     let mut data = acct_info.try_borrow_mut_data()?;
@@ -2167,6 +2187,10 @@ pub mod accord {
             let acct_info = &ctx.remaining_accounts[i];
             require!(
                 acct_info.key == &expected_pda,
+                AccordError::InvalidMembershipProof
+            );
+            require!(
+                acct_info.owner == &crate::ID,
                 AccordError::InvalidMembershipProof
             );
             let no_show = round.reveals[i] == u8::MAX;
@@ -2505,6 +2529,10 @@ fn read_bond_amounts<'info>(
             bond_info.key == &expected_pda,
             AccordError::InvalidMembershipProof
         );
+        require!(
+            bond_info.owner == &crate::ID,
+            AccordError::InvalidMembershipProof
+        );
         let d = bond_info.try_borrow_data()?;
         require!(
             d.len() >= BOND_AMOUNT_OFFSET + 8,
@@ -2576,6 +2604,10 @@ fn release_prior_rounds<'info>(
                 acct_info.key == &expected_pda,
                 AccordError::InvalidMembershipProof
             );
+            require!(
+                acct_info.owner == &crate::ID,
+                AccordError::InvalidMembershipProof
+            );
             let mut data = acct_info.try_borrow_mut_data()?;
             let draws = u32::from_le_bytes(
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
@@ -2643,6 +2675,10 @@ fn settle_round_accounts(
         .0;
         require!(
             accounts[i].key == &expected_pda,
+            AccordError::InvalidMembershipProof
+        );
+        require!(
+            accounts[i].owner == &crate::ID,
             AccordError::InvalidMembershipProof
         );
 
