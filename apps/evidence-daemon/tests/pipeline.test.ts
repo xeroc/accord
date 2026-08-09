@@ -235,14 +235,14 @@ function dBundle(): EvidenceBundle {
 }
 
 function dChain(opts: {
-  dispute?: { subaccord: Uint8Array; evidence_hash: Uint8Array } | null;
+  dispute?: { subaccord: Uint8Array; evidence_hashes: Uint8Array[]; current_round: number } | null;
   subaccord?: { evidence_operator: Uint8Array } | null;
   round?: { jurors: Uint8Array[] } | null;
 }): DeliverChainReader {
   return {
     async readDispute() {
       return opts.dispute === undefined
-        ? { subaccord: D_SUB, evidence_hash: D_HASH }
+        ? { subaccord: D_SUB, evidence_hashes: [D_HASH], current_round: 0 }
         : opts.dispute;
     },
     async readSubaccord() {
@@ -300,12 +300,18 @@ function dDeps(parts: Partial<DeliverDeps>): DeliverDeps {
   };
 }
 
-test("deliver: happy (drawn juror) → 200 {out, operator_ephem_pub}", async () => {
+test("deliver: happy (drawn juror) → 200 {rounds:[{out, operator_ephem_pub}]}", async () => {
   const out = await deliver(D_DISPUTE, D_JUROR, dDeps({}));
   assert.equal(out.status, 200);
   if (out.status !== 200) throw new Error("unreachable");
-  assert.deepEqual(out.out, D_PLAINTEXT, "out is the (watermarked) plaintext via stub reencrypt");
-  assert.deepEqual(out.operator_ephem_pub, D_EPH);
+  assert.equal(out.rounds.length, 1, "round-0 only today (single evidence_hash)");
+  assert.equal(out.rounds[0]!.round, 0);
+  assert.deepEqual(
+    out.rounds[0]!.out,
+    D_PLAINTEXT,
+    "out is the (watermarked) plaintext via stub reencrypt",
+  );
+  assert.deepEqual(out.rounds[0]!.operator_ephem_pub, D_EPH);
 });
 
 test("deliver: premature (round missing / not yet drawn) → 404", async () => {
@@ -339,7 +345,7 @@ test("deliver: no evidence ingested (store null) → 404", async () => {
   assert.equal(out.status, 404);
 });
 
-test("deliver: gate-fail (sha256(plaintext) != evidence_hash) → 409", async () => {
+test("deliver: gate-fail (sha256(plaintext) != evidence_hashes[0]) → 409", async () => {
   const out = await deliver(
     D_DISPUTE,
     D_JUROR,
@@ -347,7 +353,8 @@ test("deliver: gate-fail (sha256(plaintext) != evidence_hash) → 409", async ()
       chain: dChain({
         dispute: {
           subaccord: D_SUB,
-          evidence_hash: new Uint8Array(32).fill(0x11),
+          evidence_hashes: [new Uint8Array(32).fill(0x11)],
+          current_round: 0,
         },
       }),
     }),
@@ -409,5 +416,203 @@ test("deliver: encrypted-at-rest — store object exposes no plaintext field", a
   assert.ok(
     !Object.keys(seen as object).includes("plaintext"),
     "store object has no plaintext field",
+  );
+});
+
+// ============================================== DELIVER (multi-round) ===
+// ADR-0023 (milestone accord-qp7c): a juror drawn in round N receives every
+// non-zero manifest from round 0..N. Each round is gated against its own
+// evidence_hashes[k] and re-encrypted as a separate package. `[0u8;32]` is the
+// "no new evidence this round" sentinel — skipped, no bundle fetched. A gate
+// failure at any round fails the whole delivery (tampering — no partial set).
+
+const ZERO32 = new Uint8Array(32); // ADR-0023 sentinel
+
+/** Per-round store: returns the bundle stashed under `round`, else null. */
+function roundStore(byRound: Map<number, EvidenceBundle>): DeliverStore {
+  return {
+    async get(_sa, _d, round) {
+      return byRound.get(round) ?? null;
+    },
+  };
+}
+
+/**
+ * Multi-round crypto stub. `sha256` is the identity (so the "hash" is the
+ * plaintext bytes themselves); `unwrap` returns the bundle's `ct` as the
+ * plaintext; `reencrypt` echoes the watermarked bytes. Lets each round carry a
+ * distinct plaintext without real crypto.
+ */
+function multiCrypto(): DeliveryCrypto {
+  return {
+    sha256: async (data) => data,
+    async unwrap(bundle) {
+      return { plaintext: bundle.ct };
+    },
+    async reencryptToJuror(wm) {
+      return { out: wm, operator_ephem_pub: D_EPH };
+    },
+  };
+}
+
+/** Bundle whose stub-plaintext (== ct) is `pt`; gated via the identity sha256. */
+function rBundle(pt: Uint8Array): EvidenceBundle {
+  return {
+    subaccord: D_SUB,
+    dispute: D_DISPUTE,
+    ct: pt,
+    claimant_ephem_pub: new Uint8Array(32).fill(0xcc),
+    wrapped: new Uint8Array([9, 9]),
+    plaintext_hash: pt,
+    ingested_at: 0,
+  };
+}
+
+function multiChain(hashes: Uint8Array[], currentRound: number): DeliverChainReader {
+  return dChain({
+    dispute: { subaccord: D_SUB, evidence_hashes: hashes, current_round: currentRound },
+  });
+}
+
+function multiDeps(parts: {
+  store: DeliverStore;
+  hashes: Uint8Array[];
+  currentRound: number;
+}): DeliverDeps {
+  return {
+    store: parts.store,
+    chain: multiChain(parts.hashes, parts.currentRound),
+    keyring: dKeyring(D_OP_SK),
+    crypto: multiCrypto(),
+  };
+}
+
+test("deliver: multi-round — 3 non-zero hashes → 200 rounds [0,1,2], each gated + re-encrypted", async () => {
+  const h0 = new Uint8Array(32).fill(0xa1);
+  const h1 = new Uint8Array(32).fill(0xa2);
+  const h2 = new Uint8Array(32).fill(0xa3);
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    multiDeps({
+      store: roundStore(
+        new Map([
+          [0, rBundle(h0)],
+          [1, rBundle(h1)],
+          [2, rBundle(h2)],
+        ]),
+      ),
+      hashes: [h0, h1, h2],
+      currentRound: 2,
+    }),
+  );
+  assert.equal(out.status, 200);
+  if (out.status !== 200) throw new Error("unreachable");
+  assert.equal(out.rounds.length, 3);
+  assert.deepEqual(
+    out.rounds.map((r) => r.round),
+    [0, 1, 2],
+    "round-ascending, one package per non-zero hash",
+  );
+  assert.deepEqual(out.rounds[0]!.out, h0);
+  assert.deepEqual(out.rounds[1]!.out, h1);
+  assert.deepEqual(out.rounds[2]!.out, h2);
+});
+
+test("deliver: sentinel — [0u8;32] at slot 1 → only rounds 0 and 2 (slot 1 skipped, no fetch)", async () => {
+  const h0 = new Uint8Array(32).fill(0xb1);
+  const h2 = new Uint8Array(32).fill(0xb3);
+  let slot1Fetched = false;
+  const store: DeliverStore = {
+    async get(_sa, _d, round) {
+      if (round === 1) slot1Fetched = true;
+      if (round === 0) return rBundle(h0);
+      if (round === 2) return rBundle(h2);
+      return null;
+    },
+  };
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    multiDeps({ store, hashes: [h0, ZERO32, h2], currentRound: 2 }),
+  );
+  assert.equal(out.status, 200);
+  if (out.status !== 200) throw new Error("unreachable");
+  assert.deepEqual(
+    out.rounds.map((r) => r.round),
+    [0, 2],
+    "sentinel slot yields no package",
+  );
+  assert.equal(slot1Fetched, false, "sentinel slot must not fetch a bundle");
+});
+
+test("deliver: gate-fail at round 2 → 409 (whole delivery fails, no partial set)", async () => {
+  const h0 = new Uint8Array(32).fill(0xc1);
+  const h1 = new Uint8Array(32).fill(0xc2);
+  const h2 = new Uint8Array(32).fill(0xc3);
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    multiDeps({
+      // round 2's plaintext (0xff..) != h2 (0xc3..) → its gate fails.
+      store: roundStore(
+        new Map([
+          [0, rBundle(h0)],
+          [1, rBundle(h1)],
+          [2, rBundle(new Uint8Array(32).fill(0xff))],
+        ]),
+      ),
+      hashes: [h0, h1, h2],
+      currentRound: 2,
+    }),
+  );
+  assert.equal(out.status, 409);
+  if (out.status !== 409) throw new Error("unreachable");
+  assert.match(out.reason, /round 2/i);
+});
+
+test("deliver: missing bundle for a non-zero round → 404", async () => {
+  const h0 = new Uint8Array(32).fill(0xd1);
+  const h1 = new Uint8Array(32).fill(0xd2);
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    multiDeps({
+      store: roundStore(new Map([[0, rBundle(h0)]])), // round 1 bundle absent
+      hashes: [h0, h1],
+      currentRound: 1,
+    }),
+  );
+  assert.equal(out.status, 404);
+  if (out.status !== 404) throw new Error("unreachable");
+  assert.match(out.reason, /round 1/i);
+});
+
+test("deliver: bounded by current_round — round-1 juror does not receive round-2 evidence", async () => {
+  const h0 = new Uint8Array(32).fill(0xe1);
+  const h1 = new Uint8Array(32).fill(0xe2);
+  const h2 = new Uint8Array(32).fill(0xe3);
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    multiDeps({
+      store: roundStore(
+        new Map([
+          [0, rBundle(h0)],
+          [1, rBundle(h1)],
+          [2, rBundle(h2)],
+        ]),
+      ),
+      // current_round=1 → bound = min(2, 3) = 2 → rounds 0,1 only; slot 2 withheld.
+      hashes: [h0, h1, h2],
+      currentRound: 1,
+    }),
+  );
+  assert.equal(out.status, 200);
+  if (out.status !== 200) throw new Error("unreachable");
+  assert.deepEqual(
+    out.rounds.map((r) => r.round),
+    [0, 1],
+    "future-round evidence withheld",
   );
 });

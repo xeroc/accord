@@ -114,22 +114,40 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     },
   };
   const deliverStore = {
-    async get(sa: Uint8Array, d: Uint8Array) {
+    async get(sa: Uint8Array, d: Uint8Array, round: number) {
+      // ponytail: round-0-only storage today — ingest has no round dimension
+      // yet, so no round>0 bundle can exist. Round > 0 → null → 404. When ingest
+      // + the store gain a round param (follow-up to accord-xq40), pass `round`
+      // through to store.get(bytesToAddr(sa), bytesToAddr(d), round).
+      if (round !== 0) return null;
       const b = await store.get(bytesToAddr(sa), bytesToAddr(d));
       return b === null ? null : fromStoreBundle(b);
     },
   };
 
   // --- chain adapter: reader functions (Accord+Address) → pipeline ports ---
-  const readDisputeBytes = async (d: Uint8Array) => {
+  const readDisputeIngest = async (d: Uint8Array) => {
     const v = await readDispute(accord, bytesToAddr(d));
     if (v === null) return null;
     // new Uint8Array(...) copies the readonly view into a mutable pipeline value.
     return { subaccord: b58ToBytes(v.subaccord), evidence_hash: new Uint8Array(v.evidenceHash) };
   };
-  const ingestChain: IngestChainReader = { readDispute: readDisputeBytes };
+  const readDisputeDeliver = async (d: Uint8Array) => {
+    const v = await readDispute(accord, bytesToAddr(d));
+    if (v === null) return null;
+    // ponytail: SDK still exposes a single evidenceHash (the ADR-0023 on-chain
+    // array + SDK regen have not landed). Wrap it into a 1-element array so the
+    // deliver loop is multi-hash-ready; today it always degenerates to round 0.
+    // When the SDK regen ships `evidenceHashes`, swap to [...v.evidenceHashes].
+    return {
+      subaccord: b58ToBytes(v.subaccord),
+      evidence_hashes: [new Uint8Array(v.evidenceHash)],
+      current_round: v.currentRound,
+    };
+  };
+  const ingestChain: IngestChainReader = { readDispute: readDisputeIngest };
   const deliverChain = {
-    readDispute: readDisputeBytes,
+    readDispute: readDisputeDeliver,
     async readSubaccord(sa: Uint8Array) {
       const v = await readSubaccord(accord, bytesToAddr(sa));
       if (v === null) return null;
@@ -238,8 +256,11 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
         ok: true,
         status: 200,
         body: {
-          out: bytesToBase64(out.out),
-          operator_ephem_pub: bytesToBase64(out.operator_ephem_pub),
+          rounds: out.rounds.map((r) => ({
+            round: r.round,
+            out: bytesToBase64(r.out),
+            operator_ephem_pub: bytesToBase64(r.operator_ephem_pub),
+          })),
         },
       };
     }

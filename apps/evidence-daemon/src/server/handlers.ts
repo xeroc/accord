@@ -28,12 +28,26 @@ export interface EvidenceBundleInput {
   ingested_at?: number;
 }
 
-/** Delivered, Juror-bound re-encrypted payload (ADR-0006 delivery step 4-5). */
+/**
+ * One round's delivered, Juror-bound re-encrypted payload (ADR-0006 delivery
+ * step 4-5; ADR-0023 per-round). A GET returns one of these per non-zero
+ * `evidence_hashes[k]` in the juror's round, ordered round-ascending.
+ */
 export interface DeliveryPayload {
+  /** Evidence round (0 = filer; 1..MAX_APPEALS = appeal rounds). */
+  round: number;
   /** AES-GCM(watermarked) under the operator→juror ECDH key, base64. */
   out: string;
   /** Operator ephemeral X25519 pubkey for this delivery, base64. */
   operator_ephem_pub: string;
+}
+
+/**
+ * GET delivery body: the set of per-round packages a drawn juror receives
+ * (ADR-0023). Round-0-only disputes return a single-element `rounds[]`.
+ */
+export interface DeliveryBody {
+  rounds: DeliveryPayload[];
 }
 
 export type IngestResult =
@@ -41,7 +55,7 @@ export type IngestResult =
   | { readonly ok: false; readonly status: 400 | 404 | 409; readonly error: string };
 
 export type DeliverResult =
-  | { readonly ok: true; readonly status: 200; readonly body: DeliveryPayload }
+  | { readonly ok: true; readonly status: 200; readonly body: DeliveryBody }
   | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
 
 /**

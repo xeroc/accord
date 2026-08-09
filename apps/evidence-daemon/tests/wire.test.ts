@@ -140,10 +140,11 @@ test("wire: ingest + deliver round-trip — juror decrypts to the original plain
   expect(delivered.status).toBe(200);
 
   // Juror decrypts with its own seed — recovers exactly the claimant's plaintext.
+  // (Body is { rounds: [...] } per ADR-0023; round 0 is the filer's package.)
   const recovered = await jurorDecrypt(
     {
-      out: base64ToBytes(delivered.body.out),
-      operator_ephem_pub: base64ToBytes(delivered.body.operator_ephem_pub),
+      out: base64ToBytes(delivered.body.rounds[0]!.out),
+      operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
     },
     jurorSeed,
   );
@@ -206,8 +207,8 @@ test("wire: a different juror's seed cannot decrypt the delivered bundle", async
   await expect(
     jurorDecrypt(
       {
-        out: base64ToBytes(delivered.body.out),
-        operator_ephem_pub: base64ToBytes(delivered.body.operator_ephem_pub),
+        out: base64ToBytes(delivered.body.rounds[0]!.out),
+        operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
       },
       stranger,
     ),
