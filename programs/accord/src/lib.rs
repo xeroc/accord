@@ -815,7 +815,7 @@ pub mod accord {
         d.nonce = nonce;
         d.num_options = num_options;
         d.options = opt_arr;
-        d.evidence_hash = evidence_hash;
+        d.evidence_hashes[0] = evidence_hash;
         d.state = DisputeState::Created;
         d.current_round = 0;
         d.final_ruling = u8::MAX;
