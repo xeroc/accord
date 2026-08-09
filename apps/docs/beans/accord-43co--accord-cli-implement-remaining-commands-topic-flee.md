@@ -1,11 +1,11 @@
 ---
 # accord-43co
 title: Accord CLI — implement remaining commands (topic fleet)
-status: todo
+status: completed
 type: milestone
 priority: high
 created_at: 2026-08-09T20:19:36Z
-updated_at: 2026-08-09T20:21:17Z
+updated_at: 2026-08-09T21:45:06Z
 ---
 
 Implement every remaining `useaccord` command in `CLI.md` §3 by **parallelizing
