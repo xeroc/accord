@@ -28,8 +28,21 @@ export const MIN_APPEAL_WINDOW_SECS = 3_600n;
 
 // --- Accumulator (ADR-0012) ---
 
-/** Default Merkle accumulator tree depth. 2^20 ≈ 1M seats; per-Subaccord. */
-export const DEFAULT_TREE_DEPTH = 20;
+/**
+ * Maximum tree depth that fits a `stake`/`requestWithdraw`/`reconcileStake`
+ * instruction within the 1232-byte serialized transaction limit when signed
+ * via a browser wallet. The MST proof is `depth × 40` bytes of instruction
+ * data; the `stake` ix has ~490 bytes of fixed overhead (7 accounts + headers
+ * + discriminator + amount). `490 + depth×40 ≤ 1232` ⇒ depth ≤ 18, but we
+ * cap at 16 (102-byte margin) for safety.
+ */
+export const MAX_SAFE_TREE_DEPTH = 16;
+
+/**
+ * Default Merkle accumulator tree depth. 2^16 = 65,536 seats; per-Subaccord.
+ * Capped at {@link MAX_SAFE_TREE_DEPTH} so browser-wallet signing works.
+ */
+export const DEFAULT_TREE_DEPTH = 16;
 
 // --- v1 default economics (per-Subaccord; AGENTS.md "v1 Defaults") ---
 

@@ -32,6 +32,7 @@ import {
   DEFAULT_MAX_DRAW_ATTEMPTS,
   DEFAULT_FEE_PER_JUROR,
   DEFAULT_TREE_DEPTH,
+  MAX_SAFE_TREE_DEPTH,
   MAX_APPEALS,
   MAX_DRAW_ATTEMPTS,
   MIN_APPEAL_WINDOW_SECS,
@@ -276,14 +277,7 @@ export function SubaccordCreatePage() {
               required
               mono
             />
-            <Field
-              label="Tree depth"
-              help="Accumulator depth. 2^depth seats. Default 20."
-              value={form.depth}
-              onChange={(v) => set("depth", v)}
-              required
-              mono
-            />
+            <DepthPicker value={form.depth} onChange={(v) => set("depth", v)} />
           </fieldset>
 
           <fieldset>
@@ -417,6 +411,49 @@ function requireAddress(input: string, label: string): Address {
   const v = input.trim();
   if (!v) throw new Error(`${label}: address required.`);
   return v as Address;
+}
+
+// --- depth picker (pool capacity) -------------------------------------------
+
+/** Curated depth options — capped at MAX_SAFE_TREE_DEPTH (browser tx limit). */
+const DEPTH_OPTIONS = [
+  { depth: 4, note: "16 seats — testing" },
+  { depth: 6, note: "64 seats — small pool" },
+  { depth: 8, note: "256 seats" },
+  { depth: 10, note: "1,024 seats" },
+  { depth: 12, note: "4,096 seats — recommended" },
+  { depth: 14, note: "16,384 seats — large" },
+  { depth: MAX_SAFE_TREE_DEPTH, note: "65,536 seats — max (browser tx limit)" },
+] as const;
+
+function DepthPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span className="label">Pool capacity.</span>
+      <select
+        className="input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {DEPTH_OPTIONS.map((opt) => (
+          <option key={opt.depth} value={opt.depth}>
+            {opt.note}
+          </option>
+        ))}
+      </select>
+      <span className="help">
+        Maximum juror seats. Each stake/unstake tx carries a Merkle proof
+        proportional to depth — depths beyond {MAX_SAFE_TREE_DEPTH} exceed the
+        1232-byte transaction limit in browser wallets.
+      </span>
+    </label>
+  );
 }
 
 // --- field primitive --------------------------------------------------------
