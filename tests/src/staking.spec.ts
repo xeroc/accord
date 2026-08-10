@@ -67,6 +67,9 @@ const FEE_PER_JUROR = 1_000_000n;
 const MIN_STAKE = 1_000n;
 const STAKE_FUND = 10_000n; // juror ATA balance before staking
 const STAKE_AMT = 5_000n;
+const ALPHA_BPS = 1_000n; // mirrors defaultSubaccordArgs (10%)
+/** Draw-eligibility floor on the first deposit = min_stake + α·min_stake (REVIEW #5). */
+const MIN_INITIAL = MIN_STAKE + (ALPHA_BPS * MIN_STAKE) / 10_000n;
 const DEPTH = 4;
 const WITHDRAWAL_DELAY_SECS = 3 * 24 * 60 * 60; // constants.rs: PRE_DRAW_CANCEL_TIMEOUT_SECS
 
@@ -336,6 +339,32 @@ describe("e2e: staking (requires Surfpool)", () => {
     expect(() =>
       stake(facade.adapter, env.programId, accounts, 0n, path),
     ).toThrow(/InvalidAmount/);
+  }, 60_000);
+  it("first stake below min_stake + α·min_stake reverts (InsufficientStake)", async () => {
+    if (!env.up) return;
+    const { accounts, facade } = await armJuror();
+    const before = tree.nextIndex;
+    const path = await tree.pathForNext();
+    // MIN_STAKE alone passes the leaf-size gate but not the draw-eligibility
+    // floor: draw_seat reserves α·min_stake and requires min_stake free, so a
+    // juror staking exactly min_stake can never be drawn. The first deposit
+    // must clear min_stake + α·min_stake.
+    await expect(
+      env.sendIx(stake(facade.adapter, env.programId, accounts, MIN_STAKE, path)),
+    ).rejects.toThrow();
+    // Atomic revert: no accumulator leaf consumed (no hole in the tree).
+    expect(tree.nextIndex).toBe(before);
+  }, 60_000);
+
+  it("first stake at exactly min_stake + α·min_stake succeeds", async () => {
+    if (!env.up) return;
+    const { juror, jurorStake, accounts, facade } = await armJuror();
+    const path = await tree.pathForNext();
+    await env.sendIx(
+      stake(facade.adapter, env.programId, accounts, MIN_INITIAL, path),
+    );
+    await tree.setLeaf(juror.address, MIN_INITIAL);
+    expect((await readStake(jurorStake))!.staked).toBe(MIN_INITIAL);
   }, 60_000);
 
   it("requestWithdraw over balance reverts on-chain (InsufficientBalance)", async () => {

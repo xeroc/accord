@@ -480,6 +480,24 @@ pub mod accord {
             .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
+        // REVIEW #5 backstop: the position-opening deposit must clear the
+        // draw-time free-stake threshold — min_stake + α·min_stake — or the
+        // juror can never be drawn (each draw_seat reserves α·min_stake and
+        // requires free stake ≥ min_stake + α·min_stake). Staking exactly
+        // min_stake is the footgun this closes. Top-ups are NOT gated: only the
+        // first deposit that opens the JurorStake leaf.
+        if is_new_leaf {
+            let slash_per_juror = (sub.alpha_bps as u64)
+                .checked_mul(sub.min_stake)
+                .and_then(|v| v.checked_div(10_000))
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            let min_initial = sub
+                .min_stake
+                .checked_add(slash_per_juror)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            require!(new_stake >= min_initial, AccordError::InsufficientStake);
+        }
+
         // Verify the supplied path against the stored root, then recompute the
         // root for the new leaf stake. The juror identity may change
         // (default→real) on first stake; afterwards it is stable.
