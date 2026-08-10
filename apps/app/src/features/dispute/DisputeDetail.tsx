@@ -7,6 +7,7 @@ import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
+import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { StateMachine } from "./StateMachine";
 import { Voting } from "./Voting";
@@ -108,7 +109,7 @@ export function DisputeDetail() {
         instruction,
       );
     } catch (err) {
-      setAppealError(err instanceof Error ? err.message : String(err));
+      setAppealError(describeError(err));
     } finally {
       setAppealSending(false);
     }

@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { useClusterRpc } from "../../shared/rpc";
 import { useSigner } from "../../shared/wallet";
 import { sendInstruction } from "../../shared/transaction";
-import { unwrapError } from "../../shared/errors";
+import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { formatTokenAmount } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
@@ -207,7 +207,7 @@ function InitialStakeForm({
       toast.success(`Staked ${amount}. You are now draw-eligible.`);
       setAmount("");
     } catch (err) {
-      toast.error(unwrapError(err));
+      toast.error(describeError(err));
     } finally {
       setSending(false);
     }

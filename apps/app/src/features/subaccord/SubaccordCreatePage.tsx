@@ -41,6 +41,7 @@ import {
 
 import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
+import { describeError } from "../../shared/errors";
 import { ZERO_ADDRESS, useSigner } from "../../shared/wallet";
 
 /** String-valued form state — every input is text; parsed on submit. */
@@ -122,7 +123,7 @@ export function SubaccordCreatePage() {
       );
       navigate(`/subaccords/${subaccord}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
       setSending(false);
     }
   }

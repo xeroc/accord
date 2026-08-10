@@ -10,6 +10,7 @@ import {
 
 import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
+import { describeError } from "../../shared/errors";
 import { useSigner } from "../../shared/wallet";
 import { getAtaAddress } from "../../shared/tokens";
 import { useTokenMeta } from "../../shared/useTokenMeta";
@@ -165,7 +166,7 @@ export function CreateDispute() {
       );
       navigate(`/disputes/${dispute}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setSubmitting(false);
     }

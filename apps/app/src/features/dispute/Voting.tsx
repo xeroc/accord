@@ -14,6 +14,7 @@ import {
 import { Copyable } from "../../components/Copyable";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
+import { describeError } from "../../shared/errors";
 
 // --- localStorage salt persistence (commit → reveal bridge) ---
 
@@ -126,7 +127,7 @@ export function Voting({
         instruction,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setSending(false);
     }
@@ -159,7 +160,7 @@ export function Voting({
         instruction,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setSending(false);
     }
