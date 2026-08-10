@@ -21,9 +21,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup && tsc -p tsconfig.json --emitDeclarationOnly",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test src/**/*.test.ts",
+    "test": "tsc -p tsconfig.json --noEmit && node --test src/**/*.test.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -38,6 +38,7 @@
     "@codama/renderers-js": "^2.3.1",
     "codama": "^1.10.0",
     "typescript": "^5.5.0",
-    "@types/bn.js": "^5.1.6"
+    "@types/bn.js": "^5.1.6",
+    "tsup": "^8.3.0"
   }
 }
