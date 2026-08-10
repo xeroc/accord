@@ -27,3 +27,5 @@ jobs:
     name: Program Tests
     secrets: inherit
     uses: ./.github/workflows/program-tests.yml
+    with:
+      program: accord
