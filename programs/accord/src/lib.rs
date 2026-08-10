@@ -930,16 +930,24 @@ pub mod accord {
             callback_program_id: crate::ID,
             callback_discriminator: instruction::CommitVrfCallback::DISCRIMINATOR.to_vec(),
             caller_seed: dispute_key.to_bytes(),
+            // ORDER IS LOAD-BEARING: the VRF oracle prepends the scoped
+            // vrf_program_identity, then appends these metas positionally onto
+            // the CommitVrfCallback struct fields. So this list MUST mirror the
+            // callback struct field order AFTER the identity: [subaccord,
+            // dispute]. A swap lands `dispute` on the `subaccord` field and
+            // fails the callback with AccountDiscriminatorMismatch — which the
+            // oracle observes via pre-simulation and never submits (the request
+            // then stalls at its queue index indefinitely).
             accounts_metas: Some(vec![
-                SerializableAccountMeta {
-                    pubkey: dispute_key,
-                    is_signer: false,
-                    is_writable: true,
-                },
                 SerializableAccountMeta {
                     pubkey: subaccord_key,
                     is_signer: false,
                     is_writable: false,
+                },
+                SerializableAccountMeta {
+                    pubkey: dispute_key,
+                    is_signer: false,
+                    is_writable: true,
                 },
             ]),
             ..Default::default()
