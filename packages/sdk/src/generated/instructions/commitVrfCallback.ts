@@ -49,8 +49,7 @@ export function getCommitVrfCallbackDiscriminatorBytes(): ReadonlyUint8Array {
 
 export type CommitVrfCallbackInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
-  TAccountVrfProgramIdentity extends string | AccountMeta<string> =
-    "9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw",
+  TAccountVrfProgramIdentity extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -113,7 +112,7 @@ export type CommitVrfCallbackInput<
   TAccountSubaccord extends string = string,
   TAccountDispute extends string = string,
 > = {
-  vrfProgramIdentity?: TransactionSigner<TAccountVrfProgramIdentity>;
+  vrfProgramIdentity: TransactionSigner<TAccountVrfProgramIdentity>;
   subaccord: Address<TAccountSubaccord>;
   dispute: Address<TAccountDispute>;
   randomness: CommitVrfCallbackInstructionDataArgs["randomness"];
@@ -156,12 +155,6 @@ export function getCommitVrfCallbackInstruction<
 
   // Original args.
   const args = { ...input };
-
-  // Resolve default values.
-  if (!accounts.vrfProgramIdentity.value) {
-    accounts.vrfProgramIdentity.value =
-      "9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw" as Address<"9irBy75QS2BN81FUgXuHcjqceJJRuc9oDkAe8TKVvvAw">;
-  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
