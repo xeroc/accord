@@ -52,7 +52,7 @@ export interface UnstakeGuard {
 /**
  * Pre-flight the `unstake` against the juror's live stake. Mirrors the three
  * on-chain requires (lib.rs:270-277): `amount > 0`, `active_draws == 0`,
- * `amount ≤ amount`. Pure — no chain access.
+ * `amount ≤ staked`. Pure — no chain access.
  */
 export function canUnstake(
   stake: JurorStakeView,
