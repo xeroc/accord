@@ -3380,7 +3380,7 @@ pub struct Appeal<'info> {
         associated_token::mint = fee_token,
         associated_token::authority = appellant,
     )]
-    pub appellant_token_account: Account<'info, TokenAccount>,
+    pub appellant_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         init_if_needed,
         payer = appellant,

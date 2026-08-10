@@ -70,7 +70,7 @@ pub struct ChallengeItem<'info> {
         associated_token::mint = fee_mint,
         associated_token::authority = list,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
