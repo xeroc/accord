@@ -12,14 +12,14 @@
  * Idempotent: zeroing the bond on payout makes re-invocation a no-op.
  *
  * Client-side helpers mirror the on-chain appeal ladder (`panel_size_for_round`,
- * lib.rs:1563) and cost math so the facade can quote a panel + fee before
+ * lib.rs:2555) and cost math so the facade can quote a panel + fee before
  * sending. Same ADR-0010 facade pattern: Kit type-only, PDA lazy.
  *
  * Sources of truth:
- *   - appeal / claim_appeal_refund: lib.rs (1374-1524)
- *   - Appeal / ClaimAppealRefund accounts: lib.rs (2212-2303)
+ *   - appeal / claim_appeal_refund: lib.rs:1643 (appeal), :1772 (claim_appeal_refund)
+ *   - Appeal / ClaimAppealRefund accounts: lib.rs:3422 (Appeal), :3486 (ClaimAppealRefund)
  *   - AppealBond struct + seeds: state.rs (174-193)  `["bond", dispute, round_idx]`
- *   - appeal ladder: lib.rs:1540-1577, ADR-0004
+ *   - appeal ladder: lib.rs:2553-2570, ADR-0004
  */
 import type { Address, Instruction } from "@solana/kit";
 import { MAX_JURORS, panelSizeForRound } from "../constants.js";
@@ -47,13 +47,13 @@ function le4(v: number): Uint8Array {
 /**
  * Required panel size for round `roundIdx` — the appeal ladder
  * `N_{k+1} = 2·N_k + 1` (closed form `(J+1)·2^k − 1`), capped at
- * {@link MAX_JURORS}. Direct port of `panel_size_for_round` (lib.rs:1563).
+ * {@link MAX_JURORS}. Direct port of `panel_size_for_round` (lib.rs:2555).
  * Returns `null` on overflow (round_idx ≥ 31).
  *
  * Re-exported from {@link ../constants.js} for module-internal use.
  */
 
-/** Appeal cost breakdown for opening round `currentRound + 1` (lib.rs:1416-1430). */
+/** Appeal cost breakdown for opening round `currentRound + 1` (lib.rs:1688-1695). */
 export interface AppealCost {
   newRound: number;
   panel: number;
@@ -67,7 +67,7 @@ export interface AppealCost {
 
 /**
  * Quote the panel + fee + bond for an appeal from `currentRound`. Mirrors
- * lib.rs:1416-1430 (`panel_new = panel_size_for_round(J, current+1)`,
+ * lib.rs:1688-1695 (`panel_new = panel_size_for_round(J, current+1)`,
  * `fee_new = panel_new · fee_per_juror`, `bond = fee_new`,
  * `total = fee_new + bond`). Returns `null` if the panel math overflows.
  */
@@ -83,7 +83,7 @@ export function appealCost(
   return { newRound, panel, fee, bond, total: fee + bond };
 }
 
-/** Gate: a fresh appeal requires `currentRound < maxAppeals` (lib.rs:1386). */
+/** Gate: a fresh appeal requires `currentRound < maxAppeals` (lib.rs:1660). */
 export function canAppeal(currentRound: number, maxAppeals: number): boolean {
   return currentRound < maxAppeals;
 }
@@ -186,10 +186,10 @@ export function assertValidNewEvidenceHash(newEvidenceHash: Uint8Array): void {
 }
 
 /**
- * Build `appeal` (lib.rs:1374). Opens `current_round + 1` with a `2N+1` panel;
+ * Build `appeal` (lib.rs:1643). Opens `current_round + 1` with a `2N+1` panel;
  * the appellant pays `fee_new + bond` (bond == fee_new). The AppealBond PDA is
- * keyed by the new round — derive it via {@link findAppealBondPda} with
- * `currentRound + 1`.
+ * keyed by the round BEING appealed (`current_round`, pre-increment) — derive it
+ * via {@link findAppealBondPda} with `currentRound`.
  *
  * `newEvidenceHash` optionally introduces fresh evidence for the new round
  * (stored at `evidence_hashes[current_round + 1]`); pass the `[0u8; 32]`
@@ -207,9 +207,10 @@ export function appeal(
 }
 
 /**
- * Build `claim_appeal_refund` (lib.rs:1481) for a specific appeal's bond.
- * `roundIdx` is the round the appeal OPENED (the value of `current_round + 1`
- * at appeal time) — it selects which `AppealBond` PDA to claim. Idempotent
+ * Build `claim_appeal_refund` (lib.rs:1772) for a specific appeal's bond.
+ * `roundIdx` is the round that was appealed (`current_round` at appeal time —
+ * the AppealBond PDA seed, pre-increment), selecting which bond to claim.
+ * Idempotent
  * on-chain (the bond is zeroed on payout).
  */
 export function claimAppealRefund(
