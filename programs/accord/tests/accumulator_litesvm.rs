@@ -220,8 +220,6 @@ struct AccEnv {
     creator: Keypair,
     mint: Pubkey,
     subaccord: Pubkey,
-    depth: u8,
-    risk_type: [u8; 32],
 }
 
 const TEST_DEPTH: u8 = 4;
@@ -308,8 +306,6 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
         creator,
         mint,
         subaccord: sub,
-        depth: TEST_DEPTH,
-        risk_type,
     }
 }
 
@@ -757,7 +753,6 @@ fn commit_vrf_callback_freezes_live_root() {
         .assert_success();
 
     // commit_vrf_callback: the VRF program identity is the signer.
-    let vrf_identity = Keypair::new();
     // We need to spoof the VRF program identity constraint. The constraint is
     // `address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY`. In LiteSVM
     // we can't change that — but we CAN set the account directly. Instead, we
@@ -1418,7 +1413,6 @@ fn last_change_slot_field_absent_from_juror_stake() {
     let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
     do_stake(&mut env, &juror, 5_000, path).assert_success();
 
-    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
     // If last_change_slot existed (i64), reading the account at its offset
     // would yield a non-zero value. The struct layout (after the 8-byte disc):
     //   subaccord(32) juror(32) amount(8) active_draws(4) bump(1) tree_index(4)
@@ -3683,21 +3677,67 @@ fn seat_leaf(
     unreachable!("r_i always lands on a leaf")
 }
 
+/// Resolve `n_seats` distinct jurors against the stake-weighted sortition at
+/// the given `(vrf, round_idx, draw_attempt)`, walking the retry loop exactly
+/// like the on-chain `draw_seat`: for each seat, bump `retry` until `seat_leaf`
+/// lands on a leaf not already drawn. Submits each seat via `submit_draw_seat`.
+///
+/// Replaces the old "brute-force a collision-free VRF" trick: any random VRF
+/// works here, collisions are resolved faithfully (exercising the on-chain
+/// retry path + `DuplicateJuror` guard), and re-resolution at a later
+/// `draw_attempt` re-uses the same logic instead of skipping. Returns
+/// `(seat, leaf_idx, retries)` per drawn seat.
+#[allow(clippy::too_many_arguments)]
+fn submit_draw_panel(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    round_pda: Pubkey,
+    vrf: &[u8; 32],
+    round_idx: u32,
+    draw_attempt: u32,
+    n_seats: u32,
+    leaves: &[(Pubkey, u64)],
+) -> Vec<(u32, usize, u32)> {
+    let total: u64 = leaves.iter().map(|(_, s)| s).sum();
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::with_capacity(leaves.len());
+        let mut a = 0u64;
+        for (_, s) in leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let seed = vrf_seed(vrf, &dispute, round_idx, draw_attempt);
+    let mut drawn: Vec<(u32, usize, u32)> = Vec::new();
+    for seat in 0..n_seats {
+        let mut chosen: Option<(usize, u32)> = None;
+        for retry in 0..=accord::constants::MAX_SORTITION_RETRIES {
+            let leaf = seat_leaf(&seed, seat, retry, total, &prefixes, leaves);
+            if !drawn.iter().any(|&(_, l, _)| l == leaf) {
+                chosen = Some((leaf, retry));
+                break;
+            }
+        }
+        let (leaf, retry) =
+            chosen.expect("sortition retry budget exhausted — panel larger than juror pool");
+        submit_draw_seat(env, dispute, round_pda, seat, retry, leaf, leaves).assert_success();
+        drawn.push((seat, leaf, retry));
+    }
+    drawn
+}
+
 /// Owned bundle returned by `setup_and_finalize`: everything a test needs to
 /// assert on the post-finalize state and drive `redraw` / re-draw.
 struct DrawnDispute {
     env: AccEnv,
     dispute: Pubkey,
     rnd: Pubkey,
-    jurors: Vec<Keypair>,
     leaves: Vec<(Pubkey, u64)>,
     /// `(seat, leaf_idx)` per drawn seat (draw_attempt 0).
     drawn: Vec<(u32, usize)>,
     filer: Keypair,
-    filer_fee: u64,
     vrf: [u8; 32],
-    total: u64,
-    prefixes: Vec<u64>,
 }
 
 /// Build a Subaccord (custom `threshold_bps`/`max_draw_attempts`) + 3 staked
@@ -3719,16 +3759,6 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         jurors.push(juror);
     }
     let sub = read_subaccord(&env);
-    let total = sub.total_stake;
-    let prefixes: Vec<u64> = {
-        let mut p = Vec::new();
-        let mut a = 0u64;
-        for (_, s) in &leaves {
-            p.push(a);
-            a += s;
-        }
-        p
-    };
 
     let filer = Keypair::new();
     env.ctx
@@ -3768,36 +3798,24 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         .unwrap()
         .assert_success();
 
-    // Brute-force a VRF that draws 3 distinct jurors at draw_attempt 0.
+    // Any random VRF works — the sortition collision/retry path is resolved
+    // faithfully by `submit_draw_panel` (mirrors on-chain `draw_seat`). The
+    // old brute-force for a collision-free seed existed only because the
+    // harness used to submit `retries=0`; that's gone.
     let round_idx = 0u32;
     let vrf = {
         let mut c = [0u8; 32];
-        loop {
-            c[0] = c[0].wrapping_add(1);
-            if c[0] == 0 {
-                c[1] = c[1].wrapping_add(1);
-            }
-            let seed = vrf_seed(&c, &dispute, round_idx, 0);
-            let seats: Vec<usize> = (0..3u32)
-                .map(|seat| seat_leaf(&seed, seat, 0, total, &prefixes, &leaves))
-                .collect();
-            if seats.iter().collect::<std::collections::HashSet<_>>().len() == 3 {
-                break c;
-            }
-        }
+        // ponytail: reuse the dispute PDA's first 32 bytes as a deterministic-
+        // per-test VRF. Any 32 bytes work; this avoids pulling another rng.
+        c.copy_from_slice(&dispute.to_bytes());
+        c
     };
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
 
-    // Resolve + submit the 3 seats (draw_attempt 0).
-    let seed0 = vrf_seed(&vrf, &dispute, round_idx, 0);
-    let mut drawn: Vec<(u32, usize)> = Vec::new();
-    for seat in 0..3u32 {
-        drawn.push((seat, seat_leaf(&seed0, seat, 0, total, &prefixes, &leaves)));
-    }
+    // Resolve + submit the 3 seats (draw_attempt 0), walking retries on collisions.
     let rnd = round_pda(&dispute, round_idx);
-    for &(seat, leaf_idx) in &drawn {
-        submit_draw_seat(&mut env, dispute, rnd, seat, 0, leaf_idx, &leaves).assert_success();
-    }
+    let panel = submit_draw_panel(&mut env, dispute, rnd, &vrf, round_idx, 0, 3, &leaves);
+    let drawn: Vec<(u32, usize)> = panel.iter().map(|&(s, l, _)| (s, l)).collect();
 
     // Commit + reveal the first `n_reveal` drawn jurors (vote 0).
     let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
@@ -3895,14 +3913,10 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         env,
         dispute,
         rnd,
-        jurors,
         leaves,
         drawn,
         filer,
-        filer_fee,
         vrf,
-        total,
-        prefixes,
     }
 }
 
@@ -4116,42 +4130,27 @@ fn redraw_seed_advances_with_draw_attempt() {
     let seed1 = vrf_seed(&dd.vrf, &dd.dispute, 0, 1);
     assert_ne!(seed0, seed1, "draw_attempt must change the seed");
 
-    // Resolve which leaf each seat lands on at draw_attempt=1, then submit.
-    let mut redrawn: Vec<(u32, usize)> = Vec::new();
-    for seat in 0..3u32 {
-        redrawn.push((
-            seat,
-            seat_leaf(&seed1, seat, 0, dd.total, &dd.prefixes, &dd.leaves),
-        ));
-    }
-    // If the redraw panel happens to be 3 distinct jurors, draw them and confirm
-    // the on-chain draw accepts the draw_attempt=1-derived memberships.
-    let distinct = redrawn
-        .iter()
-        .map(|&(_, l)| l)
-        .collect::<std::collections::HashSet<_>>()
-        .len()
-        == 3;
-    if distinct {
-        for &(seat, leaf_idx) in &redrawn {
-            submit_draw_seat(
-                &mut dd.env,
-                dd.dispute,
-                dd.rnd,
-                seat,
-                0,
-                leaf_idx,
-                &dd.leaves,
-            )
-            .assert_success();
-        }
-        let acc = dd.env.ctx.svm.get_account(&dd.rnd).unwrap();
-        let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
-        assert_eq!(round.juror_count, 3, "fresh panel filled at draw_attempt=1");
-        assert_eq!(round.draw_attempt, 1, "draw_attempt still 1");
-    }
-    // If not distinct for this VRF, the seed-distinctness assert above already
-    // proves the redraw re-seeds; a different VRF would yield distinct seats.
+    // Resolve + submit the fresh panel at draw_attempt=1, walking retries on
+    // collisions (same path as the initial draw). Collisions across the two
+    // attempts are fine: submit_draw_panel re-derives the (seat, leaf, retry)
+    // tuple from `vrf`+draw_attempt, and submit_draw_seat's per-call fresh
+    // signer avoids LiteSVM's tx-dedup even when the tuple repeats.
+    let panel1 = submit_draw_panel(
+        &mut dd.env,
+        dd.dispute,
+        dd.rnd,
+        &dd.vrf,
+        0,
+        1,
+        3,
+        &dd.leaves,
+    );
+    assert_eq!(panel1.len(), 3, "fresh panel filled at draw_attempt=1");
+
+    let acc = dd.env.ctx.svm.get_account(&dd.rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
+    assert_eq!(round.juror_count, 3, "fresh panel filled at draw_attempt=1");
+    assert_eq!(round.draw_attempt, 1, "draw_attempt still 1");
 }
 
 #[test]
@@ -4354,11 +4353,23 @@ fn submit_draw_seat(
         index: leaf_idx as u32,
     };
 
+    // Fresh caller per call. LiteSVM dedupes transactions by full hash
+    // (message + signatures) and never auto-advances the blockhash, so two
+    // byte-identical instructions signed by the same keypair collide as
+    // `AlreadyProcessed` — the redraw flakiness root cause. A distinct signer
+    // per call guarantees a distinct signature → no dedup. The program treats
+    // `caller` only as payer/signer (DrawSeat stores nothing caller-specific).
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+
     let ix = env
         .ctx
         .program()
         .accounts(accounts::DrawSeat {
-            caller: env.creator.pubkey(),
+            caller: caller.pubkey(),
             dispute,
             round: round_pda,
             system_program: system_program::ID,
@@ -4385,7 +4396,7 @@ fn submit_draw_seat(
         data: ix.data,
     };
     env.ctx
-        .execute_instruction(ix_with_meta, &[&env.creator])
+        .execute_instruction(ix_with_meta, &[&caller])
         .unwrap()
 }
 

@@ -51,7 +51,7 @@ LiteSVM TDD coverage for ADR-0021 (E2) — 6 new tests in
    `fee_paid` zeroed, no-shows' slashes retained, `active_draws` released.
 5. `redraw_seed_advances_with_draw_attempt` — proves `seed(…,draw_attempt=0) ≠
 seed(…,draw_attempt=1)`; after redraw, a fresh panel fills at `draw_attempt=1`
-   matching the off-chain seed (when the VRF yields 3 distinct seats).
+   via the faithful retry walk (`submit_draw_panel`), collisions and all.
 6. `reconciled_noshow_excluded_from_redraw_by_free_stake` — a minimal-stake
    juror (1_100 = min_stake + slash_per_juror) is slashed (inject) + reconciled
    (→1_000), then a VRF brute-forced to select it passes sortition but the
