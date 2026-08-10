@@ -57,6 +57,12 @@ export interface ProgramLogListenerOptions {
 const BASE_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
+const IGNORE_DISPUTE_ADDRESSES = [
+  "ComputeBudget111111111111111111111111111111",
+  "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz",
+  "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed",
+  "11111111111111111111111111111111",
+];
 
 /**
  * Best-effort: pull Solana base58 address candidates out of raw log lines.
@@ -143,7 +149,7 @@ export class ProgramLogListener {
         const delay = this.opts.backoffMs(attempt);
         this.opts.log(
           `[listener] WS disconnected: ${stringifyErr(err)} — ` +
-            `reconnecting in ${delay}ms (60s poll loop carries on regardless)`,
+          `reconnecting in ${delay}ms (60s poll loop carries on regardless)`,
         );
         attempt += 1;
         await this.opts.sleep(delay);
@@ -178,6 +184,8 @@ export class ProgramLogListener {
   /** Parse the log lines and fire one reconcile per candidate dispute address. */
   private dispatch(logs: readonly string[]): void {
     for (const address of extractDisputeCandidates(logs)) {
+      if (IGNORE_DISPUTE_ADDRESSES.includes(address)) continue;
+
       this.opts.log(`[listener] event -> reconcile ${address}`);
       // ponytail: fire-and-forget; reconciler is idempotent. Never block/await
       // here — a slow or failed reconcile must not stall the log stream.

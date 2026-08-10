@@ -127,7 +127,9 @@ async function main(): Promise<void> {
     programId: Accord.PROGRAM_ID,
     reconciler: {
       // Full sweep — used on reconnect to close the gap.
-      reconcileAll: async () => { await reconcileOnce(config); },
+      reconcileAll: async () => {
+        await reconcileOnce(config);
+      },
       // Scoped sweep — just the one dispute the log event mentioned.
       reconcileDispute: async (addr: Address) => {
         const maybe = await fetchMaybeDispute(accord.rpc, addr);
