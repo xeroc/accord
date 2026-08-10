@@ -138,6 +138,23 @@ export type Subaccord = {
   nextIndex: number;
   /** Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`. */
   depth: number;
+  /**
+   * Parallel vault ledger — fee side (bean accord-fdad). Tracks every
+   * `fee_token` SPL transfer in/out of the `fee_vault`, independent of the
+   * vault's live balance. The vault balance is a *derivable consequence*:
+   * `fee_vault.amount == fee_vault_deposited - fee_vault_withdrawn`
+   * (separate-mint) or the fee portion of a shared ATA (same-mint).
+   */
+  feeVaultDeposited: bigint;
+  feeVaultWithdrawn: bigint;
+  /**
+   * Parallel vault ledger — stake side (bean accord-fdad). Tracks every
+   * `staking_token` SPL transfer in/out of the `stake_vault`. Bumped only by
+   * `stake` (in) and `withdraw` (out); slashing and `request_withdraw` are
+   * ledger-only and never touch these.
+   */
+  stakeVaultDeposited: bigint;
+  stakeVaultWithdrawn: bigint;
   bump: number;
 };
 
@@ -217,6 +234,23 @@ export type SubaccordArgs = {
   nextIndex: number;
   /** Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`. */
   depth: number;
+  /**
+   * Parallel vault ledger — fee side (bean accord-fdad). Tracks every
+   * `fee_token` SPL transfer in/out of the `fee_vault`, independent of the
+   * vault's live balance. The vault balance is a *derivable consequence*:
+   * `fee_vault.amount == fee_vault_deposited - fee_vault_withdrawn`
+   * (separate-mint) or the fee portion of a shared ATA (same-mint).
+   */
+  feeVaultDeposited: number | bigint;
+  feeVaultWithdrawn: number | bigint;
+  /**
+   * Parallel vault ledger — stake side (bean accord-fdad). Tracks every
+   * `staking_token` SPL transfer in/out of the `stake_vault`. Bumped only by
+   * `stake` (in) and `withdraw` (out); slashing and `request_withdraw` are
+   * ledger-only and never touch these.
+   */
+  stakeVaultDeposited: number | bigint;
+  stakeVaultWithdrawn: number | bigint;
   bump: number;
 };
 
@@ -249,6 +283,10 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["totalStake", getU64Encoder()],
       ["nextIndex", getU32Encoder()],
       ["depth", getU8Encoder()],
+      ["feeVaultDeposited", getU64Encoder()],
+      ["feeVaultWithdrawn", getU64Encoder()],
+      ["stakeVaultDeposited", getU64Encoder()],
+      ["stakeVaultWithdrawn", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBACCORD_DISCRIMINATOR }),
@@ -283,6 +321,10 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["totalStake", getU64Decoder()],
     ["nextIndex", getU32Decoder()],
     ["depth", getU8Decoder()],
+    ["feeVaultDeposited", getU64Decoder()],
+    ["feeVaultWithdrawn", getU64Decoder()],
+    ["stakeVaultDeposited", getU64Decoder()],
+    ["stakeVaultWithdrawn", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -346,5 +388,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 338;
+  return 370;
 }

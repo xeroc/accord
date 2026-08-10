@@ -4917,6 +4917,30 @@ fn do_withdraw_fees(env: &mut AccEnv, juror: &Keypair) -> TransactionResult {
     env.ctx.execute_instruction(ix, &[juror]).unwrap()
 }
 
+/// Assert the parallel-ledger vault invariant (bean accord-fdad):
+/// `vault.balance == (fee_deposited - fee_withdrawn) + (stake_deposited - stake_withdrawn)`.
+/// Always exact `==` — no inequalities, regardless of same-mint or separate-mint.
+fn assert_vault_invariant(env: &AccEnv) {
+    let sub = read_subaccord(env);
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let vault_balance = spl_balance(env, &vault);
+    let fee_net = sub.fee_vault_deposited - sub.fee_vault_withdrawn;
+    let stake_net = sub.stake_vault_deposited - sub.stake_vault_withdrawn;
+    assert_eq!(
+        vault_balance,
+        fee_net + stake_net,
+        "vault invariant: balance == fee_net + stake_net (exact)\n\
+         fee:   deposited={} withdrawn={} net={}\n\
+         stake: deposited={} withdrawn={} net={}",
+        sub.fee_vault_deposited,
+        sub.fee_vault_withdrawn,
+        fee_net,
+        sub.stake_vault_deposited,
+        sub.stake_vault_withdrawn,
+        stake_net,
+    );
+}
+
 #[test]
 fn withdraw_fees_pays_full_amount_when_vault_has_enough() {
     let mut env = setup_accumulator();
@@ -4959,55 +4983,116 @@ fn withdraw_fees_pays_full_amount_when_vault_has_enough() {
 }
 
 #[test]
-fn withdraw_fees_caps_at_vault_balance_preserving_remainder() {
-    // H-2 defense-in-depth: if the vault has less than fees_earned, the
-    // withdrawal is capped and the unpaid remainder stays in fees_earned.
+fn vault_invariant_exact_after_stake_and_dispute() {
+    // Bean accord-fdad: the parallel-ledger invariant must hold as an exact
+    // equality after every vault movement. Same-mint setup (staking_token ==
+    // fee_token) — both stake and fee tokens share one ATA.
     let mut env = setup_accumulator();
 
-    // Stake a juror.
-    let juror = Keypair::new();
-    arm_juror(&mut env, &juror, 10_000);
-    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
-    do_stake(&mut env, &juror, 5_000, path).assert_success();
+    // 3 stakers × 5_000 stake = 15_000 stake tokens into the vault.
+    let jurors = arm_n_stakers(&mut env, 3);
+    assert_vault_invariant(&env);
 
-    // Set fees_earned to MORE than the vault balance. The vault has 5_000
-    // (the juror's stake collateral — same mint for stake + fee in this setup).
+    // Filing fee: 3 × fee_per_juror (1_000_000) = 3_000_000 fee tokens in.
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+    assert_vault_invariant(&env);
+
+    // The vault now holds 15_000 stake + 3_000_000 fees = 3_015_000.
     let vault = vault_ata(&env.subaccord, &env.mint);
-    let vault_before = u64::from_le_bytes(
-        env.ctx.svm.get_account(&vault).unwrap().data[64..72]
-            .try_into()
-            .unwrap(),
-    );
-    // fees_earned exceeds the vault balance.
-    let fees_earned = vault_before + 1_000_000;
-    let js_pda = juror_stake_pda(&env.subaccord, &juror.pubkey());
-    set_fees_earned(&mut env, &js_pda, fees_earned);
+    assert_eq!(spl_balance(&env, &vault), 3_015_000);
 
-    // Juror fee ATA.
-    let jata = juror_ata(&juror.pubkey(), &env.mint);
-    create_token_account(&mut env.ctx, &jata, &env.mint, &juror.pubkey(), 0);
+    let _ = (dispute, jurors);
+}
 
-    // Withdraw: capped at vault balance.
-    do_withdraw_fees(&mut env, &juror).assert_success();
+#[test]
+fn withdraw_fees_cannot_drain_stake_same_mint() {
+    // Bean accord-fdad core fix: withdraw_fees pulls the juror's full
+    // fees_earned from the FEE portion of the vault, never from stake
+    // collateral. Before the fix, the gross-balance cap let a juror drain
+    // stake tokens when staking_token == fee_token (same ATA).
+    let mut env = setup_accumulator();
+    let jurors = arm_n_stakers(&mut env, 3);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
 
-    // Juror received the vault balance (capped), not the full fees_earned.
-    let juror_bal = u64::from_le_bytes(
-        env.ctx.svm.get_account(&jata).unwrap().data[64..72]
-            .try_into()
-            .unwrap(),
-    );
+    // Vault: 15_000 stake + 3_000_000 fee = 3_015_000 (all same-mint ATA).
+    let fee_per_juror = 1_000_000u64;
+    let filing_fee = 3 * fee_per_juror;
+    let total_stake = 3 * 5_000u64;
+
+    // Simulate round-0 settlement: credit fees_earned to juror 0 (the filing
+    // fee is their compensation). Ledger-only — no vault movement.
+    let js_pda = juror_stake_pda(&env.subaccord, &jurors[0].pubkey());
+    set_fees_earned(&mut env, &js_pda, filing_fee);
+
+    // Withdraw the full filing fee.
+    let jata = juror_ata(&jurors[0].pubkey(), &env.mint);
+    let juror_before = spl_balance(&env, &jata);
+    do_withdraw_fees(&mut env, &jurors[0]).assert_success();
+
+    // Juror received the full filing fee — not capped, not truncated.
     assert_eq!(
-        juror_bal, vault_before,
-        "juror receives only what the vault held"
+        spl_balance(&env, &jata) - juror_before,
+        filing_fee,
+        "juror receives full fees_earned (no gross-balance cap)"
     );
 
-    // Unpaid remainder stays in fees_earned (not zeroed).
-    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    // The vault retains ALL stake collateral — the fee withdrawal came from
+    // the fee portion, not the stake portion.
+    let vault = vault_ata(&env.subaccord, &env.mint);
     assert_eq!(
-        js.fees_earned,
-        fees_earned - vault_before,
-        "unpaid remainder preserved in fees_earned"
+        spl_balance(&env, &vault),
+        total_stake,
+        "vault retains all stake collateral after fee withdrawal"
     );
+
+    // The exact invariant still holds: fee_net (now 0) + stake_net (15_000).
+    assert_vault_invariant(&env);
+
+    let _ = dispute;
+}
+
+#[test]
+fn multi_claimant_withdraw_order_does_not_starve() {
+    // Bean accord-fdad: two jurors each earn fees from the same filing-fee
+    // deposit. Both must be able to withdraw their full claim regardless of
+    // order — no claimant can consume another's reserved funds.
+    let mut env = setup_accumulator();
+    let jurors = arm_n_stakers(&mut env, 3);
+    let _dispute = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+
+    // Split the 3_000_000 filing fee between two jurors (settlement
+    // redistribution — ledger-only, no vault movement).
+    let half = 1_500_000u64;
+    let pda0 = juror_stake_pda(&env.subaccord, &jurors[0].pubkey());
+    set_fees_earned(&mut env, &pda0, half);
+    let pda1 = juror_stake_pda(&env.subaccord, &jurors[1].pubkey());
+    set_fees_earned(&mut env, &pda1, half);
+
+    assert_vault_invariant(&env);
+
+    // Juror 0 withdraws first.
+    let j0_before = spl_balance(&env, &juror_ata(&jurors[0].pubkey(), &env.mint));
+    do_withdraw_fees(&mut env, &jurors[0]).assert_success();
+    assert_eq!(
+        spl_balance(&env, &juror_ata(&jurors[0].pubkey(), &env.mint)) - j0_before,
+        half,
+        "juror 0 receives full claim"
+    );
+    assert_vault_invariant(&env);
+
+    // Juror 1 withdraws second — still gets the full claim (not starved).
+    let j1_before = spl_balance(&env, &juror_ata(&jurors[1].pubkey(), &env.mint));
+    do_withdraw_fees(&mut env, &jurors[1]).assert_success();
+    assert_eq!(
+        spl_balance(&env, &juror_ata(&jurors[1].pubkey(), &env.mint)) - j1_before,
+        half,
+        "juror 1 receives full claim (not starved by ordering)"
+    );
+    assert_vault_invariant(&env);
+
+    // Vault retains only stake collateral — all fees withdrawn.
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    assert_eq!(spl_balance(&env, &vault), 3 * 5_000u64);
 }
 
 // ─── per-round evidence hashes (milestone accord-qp7c / bean accord-azyd) ────

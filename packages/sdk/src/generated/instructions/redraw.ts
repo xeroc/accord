@@ -70,7 +70,7 @@ export type RedrawInstruction<
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
@@ -187,7 +187,7 @@ export async function getRedrawInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
@@ -327,7 +327,7 @@ export function getRedrawInstruction<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },

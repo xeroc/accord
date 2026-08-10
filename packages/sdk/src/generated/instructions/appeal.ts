@@ -77,7 +77,7 @@ export type AppealInstruction<
             AccountSignerMeta<TAccountAppellant>
         : TAccountAppellant,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountPauseState extends string
         ? ReadonlyAccount<TAccountPauseState>
@@ -234,7 +234,7 @@ export async function getAppealInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     appellant: { value: input.appellant ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     pauseState: { value: input.pauseState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: false },
@@ -453,7 +453,7 @@ export function getAppealInstruction<
   // Original accounts.
   const originalAccounts = {
     appellant: { value: input.appellant ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     pauseState: { value: input.pauseState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: false },

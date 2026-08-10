@@ -420,6 +420,10 @@ pub mod accord {
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
+        // Parallel vault ledger (bean accord-fdad): track the real SPL delta.
+        // Ledger-only ops (slash, request_withdraw) never touch this — only
+        // actual token transfers in/out of the vault.
+
         let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;
         let sub = &mut ctx.accounts.subaccord;
@@ -494,6 +498,10 @@ pub mod accord {
 
         sub.root_hash = new_root;
         sub.total_stake = new_total;
+        sub.stake_vault_deposited = sub
+            .stake_vault_deposited
+            .checked_add(delta)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         emit!(Staked {
             subaccord: sub.key(),
@@ -609,7 +617,7 @@ pub mod accord {
         js.pending_withdrawal = 0;
         js.withdraw_requested_at = 0;
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -623,12 +631,18 @@ pub mod accord {
                 Transfer {
                     from: ctx.accounts.stake_vault.to_account_info(),
                     to: ctx.accounts.juror_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
+                    authority: sub.to_account_info(),
                 },
                 &[signer_seeds],
             ),
             amount,
         )?;
+
+        // Parallel vault ledger (bean accord-fdad): track the SPL withdrawal.
+        sub.stake_vault_withdrawn = sub
+            .stake_vault_withdrawn
+            .checked_add(amount)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         emit!(Unstaked {
             subaccord: sub.key(),
@@ -777,7 +791,7 @@ pub mod accord {
         let n = options.len();
         require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let required_fee = (INITIAL_NUM_JURORS as u64)
             .checked_mul(sub.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -803,8 +817,12 @@ pub mod accord {
         )?;
         ctx.accounts.fee_vault.reload()?;
         let after = ctx.accounts.fee_vault.amount;
-        let _delta = after
+        let delta = after
             .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        sub.fee_vault_deposited = sub
+            .fee_vault_deposited
+            .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         let num_options = n as u8;
@@ -1634,7 +1652,7 @@ pub mod accord {
             AccordError::InvalidState
         );
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         // Cap: `current_round` is the round just resolved. Appealing opens round
         // `current_round + 1`, i.e. appeal number `current_round + 1`. The
         // number of appeals must not exceed `max_appeals`. Ugly 6: the cap is
@@ -1691,8 +1709,12 @@ pub mod accord {
         )?;
         ctx.accounts.fee_vault.reload()?;
         let after = ctx.accounts.fee_vault.amount;
-        let _delta = after
+        let delta = after
             .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        sub.fee_vault_deposited = sub
+            .fee_vault_deposited
+            .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Record the appeal bond in its own PDA for settlement. `prior_result`
@@ -1775,7 +1797,7 @@ pub mod accord {
         let refund = bond_acc.amount.saturating_sub(fee);
         require!(refund > 0, AccordError::InvalidAmount);
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -1790,12 +1812,18 @@ pub mod accord {
                 Transfer {
                     from: ctx.accounts.fee_vault.to_account_info(),
                     to: ctx.accounts.claimant_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
+                    authority: sub.to_account_info(),
                 },
                 &[signer_seeds],
             ),
             refund,
         )?;
+
+        // Parallel vault ledger (bean accord-fdad): track the bond refund out.
+        sub.fee_vault_withdrawn = sub
+            .fee_vault_withdrawn
+            .checked_add(refund)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Mark claimed (idempotent): no double-refund on re-invocation.
         ctx.accounts.appeal_bond.amount = 0;
@@ -2049,7 +2077,7 @@ pub mod accord {
         let filer_fee = dispute.fee_paid;
         dispute.fee_paid = 0;
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -2064,12 +2092,20 @@ pub mod accord {
                     Transfer {
                         from: ctx.accounts.fee_vault.to_account_info(),
                         to: ctx.accounts.filer_token_account.to_account_info(),
-                        authority: ctx.accounts.subaccord.to_account_info(),
+                        authority: sub.to_account_info(),
                     },
                     &[signer_seeds],
                 ),
                 filer_fee,
             )?;
+        }
+
+        // Parallel vault ledger (bean accord-fdad): track the filer refund out.
+        if filer_fee > 0 {
+            sub.fee_vault_withdrawn = sub
+                .fee_vault_withdrawn
+                .checked_add(filer_fee)
+                .ok_or(AccordError::ArithmeticOverflow)?;
         }
 
         dispute.state = DisputeState::Failed;
@@ -2094,25 +2130,25 @@ pub mod accord {
     /// from the Subaccord's `fee_vault` → the juror's `fee_token` ATA. No
     /// `active_draws` gate, no timelock — earned fees are not at-risk capital.
     ///
-    /// H-2: the withdrawal is capped at the vault balance as defense-in-depth.
-    /// With C-1 fixed (`cancel_dispute` refunds `fee_paid`, not the shared
-    /// vault), the invariant `fee_vault.balance ≥ Σ fees_earned` holds under
-    /// normal operation, so the cap never truncates. If it ever does (future
-    /// bug, fee-on-transfer drift), the juror's unpaid remainder stays in
-    /// `fees_earned` rather than being zeroed without payment.
+    /// Bean accord-fdad: no vault-balance cap. The parallel-ledger invariant
+    /// (`fee_vault.amount == fee_deposited − fee_withdrawn`, see Subaccord)
+    /// guarantees the fee-side net always covers all unwithdrawn `fees_earned`
+    /// — every fee credit was preceded by its backing deposit, and refunds
+    /// only return unconsumed portions. The SPL transfer is the last-resort
+    /// assertion: if it ever fails, it signals a missed accumulator touchpoint
+    /// (a bug), not legitimate insolvency.
     pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()> {
         let js = &mut ctx.accounts.juror_stake;
         let amt = js.fees_earned;
         require!(amt > 0, AccordError::NoFeesEarned);
+        js.fees_earned = 0;
 
-        let vault_bal = ctx.accounts.fee_vault.amount;
-        let withdrawable = amt.min(vault_bal);
-        require!(withdrawable > 0, AccordError::NoFeesEarned);
-        js.fees_earned = amt
-            .checked_sub(withdrawable)
+        let sub = &mut ctx.accounts.subaccord;
+        sub.fee_vault_withdrawn = sub
+            .fee_vault_withdrawn
+            .checked_add(amt)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
-        let sub = &ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -2126,17 +2162,17 @@ pub mod accord {
                 Transfer {
                     from: ctx.accounts.fee_vault.to_account_info(),
                     to: ctx.accounts.juror_fee_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
+                    authority: sub.to_account_info(),
                 },
                 &[signer_seeds],
             ),
-            withdrawable,
+            amt,
         )?;
 
         emit!(FeesWithdrawn {
             subaccord: sub.key(),
             juror: ctx.accounts.juror.key(),
-            amount: withdrawable,
+            amount: amt,
         });
         Ok(())
     }
@@ -2272,7 +2308,7 @@ pub mod accord {
             // ADR-0020 invariant guarantees `fee_vault.balance ≥ fee_paid`).
             let refund = dispute.fee_paid;
             dispute.fee_paid = 0;
-            let sub = &ctx.accounts.subaccord;
+            let sub = &mut ctx.accounts.subaccord;
             let bump = [sub.bump];
             let signer_seeds = &[
                 SEED_SUBACCORD,
@@ -2287,12 +2323,20 @@ pub mod accord {
                         Transfer {
                             from: ctx.accounts.fee_vault.to_account_info(),
                             to: ctx.accounts.filer_token_account.to_account_info(),
-                            authority: ctx.accounts.subaccord.to_account_info(),
+                            authority: sub.to_account_info(),
                         },
                         &[signer_seeds],
                     ),
                     refund,
                 )?;
+            }
+
+            // Parallel vault ledger (bean accord-fdad): track the filer refund.
+            if refund > 0 {
+                sub.fee_vault_withdrawn = sub
+                    .fee_vault_withdrawn
+                    .checked_add(refund)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
             }
 
             round.draw_attempt = new_draw_attempt;
@@ -2941,7 +2985,7 @@ pub struct Stake<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     /// Circuit breaker (ADR-0007): stake reverts while paused.
     #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
     pub pause_state: Account<'info, PauseState>,
@@ -3010,6 +3054,7 @@ pub struct Withdraw<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3119,6 +3164,7 @@ pub struct CreateDispute<'info> {
     #[account(mut)]
     pub filer: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3377,6 +3423,7 @@ pub struct Appeal<'info> {
     #[account(mut)]
     pub appellant: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3440,6 +3487,7 @@ pub struct ClaimAppealRefund<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3496,6 +3544,7 @@ pub struct CancelDispute<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3533,6 +3582,7 @@ pub struct WithdrawFees<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3571,6 +3621,7 @@ pub struct Redraw<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3598,7 +3649,7 @@ pub struct Redraw<'info> {
         associated_token::mint = fee_token,
         associated_token::authority = dispute.filer,
     )]
-    pub filer_token_account: Account<'info, TokenAccount>,
+    pub filer_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         associated_token::mint = fee_token,

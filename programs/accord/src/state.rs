@@ -97,6 +97,19 @@ pub struct Subaccord {
     pub next_index: u32,
     /// Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`.
     pub depth: u8,
+    /// Parallel vault ledger — fee side (bean accord-fdad). Tracks every
+    /// `fee_token` SPL transfer in/out of the `fee_vault`, independent of the
+    /// vault's live balance. The vault balance is a *derivable consequence*:
+    /// `fee_vault.amount == fee_vault_deposited - fee_vault_withdrawn`
+    /// (separate-mint) or the fee portion of a shared ATA (same-mint).
+    pub fee_vault_deposited: u64,
+    pub fee_vault_withdrawn: u64,
+    /// Parallel vault ledger — stake side (bean accord-fdad). Tracks every
+    /// `staking_token` SPL transfer in/out of the `stake_vault`. Bumped only by
+    /// `stake` (in) and `withdraw` (out); slashing and `request_withdraw` are
+    /// ledger-only and never touch these.
+    pub stake_vault_deposited: u64,
+    pub stake_vault_withdrawn: u64,
     pub bump: u8,
 }
 

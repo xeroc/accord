@@ -107,8 +107,10 @@ export type Dispute = {
    */
   finalizedAt: bigint;
   /**
-   * Total fee deposited by the filer (N * fee_per_juror at creation; appeals
-   * add to the round's pool). Drives the redistribution economics.
+   * Round-0 filing fee deposited by the filer (`N · fee_per_juror` at
+   * creation). Decremented as round-0 jurors earn (`finalize_round`). This
+   * is the filer's refundable pool on cancel/redraw-exhaustion. Appeal-round
+   * fees live in their `AppealBond`, NOT here (bean accord-xftx).
    */
   feePaid: bigint;
   /**
@@ -178,8 +180,10 @@ export type DisputeArgs = {
    */
   finalizedAt: number | bigint;
   /**
-   * Total fee deposited by the filer (N * fee_per_juror at creation; appeals
-   * add to the round's pool). Drives the redistribution economics.
+   * Round-0 filing fee deposited by the filer (`N · fee_per_juror` at
+   * creation). Decremented as round-0 jurors earn (`finalize_round`). This
+   * is the filer's refundable pool on cancel/redraw-exhaustion. Appeal-round
+   * fees live in their `AppealBond`, NOT here (bean accord-xftx).
    */
   feePaid: number | bigint;
   /**

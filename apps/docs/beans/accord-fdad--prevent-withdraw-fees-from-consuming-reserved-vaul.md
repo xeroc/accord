@@ -1,11 +1,11 @@
 ---
 # accord-fdad
 title: Prevent withdraw_fees from consuming reserved vault funds
-status: todo
+status: completed
 type: bug
 priority: high
 created_at: 2026-08-10T02:17:26Z
-updated_at: 2026-08-10T02:17:26Z
+updated_at: 2026-08-10T16:43:33Z
 ---
 
 ## Problem

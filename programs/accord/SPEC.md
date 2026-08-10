@@ -87,7 +87,16 @@ window). Odd Juror counts (3 / 7 / 15 / 31) make ties impossible.
 - **Redistribution (two pools):** slash pool (`stake_token`) → coherent `stake_delta`; fee pool = non-revealer fees + forfeited bonds (`fee_token`) → coherent `fees_earned`. When no juror is coherent but some revealed, pools fall back to revealers (those who at least participated); zero reveals → surplus trapped in vault as protocol revenue (bean accord-aqmw). Equal split (integer div; remainder is protocol surplus).
 - **`withdraw_fees`:** per-juror, pulls aggregate `fees_earned` from `fee_vault`. No `active_draws` gate, no timelock.
 - **Cross-round settlement:** every round is re-settled against the **final** Ruling (Kleros §4.6, ADR-0018).
-- **Fund invariant:** `stake_vault.balance == Σ staked (± pending stake_delta)`. `fee_vault.balance` covers `Σ fee_paid` (round-0 unconsumed filing fee) + `Σ fees_earned` (earned-but-unwithdrawn juror comp) + each outstanding `AppealBond`'s bond portion. The appeal fee sits in `AppealBond.amount` until its round's jurors earn it into `fees_earned`; `claim_appeal_refund` returns only the bond — every token is owed to exactly one party (bean accord-xftx).
+- **Fund invariant (parallel-ledger, bean accord-fdad):** Each Subaccord tracks four running accumulators — `fee_vault_deposited`/`fee_vault_withdrawn` (every `fee_token` SPL transfer in/out) and `stake_vault_deposited`/`stake_vault_withdrawn` (every `staking_token` SPL transfer in/out). The vault balance is a **derivable consequence**, always an exact `==`:
+
+  ```
+  separate-mint:  fee_vault.amount   == fee_vault_deposited − fee_vault_withdrawn
+                  stake_vault.amount == stake_vault_deposited − stake_vault_withdrawn
+  same-mint:      vault.amount == (fee_vault_deposited − fee_vault_withdrawn)
+                               + (stake_vault_deposited − stake_vault_withdrawn)
+  ```
+
+  No inequalities. `withdraw_fees` pulls the juror's full `fees_earned` with **no gross-balance cap** — the fee-side net is provably ≥ Σ `fees_earned` (every credit was preceded by its backing deposit; refunds return only unconsumed portions). Slashing and `request_withdraw` are ledger-only and never touch the accumulators.
 
 ## Authority model
 

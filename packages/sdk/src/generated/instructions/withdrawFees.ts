@@ -72,7 +72,7 @@ export type WithdrawFeesInstruction<
             AccountSignerMeta<TAccountJuror>
         : TAccountJuror,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountJurorStake extends string
         ? WritableAccount<TAccountJurorStake>
@@ -176,7 +176,7 @@ export async function getWithdrawFeesInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
     jurorFeeTokenAccount: {
@@ -342,7 +342,7 @@ export function getWithdrawFeesInstruction<
   // Original accounts.
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
     jurorFeeTokenAccount: {
