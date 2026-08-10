@@ -7,7 +7,7 @@ step is on-chain verifiable.
 ## Trust chain
 
 ```
-1. request_vrf         ─►  VRF oracle (magicblock, ephemeral_vrf_sdk)
+1. request_vrf         ─►  VRF oracle (magicblock, ephemeral_rollups_sdk::vrf)
 2. commit_vrf_callback ◄─  oracle writes committed_vrf AND freezes dispute.frozen_root = subaccord.root
 3. draw_seat × N       ─►  on-chain verifies MST membership + sortition + inflation + distinctness (per seat)
 ```

@@ -19,7 +19,7 @@
 
 | Old finding | Resolution |
 |---|---|
-| ~~Unverified caller-supplied VRF~~ | **Resolved.** `request_vrf` CPIs the real VRF oracle; `commit_vrf_callback` is signer-gated to `VRF_PROGRAM_IDENTITY`. |
+| ~~Unverified caller-supplied VRF~~ | **Resolved.** `request_vrf` CPIs the real VRF oracle; `commit_vrf_callback` is signer-gated to the scoped per-program identity `scoped_vrf_identity(&crate::ID)` (ADR-0013). |
 | ~~Voided snapshot stalls dispute~~ | **Resolved.** No snapshot step exists — ADR-0012 accumulator replaced it entirely. |
 | ~~Snapshot fraud proof limited~~ | **Resolved.** No snapshot system. The Merkle-Sum Tree authenticates stake-weighted ranges by construction. |
 

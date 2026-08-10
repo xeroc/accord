@@ -17,7 +17,11 @@ anchor-spl = { version = "1.0.2", features = ["token", "associated_token"] }
 # the separate-dep check (#4166), so we pull it directly for `hashv`
 # (commit/reveal hashing + merkle verification).
 solana-program = "3"
-ephemeral-vrf-sdk = { version = "0.4.1", features = ["anchor"] }
+# VRF via the unified SDK (magicblock skill known-good snapshot). The `vrf`
+# feature re-exports `ephemeral-vrf-sdk` under `ephemeral_rollups_sdk::vrf` and
+# flips the `#[vrf]` macro to emit `::ephemeral_rollups_sdk::vrf` paths — so no
+# direct `ephemeral-vrf-sdk` dependency is needed.
+ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor", "vrf"] }
 
 [profile.release]
 overflow-checks = true

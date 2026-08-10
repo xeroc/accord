@@ -29,11 +29,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-use ephemeral_vrf_sdk::anchor::vrf;
-use ephemeral_vrf_sdk::instructions::{
+use ephemeral_rollups_sdk::anchor::vrf;
+use ephemeral_rollups_sdk::vrf::instructions::{
     create_request_high_priority_scoped_randomness_ix, RequestRandomnessParams,
 };
-use ephemeral_vrf_sdk::types::SerializableAccountMeta;
+use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
 pub mod constants;
 pub mod errors;
@@ -195,6 +195,28 @@ mod layout_tests {
             &ab.amount.to_le_bytes()[..]
         );
         assert_eq!(buf[layout::AB_PRIOR_OFF], ab.prior_result);
+    }
+}
+
+#[cfg(test)]
+mod vrf_identity_tests {
+    /// ADR-0013: the callback validates the SCOPED per-program identity, not the
+    /// deprecated global one. `request_vrf` issues a scoped request
+    /// (`create_request_high_priority_scoped_randomness_ix`), so the oracle
+    /// fulfills by signing with `scoped_vrf_identity(callback_program_id)`. This
+    /// pins that the per-program PDA differs from the global
+    /// `VRF_PROGRAM_IDENTITY` — the unit-level regression guard for the
+    /// `CommitVrfCallback` `address =` constraint. The real oracle→callback path
+    /// is never exercised in tests (they inject the VRF directly), so this delta
+    /// is what catches a revert to the global constant.
+    #[test]
+    fn scoped_identity_differs_from_global() {
+        let scoped = ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity(&crate::ID);
+        let global = ephemeral_rollups_sdk::vrf::consts::VRF_PROGRAM_IDENTITY;
+        assert_ne!(
+            scoped, global,
+            "scoped per-program identity must differ from the deprecated global constant"
+        );
     }
 }
 
@@ -934,8 +956,9 @@ pub mod accord {
 
     /// VRF callback: stores the oracle-verified random value (ADR-0009) AND
     /// atomically freezes the accumulator root (ADR-0012). ONLY the VRF program
-    /// can call this — `vrf_program_identity` is constrained to
-    /// `VRF_PROGRAM_IDENTITY`. Freezing here (not at `create_dispute`) closes
+    /// can call this — `vrf_program_identity` is constrained to the scoped
+    /// per-program identity `scoped_vrf_identity(&crate::ID)` (ADR-0013), not
+    /// the deprecated global constant. Freezing here (not at `create_dispute`) closes
     /// the manipulation window: pre-callback the VRF is blind, post-callback
     /// the root is inert. One VRF + one frozen root serve the whole dispute.
     pub fn commit_vrf_callback(
@@ -3222,7 +3245,7 @@ pub struct RequestVrf<'info> {
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     /// CHECK: VRF oracle queue (mainnet default).
-    #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
+    #[account(mut, address = ephemeral_rollups_sdk::vrf::consts::DEFAULT_QUEUE)]
     pub oracle_queue: UncheckedAccount<'info>,
 }
 
@@ -3233,7 +3256,7 @@ pub struct RequestVrf<'info> {
 /// frozen root.
 #[derive(Accounts)]
 pub struct CommitVrfCallback<'info> {
-    #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
+    #[account(address = ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity(&crate::ID))]
     pub vrf_program_identity: Signer<'info>,
     #[account(
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
