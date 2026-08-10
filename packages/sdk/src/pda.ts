@@ -53,6 +53,9 @@ export {
   findSubaccordPda,
   type SubaccordSeeds,
 } from "./generated/pdas/subaccord";
+export {
+  findProgramIdentityPda,
+} from "./generated/pdas/programIdentity";
 
 // --- Hand-written PDA helper (1/7) ------------------------------------------
 // Round: seeds use `dispute.key()` (the account address), which Codama can't

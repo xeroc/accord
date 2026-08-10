@@ -16,13 +16,14 @@
  */
 import { readFileSync } from "node:fs";
 
-import { getAddressEncoder, getProgramDerivedAddress, type Address } from "@solana/kit";
+import { type Address } from "@solana/kit";
 
 import {
+  fetchMaybeSubaccord,
+  findAssociatedTokenAddress,
   findJurorStakePda,
   findJurorStakesBySubaccord,
   findPauseStatePda,
-  fetchMaybeSubaccord,
   prepareStakeProof,
   type MSTNode,
   type Subaccord,
@@ -31,25 +32,6 @@ import {
 } from "@useaccord/sdk";
 
 import type { ChainContext } from "./lib/base-command.js";
-
-/** SPL Token program. */
-export const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-/** SPL Associated Token Account program. */
-const ATA_PROGRAM_ID = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-
-/** Derive the canonical ATA for (mint, owner) the way the program does. */
-export async function associatedTokenAddress(mint: Address, owner: Address): Promise<Address> {
-  const enc = getAddressEncoder();
-  const [addr] = await getProgramDerivedAddress({
-    programAddress: ATA_PROGRAM_ID,
-    seeds: [
-      new Uint8Array(enc.encode(owner)),
-      new Uint8Array(enc.encode(TOKEN_PROGRAM_ID)),
-      new Uint8Array(enc.encode(mint)),
-    ],
-  });
-  return addr;
-}
 
 /** Everything a staking instruction needs after the Subaccord is fetched. */
 export interface ResolvedStaking {
@@ -81,8 +63,8 @@ export async function resolveStaking(
   const sub = maybe.data;
 
   const jurorStakePda = await findJurorStakePda({ subaccord: subaccordAddr, juror });
-  const jurorAta = await associatedTokenAddress(sub.stakingToken, juror);
-  const stakeVault = await associatedTokenAddress(sub.stakingToken, subaccordAddr);
+  const jurorAta = await findAssociatedTokenAddress(sub.stakingToken, juror);
+  const stakeVault = await findAssociatedTokenAddress(sub.stakingToken, subaccordAddr);
   const pauseStatePda = await findPauseStatePda();
   const pauseState = opts.pauseState ?? pauseStatePda[0];
 

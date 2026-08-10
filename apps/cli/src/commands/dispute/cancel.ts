@@ -17,30 +17,13 @@ import {
   fetchMaybeRound,
   fetchMaybeSubaccord,
   findAppealBondPda,
+  findAssociatedTokenAddress,
   findJurorStakePda,
   findRoundPda,
   type Dispute,
 } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
-
-// Well-known SPL addresses (not exported by @solana/kit v7).
-const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ATA_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-
-/** Derive the Associated Token Account for `mint` owned by `owner`. */
-async function deriveAta(mint: Address, owner: Address): Promise<Address> {
-  const { getAddressEncoder, getProgramDerivedAddress } = await import("@solana/kit");
-  const [ata] = await getProgramDerivedAddress({
-    programAddress: ATA_PROGRAM_ADDRESS,
-    seeds: [
-      getAddressEncoder().encode(owner),
-      getAddressEncoder().encode(TOKEN_PROGRAM_ADDRESS),
-      getAddressEncoder().encode(mint),
-    ],
-  });
-  return ata;
-}
 
 /** Fetch the Subaccord's fee economics (feeToken + feeVault ATA + feePerJuror). */
 async function readSubaccordEcons(
@@ -53,7 +36,7 @@ async function readSubaccordEcons(
     throw new Error(`SubaccordNotFound: ${subaccord}`);
   }
   const feeToken = account.data.feeToken;
-  const feeVault = await deriveAta(feeToken, subaccord);
+  const feeVault = await findAssociatedTokenAddress(feeToken, subaccord);
   return { feeToken, feeVault };
 }
 
@@ -104,7 +87,7 @@ export default class DisputeCancel extends ChainCommand {
     const subaccord = data.subaccord;
     const filer = data.filer;
     const econs = await readSubaccordEcons(ctx.accord.rpc, subaccord, ctx.commitment);
-    const filerTokenAccount = await deriveAta(econs.feeToken, filer);
+    const filerTokenAccount = await findAssociatedTokenAddress(econs.feeToken, filer);
 
     const remaining =
       flags["remaining-accounts"] === "list"

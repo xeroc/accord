@@ -14,25 +14,16 @@
  * no-op.
  */
 import { Flags } from "@oclif/core";
-import { getAddressEncoder, getProgramDerivedAddress, type Address } from "@solana/kit";
+import { type Address } from "@solana/kit";
 
-import { fetchMaybeDispute, fetchMaybeSubaccord, findAppealBondPda } from "@useaccord/sdk";
+import {
+  fetchMaybeDispute,
+  fetchMaybeSubaccord,
+  findAppealBondPda,
+  findAssociatedTokenAddress,
+} from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
-
-// Well-known SPL addresses (not exported by @solana/kit v7).
-const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-
-/** Derive the associated token account (ATA) for `owner` under `mint`. */
-async function ataOf(mint: Address, owner: Address): Promise<Address> {
-  const enc = getAddressEncoder();
-  const [addr] = await getProgramDerivedAddress({
-    programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [enc.encode(owner), enc.encode(TOKEN_PROGRAM_ADDRESS), enc.encode(mint)],
-  });
-  return addr;
-}
 
 export default class AppealClaimRefund extends ChainCommand {
   static summary = "Sweep a flipped appeal bond back to its appellant (permissionless crank)";
@@ -86,10 +77,10 @@ export default class AppealClaimRefund extends ChainCommand {
     const feeToken = subAcct.data.feeToken;
 
     const [appealBond] = await findAppealBondPda({ dispute, roundIdx });
-    const feeVault = await ataOf(feeToken, subaccord);
+    const feeVault = await findAssociatedTokenAddress(feeToken, subaccord);
     const claimantTokenAccount =
       (flags["claimant-token-account"] as Address | undefined) ??
-      (await ataOf(feeToken, ctx.signer.address));
+      (await findAssociatedTokenAddress(feeToken, ctx.signer.address));
 
     const instruction = ctx.accord.methods.claimAppealRefund(
       {
