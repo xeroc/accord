@@ -12,7 +12,7 @@
 // truth; these are its behavioural guarantees.
 import { test, expect } from "bun:test";
 import { address, type Address } from "@solana/kit";
-import { DisputeState, type Accord } from "@useaccord/sdk";
+import { DisputeState } from "@useaccord/sdk";
 import {
   isDeliverable,
   isDrawn,
@@ -22,6 +22,7 @@ import {
   type DisputeView,
   type RoundView,
 } from "../src/chain/reader.ts";
+import { stubAccord } from "./helpers/accordStub.ts";
 
 // Distinct on-chain addresses used as fixtures.
 const SYS: Address = address("11111111111111111111111111111112");
@@ -29,27 +30,6 @@ const TOK: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const RENT: Address = address("SysvarRent111111111111111111111111111111111");
 const OPERATOR: Address = address("Accord1111111111111111111111111111111111111");
 const ZERO_PUBKEY: Address = address("11111111111111111111111111111111");
-
-/** Build a minimal `Accord` stub returning controlled maybe-accounts. */
-function stubAccord(accounts: {
-  subaccord?: { exists: true; data: Record<string, unknown> } | { exists: false };
-  dispute?: { exists: true; data: Record<string, unknown> } | { exists: false };
-  round?: { exists: true; data: Record<string, unknown> } | { exists: false };
-}): Accord {
-  const mk = (m: { exists: true; data: unknown } | { exists: false } | undefined) => async () =>
-    m ?? { exists: false };
-  return {
-    client: {
-      accord: {
-        accounts: {
-          subaccord: { fetchMaybe: mk(accounts.subaccord) },
-          dispute: { fetchMaybe: mk(accounts.dispute) },
-          round: { fetchMaybe: mk(accounts.round) },
-        },
-      },
-    },
-  } as unknown as Accord;
-}
 
 // ---------------------------------------------------------------------------
 // isDrawn — authoritative drawn-set membership (HANDOFF §4).
@@ -148,20 +128,17 @@ test("isDeliverable: true for every state at or beyond Drawn", () => {
 
 test("readSubaccord: maps the evidence_operator the keyring resolves", async () => {
   const spec = new Uint8Array(32);
-  const accord = stubAccord({
-    subaccord: {
-      exists: true,
-      data: { evidenceOperator: OPERATOR, evidenceSpec: spec },
-    },
+  const accord = await stubAccord({
+    subaccord: { address: SYS, data: { evidenceOperator: OPERATOR, evidenceSpec: spec } },
   });
   const view = await readSubaccord(accord, SYS);
   expect(view).not.toBeNull();
   expect(view!.evidenceOperator).toBe(OPERATOR);
-  expect(view!.evidenceSpec).toBe(spec);
+  expect(view!.evidenceSpec).toEqual(spec);
 });
 
 test("readSubaccord: null when the account does not exist", async () => {
-  const accord = stubAccord({ subaccord: { exists: false } });
+  const accord = await stubAccord({});
   expect(await readSubaccord(accord, SYS)).toBeNull();
 });
 
@@ -177,9 +154,9 @@ test("readDispute: maps subaccord / evidenceHashes / state / currentRound", asyn
     new Uint8Array(32),
     new Uint8Array(32),
   ];
-  const accord = stubAccord({
+  const accord = await stubAccord({
     dispute: {
-      exists: true,
+      address: SYS,
       data: {
         subaccord: TOK,
         evidenceHashes: hashes,
@@ -191,13 +168,13 @@ test("readDispute: maps subaccord / evidenceHashes / state / currentRound", asyn
   const view = await readDispute(accord, SYS);
   expect(view).not.toBeNull();
   expect(view!.subaccord).toBe(TOK);
-  expect(view!.evidenceHashes).toBe(hashes);
+  expect(view!.evidenceHashes).toEqual(hashes);
   expect(view!.state).toBe(DisputeState.Drawn);
   expect(view!.currentRound).toBe(3);
 });
 
 test("readDispute: null when the account does not exist", async () => {
-  const accord = stubAccord({ dispute: { exists: false } });
+  const accord = await stubAccord({});
   expect(await readDispute(accord, SYS)).toBeNull();
 });
 
@@ -210,24 +187,21 @@ test("readRound: maps the authoritative drawn set + jurorCount", async () => {
   const jurors = Array.from({ length: 31 }, () => ZERO_PUBKEY);
   jurors[0] = SYS;
   jurors[1] = TOK;
-  const accord = stubAccord({
-    round: {
-      exists: true,
-      data: { roundIdx: 0, jurorCount: 2, jurors },
-    },
+  const accord = await stubAccord({
+    round: { dispute: SYS, roundIdx: 0, data: { roundIdx: 0, jurorCount: 2, jurors } },
   });
   const view = await readRound(accord, SYS, 0);
   expect(view).not.toBeNull();
   expect(view!.roundIdx).toBe(0);
   expect(view!.jurorCount).toBe(2);
-  expect(view!.jurors).toBe(jurors);
+  expect(view!.jurors).toEqual(jurors);
   // The drawn set is authoritative: isDrawn composes with this view.
   expect(isDrawn(view!, SYS)).toBe(true);
   expect(isDrawn(view!, RENT)).toBe(false);
 });
 
 test("readRound: null when the round is not initialized (pre-draw)", async () => {
-  const accord = stubAccord({ round: { exists: false } });
+  const accord = await stubAccord({});
   expect(await readRound(accord, SYS, 0)).toBeNull();
 });
 

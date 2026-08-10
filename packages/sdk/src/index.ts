@@ -138,12 +138,23 @@ export {
 } from "./methods/disputePhase.js";
 
 // Account codecs — exposed for advanced/test use (e.g. e2e VRF injection via
-// `surfnet_setAccount`: decode → set committedVrf → re-encode). Generated surface.
+// `surfnet_setAccount`: decode → set committedVrf → re-encode; daemon unit
+// tests encode fixtures over a stubbed RPC). Generated surface.
 export {
   getDisputeEncoder,
   getDisputeCodec,
   DISPUTE_DISCRIMINATOR,
 } from "./generated/accounts/dispute.js";
+export {
+  getRoundEncoder,
+  getRoundCodec,
+  ROUND_DISCRIMINATOR,
+} from "./generated/accounts/round.js";
+export {
+  getSubaccordEncoder,
+  getSubaccordCodec,
+  SUBACCORD_DISCRIMINATOR,
+} from "./generated/accounts/subaccord.js";
 
 // Account decoders — pure (no `client.rpc`). The facade's typed fetchers
 // (`fetchX`) currently require a `ClientWithRpc` and break when the facade is
