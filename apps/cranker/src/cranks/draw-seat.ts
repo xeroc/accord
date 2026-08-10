@@ -115,7 +115,9 @@ function getTreeCache(ctx: CrankContext): TreeCache {
 /** The draw_seat handler. Draws all remaining seats from `action.seat`. */
 export const drawSeatHandler: CrankHandler = async (ctx, action) => {
   if (action.kind !== "draw_seat") return;
-  const { dispute, round } = ctx;
+  const dispute = ctx.dispute;
+  const round = ctx.round ?? null;
+  if (!dispute) return; // draw_seat is always dispatched from the dispute loop
   const d = dispute.data;
 
   // 1. Verify the live tree matches the frozen root (skip on mismatch).

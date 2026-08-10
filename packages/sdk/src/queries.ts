@@ -24,6 +24,11 @@ import {
   decodeDispute,
   type Dispute,
 } from "./generated/accounts/dispute.js";
+import {
+  PENDING_UPDATE_DISCRIMINATOR,
+  decodePendingUpdate,
+  type PendingUpdate,
+} from "./generated/accounts/pendingUpdate.js";
 import { ACCORD_PROGRAM_ID } from "./pda.js";
 
 export type QueryConfig = {
@@ -62,5 +67,34 @@ export async function findAllDisputes(
 
   return results.map(({ pubkey, account }) =>
     decodeDispute(parseBase64RpcAccount(pubkey as Address, account)),
+  );
+}
+
+/**
+ * Fetch every PendingUpdate account on-chain, decoded and typed.
+ * Filters by the 8-byte account discriminator at offset 0.
+ */
+export async function findAllPendingUpdates(
+  rpc: Rpc<GetProgramAccountsApi>,
+  config?: QueryConfig,
+): Promise<Account<PendingUpdate>[]> {
+  const results = await rpc
+    .getProgramAccounts(ACCORD_PROGRAM_ID, {
+      encoding: "base64",
+      filters: [
+        {
+          memcmp: {
+            offset: 0n,
+            bytes: discriminatorToBase64(PENDING_UPDATE_DISCRIMINATOR),
+            encoding: "base64",
+          },
+        },
+      ],
+      commitment: config?.commitment,
+    })
+    .send();
+
+  return results.map(({ pubkey, account }) =>
+    decodePendingUpdate(parseBase64RpcAccount(pubkey as Address, account)),
   );
 }

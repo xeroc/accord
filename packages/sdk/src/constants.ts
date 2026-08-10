@@ -1,3 +1,5 @@
+import type { Address } from "@solana/kit";
+
 /**
  * v1 protocol constants and defaults.
  *
@@ -88,3 +90,25 @@ export function maxAppealPanelSize(maxAppeals: number): number {
   const factor = 1 << maxAppeals;
   return Math.min((INITIAL_NUM_JURORS + 1) * factor - 1, MAX_JURORS);
 }
+
+// --- MagicBlock VRF oracle queues (ephemeral_rollups_sdk::vrf::consts) ---
+//
+// Every randomness request names an oracle queue. A delegated queue is writable
+// only from inside an ephemeral rollup; a non-delegated (base-layer) queue is
+// writable on L1. The cranker and Arbitrables run on L1, so they reference the
+// base-layer queue. Mainnet and devnet share the same addresses.
+//
+// @see https://docs.magicblock.dev
+
+/** Mainnet/devnet base-layer VRF oracle queue (`DEFAULT_QUEUE`). */
+export const VRF_ORACLE_QUEUE =
+  "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh" as Address;
+/** Mainnet/devnet delegated (ephemeral rollup) VRF oracle queue (`DEFAULT_EPHEMERAL_QUEUE`). */
+export const VRF_ORACLE_EPHEMERAL_QUEUE =
+  "5hBR571xnXppuCPveTrctfTU7tJLSN94nq7kv7FRK5Tc" as Address;
+/** Localnet base-layer test VRF oracle queue (`DEFAULT_TEST_QUEUE`). */
+export const VRF_ORACLE_TEST_QUEUE =
+  "GKE6d7iv8kCBrsxr78W3xVdjGLLLJnxsGiuzrsZCGEvb" as Address;
+/** Localnet delegated (ephemeral rollup) test VRF oracle queue (`DEFAULT_EPHEMERAL_TEST_QUEUE`). */
+export const VRF_ORACLE_EPHEMERAL_TEST_QUEUE =
+  "Sc9MJUngNbQXSXGP3F67KvKwVnhaYn6kcioxXNVowYT" as Address;

@@ -96,13 +96,16 @@ export interface CrankContext {
   readonly sendIx: (ix: Instruction) => Promise<string>;
   /** Structured per-crank log sink — `{kind} {dispute} {msg}`. */
   readonly log: (kind: CrankKind, dispute: Address | null, msg: string) => void;
-  /** The dispute this cycle resolved against (pre-fetched by the reconciler). */
-  readonly dispute: Account<Dispute>;
+  /**
+   * The dispute this cycle resolved against (dispute-lifecycle cranks only).
+   * Undefined for program-wide cranks (`execute_update`, `execute_unpause`).
+   */
+  readonly dispute?: Account<Dispute>;
   /**
    * The Round the resolver used: the current round for lifecycle cranks, or a
    * prior round for `settle_round`. `null` when the Round PDA does not exist.
    */
-  readonly round: Account<Round> | null;
+  readonly round?: Account<Round> | null;
   /** Live RPC + subscriptions (TreeCache, send). */
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
