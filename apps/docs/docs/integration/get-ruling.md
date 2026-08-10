@@ -15,7 +15,7 @@ pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>>
 `final_ruling` is set only by `finalize_dispute`, which requires:
 
 - `state == RoundResolved`, and
-- `now ≥ reveal_end + terms.appeal_window` (no further appeal possible; per-Subaccord, [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)).
+- `now ≥ reveal_end + terms.appeal_window` (no further appeal possible; per-Subaccord, [ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)).
 
 So a ruling is final iff the appeal window has elapsed on the last round with no appeal landed. Polling earlier than that returns `None`.
 
@@ -41,4 +41,4 @@ if (d?.exists && d.data.finalRuling !== null) {
 
 Index into the `options` array the filer passed to [`create_dispute`](disputes.md). The Arbitrable defines what each hash means; the Accord only returns the index.
 
-State gate detail: [state machine](../reference/state-machine.md). Two-call model: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).
+State gate detail: [state machine](../reference/state-machine.md). Two-call model: [ADR-0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md).

@@ -3,7 +3,7 @@
 The juror-set root is a **live on-chain stake accumulator**, not a posted
 claim. There is no poster, no bond, no 1-day challenge window, and no fraud
 predicates — the root cannot be withheld or fabricated because it is maintained
-by the protocol on every `stake`/`unstake` ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md);
+by the protocol on every `stake`/`unstake` ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md);
 supersedes the optimistic snapshot layer of ADR-0003/0008/0009).
 
 ## Why no fraud proofs are needed
@@ -63,4 +63,4 @@ graph LR
   A[Any auditor getProgramAccounts] -.->|rebuild + compare| R
 ```
 
-Why: [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Sortition consumption: [sortition & VRF](sortition-vrf.md).
+Why: [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Sortition consumption: [sortition & VRF](sortition-vrf.md).

@@ -38,9 +38,9 @@ accord::cpi::create_dispute(
 ```
 
 `evidence_hash` is the round-0 commitment — the filer's evidence package
-([ADR-0006](../adr/0006-evidence-onchain-hash-trusted-re-encryption-operator.md),
-[ADR-0017](../adr/0017-evidence-data-format-manifest-yaml.md)). Appeals may add per-round
-hashes into `dispute.evidence_hashes[1..=MAX_APPEALS]` ([ADR-0023](../adr/0023-per-round-evidence-hashes.md));
+([ADR-0006](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0006-evidence-onchain-hash-trusted-re-encryption-operator.md),
+[ADR-0017](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0017-evidence-data-format-manifest-yaml.md)). Appeals may add per-round
+hashes into `dispute.evidence_hashes[1..=MAX_APPEALS]` ([ADR-0023](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0023-per-round-evidence-hashes.md));
 the Arbitrable does not pass those — `appeal` does.
 
 ## 2. Read the ruling
@@ -77,4 +77,4 @@ fee_round_0 = INITIAL_NUM_JURORS × fee_per_juror   // round-1 panel = 3 (ADR-00
 fee_round_k = panel_k × fee_per_juror     // appeal rounds; see appeals.md
 ```
 
-TypeScript: see [SDK](../sdk.md). Finality = `terms.appeal_window` (per-Subaccord, [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)) after the last round's `reveal_end` ([state machine](../reference/state-machine.md)). Why two calls: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md).
+TypeScript: see [SDK](../sdk.md). Finality = `terms.appeal_window` (per-Subaccord, [ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)) after the last round's `reveal_end` ([state machine](../reference/state-machine.md)). Why two calls: [ADR-0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md).

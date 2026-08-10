@@ -28,4 +28,4 @@ File → resolve. Steps 1 and 9 are the Arbitrable's; steps 2–8 are permission
 
 Integrator entry points: [Arbitrable interface](arbitrable-interface.md) · [Subaccords](subaccords.md) · [Staking](staking.md) · [Disputes](disputes.md) · [Draw & voting](draw-voting.md) · [Appeals](appeals.md) · [Ruling](get-ruling.md).
 
-Why: [ADR-0001](../adr/0001-schelling-accord-replaces-hired-judges.md) (Schelling), [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md) (party-agnostic). Draw mechanism: [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).
+Why: [ADR-0001](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0001-schelling-accord-replaces-hired-judges.md) (Schelling), [ADR-0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md) (party-agnostic). Draw mechanism: [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md).

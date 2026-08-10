@@ -15,15 +15,15 @@ Stake capital into a Subaccord; become draw-eligible. Capital moves between the 
 
 - PDA-signed transfer `stake_vault → juror_token_account`.
 - Caller supplies the juror's Merkle path; root recomputed the same way as `stake`.
-- Reverts while `active_draws > 0` (stake frozen until every drawn dispute settles — [ADR-0003](../adr/0003-accord-draw-merkle-snapshot-distinct-vrf.md)).
+- Reverts while `active_draws > 0` (stake frozen until every drawn dispute settles — [ADR-0003](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0003-accord-draw-merkle-snapshot-distinct-vrf.md)).
 - Caps at `JurorStake.staked`.
-- **Never halted by pause** (capital is never trapped — [ADR-0007](../adr/0007-upgrade-authority-multisig-then-freeze.md)).
+- **Never halted by pause** (capital is never trapped — [ADR-0007](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0007-upgrade-authority-multisig-then-freeze.md)).
 - Full unstake (positive → 0) zeros the leaf (kept at zero selection weight; `tree_index` reused on re-stake) and decrements `Subaccord.staker_count`.
 
 ## `staker_count` — coarse gate only
 
 - Counts distinct Jurors with `staked > 0`. Maintained O(1).
-- **Does not** track `min_stake` eligibility (changes via timelock; recomputing needs the O(n) ledger [ADR-0003](../adr/0003-accord-draw-merkle-snapshot-distinct-vrf.md) rejected).
+- **Does not** track `min_stake` eligibility (changes via timelock; recomputing needs the O(n) ledger [ADR-0003](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0003-accord-draw-merkle-snapshot-distinct-vrf.md) rejected).
 - Precise eligibility (staked ≥ min_stake, distinctness) is enforced at [`draw_seat`](../security/sortition-vrf.md) against the frozen accumulator root.
 
 ## `withdraw_fees` — earned compensation (ADR-0020)
@@ -54,4 +54,4 @@ await unstake(accord.adapter, accord.PROGRAM_ID, {
 });
 ```
 
-PDA: `["stake", subaccord, juror]`. Each `JurorStake` carries a `tree_index` (its leaf position in the Subaccord accumulator, assigned at first stake). The accumulator root lives on the `Subaccord` ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)); a wrong path reverts — root integrity never depends on the caller.
+PDA: `["stake", subaccord, juror]`. Each `JurorStake` carries a `tree_index` (its leaf position in the Subaccord accumulator, assigned at first stake). The accumulator root lives on the `Subaccord` ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)); a wrong path reverts — root integrity never depends on the caller.

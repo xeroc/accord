@@ -14,13 +14,13 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 
 | Constant                     | Value     | Unit / Notes                                                                                                                                                                              |
 | ---------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `UPDATE_TIMELOCK_SLOTS`      | `432_000` | slots (~48h @ 400ms mainnet). Subaccord param update. [ADR-0005](../adr/0005-subaccord-authority-pubkey-timelock.md)                                                                      |
-| `DEFAULT_APPEAL_WINDOW_SECS` | `259_200` | seconds (3 days). **Default** appeal window — the runtime value is the per-Subaccord `terms.appealWindow` ([ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)).          |
-| `MIN_APPEAL_WINDOW_SECS`     | `3_600`   | seconds (1 hour). Per-Subaccord floor ([ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)). `appeal_window == 0` rejected; use `max_appeals == 0` for no-appeals intent. |
-| `UNPAUSE_TIMELOCK_SLOTS`     | `216_000` | slots (~24h @ 400ms). `propose_unpause` → `execute_unpause`. [ADR-0007](../adr/0007-upgrade-authority-multisig-then-freeze.md)                                                            |
+| `UPDATE_TIMELOCK_SLOTS`      | `432_000` | slots (~48h @ 400ms mainnet). Subaccord param update. [ADR-0005](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0005-subaccord-authority-pubkey-timelock.md)                                                                      |
+| `DEFAULT_APPEAL_WINDOW_SECS` | `259_200` | seconds (3 days). **Default** appeal window — the runtime value is the per-Subaccord `terms.appealWindow` ([ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)).          |
+| `MIN_APPEAL_WINDOW_SECS`     | `3_600`   | seconds (1 hour). Per-Subaccord floor ([ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)). `appeal_window == 0` rejected; use `max_appeals == 0` for no-appeals intent. |
+| `UNPAUSE_TIMELOCK_SLOTS`     | `216_000` | slots (~24h @ 400ms). `propose_unpause` → `execute_unpause`. [ADR-0007](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0007-upgrade-authority-multisig-then-freeze.md)                                                            |
 
 > The `SNAPSHOT_CHALLENGE_WINDOW_SECS` (1-day fraud window) is removed — the
-> juror-set root is canonical by construction ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
+> juror-set root is canonical by construction ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ## PDA seed prefixes
 
@@ -34,7 +34,7 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 | `SEED_APPEAL_BOND`    | `b"bond"`      | `AppealBond`             |
 | `SEED_PAUSE`          | `b"pause"`     | `PauseState` (singleton) |
 
-> `SEED_SNAPSHOT` (`b"snapshot"`) is removed — there is no `Snapshot` account ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
+> `SEED_SNAPSHOT` (`b"snapshot"`) is removed — there is no `Snapshot` account ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ## v1 default economics (per-Subaccord configurable)
 
@@ -45,7 +45,7 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 | `DEFAULT_REVIEW_WINDOW_SECS` | `604_800` | 7 days.                                                                                                    |
 | `DEFAULT_COMMIT_WINDOW_SECS` | `172_800` | 2 days.                                                                                                    |
 | `DEFAULT_REVEAL_WINDOW_SECS` | `172_800` | 2 days.                                                                                                    |
-| `DEFAULT_APPEAL_WINDOW_SECS` | `259_200` | 3 days. Per-Subaccord appeal window ([ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)). |
+| `DEFAULT_APPEAL_WINDOW_SECS` | `259_200` | 3 days. Per-Subaccord appeal window ([ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)). |
 | `DEFAULT_MAX_APPEALS`        | `3`       | Caps at `MAX_APPEALS`.                                                                                     |
 
 Program ID: `RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe`

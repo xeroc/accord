@@ -8,6 +8,6 @@ Protocol facts at a glance. Pull these before reading the source.
 - [Error Codes](errors.md) — every `AccordError`, grouped by class
 - [Constants](constants.md) — sizes, timelocks, windows, seeds, v1 defaults
 
-Source of truth for intent: [`SPEC.md`](../../../../programs/accord/SPEC.md).
+Source of truth for intent: [`SPEC.md`](https://github.com/xeroc/accord/blob/main/programs/accord/SPEC.md).
 
 Program ID: `RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe`

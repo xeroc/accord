@@ -85,4 +85,4 @@ for (let seat = 0; seat < panel; seat++) {
 }
 ```
 
-Why: [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Accumulator trust model: [stake accumulator](fraud-proofs.md).
+Why: [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Accumulator trust model: [stake accumulator](fraud-proofs.md).

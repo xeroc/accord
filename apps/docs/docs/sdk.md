@@ -1,6 +1,6 @@
 # SDK
 
-`@useaccord/sdk` — TypeScript facade over the Accord. Solana Kit + Codama codegen, no `@coral-xyz/anchor` runtime, no `@solana/web3.js`. Why: [ADR-0010](adr/0010-sdk-codama-solana-kit-facade.md).
+`@useaccord/sdk` — TypeScript facade over the Accord. Solana Kit + Codama codegen, no `@coral-xyz/anchor` runtime, no `@solana/web3.js`. Why: [ADR-0010](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0010-sdk-codama-solana-kit-facade.md).
 
 ## Install
 
@@ -86,7 +86,7 @@ Seeds reference: [accounts](reference/accounts.md), [constants](reference/consta
 ## Client-side crypto
 
 - **Commit hash:** `sha256(vote_byte | salt[32] | juror_pubkey[32])` — matches the program's `hashv`.
-- **Subtree-sum MST:** `buildAccumulator` + `proveMembership` produce the `JurorMembership` struct `draw_seat` verifies against `dispute.frozen_root`. Internal node = `H(left_hash ‖ left_sum ‖ right_hash ‖ right_sum)`; sums bound into hashes ([ADR-0012](adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
+- **Subtree-sum MST:** `buildAccumulator` + `proveMembership` produce the `JurorMembership` struct `draw_seat` verifies against `dispute.frozen_root`. Internal node = `H(left_hash ‖ left_sum ‖ right_hash ‖ right_sum)`; sums bound into hashes ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 - **Per-seat resolution:** `resolveSeat` returns one seat's membership from the frozen root + committed VRF. The draw is one tx per seat (the 1232-byte packet can't hold N proofs); sampling is deterministic without replacement (no `draw_attempt` grind).
 
 ```typescript
