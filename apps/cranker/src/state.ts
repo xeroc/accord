@@ -20,6 +20,7 @@
  * (programs/accord/src/lib.rs); `now` is a Unix-seconds timestamp matching
  * `Clock::get().unix_timestamp`.
  */
+import { isNone } from "@solana/kit";
 import { DisputeState, panelSizeForRound, type Dispute, type Round } from "@useaccord/sdk";
 
 /** Pre-draw stall timeout before a `Created` dispute may be cancelled (constants.rs). */
@@ -73,7 +74,7 @@ export function resolveNextAction(
     if (now > dispute.filedAt + PRE_DRAW_CANCEL_TIMEOUT_SECS) {
       return { kind: "cancel_dispute" };
     }
-    if (dispute.committedVrf.__option !== "Some") {
+    if (isNone(dispute.committedVrf)) {
       return { kind: "request_vrf" };
     }
     // VRF committed: fill the panel one seat at a time. Each draw_seat is its

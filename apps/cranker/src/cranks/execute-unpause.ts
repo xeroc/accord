@@ -4,6 +4,7 @@
  * slot elapses. The PauseState is a program-wide singleton. (lib.rs:120,
  * ADR-0007, milestone accord-27r5.)
  */
+import { isNone } from "@solana/kit";
 import { canExecuteAt, executeUnpause } from "@useaccord/sdk";
 import { registerCrank, type CrankDispatch } from "../dispatch.js";
 import type { CrankContext, CrankResult } from "../types.js";
@@ -13,7 +14,7 @@ export async function execute(ctx: CrankContext): Promise<CrankResult> {
   const pauseStateAddr = await pauseStatePda(ctx.programId);
   const ps = await fetchPauseState(ctx.accord.rpc, pauseStateAddr);
   const after = ps.data.pendingUnpauseAfter;
-  if (after.__option !== "Some") return { skipped: "no pending unpause" };
+  if (isNone(after)) return { skipped: "no pending unpause" };
   const slot = await ctx.accord.rpc.getSlot().send();
   if (!canExecuteAt(after.value, BigInt(slot))) {
     return { skipped: `unpause timelock not elapsed (slot=${slot})` };

@@ -19,6 +19,7 @@
 import {
   getAddressDecoder,
   getAddressEncoder,
+  isNone,
   type Address,
   type ReadonlyUint8Array,
 } from "@solana/kit";
@@ -128,8 +129,9 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
   if (tree.rootSum <= 0n) return;
 
   // 3. Extract sortition params.
-  if (d.committedVrf.__option !== "Some") return;
-  const committedVrf = new Uint8Array(d.committedVrf.value);
+  const vrfOpt = d.committedVrf;
+  if (isNone(vrfOpt)) return;
+  const committedVrf = new Uint8Array(vrfOpt.value);
   const disputeBytes = addressBytes(dispute.address);
   const roundIdx = d.currentRound;
   const drawAttempt = round?.data.drawAttempt ?? 0;

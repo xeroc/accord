@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { type ReadonlyUint8Array } from "@solana/kit";
+import { isSome, type ReadonlyUint8Array } from "@solana/kit";
 import { findAppealBondPda, findPauseStatePda } from "@useaccord/sdk";
 
 import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
@@ -160,7 +160,7 @@ export function DisputeDetail() {
         <InfoRow label="State" value={DISPUTE_STATE_LABELS[d.state]} />
         <InfoRow label="Current round" value={`${d.currentRound}`} mono />
         <InfoRow label="Fee paid" value={formatLamports(d.feePaid)} mono />
-        <InfoRow label="VRF" value={d.committedVrf ? "Committed" : "Pending"} />
+        <InfoRow label="VRF" value={isSome(d.committedVrf) ? "Committed" : "Pending"} />
         <InfoRow
           label="Frozen root"
           value={

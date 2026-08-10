@@ -10,6 +10,7 @@
  * The dispute + round fetchers are injectable so the loop is unit-testable with
  * no validator; they default to the SDK (`findAllDisputes` + `fetchMaybeRound`).
  */
+import { isSome } from "@solana/kit";
 import type {
   Account,
   Address,
@@ -204,10 +205,11 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
 
   // --- Phase 3: PauseState unpause crank (execute_unpause) ---
   const pauseState = await fetchPauseState();
+  const pendingUnpauseAfter = pauseState?.data.pendingUnpauseAfter;
   if (
-    pauseState &&
-    pauseState.data.pendingUnpauseAfter.__option === "Some" &&
-    canExecuteAt(pauseState.data.pendingUnpauseAfter.value, currentSlot)
+    pendingUnpauseAfter &&
+    isSome(pendingUnpauseAfter) &&
+    canExecuteAt(pendingUnpauseAfter.value, currentSlot)
   ) {
     const action: CrankAction = { kind: "execute_unpause" };
     const handled = await dispatch.execute(baseCtx, action);
