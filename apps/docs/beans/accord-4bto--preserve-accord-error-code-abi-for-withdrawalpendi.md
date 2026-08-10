@@ -1,11 +1,11 @@
 ---
 # accord-4bto
 title: Preserve Accord error-code ABI for WithdrawalPending
-status: todo
+status: scrapped
 type: bug
 priority: high
 created_at: 2026-08-10T02:17:26Z
-updated_at: 2026-08-10T02:17:26Z
+updated_at: 2026-08-10T14:49:15Z
 ---
 
 ## Problem

@@ -1,11 +1,11 @@
 ---
 # accord-xftx
 title: Prevent appeal fee double refund on failed disputes
-status: todo
+status: completed
 type: bug
 priority: high
 created_at: 2026-08-10T02:17:26Z
-updated_at: 2026-08-10T02:17:26Z
+updated_at: 2026-08-10T16:05:51Z
 ---
 
 ## Problem

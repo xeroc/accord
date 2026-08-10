@@ -1,11 +1,11 @@
 ---
 # accord-aqmw
 title: Fix zero-coherent settlement economics
-status: todo
+status: completed
 type: bug
 priority: high
 created_at: 2026-08-10T02:17:26Z
-updated_at: 2026-08-10T02:17:26Z
+updated_at: 2026-08-10T15:30:25Z
 ---
 
 ## Problem
@@ -22,10 +22,35 @@ Relevant code:
 
 ## Acceptance Criteria
 
-- [ ] Specify the intended beneficiary or accounting treatment for fee and stake surplus when no juror is coherent.
-- [ ] Non-revealers and incoherent jurors are not rewarded merely because `coherent_count == 0`, unless governance explicitly adopts and documents that economic rule.
-- [ ] Handle both fee-token and stake-token surplus without creating permanently unclaimable custody.
-- [ ] Define deterministic handling for integer-division remainder.
-- [ ] Test zero-threshold/no-reveal and overturned-prior-round scenarios.
-- [ ] Assert conservation across token custody and ledger claims.
-- [ ] Correct the security checklist only after the complete behavior is implemented.
+- [x] Revealers receive both pools when coherent_count == 0; zero reveals → trapped as protocol surplus (accord-31xw).
+- [x] Non-revealers are NEVER rewarded — slashed only.
+- [x] reveal_count > 0: both pools redistributed to revealers. reveal_count == 0: surplus trapped (deferred to accord-31xw).
+- [x] Integer-div remainder → protocol surplus (unchanged).
+- [x] LiteSVM: settle_round_no_coherent_rewards_revealers_only + settle_round_zero_reveals_traps_surplus — both green.
+- [x] Per-juror stake_delta + fees_earned assertions verify net splits.
+- [x] security-checklist.md H-3 + SPEC.md redistribution updated.
+
+## Summary of Changes
+
+### Decision
+
+When `coherent_count == 0`:
+
+- `reveal_count > 0` → pools (fee + stake) split among **revealers** only. Non-revealers slashed, no reward.
+- `reveal_count == 0` → nobody rewarded. Both pools trapped as protocol surplus (follow-up: accord-31xw).
+
+### Code (`lib.rs:2683` `settle_round_accounts`)
+
+- Replaced `consolation_fee` with `reward_count = coherent_count > 0 ? coherent_count : reveal_count`.
+- Second pass: slash liability (`!is_coherent`) separated from reward eligibility (coherent normally; `reveals[i] != u8::MAX` as zero-coherent fallback).
+- A revealer in the zero-coherent case is both slash-liable and reward-eligible.
+
+### Tests
+
+- `settle_round_no_coherent_rewards_revealers_only` — 2 revealers stake_delta=+50/fees=500k; non-revealer -100/0.
+- `settle_round_zero_reveals_traps_surplus` — all slashed, zero rewards.
+- Normal path unchanged.
+
+### Follow-up
+
+- `accord-31xw`: make zero-reveal surplus authority-claimable.

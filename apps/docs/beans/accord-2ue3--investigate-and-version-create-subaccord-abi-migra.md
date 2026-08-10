@@ -1,11 +1,11 @@
 ---
 # accord-2ue3
 title: Investigate and version create_subaccord ABI migration
-status: todo
+status: scrapped
 type: bug
 priority: high
 created_at: 2026-08-10T02:17:26Z
-updated_at: 2026-08-10T02:17:26Z
+updated_at: 2026-08-10T14:49:04Z
 ---
 
 ## Problem
