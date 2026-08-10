@@ -32,7 +32,8 @@
 | C-1 | 🔴 Critical | `cancel_dispute` drained shared `fee_vault` | ✅ Fixed — refunds `fee_paid` only |
 | H-1 | 🟠 High | `execute_subaccord_update` skipped param validation | ✅ Fixed — `validate_update_payload` at propose + execute |
 | H-2 | 🟠 High | `withdraw_fees` no vault solvency check | ✅ Fixed — capped at vault balance, remainder preserved |
-| H-3 | 🟠 High | No-coherent-juror round trapped fee pool | ✅ Fixed — consoled to all jurors equally |
+| H-3 | 🟠 High | No-coherent-juror round trapped fee pool | ✅ Fixed — pools go to revealers (not all jurors); zero-reveal surplus trapped as protocol revenue (bean accord-aqmw) |
+| H-4 | 🟠 High | Appeal fee double-refund on Failed (`fee_paid` + `AppealBond.amount`) | ✅ Fixed — `fee_paid` round-0 only; `claim_appeal_refund` returns bond only (bean accord-xftx) |
 | M-1 | 🟡 Medium | `request_withdraw` reset timelock on repeat | ✅ Fixed — rejects while pending |
 | M-2 | 🟡 Medium | Raw-offset `remaining_accounts` no owner check | ✅ Fixed — `require!(owner == &crate::ID)` at all 9 sites |
 | L-1 | 🟢 Low | One-step Subaccord authority rotation | ⚠️ Accepted — timelock mitigates |

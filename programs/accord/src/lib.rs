@@ -1391,10 +1391,18 @@ pub mod accord {
                 data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
                     .copy_from_slice(&new_fees.to_le_bytes());
             }
-            dispute.fee_paid = (round.reveal_count as u64)
-                .checked_mul(fee_per_juror)
-                .and_then(|earned| dispute.fee_paid.checked_sub(earned))
-                .ok_or(AccordError::ArithmeticOverflow)?;
+            // fee_paid owns ONLY the round-0 filing fee (bean accord-xftx):
+            // appeal-round fees live in their AppealBond, not here. Decrement
+            // the filer's refundable pool only as round-0 jurors earn. The
+            // fees_earned credit above still runs for every round — that is the
+            // vault liability (juror compensation), tracked separately from this
+            // filer-refund bookkeeping.
+            if round.round_idx == 0 {
+                dispute.fee_paid = (round.reveal_count as u64)
+                    .checked_mul(fee_per_juror)
+                    .and_then(|earned| dispute.fee_paid.checked_sub(earned))
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
         }
 
         dispute.state = DisputeState::RoundResolved;
@@ -1419,6 +1427,8 @@ pub mod accord {
     /// 2. Slash each incoherent/non-revealing juror: `α · min_stake` →
     ///    `stake_delta` (stake_token).
     /// 3. Stake pool = slash_total → coherent `stake_delta` (stake_token).
+    ///    When no juror is coherent but some revealed, pools go to revealers
+    ///    instead (bean accord-aqmw). Zero reveals → surplus trapped.
     /// 4. Fee pool = non-revealer fees + forfeited (no-flip) bonds → coherent
     ///    `fees_earned` (fee_token). (Revealer base fees were credited at
     ///    `finalize_round`; only the forfeited portion redistributes here.)
@@ -1545,11 +1555,11 @@ pub mod accord {
     ///
     /// Prior-round jurors were left with `active_draws > 0` after the dispute
     /// finalized — this crank releases them. Each call handles one round (≤ 31
-    /// juror-stake accounts, fitting the transaction account limit).
-    ///
     /// Coherence is judged against `dispute.final_ruling`, not the round's own
     /// result: a round-0 juror who voted the option the final panel overturned
     /// is slashed; one who voted the final ruling gets a coherence share.
+    /// When no juror is coherent (overturned prior round), pools fall back to
+    /// revealers; zero reveals → surplus trapped (bean accord-aqmw).
     /// Revealer base fees were credited at `finalize_round`; non-revealer fees
     /// fold into the coherent fee pool (ADR-0020).
     pub fn settle_round(ctx: Context<SettleRound>, round_idx: u32) -> Result<()> {
@@ -1697,10 +1707,11 @@ pub mod accord {
         bond_acc.prior_result = prior_result;
         bond_acc.bump = ctx.bumps.appeal_bond;
 
-        dispute.fee_paid = dispute
-            .fee_paid
-            .checked_add(fee_new)
-            .ok_or(AccordError::ArithmeticOverflow)?;
+        // Ownership boundary (bean accord-xftx): the appeal fee lives ONLY in
+        // `AppealBond.amount` (fee + bond), never in `dispute.fee_paid`. The
+        // filer's `fee_paid` owns exclusively the round-0 filing fee; folding
+        // the appeal fee in here caused a double-refund on cancel (filer via
+        // fee_paid, appellant via the bond — same fee, two claimants).
 
         // Open the new round: bump `current_round` and reset to `Created` so the
         // snapshot → draw → vote cycle reruns for the larger panel.  Stamp
@@ -1726,14 +1737,16 @@ pub mod accord {
         Ok(())
     }
 
-    /// Permissionless crank that returns a flipped appeal bond to its appellant
-    /// after the dispute is finalized (ADR-0004: bond returned if the appeal
-    /// flipped the prior ruling). `round_idx` selects which appeal's bond to
-    /// claim (the round that was current when the appeal was filed). The handler
-    /// verifies the `AppealBond` belongs to the destination ATA's owner, that the
-    /// bond is still outstanding (`amount > 0` — `finalize_dispute` zeroes
-    /// no-flip bonds), and PDA-signs the vault → ATA refund before zeroing the
-    /// bond (idempotent).
+    /// Permissionless crank that returns the appeal bond to its appellant once
+    /// the dispute is terminal (Final or Failed). The appellant ALWAYS recovers
+    /// only the bond — never the appeal fee (bean accord-xftx): on Final a
+    /// flipped bond is returned (a no-flip bond was already zeroed by
+    /// `finalize_dispute`); on Failed the bond is returned regardless (the
+    /// appeal fee is owned by the round's jurors or trapped in the vault).
+    /// `round_idx` selects which appeal's bond to claim (the round that was
+    /// current when the appeal was filed). Verifies the `AppealBond` belongs to
+    /// the destination ATA's owner, PDA-signs the vault → ATA refund, then
+    /// zeroes the bond (idempotent).
     pub fn claim_appeal_refund(ctx: Context<ClaimAppealRefund>, round_idx: u32) -> Result<()> {
         let _ = round_idx; // consumed by the `#[instruction]` PDA seeds
         let dispute = &ctx.accounts.dispute;
@@ -1748,17 +1761,18 @@ pub mod accord {
             AccordError::InvalidMembershipProof
         );
 
-        // `amount` is the total deposit (fee + bond). On Failed (cancel), the
-        // round never consumed fees — return the full deposit. On Final, the
-        // fee was consumed by settlement — return only the bond portion.
-        let refund = if dispute.state == DisputeState::Failed {
-            bond_acc.amount
-        } else {
-            let fee = (panel_size_for_round(bond_acc.round_idx)? as u64)
-                .checked_mul(dispute.terms.fee_per_juror)
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            bond_acc.amount.saturating_sub(fee)
-        };
+        // `amount` is the total deposit (appeal fee + bond). The appellant
+        // always recovers ONLY the bond — never the appeal fee — regardless of
+        // terminal state (bean accord-xftx). The appeal fee is owned by the
+        // round's jurors (credited as fees_earned if the round resolved) or
+        // trapped in the vault if it never resolved; it is never the
+        // appellant's to reclaim. On Final a no-flip bond was already zeroed
+        // by finalize_dispute, so this yields 0 → InvalidAmount (idempotent
+        // guard against claiming a forfeited bond).
+        let fee = (panel_size_for_round(bond_acc.round_idx)? as u64)
+            .checked_mul(dispute.terms.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let refund = bond_acc.amount.saturating_sub(fee);
         require!(refund > 0, AccordError::InvalidAmount);
 
         let sub = &ctx.accounts.subaccord;
@@ -2650,11 +2664,21 @@ fn release_prior_rounds<'info>(
 ///
 /// Judges every drawn juror against `final_ruling` (NOT the round's own result),
 /// slashes incoherent/non-revealing jurors by `α·min_stake`, and redistributes
-/// two distinct pools among coherent jurors:
+/// two distinct pools:
 /// - **stake pool** (`stake_token`): slash proceeds → written to `stake_delta`.
 /// - **fee pool** (`fee_token`): non-revealer fees + forfeited bonds → written
 ///   to `fees_earned`. Revealers already received their base `fee_per_juror`
 ///   credit at `finalize_round`; only the forfeited portion redistributes here.
+///
+/// Recipient selection (bean accord-aqmw):
+/// - `coherent_count > 0`: pools split among **coherent** jurors (normal).
+/// - `coherent_count == 0, reveal_count > 0`: pools split among **revealers** —
+///   those who at least participated, even though none matched the final
+///   ruling (typically a prior round overturned on appeal). Non-revealers are
+///   slashed but receive no reward.
+/// - `coherent_count == 0, reveal_count == 0`: nobody is rewarded. Both pools
+///   are trapped in vault custody as permanent Subaccord protocol surplus
+///   (follow-up: authority-claimable withdrawal).
 /// Decrements `active_draws` for every drawn juror (releases the unstake lock).
 ///
 /// `pool_extra` is the forfeited (no-flip) appeal-bond total (final round only;
@@ -2712,26 +2736,26 @@ fn settle_round_accounts(
         .checked_add(pool_extra)
         .ok_or(AccordError::ArithmeticOverflow)?;
 
-    // H-3: when no juror is coherent (rare — typically a prior round whose
-    // result was overturned on appeal), the fee pool would be permanently
-    // trapped in the vault. Credit it to ALL drawn jurors equally as a
-    // consolation fee (fee_pool / panel) instead. The stake pool is NOT
-    // redistributed (dividing by panel would nullify the slash). Ideally
-    // this surplus would go to the Subaccord authority as protocol revenue,
-    // but the ledger-only settlement architecture doesn't have the
-    // authority's JurorStake in context — see H-3 report, Option A.
-    let consolation_fee = if coherent_count > 0 {
-        0
+    // Recipient pool: coherent jurors normally; when none are coherent
+    // (a prior round overturned on appeal, or a degenerate
+    // reveal_threshold_bps = 0 config), fall back to revealers — those
+    // who at least participated. Non-revealers are NEVER rewarded.
+    // When reveal_count is also 0 (no-show round), reward_count = 0 and
+    // both pools are trapped in vault custody as permanent Subaccord
+    // protocol surplus (bean accord-aqmw / follow-up: make claimable via
+    // authority withdrawal). Integer-div remainder → protocol surplus.
+    let reward_count: u32 = if coherent_count > 0 {
+        coherent_count
     } else {
-        fee_pool / panel as u64
+        round.reveal_count as u32
     };
-    let stake_share = if coherent_count > 0 {
-        slash_total / coherent_count as u64
+    let stake_share = if reward_count > 0 {
+        slash_total / reward_count as u64
     } else {
         0
     };
-    let fee_share = if coherent_count > 0 {
-        fee_pool / coherent_count as u64
+    let fee_share = if reward_count > 0 {
+        fee_pool / reward_count as u64
     } else {
         0
     };
@@ -2781,22 +2805,33 @@ fn settle_round_accounts(
             (stk, draws, delta, reserve, fees)
         };
 
-        let (new_delta, new_fees) = if is_coherent {
-            (
-                existing_delta.saturating_add(stake_share as i64),
-                existing_fees
-                    .checked_add(fee_share)
-                    .ok_or(AccordError::ArithmeticOverflow)?,
-            )
+        // Slash every non-coherent juror (incoherent voter or no-show).
+        // Reward eligibility: coherent normally; revealers as fallback when
+        // no juror is coherent. Non-revealers are never rewarded.
+        let is_reward_eligible = if coherent_count > 0 {
+            is_coherent
         } else {
-            (
-                existing_delta.saturating_add(-(slash_per_juror.min(staked) as i64)),
-                // H-3: consolation fee when no juror is coherent (0 in the
-                // normal case — avoids trapping the fee pool).
-                existing_fees
-                    .checked_add(consolation_fee)
-                    .ok_or(AccordError::ArithmeticOverflow)?,
-            )
+            round.reveals[i] != u8::MAX
+        };
+        let slash_delta = if is_coherent {
+            0i64
+        } else {
+            -(slash_per_juror.min(staked) as i64)
+        };
+        let new_delta =
+            existing_delta
+                .saturating_add(slash_delta)
+                .saturating_add(if is_reward_eligible {
+                    stake_share as i64
+                } else {
+                    0
+                });
+        let new_fees = if is_reward_eligible {
+            existing_fees
+                .checked_add(fee_share)
+                .ok_or(AccordError::ArithmeticOverflow)?
+        } else {
+            existing_fees
         };
         let new_draws = active_draws.saturating_sub(1);
         let new_reserve = slash_reserve.saturating_sub(slash_per_juror);

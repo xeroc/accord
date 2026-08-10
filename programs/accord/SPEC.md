@@ -81,13 +81,13 @@ window). Odd Juror counts (3 / 7 / 15 / 31) make ties impossible.
 ## Economics (Kleros-inherited; ADR-0020 two-mint split)
 
 - **Two mints:** `staking_token` (collateral — sortition weight + slash exposure) and `fee_token` (compensation — fees + appeal bonds, USDC by convention).
-- **Fee:** filer pays `N · fee_per_juror` (round 1, in `fee_token`); appellant pays `N_new · fee_per_juror` + bond (in `fee_token`). Fees flow into the per-Subaccord `fee_vault`.
-- **Fee credit:** `finalize_round` credits each revealer `fees_earned += fee_per_juror` and decrements `dispute.fee_paid` **only if the reveal-quorum threshold is met** (`reveal_count ≥ ceil(panel × reveal_threshold_bps / 10_000)`, ADR-0021). A shortfall credits nothing → the filer's single deposit suffices across the whole redraw ladder.
+- **Fee:** filer pays `N · fee_per_juror` (round 1, in `fee_token`); appellant pays `N_new · fee_per_juror` + bond (in `fee_token`). Fees flow into the per-Subaccord `fee_vault`. `dispute.fee_paid` tracks ONLY the round-0 filing fee; the appeal fee + bond live in `AppealBond.amount` (bean accord-xftx — non-overlapping ownership).
+- **Fee credit:** `finalize_round` credits each revealer `fees_earned += fee_per_juror` (every round) but decrements `dispute.fee_paid` ONLY for round 0, and ONLY if the reveal-quorum threshold is met (`reveal_count ≥ ceil(panel × reveal_threshold_bps / 10_000)`, ADR-0021). A shortfall credits nothing → the filer's single deposit suffices across the whole redraw ladder.
 - **Slash:** each Incoherent Juror loses **`α · min_stake`** (flat, in `staking_token`) → written to `stake_delta`.
-- **Redistribution (two pools):** slash pool (`stake_token`) → coherent `stake_delta`; fee pool = non-revealer fees + forfeited bonds (`fee_token`) → coherent `fees_earned`. Equal split (integer div; remainder is protocol surplus).
+- **Redistribution (two pools):** slash pool (`stake_token`) → coherent `stake_delta`; fee pool = non-revealer fees + forfeited bonds (`fee_token`) → coherent `fees_earned`. When no juror is coherent but some revealed, pools fall back to revealers (those who at least participated); zero reveals → surplus trapped in vault as protocol revenue (bean accord-aqmw). Equal split (integer div; remainder is protocol surplus).
 - **`withdraw_fees`:** per-juror, pulls aggregate `fees_earned` from `fee_vault`. No `active_draws` gate, no timelock.
 - **Cross-round settlement:** every round is re-settled against the **final** Ruling (Kleros §4.6, ADR-0018).
-- **Fund invariant:** `stake_vault.balance == Σ staked (± pending stake_delta)`; `fee_vault.balance == Σ dispute.fee_paid + Σ fees_earned + Σ AppealBond.amount`.
+- **Fund invariant:** `stake_vault.balance == Σ staked (± pending stake_delta)`. `fee_vault.balance` covers `Σ fee_paid` (round-0 unconsumed filing fee) + `Σ fees_earned` (earned-but-unwithdrawn juror comp) + each outstanding `AppealBond`'s bond portion. The appeal fee sits in `AppealBond.amount` until its round's jurors earn it into `fees_earned`; `claim_appeal_refund` returns only the bond — every token is owed to exactly one party (bean accord-xftx).
 
 ## Authority model
 
