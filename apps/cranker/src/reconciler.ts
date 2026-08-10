@@ -45,7 +45,6 @@ import { sendIx } from "./send.js";
 import { resolveNextAction } from "./state.js";
 import type { CrankerWallet } from "./wallet.js";
 
-
 export interface ReconcilerConfig {
   /** SDK facade — owns the RPC, signer, and adapter the cranks build with. */
   accord: Accord;
@@ -142,8 +141,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     if (
       action === null &&
       dispute.data.currentRound > 0 &&
-      (dispute.data.state === DisputeState.Final ||
-        dispute.data.state === DisputeState.Failed)
+      (dispute.data.state === DisputeState.Final || dispute.data.state === DisputeState.Failed)
     ) {
       for (let r = 1; r <= dispute.data.currentRound; r++) {
         const [bondAddr] = await findAppealBondPda({
@@ -255,9 +253,7 @@ async function fetchRoundAccount(
 }
 
 /** Default SDK PauseState fetch: derive the singleton PDA, read + decode, null if absent. */
-async function fetchPauseStateAccount(
-  rpc: Rpc<SolanaRpcApi>,
-): Promise<Account<PauseState> | null> {
+async function fetchPauseStateAccount(rpc: Rpc<SolanaRpcApi>): Promise<Account<PauseState> | null> {
   const [pda] = await findPauseStatePda({});
   const maybe = await fetchMaybePauseState(rpc, pda);
   if (maybe.exists) return maybe as Account<PauseState>;

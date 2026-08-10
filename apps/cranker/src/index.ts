@@ -28,7 +28,7 @@ import {
 } from "@useaccord/sdk";
 
 import { createCrankDispatch } from "./dispatch.js";
-import { ProgramLogListener, createListenerSubscriptions } from "./listener.js";
+import { ProgramLogListener } from "./listener.js";
 import { reconcileOnce, startReconciler, type ReconcilerConfig } from "./reconciler.js";
 import { register as registerCancelDispute } from "./cranks/cancel-dispute.js";
 import { register as registerClaimRefund } from "./cranks/claim-refund.js";

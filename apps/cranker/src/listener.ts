@@ -148,8 +148,7 @@ export class ProgramLogListener {
         if (!this.running) break; // aborted via stop()
         const delay = this.opts.backoffMs(attempt);
         this.opts.log(
-          `[listener] WS disconnected: ${stringifyErr(err)} — ` +
-          `reconnecting in ${delay}ms (60s poll loop carries on regardless)`,
+          `[listener] WS disconnected: ${stringifyErr(err)} — reconnecting in ${delay}ms (60s poll loop carries on regardless)`,
         );
         attempt += 1;
         await this.opts.sleep(delay);
