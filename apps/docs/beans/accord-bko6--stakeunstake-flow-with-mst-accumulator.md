@@ -3,8 +3,9 @@
 title: Stake/unstake flow with MST accumulator
 status: completed
 type: task
+priority: normal
 created_at: 2026-08-07T23:09:16Z
-updated_at: 2026-08-08T00:00:00Z
+updated_at: 2026-08-08T23:19:01Z
 parent: accord-pbff
 ---
 
@@ -20,10 +21,12 @@ primitives; the React `/juror/stake` page wires them once the app scaffold
 
 ### New files
 
-- **`packages/sdk/src/queries.ts`** — `findJurorStakesBySubaccord(rpc,
-programId, subaccord)`: typed `getProgramAccounts` wrapper. Filters by
-  memcmp at offset 8 (subaccord field) + dataSize (129). Decodes each
-  JurorStake with the generated codec. The frontend never touches raw bytes.
+- **`packages/sdk/src/query.ts`** — typed `getProgramAccounts` wrappers
+  (discriminator + 32-byte Address memcmp at fixed offsets, base58-encoded).
+  Includes `findJurorStakesBySubaccord(rpc, subaccord)` (the one the stake
+  flow calls) plus `findAllSubaccords`, `findJurorStakesByJuror`,
+  `findDisputesBySubaccord`, `findDisputesByFiler`. The frontend never
+  touches raw bytes or memcmp offsets.
 - **`packages/sdk/src/methods/stakeFlow.ts`** — `prepareStakeProof(subaccord,
 jurorStakes, juror)`: the full MST accumulator orchestration — sort by
   treeIndex → build accumulator → verify root → determine juror index (new
@@ -35,9 +38,9 @@ jurorStakes, juror)`: the full MST accumulator orchestration — sort by
 
 ### Modified files
 
-- **`packages/sdk/src/index.ts`** — exports `findJurorStakesBySubaccord`,
-  `JurorStakeAccount`, `prepareStakeProof`, `SubaccordAccumulatorView`,
-  `JurorStakeLeaf`, `StakeProofResult`.
+- **`packages/sdk/src/index.ts`** — exports `findJurorStakesBySubaccord`
+  (and the other 4 query wrappers), `prepareStakeProof`,
+  `SubaccordAccumulatorView`, `JurorStakeLeaf`, `StakeProofResult`.
 
 ### What's NOT included (depends on scaffold beans)
 
