@@ -1,11 +1,11 @@
 ---
 # accord-qp7c
 title: Per-round evidence hashes — evidence-on-appeal
-status: todo
+status: completed
 type: milestone
 priority: critical
 created_at: 2026-08-09T16:55:52Z
-updated_at: 2026-08-09T16:55:52Z
+updated_at: 2026-08-09T21:15:16Z
 ---
 
 ## Why

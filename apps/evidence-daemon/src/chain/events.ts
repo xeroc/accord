@@ -59,7 +59,7 @@ const DISCRIM_RULING_FINALIZED = new Uint8Array([0xbf, 0x58, 0xc2, 0x3f, 0x8e, 0
 // ---------------------------------------------------------------------------
 // Typed event payloads — narrow views of the on-chain events. Fields the daemon
 // never consumes are dropped (e.g. DisputeCreated.num_options is exposed for
-// completeness but unused; the integrity gate reads `Dispute.evidence_hash`).
+// completeness but unused; the integrity gate reads `Dispute.evidence_hashes`).
 // ---------------------------------------------------------------------------
 
 /** `DisputeCreated` — signals a Dispute account exists; indexing wake-up hint. */

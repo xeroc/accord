@@ -64,20 +64,20 @@ function stubAccord(accounts: {
 /** In-memory EvidenceStore stand-in (exercises the bundle-shape adapter). */
 function memoryStore(): EvidenceStore & { size: () => number } {
   const objects = new Map<string, EvidenceBundle>();
-  const key = (sa: Address, d: Address) => `${sa}/${d}`;
+  const key = (sa: Address, d: Address, r: number) => `${sa}/${d}/${r}`;
   return {
     size: () => objects.size,
     async put(b) {
-      objects.set(key(b.subaccord, b.dispute), b);
+      objects.set(key(b.subaccord, b.dispute, b.round), b);
     },
-    async get(sa, d) {
-      return objects.get(key(sa, d)) ?? null;
+    async get(sa, d, r) {
+      return objects.get(key(sa, d, r)) ?? null;
     },
-    async delete(sa, d) {
-      objects.delete(key(sa, d));
+    async delete(sa, d, r) {
+      objects.delete(key(sa, d, r));
     },
-    async exists(sa, d) {
-      return objects.has(key(sa, d));
+    async exists(sa, d, r) {
+      return objects.has(key(sa, d, r));
     },
   };
 }
@@ -94,7 +94,12 @@ async function rig() {
     },
     dispute: {
       exists: true,
-      data: { subaccord: SUB, evidenceHash, state: DisputeState.Drawn, currentRound: 0 },
+      data: {
+        subaccord: SUB,
+        evidenceHashes: [evidenceHash, new Uint8Array(32), new Uint8Array(32), new Uint8Array(32)],
+        state: DisputeState.Drawn,
+        currentRound: 0,
+      },
     },
     round: {
       exists: true,
@@ -127,11 +132,11 @@ test("wire: ingest + deliver round-trip — juror decrypts to the original plain
   const { deps, store } = await rig();
   const body = await postBody();
 
-  const ingested = await deps.ingest(SUB, DISPUTE, body);
+  const ingested = await deps.ingest(SUB, DISPUTE, 0, body);
   expect(ingested.ok).toBe(true);
   if (!ingested.ok) throw new Error("unreachable");
   expect(ingested.status).toBe(201);
-  expect(ingested.location).toBe(`/evidence/${SUB}/${DISPUTE}`);
+  expect(ingested.location).toBe(`/evidence/${SUB}/${DISPUTE}/0`);
   expect(store.size()).toBe(1); // ciphertext object persisted, plaintext never
 
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
@@ -140,10 +145,11 @@ test("wire: ingest + deliver round-trip — juror decrypts to the original plain
   expect(delivered.status).toBe(200);
 
   // Juror decrypts with its own seed — recovers exactly the claimant's plaintext.
+  // (Body is { rounds: [...] } per ADR-0023; round 0 is the filer's package.)
   const recovered = await jurorDecrypt(
     {
-      out: base64ToBytes(delivered.body.out),
-      operator_ephem_pub: base64ToBytes(delivered.body.operator_ephem_pub),
+      out: base64ToBytes(delivered.body.rounds[0]!.out),
+      operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
     },
     jurorSeed,
   );
@@ -153,8 +159,8 @@ test("wire: ingest + deliver round-trip — juror decrypts to the original plain
 test("wire: re-POST of the same plaintext_hash is idempotent (single object)", async () => {
   const { deps, store } = await rig();
   const body = await postBody();
-  const first = await deps.ingest(SUB, DISPUTE, body);
-  const second = await deps.ingest(SUB, DISPUTE, body);
+  const first = await deps.ingest(SUB, DISPUTE, 0, body);
+  const second = await deps.ingest(SUB, DISPUTE, 0, body);
   expect(first.status).toBe(201);
   expect(second.status).toBe(201);
   expect(store.size()).toBe(1);
@@ -162,7 +168,7 @@ test("wire: re-POST of the same plaintext_hash is idempotent (single object)", a
 
 test("wire: deliver by a non-drawn juror → 404", async () => {
   const { deps } = await rig();
-  await deps.ingest(SUB, DISPUTE, await postBody());
+  await deps.ingest(SUB, DISPUTE, 0, await postBody());
   const other = ed25519PublicKeyFromSeed(crypto.getRandomValues(new Uint8Array(32)));
   const res = await deps.deliver(DISPUTE, bs58.encode(other));
   expect(res.ok).toBe(false);
@@ -183,7 +189,7 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
   const keyring = EnvKeyring.fromEnv(bs58.encode(operatorSeed));
   const accord = stubAccord({ dispute: { exists: false } });
   const deps = createServerDeps({ store, accord, keyring, health: async () => ({ ok: true }) });
-  const res = await deps.ingest(SUB, DISPUTE, await postBody());
+  const res = await deps.ingest(SUB, DISPUTE, 0, await postBody());
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
   expect(res.status).toBe(404);
@@ -191,7 +197,7 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
 
 test("wire: malformed POST body (missing fields) → 400", async () => {
   const { deps } = await rig();
-  const res = await deps.ingest(SUB, DISPUTE, { ct: "not-enough" });
+  const res = await deps.ingest(SUB, DISPUTE, 0, { ct: "not-enough" });
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
   expect(res.status).toBe(400);
@@ -199,15 +205,15 @@ test("wire: malformed POST body (missing fields) → 400", async () => {
 
 test("wire: a different juror's seed cannot decrypt the delivered bundle", async () => {
   const { deps } = await rig();
-  await deps.ingest(SUB, DISPUTE, await postBody());
+  await deps.ingest(SUB, DISPUTE, 0, await postBody());
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
   if (!delivered.ok) throw new Error("unreachable");
   const stranger = crypto.getRandomValues(new Uint8Array(32));
   await expect(
     jurorDecrypt(
       {
-        out: base64ToBytes(delivered.body.out),
-        operator_ephem_pub: base64ToBytes(delivered.body.operator_ephem_pub),
+        out: base64ToBytes(delivered.body.rounds[0]!.out),
+        operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
       },
       stranger,
     ),

@@ -149,6 +149,51 @@ export function DisputeDetail() {
         </div>
       </div>
 
+      {/* Evidence (per round — ADR-0023) */}
+      {/* evidenceHashes is a fixed [0..=MAX_APPEALS] slot array; slot 0 = filer,
+          each appeal may write the next slot. [0u8;32] sentinel = no new evidence
+          that round (jurors reuse prior rounds'). Only slots up to the current
+          round are relevant; future slots are zero by initialization. */}
+      {(() => {
+        const slots = d.evidenceHashes.slice(0, d.currentRound + 1);
+        const filed = slots.filter(
+          (h) => !h.every((b: number) => b === 0),
+        ).length;
+        return (
+          <div className="rounded-lg border border-border-subtle bg-raised p-4">
+            <h2 className="mb-3 font-mono text-sm text-text-secondary">
+              Evidence ({filed} new package{filed === 1 ? "" : "s"} through
+              round {d.currentRound})
+            </h2>
+            <div className="space-y-2">
+              {slots.map((h, round) => {
+                const isSentinel = h.every((b: number) => b === 0);
+                return (
+                  <div
+                    key={round}
+                    className="flex items-center gap-3 rounded border border-border-subtle px-3 py-2"
+                  >
+                    <span className="w-16 shrink-0 font-mono text-xs text-text-secondary">
+                      round {round}
+                    </span>
+                    {isSentinel ? (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        no new evidence — reuses prior rounds
+                      </span>
+                    ) : (
+                      <Copyable value={hex(h)} head={8} tail={6} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 font-mono text-xs text-muted-foreground">
+              Round-N jurors receive every non-zero package from rounds 0..=N.
+            </p>
+          </div>
+        );
+      })()}
+
       {/* Final ruling */}
       {isFinal && d.finalRuling !== FINAL_SENTINEL && (
         <div className="rounded-lg border border-amber bg-amber/10 p-4">

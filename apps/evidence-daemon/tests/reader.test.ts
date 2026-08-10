@@ -104,7 +104,7 @@ test("isDeliverable: false before draw (premature fetch)", () => {
   for (const premature of [DisputeState.Created, DisputeState.SnapshotPosted]) {
     const d: DisputeView = {
       subaccord: SYS,
-      evidenceHash: new Uint8Array(32),
+      evidenceHashes: [new Uint8Array(32)],
       state: premature,
       currentRound: 0,
     };
@@ -115,7 +115,7 @@ test("isDeliverable: false before draw (premature fetch)", () => {
 test("isDeliverable: true once state reaches Drawn", () => {
   const d: DisputeView = {
     subaccord: SYS,
-    evidenceHash: new Uint8Array(32),
+    evidenceHashes: [new Uint8Array(32)],
     state: DisputeState.Drawn,
     currentRound: 0,
   };
@@ -133,7 +133,7 @@ test("isDeliverable: true for every state at or beyond Drawn", () => {
   ]) {
     const d: DisputeView = {
       subaccord: SYS,
-      evidenceHash: new Uint8Array(32),
+      evidenceHashes: [new Uint8Array(32)],
       state: ok,
       currentRound: 0,
     };
@@ -170,14 +170,19 @@ test("readSubaccord: null when the account does not exist", async () => {
 // delivery state. Drives both key lookup and the state gate in the pipeline.
 // ---------------------------------------------------------------------------
 
-test("readDispute: maps subaccord / evidenceHash / state / currentRound", async () => {
-  const hash = new Uint8Array(32).fill(0xab);
+test("readDispute: maps subaccord / evidenceHashes / state / currentRound", async () => {
+  const hashes = [
+    new Uint8Array(32).fill(0xab),
+    new Uint8Array(32).fill(0xcd),
+    new Uint8Array(32),
+    new Uint8Array(32),
+  ];
   const accord = stubAccord({
     dispute: {
       exists: true,
       data: {
         subaccord: TOK,
-        evidenceHash: hash,
+        evidenceHashes: hashes,
         state: DisputeState.Drawn,
         currentRound: 3,
       },
@@ -186,7 +191,7 @@ test("readDispute: maps subaccord / evidenceHash / state / currentRound", async 
   const view = await readDispute(accord, SYS);
   expect(view).not.toBeNull();
   expect(view!.subaccord).toBe(TOK);
-  expect(view!.evidenceHash).toBe(hash);
+  expect(view!.evidenceHashes).toBe(hashes);
   expect(view!.state).toBe(DisputeState.Drawn);
   expect(view!.currentRound).toBe(3);
 });
@@ -235,7 +240,7 @@ test("readRound: null when the round is not initialized (pre-draw)", async () =>
 test("composition: deliverable requires BOTH state gate AND drawn membership", () => {
   const dispute: DisputeView = {
     subaccord: SYS,
-    evidenceHash: new Uint8Array(32),
+    evidenceHashes: [new Uint8Array(32)],
     state: DisputeState.Drawn,
     currentRound: 0,
   };

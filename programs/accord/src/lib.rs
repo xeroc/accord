@@ -819,7 +819,7 @@ pub mod accord {
         d.nonce = nonce;
         d.num_options = num_options;
         d.options = opt_arr;
-        d.evidence_hash = evidence_hash;
+        d.evidence_hashes[0] = evidence_hash;
         d.state = DisputeState::Created;
         d.current_round = 0;
         d.final_ruling = u8::MAX;
@@ -1603,11 +1603,16 @@ pub mod accord {
     /// `Created` so the snapshot → draw → vote cycle reruns for the new panel.
     /// Custodies the bond in a per-appeal `AppealBond` PDA.
     ///
+    /// `new_evidence_hash` optionally introduces fresh evidence for the new
+    /// round (stored at `evidence_hashes[current_round + 1]`); `[0u8; 32]`
+    /// sentinel = no new evidence, jurors reuse prior rounds' (milestone
+    /// accord-qp7c).
+    ///
     /// Gates: `RoundResolved` state, within the appeal window, under the
     /// `max_appeals` cap, and with enough active distinct stakers to fill the
     /// larger panel. Never pausable (ADR-0016) — pausing must not suppress the
     /// right to appeal.
-    pub fn appeal(ctx: Context<Appeal>) -> Result<()> {
+    pub fn appeal(ctx: Context<Appeal>, new_evidence_hash: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require_eq!(
             dispute.subaccord,
@@ -1705,6 +1710,12 @@ pub mod accord {
         dispute.current_round = new_round;
         dispute.state = DisputeState::Created;
         dispute.filed_at = now;
+        // Per-round evidence (milestone accord-qp7c): stash the appellant's
+        // new evidence at the new round's slot. `[0u8; 32]` sentinel = no new
+        // evidence this round (jurors reuse prior rounds'). The max_appeals
+        // gate above guarantees `new_round <= MAX_APPEALS`, so the index is
+        // in-bounds and the slot is virgin (sequential per-round writes).
+        dispute.evidence_hashes[new_round as usize] = new_evidence_hash;
 
         emit!(Appealed {
             dispute: dispute.key(),

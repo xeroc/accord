@@ -162,6 +162,7 @@ export interface AccordAppealClient {
   buildAppeal(input: {
     programId: Address;
     accounts: AppealAccounts;
+    newEvidenceHash: Uint8Array;
   }): Instruction;
   buildClaimAppealRefund(input: {
     programId: Address;
@@ -171,17 +172,38 @@ export interface AccordAppealClient {
 }
 
 /**
+ * Validate a per-round evidence commitment is `[u8; 32]` (lib.rs appeal arg).
+ * The `[0u8; 32]` sentinel (no new evidence this round) is a legal value, so
+ * only the length is checked. Mirrors {@link assertValidEvidenceHash} in
+ * dispute.ts but is duplicated here to keep appeal.ts self-contained.
+ */
+export function assertValidNewEvidenceHash(newEvidenceHash: Uint8Array): void {
+  if (newEvidenceHash.length !== 32) {
+    throw new Error(
+      `InvalidNewEvidenceHash: expected 32 bytes, got ${newEvidenceHash.length}`,
+    );
+  }
+}
+
+/**
  * Build `appeal` (lib.rs:1374). Opens `current_round + 1` with a `2N+1` panel;
  * the appellant pays `fee_new + bond` (bond == fee_new). The AppealBond PDA is
  * keyed by the new round — derive it via {@link findAppealBondPda} with
  * `currentRound + 1`.
+ *
+ * `newEvidenceHash` optionally introduces fresh evidence for the new round
+ * (stored at `evidence_hashes[current_round + 1]`); pass the `[0u8; 32]`
+ * sentinel (milestone accord-qp7c) to carry forward prior rounds' evidence
+ * without adding any.
  */
 export function appeal(
   client: AccordAppealClient,
   programId: Address,
   accounts: AppealAccounts,
+  newEvidenceHash: Uint8Array,
 ): Instruction {
-  return client.buildAppeal({ programId, accounts });
+  assertValidNewEvidenceHash(newEvidenceHash);
+  return client.buildAppeal({ programId, accounts, newEvidenceHash });
 }
 
 /**

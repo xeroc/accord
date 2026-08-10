@@ -9,7 +9,7 @@
 import { address, type Address } from "@solana/kit";
 
 /**
- * SHA-256 of the plaintext — equals the on-chain `Dispute.evidence_hash`.
+ * SHA-256 of the plaintext — equals the on-chain `Dispute.evidence_hashes[round]`.
  * Used as the idempotency key and the delivery integrity gate. 32 bytes.
  */
 export type PlaintextHash = Uint8Array;
@@ -23,8 +23,14 @@ export type PlaintextHash = Uint8Array;
 export interface EvidenceBundle {
   /** Subaccord address — S3 key prefix and operator-key selector. */
   readonly subaccord: Address;
-  /** Dispute address — S3 key suffix, primary index. */
+  /** Dispute address — S3 key component, primary index. */
   readonly dispute: Address;
+  /**
+   * Evidence round (ADR-0023): 0 = filer, 1..MAX_APPEALS = appeal rounds.
+   * Forms the per-round storage key `{subaccord}/{dispute}/{round}` so each
+   * round's ciphertext is stored independently.
+   */
+  readonly round: number;
   /** AES-256-GCM(plaintext) under the DEK — ciphertext. */
   readonly ct: Uint8Array;
   /** Claimant's ephemeral X25519 pubkey (32 bytes). */
@@ -45,16 +51,23 @@ export interface EvidenceBundle {
 export class EvidenceConflictError extends Error {
   readonly subaccord: Address;
   readonly dispute: Address;
+  readonly round: number;
   /** Hash already stored at the key (32 bytes, or empty if metadata absent). */
   readonly existingHash: Uint8Array;
 
-  constructor(b: { subaccord: Address; dispute: Address; existingHash: Uint8Array }) {
+  constructor(b: {
+    subaccord: Address;
+    dispute: Address;
+    round: number;
+    existingHash: Uint8Array;
+  }) {
     super(
-      `evidence conflict for ${b.subaccord}/${b.dispute}: a different plaintext_hash is already stored`,
+      `evidence conflict for ${b.subaccord}/${b.dispute}/round${b.round}: a different plaintext_hash is already stored`,
     );
     this.name = "EvidenceConflictError";
     this.subaccord = b.subaccord;
     this.dispute = b.dispute;
+    this.round = b.round;
     this.existingHash = b.existingHash;
   }
 }
@@ -78,12 +91,12 @@ export interface EvidenceStore {
    *  - no object ⇒ creates it.
    */
   put(b: EvidenceBundle): Promise<void>;
-  /** Returns the bundle, or `null` if no object exists at the key. */
-  get(subaccord: Address, dispute: Address): Promise<EvidenceBundle | null>;
-  /** Idempotent removal. No-op if the key is absent. */
-  delete(subaccord: Address, dispute: Address): Promise<void>;
-  /** `true` iff an object exists at the key. */
-  exists(subaccord: Address, dispute: Address): Promise<boolean>;
+  /** Returns the round-`round` bundle, or `null` if no object exists at the key. */
+  get(subaccord: Address, dispute: Address, round: number): Promise<EvidenceBundle | null>;
+  /** Idempotent removal of the round-`round` object. No-op if the key is absent. */
+  delete(subaccord: Address, dispute: Address, round: number): Promise<void>;
+  /** `true` iff a round-`round` object exists at the key. */
+  exists(subaccord: Address, dispute: Address, round: number): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +109,7 @@ interface BundleJson {
   v: 1;
   subaccord: string;
   dispute: string;
+  round: number;
   ct: string;
   claimant_ephem_pub: string;
   wrapped: string;
@@ -132,6 +146,7 @@ export function serializeBundle(b: EvidenceBundle): string {
     v: 1,
     subaccord: b.subaccord,
     dispute: b.dispute,
+    round: b.round,
     ct: bytesToBase64(b.ct),
     claimant_ephem_pub: bytesToBase64(b.claimantEphemPub),
     wrapped: bytesToBase64(b.wrapped),
@@ -150,6 +165,7 @@ export function deserializeBundle(s: string): EvidenceBundle {
     // is the right behaviour for a corrupted/tampered stored object.
     subaccord: address(j.subaccord),
     dispute: address(j.dispute),
+    round: j.round,
     ct: base64ToBytes(j.ct),
     claimantEphemPub: base64ToBytes(j.claimant_ephem_pub),
     wrapped: base64ToBytes(j.wrapped),

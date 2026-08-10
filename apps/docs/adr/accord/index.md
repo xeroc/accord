@@ -38,6 +38,7 @@ status banner is annotated.
 | [0020](0020-two-mint-two-vault-stake-token-fee-token.md)                      | Two-mint/two-vault economics — `stake_token` (collateral) + `fee_token` (compensation)              | Accepted             |
 | [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md)                   | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx`                         | Accepted             |
 | [0022](0022-per-subaccord-configurable-appeal-window.md)                      | Per-Subaccord configurable appeal window                                                            | Accepted             |
+| [0023](0023-per-round-evidence-hashes.md)                                     | Per-round evidence hashes — evidence-on-appeal                                                      | Accepted             |
 
 ### Supersession map
 
@@ -55,6 +56,9 @@ status banner is annotated.
 - **0020** supersedes the single-token decision of **0002** (one `staking_token` for both
   stake and fees → split `stake_token` collateral + `fee_token` compensation, dual vaults,
   `fees_earned` ledger). 0002's per-Subaccord-choice and no-Accord-token decisions stand.
+- **0023** amends **0006** / **0017** (the on-chain evidence surface is one hash _per round_,
+  not one hash frozen at filing; ADR-0017's `sha256(manifest.yaml)` remains each slot's
+  content). The round-0 commitment and `create_dispute`'s filer-facing arg are unchanged.
 
 ## How to read them
 
@@ -70,7 +74,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0023**).
+1. Number = next sequential (currently **0024**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

@@ -4,12 +4,12 @@ The Arbitrable's only write into the Accord. `create_dispute` custodies the roun
 
 ## Args
 
-| Arg             | Type            | Notes                                                                                       |
-| --------------- | --------------- | ------------------------------------------------------------------------------------------- |
-| `options`       | `Vec<[u8; 32]>` | 2..=`MAX_OPTIONS` (32). Option label hashes.                                                |
-| `evidence_hash` | `[u8; 32]`      | [ADR-0006](../adr/0006-evidence-onchain-hash-trusted-re-encryption-operator.md) commitment. |
-| `nonce`         | `u64`           | Caller-chosen; PDA uniqueness (`["dispute", filer, nonce]`).                                |
-| `fee`           | `u64`           | **Must equal** `INITIAL_NUM_JURORS · fee_per_juror` (= `3 · fee_per_juror`).                |
+| Arg             | Type            | Notes                                                                                                                                                                                                                        |
+| --------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `options`       | `Vec<[u8; 32]>` | 2..=`MAX_OPTIONS` (32). Option label hashes.                                                                                                                                                                                 |
+| `evidence_hash` | `[u8; 32]`      | [ADR-0006](../adr/0006-evidence-onchain-hash-trusted-re-encryption-operator.md) commitment. Stored at `dispute.evidence_hashes[0]`; appeals may add per-round hashes ([ADR-0023](../adr/0023-per-round-evidence-hashes.md)). |
+| `nonce`         | `u64`           | Caller-chosen; PDA uniqueness (`["dispute", filer, nonce]`).                                                                                                                                                                 |
+| `fee`           | `u64`           | **Must equal** `INITIAL_NUM_JURORS · fee_per_juror` (= `3 · fee_per_juror`).                                                                                                                                                 |
 
 ## Gates
 

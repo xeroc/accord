@@ -27,7 +27,7 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
     deliver: async () => ({
       ok: true,
       status: 200,
-      body: { out: "b3V0", operator_ephem_pub: "cHVi" },
+      body: { rounds: [{ round: 0, out: "b3V0", operator_ephem_pub: "cHVi" }] },
     }),
     health: async () => ({ ok: true }),
     ...overrides,
@@ -112,11 +112,12 @@ describe("GET /evidence/:dispute/for/:juror", () => {
     const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      out: string;
-      operator_ephem_pub: string;
+      rounds: { round: number; out: string; operator_ephem_pub: string }[];
     };
-    expect(body.out).toBe("b3V0");
-    expect(body.operator_ephem_pub).toBe("cHVi");
+    expect(body.rounds).toHaveLength(1);
+    expect(body.rounds[0]!.round).toBe(0);
+    expect(body.rounds[0]!.out).toBe("b3V0");
+    expect(body.rounds[0]!.operator_ephem_pub).toBe("cHVi");
   });
 
   it("not drawn / premature → 404 (handler signal)", async () => {

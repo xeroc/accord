@@ -6,6 +6,12 @@ Permissionless escalation to a larger panel. Anyone may appeal a resolved round 
 
 ## `appeal()`
 
+`appeal(ctx, new_evidence_hash)` — the `new_evidence_hash: [u8; 32]` argument is the
+evidence-on-appeal channel ([ADR-0023](../adr/0023-per-round-evidence-hashes.md)). It is
+stored at `dispute.evidence_hashes[current_round + 1]` (the round this appeal opens). Pass
+`[0u8; 32]` to appeal on the existing evidence only — the sentinel means "no new evidence this
+round," and round-N jurors reuse the accumulated `evidence_hashes[0..=N]`.
+
 | Gate                                     | Error                |
 | ---------------------------------------- | -------------------- |
 | `!pause_state.paused`                    | `ProgramPaused`      |
@@ -41,10 +47,14 @@ total   = fee_new + bond                  // appellant ATA → vault
 
 ## Round reset
 
-`appeal` increments `current_round` and resets `state → Created`, so the VRF → draw → vote cycle reruns for the larger panel. The same `committed_vrf` and `frozen_root` are reused — appeals draw a larger panel from the same fixed pool (no new VRF, no re-grind; [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
+`appeal` increments `current_round`, stores `new_evidence_hash` into
+`evidence_hashes[current_round]` (the new round's slot), and resets `state → Created`,
+so the VRF → draw → vote cycle reruns for the larger panel. The same `committed_vrf` and
+`frozen_root` are reused — appeals draw a larger panel from the same fixed pool (no new VRF,
+no re-grind; [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ```rust
-accord::appeal(ctx.contexts)?;
+accord::appeal(ctx.contexts, new_evidence_hash)?;   // [u8; 32]; [0u8; 32] = no new evidence
 // later, after Final:
 accord::claim_appeal_refund(ctx.contexts, round_idx)?;  // round_idx = appealed round
 ```
@@ -52,7 +62,8 @@ accord::claim_appeal_refund(ctx.contexts, round_idx)?;  // round_idx = appealed 
 ```typescript
 import { appeal, claimAppealRefund } from "@useaccord/sdk";
 
-await appeal(accord.adapter, accord.PROGRAM_ID, { dispute });
+// newEvidenceHash: Uint8Array(32); all-zeros = appeal on existing evidence (ADR-0023)
+await appeal(accord.adapter, accord.PROGRAM_ID, { dispute, newEvidenceHash });
 // after finalize_dispute:
 await claimAppealRefund(accord.adapter, accord.PROGRAM_ID, {
   dispute,

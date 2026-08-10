@@ -4829,3 +4829,287 @@ fn withdraw_fees_caps_at_vault_balance_preserving_remainder() {
         "unpaid remainder preserved in fees_earned"
     );
 }
+
+// ─── per-round evidence hashes (milestone accord-qp7c / bean accord-azyd) ────
+//
+// `Dispute.evidence_hashes: [[u8; 32]; NUM_EVIDENCE_SLOTS]` holds one
+// commitment per round: index 0 at filing, each appeal may slot a new hash at
+// `[current_round + 1]`. `[0u8; 32]` sentinel = no new evidence (jurors reuse
+// prior rounds'). These tests prove the on-chain writes (create_dispute +
+// appeal); daemon-side delivery of accumulated hashes is off-chain.
+
+/// Arm `n` distinct stakers at 5_000 each (continuous accumulator indices).
+fn arm_n_stakers(env: &mut AccEnv, n: u8) -> Vec<Keypair> {
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    let mut jurors = Vec::new();
+    for i in 0..n {
+        let juror = Keypair::new();
+        arm_juror(env, &juror, 10_000);
+        let amt = 5_000u64;
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(env, &juror, amt, path).assert_success();
+        leaves.push((juror.pubkey(), amt));
+        jurors.push(juror);
+    }
+    jurors
+}
+
+/// Create a real dispute via the on-chain ix with a caller-supplied
+/// `evidence_hash`. Caller arms enough stakers first (>= 3 for round-0 panel).
+fn create_dispute_with_evidence(env: &mut AccEnv, evidence_hash: [u8; 32]) -> (Pubkey, Keypair) {
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let fee = 3 * 1_000_000u64;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash,
+            nonce,
+            fee,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+    (dispute, filer)
+}
+
+fn read_dispute(env: &AccEnv, dispute: &Pubkey) -> Dispute {
+    Dispute::try_deserialize(&mut &env.ctx.svm.get_account(dispute).unwrap().data[..]).unwrap()
+}
+
+/// Fabricate a zero_copy Round account with `result` set and `reveal_end =
+/// now` (keeps the appeal window open). Satisfies `appeal`'s preconditions
+/// without driving the full snapshot → draw → vote cycle.
+fn fabricate_resolved_round(
+    env: &mut AccEnv,
+    dispute: &Pubkey,
+    round_idx: u32,
+    result: u8,
+) -> Pubkey {
+    let rnd = round_pda(dispute, round_idx);
+    let disc = solana_program::hash::hash(b"account:Round").to_bytes();
+    let size = 8 + std::mem::size_of::<accord::state::Round>();
+    let mut data = vec![0u8; size];
+    data[..8].copy_from_slice(&disc[..8]);
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    let r: &mut accord::state::Round = bytemuck::from_bytes_mut(&mut data[8..]);
+    r.round_idx = round_idx;
+    r.result = result;
+    r.reveal_end = now;
+    env.ctx
+        .svm
+        .set_account(
+            rnd,
+            SvmAccount {
+                lamports: 1_000_000,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+    rnd
+}
+
+/// Force a dispute into `RoundResolved` at `current_round` (simulates the
+/// round completing). Used to reach `appeal`'s state precondition.
+fn force_round_resolved(env: &mut AccEnv, dispute: &Pubkey, current_round: u32) {
+    let acc = env.ctx.svm.get_account(dispute).unwrap();
+    let mut d = Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+    d.state = DisputeState::RoundResolved;
+    d.current_round = current_round;
+    let mut data = acc.data[..8].to_vec();
+    AnchorSerialize::serialize(&d, &mut data).unwrap();
+    env.ctx
+        .svm
+        .set_account(
+            *dispute,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
+/// Fund an appellant (SOL + fee-token ATA) so `appeal`'s transfer + ATA
+/// constraints resolve.
+fn fund_appellant(env: &mut AccEnv, balance: u64) -> Keypair {
+    let appellant = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&appellant.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let ata = juror_ata(&appellant.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &ata, &env.mint, &appellant.pubkey(), balance);
+    appellant
+}
+
+/// Build + execute `appeal(new_evidence_hash)` signed by `appellant`.
+fn do_appeal(
+    env: &mut AccEnv,
+    dispute: &Pubkey,
+    appellant: &Keypair,
+    new_evidence_hash: [u8; 32],
+) -> TransactionResult {
+    let d = read_dispute(env, dispute);
+    let round = round_pda(dispute, d.current_round);
+    let appeal_bond = Pubkey::find_program_address(
+        &[
+            SEED_APPEAL_BOND,
+            dispute.as_ref(),
+            &d.current_round.to_le_bytes(),
+        ],
+        &ID,
+    )
+    .0;
+    let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Appeal {
+            appellant: appellant.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute: *dispute,
+            round,
+            appeal_bond,
+            fee_token: env.mint,
+            appellant_token_account: appellant_ata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::Appeal { new_evidence_hash })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[appellant]).unwrap()
+}
+
+/// Matrix §6.1: create_dispute stores the filed hash at evidence_hashes[0];
+/// the remaining appeal slots stay zero ([0u8;32] sentinel).
+#[test]
+fn create_dispute_stores_round0_evidence_hash() {
+    let mut env = setup_accumulator();
+    arm_n_stakers(&mut env, 3);
+    let filed = [0xAA; 32];
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, filed);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.evidence_hashes[0], filed, "round-0 slot holds filed hash");
+    for (i, slot) in d.evidence_hashes.iter().enumerate().skip(1) {
+        assert_eq!(*slot, [0u8; 32], "appeal slot {} must be zero at filing", i);
+    }
+}
+
+/// Matrix §6.2: appeal writes new_evidence_hash to evidence_hashes[round+1]
+/// and advances current_round; prior slots are untouched.
+#[test]
+fn appeal_writes_new_evidence_hash_to_next_round_slot() {
+    let mut env = setup_accumulator();
+    // First appeal opens round 1 → panel = 7 (panel_size_for_round(1)).
+    arm_n_stakers(&mut env, 7);
+    let round0 = [0xAA; 32];
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, round0);
+
+    // Reach `appeal`'s preconditions: dispute RoundResolved + a resolved round.
+    force_round_resolved(&mut env, &dispute, 0);
+    fabricate_resolved_round(&mut env, &dispute, 0, 0);
+
+    // Round-1 fee = 7 * fee_per_juror (1_000_000) = 7_000_000; bond == fee;
+    // total = 14_000_000. Fund well above.
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    let new_hash = [0xBB; 32];
+    do_appeal(&mut env, &dispute, &appellant, new_hash).assert_success();
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.current_round, 1, "appeal advances current_round");
+    assert_eq!(d.state, DisputeState::Created, "appeal reopens the dispute");
+    assert_eq!(d.evidence_hashes[0], round0, "round-0 hash untouched");
+    assert_eq!(
+        d.evidence_hashes[1], new_hash,
+        "new hash slotted at [round+1]"
+    );
+    assert_eq!(d.evidence_hashes[2], [0u8; 32], "round-2 still sentinel");
+}
+
+/// Matrix §6.3: appealing with the [0u8;32] sentinel leaves the new slot zero
+/// (jurors reuse prior rounds' evidence). The slot is written, just with the
+/// sentinel value — no branch needed on-chain.
+#[test]
+fn appeal_sentinel_evidence_hash_leaves_slot_zero() {
+    let mut env = setup_accumulator();
+    arm_n_stakers(&mut env, 7);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+
+    force_round_resolved(&mut env, &dispute, 0);
+    fabricate_resolved_round(&mut env, &dispute, 0, 0);
+
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant, [0u8; 32]).assert_success();
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.current_round, 1, "appeal still advances the round");
+    assert_eq!(
+        d.evidence_hashes[1], [0u8; 32],
+        "sentinel appeal leaves new slot zero (no new evidence)"
+    );
+}
+
+/// Matrix §6.4: max_appeals still bounds the slot array. With current_round at
+/// the cap, appeal is rejected (MaxAppealsReached) — no slot is written.
+#[test]
+fn appeal_beyond_max_appeals_rejected() {
+    let mut env = setup_accumulator();
+    arm_n_stakers(&mut env, 3);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+
+    // subaccord.max_appeals = 3 (setup_accumulator). Push the dispute to round
+    // 3 (the cap) — appealing would open round 4, beyond the array + the cap.
+    force_round_resolved(&mut env, &dispute, 3);
+    fabricate_resolved_round(&mut env, &dispute, 3, 0);
+
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    let r = do_appeal(&mut env, &dispute, &appellant, [0xCC; 32]);
+    assert!(
+        !r.is_success(),
+        "appeal beyond max_appeals must fail; logs={:?}",
+        r.logs()
+    );
+
+    // Slot 0 untouched; nothing written past the cap.
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.evidence_hashes[0], [0xAA; 32]);
+    for slot in d.evidence_hashes.iter().skip(1) {
+        assert_eq!(*slot, [0u8; 32], "no slot written by the rejected appeal");
+    }
+}

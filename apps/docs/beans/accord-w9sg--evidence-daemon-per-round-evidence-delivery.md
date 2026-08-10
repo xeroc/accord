@@ -1,11 +1,11 @@
 ---
 # accord-w9sg
 title: Evidence daemon — per-round evidence delivery
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-09T16:56:08Z
-updated_at: 2026-08-09T16:56:08Z
+updated_at: 2026-08-09T21:12:30Z
 parent: accord-qp7c
 blocked_by:
     - accord-hoaj

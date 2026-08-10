@@ -1,7 +1,7 @@
 /**
  * S3Store — v1 {@link EvidenceStore} backed by S3 / MinIO.
  *
- * Object key:     `{subaccord}/{dispute}` (base58 Address strings).
+ * Object key:     `{subaccord}/{dispute}/{round}` (base58 Address strings + round index).
  * Object body:    serialized {@link EvidenceBundle} — CIPHERTEXT ONLY.
  * Object metadata: `plaintext-hash` (base64), `subaccord`, `ingested-at`.
  * Idempotent put: HEAD first; equal `plaintext-hash` ⇒ no-op; differ ⇒ 409
@@ -52,8 +52,8 @@ export interface S3StoreConfig {
   readonly kmsKeyId?: string;
 }
 
-function objectKey(subaccord: Address, dispute: Address): string {
-  return `${subaccord}/${dispute}`;
+function objectKey(subaccord: Address, dispute: Address, round: number): string {
+  return `${subaccord}/${dispute}/${round}`;
 }
 
 export class S3Store implements EvidenceStore {
@@ -73,14 +73,14 @@ export class S3Store implements EvidenceStore {
   }
 
   async put(b: EvidenceBundle): Promise<void> {
-    const key = objectKey(b.subaccord, b.dispute);
+    const key = objectKey(b.subaccord, b.dispute, b.round);
 
     // Idempotent: HEAD the key first. S3 HEAD is eventually-consistent for new
     // objects in some deployments, but for the put-after-put pattern here the
     // ponytail: race window between HEAD and PUT is acceptable — honest
     // re-PUTs are no-ops on equal hashes; a conflicting PUT (different hash
-    // for one dispute) does not occur in the protocol (one dispute ⇒ one
-    // plaintext). Last-writer-wins on the metastable race.
+    // for one dispute+round) does not occur in the protocol (one
+    // dispute+round ⇒ one plaintext). Last-writer-wins on the metastable race.
     let exists = false;
     try {
       const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
@@ -90,6 +90,7 @@ export class S3Store implements EvidenceStore {
         throw new EvidenceConflictError({
           subaccord: b.subaccord,
           dispute: b.dispute,
+          round: b.round,
           existingHash: new Uint8Array(),
         });
       }
@@ -97,6 +98,7 @@ export class S3Store implements EvidenceStore {
         throw new EvidenceConflictError({
           subaccord: b.subaccord,
           dispute: b.dispute,
+          round: b.round,
           existingHash: base64ToBytes(existingB64),
         });
       }
@@ -128,12 +130,12 @@ export class S3Store implements EvidenceStore {
     );
   }
 
-  async get(subaccord: Address, dispute: Address): Promise<EvidenceBundle | null> {
+  async get(subaccord: Address, dispute: Address, round: number): Promise<EvidenceBundle | null> {
     try {
       const res = await this.client.send(
         new GetObjectCommand({
           Bucket: this.bucket,
-          Key: objectKey(subaccord, dispute),
+          Key: objectKey(subaccord, dispute, round),
         }),
       );
       if (res.Body === undefined) return null;
@@ -150,22 +152,22 @@ export class S3Store implements EvidenceStore {
     }
   }
 
-  async delete(subaccord: Address, dispute: Address): Promise<void> {
+  async delete(subaccord: Address, dispute: Address, round: number): Promise<void> {
     // S3 delete is idempotent: deleting a nonexistent key returns 204.
     await this.client.send(
       new DeleteObjectCommand({
         Bucket: this.bucket,
-        Key: objectKey(subaccord, dispute),
+        Key: objectKey(subaccord, dispute, round),
       }),
     );
   }
 
-  async exists(subaccord: Address, dispute: Address): Promise<boolean> {
+  async exists(subaccord: Address, dispute: Address, round: number): Promise<boolean> {
     try {
       await this.client.send(
         new HeadObjectCommand({
           Bucket: this.bucket,
-          Key: objectKey(subaccord, dispute),
+          Key: objectKey(subaccord, dispute, round),
         }),
       );
       return true;
