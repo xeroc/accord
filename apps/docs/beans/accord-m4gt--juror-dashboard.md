@@ -3,8 +3,9 @@
 title: Juror dashboard
 status: completed
 type: task
+priority: normal
 created_at: 2026-08-07T23:09:16Z
-updated_at: 2026-08-08T00:00:00Z
+updated_at: 2026-08-08T23:18:59Z
 parent: accord-pbff
 ---
 
@@ -26,9 +27,10 @@ round?)`: maps DisputeState + Round window deadlines to a human-readable
 
 ### Modified files
 
-- **`packages/sdk/src/queries.ts`** — added `findJurorStakesByJuror(rpc,
-programId, juror)`: typed getProgramAccounts wrapper (memcmp at offset 40 =
-  the juror field in JurorStake). Refactored shared decode logic.
+- **`packages/sdk/src/query.ts`** — `findJurorStakesByJuror(rpc, juror)`:
+  typed getProgramAccounts wrapper (discriminator + 32-byte memcmp at
+  offset 40 = the juror field in JurorStake). Shares the decode helper with
+  the other 4 query wrappers.
 - **`packages/sdk/src/index.ts`** — exports `findJurorStakesByJuror`,
   `disputePhase`, `RoundPhaseWindows`, `PhaseInfo`.
 

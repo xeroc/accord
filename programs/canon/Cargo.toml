@@ -10,6 +10,14 @@ workspace = true
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "canon"
+# canon has zero doctests (all prose comments, no fenced code blocks). The
+# `--doc` harness only compiles the lib as a doctest wrapper — and since canon
+# depends on `accord` via a workspace path dep, that wrapper context is the
+# surface where cargo's feature-unification intermittently fails with
+# `E0463: can't find crate for accord` after a stale build state. Disabling
+# doctests removes the failure surface without losing coverage (there's nothing
+# to run). Coverage lives in `tests/*_litesvm.rs` (LiteSVM) + e2e.
+doctest = false
 
 [features]
 no-entrypoint = []

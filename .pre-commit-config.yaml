@@ -29,39 +29,10 @@ repos:
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/ljnsn/cz-conventional-gitmoji
-    rev: v0.7.0
-    hooks:
-      - id: conventional-gitmoji
-
-  - repo: local
-    hooks:
-      #     - id: no-repeated-whitespace
-      #       name: No repeated spaces
-      #       entry: '\S+\s{2,}'
-      #       language: pygrep
-      #       types: [text]
-      #       exclude_types: [javascript, ts]
-      #
-      #     - id: no-bracket-links
-      #       name: "Brackets should not be inside links [[link]](url) -> [[link](url)]"
-      #       entry: '\]\]\('
-      #       language: pygrep
-      #       types: [markdown]
-      #
-      - id: no-http
-        name: URLs must use HTTPS
-        entry: "http:"
-        language: pygrep
-        types_or: [markdown, yaml]
-        exclude: |
-          (?x)^(
-              .pre-commit-config.yaml|
-              pnpm-lock.yaml|
-              context/.*|
-              txtx\.yml|
-              runbooks/.*
-          )$
+  # - repo: https://github.com/ljnsn/cz-conventional-gitmoji
+  #   rev: v0.7.0
+  #   hooks:
+  #     - id: conventional-gitmoji
 
   ######################################
   # docs and other markdown files

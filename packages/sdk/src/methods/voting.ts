@@ -37,10 +37,11 @@ const COMMIT_PREIMAGE_LEN = 1 + 32 + 32;
 /**
  * Shared accounts every voting instruction takes (juror or cranker signs).
  *
- * `commit`/`finalizeRound`/`finalizeDispute` use only the first four; `reveal`
- * also needs the token accounts (it pays the participation fee on reveal —
- * CONCEPT-REVIEW Ugly 5). `stakingToken`/`jurorTokenAccount`/`vault` are
- * optional for the non-reveal instructions; `tokenProgram` is a fixed constant.
+ * `commit`/`reveal`/`finalizeRound`/`finalizeDispute` use only the first four.
+ * The `stakingToken`/`jurorTokenAccount`/`vault` fields are vestigial: pre
+ * ADR-0020 `reveal` paid a fee on reveal; that credit now happens in
+ * `finalize_round`. The adapter ignores them and the chain doesn't ask.
+ * `tokenProgram` is a fixed constant.
  */
 export interface VotingAccounts {
   /** Commit/reveal: the drawn juror. finalize_*: any cranker. Always a signer. */
@@ -48,11 +49,11 @@ export interface VotingAccounts {
   subaccord: Address;
   dispute: Address;
   round: Address;
-  /** reveal only — the staking mint (fee source denomination). */
+  /** @deprecated vestigial — reveal no longer moves tokens (ADR-0020). */
   stakingToken?: Address;
-  /** reveal only — juror's ATA (fee destination). */
+  /** @deprecated vestigial — reveal no longer moves tokens (ADR-0020). */
   jurorTokenAccount?: Address;
-  /** reveal only — Subaccord PDA's vault ATA (fee source). */
+  /** @deprecated vestigial — reveal no longer moves tokens (ADR-0020). */
   vault?: Address;
 }
 
@@ -226,16 +227,9 @@ export function reveal(
     throw new Error(`InvalidVote: vote must fit a u8, got ${args.vote}`);
   }
   assertValidSalt(args.salt);
-  // reveal pays the participation fee (Ugly 5): needs the token accounts.
-  if (
-    !accounts.stakingToken ||
-    !accounts.jurorTokenAccount ||
-    !accounts.vault
-  ) {
-    throw new Error(
-      "InvalidRevealAccounts: reveal requires stakingToken, jurorTokenAccount, vault",
-    );
-  }
+  // ponytail: ADR-0020 moved reveal's fee credit to finalize_round — on-chain
+  // Reveal (lib.rs) takes only juror/subaccord/dispute/round. The optional
+  // token fields on VotingAccounts are vestigial; the adapter ignores them.
   return client.buildReveal({
     programId,
     accounts,

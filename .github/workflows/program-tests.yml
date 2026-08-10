@@ -1,19 +1,46 @@
 name: Anchor Tests
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "programs/**"
-      - "tests/**"
-      - "Anchor.toml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-  workflow_dispatch:
   workflow_call:
+    inputs:
+      program:
+        description: "Program to test"
+        required: true
+        type: string
+      branch:
+        description: "Branch to test"
+        required: false
+        type: string
+        default: "*"
 
 jobs:
   test:
-    uses: solana-foundation/github-workflows/.github/workflows/test.yaml@v0.5.0
-    with:
-      program: "accord"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Build packages/*
+        run: pnpm install && pnpm run -r --filter "./packages/*" build
+
+      - uses: solana-foundation/github-actions/extract-versions@v0.2.15
+        id: versions
+
+      - uses: solana-foundation/github-actions/setup-all@v0.2.15
+        with:
+          solana_version: ${{ steps.versions.outputs.solana_version }}
+          anchor_version: ${{ steps.versions.outputs.anchor_version }}
+          node_version: 20
+
+      - name: Run Surfpool installation script
+        run: |
+          curl -sL https://run.surfpool.run/ | bash
+
+      - uses: xeroc/github-actions/run-tests@main
+        with:
+          solana_version: ${{ steps.versions.outputs.solana_version }}
+          anchor_version: ${{ steps.versions.outputs.anchor_version }}
+          program: ${{ inputs.program }}
+          package_manager: pnpm

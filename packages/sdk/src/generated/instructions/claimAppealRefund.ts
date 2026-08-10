@@ -75,7 +75,7 @@ export type ClaimAppealRefundInstruction<
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
         ? ReadonlyAccount<TAccountDispute>
@@ -200,7 +200,7 @@ export async function getClaimAppealRefundInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
@@ -355,7 +355,7 @@ export function getClaimAppealRefundInstruction<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },

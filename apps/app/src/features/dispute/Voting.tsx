@@ -12,11 +12,12 @@ import {
 } from "@useaccord/sdk";
 
 import { Copyable } from "../../components/Copyable";
+import { useAccord } from "../../shared/rpc";
+import { sendInstruction } from "../../shared/transaction";
 
 // --- localStorage salt persistence (commit → reveal bridge) ---
 
 const VOTE_KEY = "accord:vote";
-const WALLET_KEY = "accord-wallet";
 
 interface StoredVote {
   vote: number;
@@ -61,10 +62,6 @@ function hexBytes(bytes: ReadonlyUint8Array): string {
     .join("");
 }
 
-function loadWallet(): string {
-  return localStorage.getItem(WALLET_KEY) || "";
-}
-
 // --- Component ---
 
 export function Voting({
@@ -74,17 +71,19 @@ export function Voting({
   dispute: Account<Dispute>;
   round: Account<Round>;
 }) {
-  const [wallet, setWallet] = useState(loadWallet);
+  const env = useAccord();
   const [vote, setVote] = useState(0);
   const [salt] = useState(() => randomSalt());
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const d = dispute.data;
   const r = round.data;
   const state = d.state as DisputeState;
   const numOptions = d.numOptions;
+  const wallet = env?.signer.address ?? "";
 
-  // Check if wallet is a drawn juror
+  // Check if connected wallet is a drawn juror
   const seatIdx = wallet
     ? r.jurors.slice(0, r.jurorCount).indexOf(wallet as Address)
     : -1;
@@ -105,59 +104,76 @@ export function Voting({
   const inCommit = state === DisputeState.Commit;
   const inReveal = state === DisputeState.Reveal;
 
-  function handleCommit() {
-    if (!isJuror) return;
-    saveStoredVote(voteKey(dispute.address, r.roundIdx, wallet), vote, salt);
-    // ponytail: commit tx needs ConnectorKit signer — accord-y5av.
-    // accord.methods.commit(
-    //   { signer: wallet, subaccord: d.subaccord, dispute: dispute.address,
-    //     round: round.address },
-    //   { vote, salt },
-    // ) → instruction → sendInstruction.
-    setError(
-      "Wallet connection required to sign the commit transaction. " +
-        "(ConnectorKit — accord-y5av)",
-    );
+  async function handleCommit() {
+    if (!env || !isJuror) return;
+    setError(null);
+    setSending(true);
+    try {
+      saveStoredVote(voteKey(dispute.address, r.roundIdx, wallet), vote, salt);
+      const { instruction } = await env.accord.methods.commit(
+        {
+          signer: env.signer.address,
+          subaccord: d.subaccord,
+          dispute: dispute.address,
+          round: round.address,
+        },
+        { vote, salt },
+      );
+      await sendInstruction(
+        env.rpc,
+        env.rpcSubscriptions,
+        env.signer,
+        instruction,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
   }
 
-  function handleReveal() {
+  async function handleReveal() {
+    if (!env) return;
     if (!stored) {
       setError(
         "No stored vote/salt — cannot reveal without the commit preimage.",
       );
       return;
     }
-    // ponytail: reveal tx needs ConnectorKit signer + token accounts — accord-y5av.
-    // accord.methods.reveal(
-    //   { signer: wallet, subaccord: d.subaccord, dispute: dispute.address,
-    //     round: round.address, stakingToken, jurorTokenAccount, vault },
-    //   { vote: stored.vote, salt: stored.salt },
-    // ) → instruction → sendInstruction.
-    setError(
-      "Wallet connection required to sign the reveal transaction. " +
-        "(ConnectorKit — accord-y5av)",
-    );
+    setError(null);
+    setSending(true);
+    try {
+      const instruction = env.accord.methods.reveal(
+        {
+          signer: env.signer.address,
+          subaccord: d.subaccord,
+          dispute: dispute.address,
+          round: round.address,
+        },
+        { vote: stored.vote, salt: stored.salt },
+      );
+      await sendInstruction(
+        env.rpc,
+        env.rpcSubscriptions,
+        env.signer,
+        instruction,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
   }
 
   // --- Render ---
 
-  if (!wallet) {
+  if (!env) {
     return (
       <div className="rounded-lg border border-border-subtle bg-raised p-4">
         <h2 className="mb-2 font-mono text-sm text-text-secondary">Voting</h2>
-        <p className="mb-3 text-sm text-text-secondary">
-          Enter your address to check juror eligibility and vote.
+        <p className="text-sm text-text-secondary">
+          Connect a wallet to check juror eligibility and vote.
         </p>
-        <input
-          type="text"
-          value={wallet}
-          onChange={(e) => {
-            setWallet(e.target.value);
-            localStorage.setItem(WALLET_KEY, e.target.value);
-          }}
-          placeholder="Your juror address (base58)"
-          className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary placeholder:text-muted focus:border-amber focus:outline-none"
-        />
       </div>
     );
   }
@@ -166,18 +182,7 @@ export function Voting({
     <div className="space-y-4 rounded-lg border border-border-subtle bg-raised p-4">
       <div className="flex items-center justify-between">
         <h2 className="font-mono text-sm text-text-secondary">Voting</h2>
-        <div className="flex items-center gap-2">
-          <Copyable value={wallet} />
-          <button
-            onClick={() => {
-              setWallet("");
-              localStorage.removeItem(WALLET_KEY);
-            }}
-            className="font-mono text-xs text-slash hover:text-text-primary"
-          >
-            ✕
-          </button>
-        </div>
+        <Copyable value={wallet} />
       </div>
 
       {!isJuror ? (
@@ -219,9 +224,10 @@ export function Voting({
               </div>
               <button
                 onClick={handleCommit}
-                className="rounded-md bg-amber px-4 py-2 font-medium text-ink"
+                disabled={sending}
+                className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Commit vote
+                {sending ? "Signing…" : "Commit vote"}
               </button>
             </div>
           )}
@@ -246,9 +252,10 @@ export function Voting({
                   </p>
                   <button
                     onClick={handleReveal}
-                    className="rounded-md bg-amber px-4 py-2 font-medium text-ink"
+                    disabled={sending}
+                    className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Reveal vote
+                    {sending ? "Signing…" : "Reveal vote"}
                   </button>
                 </>
               ) : (

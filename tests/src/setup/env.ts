@@ -121,7 +121,19 @@ export async function createTestEnv(
     );
     const signed = await signTransactionMessageWithSigners(message);
     assertIsTransactionWithBlockhashLifetime(signed);
-    await sendAndConfirm(signed, { commitment: "confirmed" });
+    try {
+      await sendAndConfirm(signed, { commitment: "confirmed" });
+    } catch (e: unknown) {
+      // Surface the program logs so failures aren't opaque "Custom program
+      // error: #NNNN" — walk the error chain to find logs from the RPC layer.
+      const logs = extractLogs(e);
+      if (logs?.length) {
+        console.error(
+          `[sendIx] Transaction failed. Program logs:\n  ${logs.join("\n  ")}`,
+        );
+      }
+      throw e;
+    }
     return getSignatureFromTransaction(signed);
   };
 
@@ -160,4 +172,31 @@ export async function fundSigner(
   await env.rpc.requestAirdrop(signer.address, lamports(amount)).send();
   await sleep(400);
   return signer;
+}
+
+/**
+ * Walk an error's cause chain to extract transaction simulation logs.
+ * Solana Kit wraps RPC errors in nested `cause` layers — this tries
+ * `transactionLogs` then `logs` at each level. Uses `in` narrowing
+ * (no unchecked casts).
+ */
+function extractLogs(e: unknown): string[] | undefined {
+  let cur: unknown = e;
+  for (let depth = 0; depth < 6 && cur !== null && cur !== undefined; depth++) {
+    if (typeof cur !== "object") break;
+    if ("transactionLogs" in cur) {
+      const candidate = cur.transactionLogs;
+      if (Array.isArray(candidate)) {
+        return candidate.filter((v): v is string => typeof v === "string");
+      }
+    }
+    if ("logs" in cur) {
+      const candidate = cur.logs;
+      if (Array.isArray(candidate)) {
+        return candidate.filter((v): v is string => typeof v === "string");
+      }
+    }
+    cur = "cause" in cur ? cur.cause : null;
+  }
+  return undefined;
 }

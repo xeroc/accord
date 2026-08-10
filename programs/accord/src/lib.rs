@@ -301,8 +301,6 @@ pub mod accord {
         params: CreateSubaccordParams,
     ) -> Result<()> {
         let CreateSubaccordParams {
-            staking_token,
-            fee_token,
             min_stake,
             alpha_bps,
             review_window,
@@ -352,8 +350,8 @@ pub mod accord {
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
-        acc.staking_token = staking_token;
-        acc.fee_token = fee_token;
+        acc.staking_token = ctx.accounts.staking_token.key();
+        acc.fee_token = ctx.accounts.fee_token.key();
         acc.min_stake = min_stake;
         acc.alpha_bps = alpha_bps;
         acc.review_window = review_window;
@@ -380,8 +378,8 @@ pub mod accord {
         emit!(SubaccordCreated {
             creator: ctx.accounts.creator.key(),
             subaccord: acc.key(),
-            staking_token,
-            fee_token,
+            staking_token: ctx.accounts.staking_token.key(),
+            fee_token: ctx.accounts.fee_token.key(),
             risk_type,
         });
         Ok(())
@@ -421,6 +419,10 @@ pub mod accord {
         let delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // Parallel vault ledger (bean accord-fdad): track the real SPL delta.
+        // Ledger-only ops (slash, request_withdraw) never touch this — only
+        // actual token transfers in/out of the vault.
 
         let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;
@@ -496,6 +498,10 @@ pub mod accord {
 
         sub.root_hash = new_root;
         sub.total_stake = new_total;
+        sub.stake_vault_deposited = sub
+            .stake_vault_deposited
+            .checked_add(delta)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         emit!(Staked {
             subaccord: sub.key(),
@@ -532,6 +538,12 @@ pub mod accord {
         path: Vec<MSTNode>,
     ) -> Result<()> {
         require!(amount > 0, AccordError::InvalidAmount);
+        // M-1: reject repeated calls while a withdrawal is pending — forces the
+        // juror to complete the two-phase flow (withdraw) before requesting again.
+        require!(
+            ctx.accounts.juror_stake.pending_withdrawal == 0,
+            AccordError::WithdrawalPending
+        );
 
         let juror_key = ctx.accounts.juror.key();
         let js = &mut ctx.accounts.juror_stake;
@@ -605,7 +617,7 @@ pub mod accord {
         js.pending_withdrawal = 0;
         js.withdraw_requested_at = 0;
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -619,12 +631,18 @@ pub mod accord {
                 Transfer {
                     from: ctx.accounts.stake_vault.to_account_info(),
                     to: ctx.accounts.juror_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
+                    authority: sub.to_account_info(),
                 },
                 &[signer_seeds],
             ),
             amount,
         )?;
+
+        // Parallel vault ledger (bean accord-fdad): track the SPL withdrawal.
+        sub.stake_vault_withdrawn = sub
+            .stake_vault_withdrawn
+            .checked_add(amount)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         emit!(Unstaked {
             subaccord: sub.key(),
@@ -692,6 +710,9 @@ pub mod accord {
             ctx.accounts.authority.key() == sub.authority,
             AccordError::Unauthorized
         );
+        // H-1: reject invalid updates at propose time so the authority gets
+        // immediate feedback instead of wasting the 48h timelock period.
+        validate_update_payload(&payload)?;
 
         let slot = Clock::get()?.slot;
         let execute_after = slot
@@ -724,6 +745,9 @@ pub mod accord {
         let execute_after = ctx.accounts.pending_update.execute_after_slot;
         let slot = Clock::get()?.slot;
         require!(slot >= execute_after, AccordError::TimelockNotElapsed);
+        // H-1: defense-in-depth — re-validate at execute even though propose
+        // already checked (§29.3: validate in every write path).
+        validate_update_payload(&ctx.accounts.pending_update.proposed)?;
 
         let sub = &mut ctx.accounts.subaccord;
         match &ctx.accounts.pending_update.proposed {
@@ -767,7 +791,7 @@ pub mod accord {
         let n = options.len();
         require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let required_fee = (INITIAL_NUM_JURORS as u64)
             .checked_mul(sub.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -793,8 +817,12 @@ pub mod accord {
         )?;
         ctx.accounts.fee_vault.reload()?;
         let after = ctx.accounts.fee_vault.amount;
-        let _delta = after
+        let delta = after
             .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        sub.fee_vault_deposited = sub
+            .fee_vault_deposited
+            .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         let num_options = n as u8;
@@ -809,7 +837,7 @@ pub mod accord {
         d.nonce = nonce;
         d.num_options = num_options;
         d.options = opt_arr;
-        d.evidence_hash = evidence_hash;
+        d.evidence_hashes[0] = evidence_hash;
         d.state = DisputeState::Created;
         d.current_round = 0;
         d.final_ruling = u8::MAX;
@@ -1103,6 +1131,10 @@ pub mod accord {
             js_info.key == &expected_pda,
             AccordError::InvalidMembershipProof
         );
+        require!(
+            js_info.owner == &crate::ID,
+            AccordError::InvalidMembershipProof
+        );
         let slash_per_juror = (dispute.terms.alpha_bps as u64)
             .checked_mul(dispute.terms.min_stake)
             .and_then(|v| v.checked_div(10_000))
@@ -1361,6 +1393,10 @@ pub mod accord {
                     js_info.key == &expected_pda,
                     AccordError::InvalidMembershipProof
                 );
+                require!(
+                    js_info.owner == &crate::ID,
+                    AccordError::InvalidMembershipProof
+                );
                 let mut data = js_info.try_borrow_mut_data()?;
                 let existing = u64::from_le_bytes(
                     data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
@@ -1373,10 +1409,18 @@ pub mod accord {
                 data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
                     .copy_from_slice(&new_fees.to_le_bytes());
             }
-            dispute.fee_paid = (round.reveal_count as u64)
-                .checked_mul(fee_per_juror)
-                .and_then(|earned| dispute.fee_paid.checked_sub(earned))
-                .ok_or(AccordError::ArithmeticOverflow)?;
+            // fee_paid owns ONLY the round-0 filing fee (bean accord-xftx):
+            // appeal-round fees live in their AppealBond, not here. Decrement
+            // the filer's refundable pool only as round-0 jurors earn. The
+            // fees_earned credit above still runs for every round — that is the
+            // vault liability (juror compensation), tracked separately from this
+            // filer-refund bookkeeping.
+            if round.round_idx == 0 {
+                dispute.fee_paid = (round.reveal_count as u64)
+                    .checked_mul(fee_per_juror)
+                    .and_then(|earned| dispute.fee_paid.checked_sub(earned))
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
         }
 
         dispute.state = DisputeState::RoundResolved;
@@ -1401,6 +1445,8 @@ pub mod accord {
     /// 2. Slash each incoherent/non-revealing juror: `α · min_stake` →
     ///    `stake_delta` (stake_token).
     /// 3. Stake pool = slash_total → coherent `stake_delta` (stake_token).
+    ///    When no juror is coherent but some revealed, pools go to revealers
+    ///    instead (bean accord-aqmw). Zero reveals → surplus trapped.
     /// 4. Fee pool = non-revealer fees + forfeited (no-flip) bonds → coherent
     ///    `fees_earned` (fee_token). (Revealer base fees were credited at
     ///    `finalize_round`; only the forfeited portion redistributes here.)
@@ -1465,6 +1511,10 @@ pub mod accord {
                 bond_info.key == &expected_pda,
                 AccordError::InvalidMembershipProof
             );
+            require!(
+                bond_info.owner == &crate::ID,
+                AccordError::InvalidMembershipProof
+            );
             let (bond_portion, prior_result) = {
                 let d = bond_info.try_borrow_data()?;
                 require!(
@@ -1523,11 +1573,11 @@ pub mod accord {
     ///
     /// Prior-round jurors were left with `active_draws > 0` after the dispute
     /// finalized — this crank releases them. Each call handles one round (≤ 31
-    /// juror-stake accounts, fitting the transaction account limit).
-    ///
     /// Coherence is judged against `dispute.final_ruling`, not the round's own
     /// result: a round-0 juror who voted the option the final panel overturned
     /// is slashed; one who voted the final ruling gets a coherence share.
+    /// When no juror is coherent (overturned prior round), pools fall back to
+    /// revealers; zero reveals → surplus trapped (bean accord-aqmw).
     /// Revealer base fees were credited at `finalize_round`; non-revealer fees
     /// fold into the coherent fee pool (ADR-0020).
     pub fn settle_round(ctx: Context<SettleRound>, round_idx: u32) -> Result<()> {
@@ -1581,11 +1631,16 @@ pub mod accord {
     /// `Created` so the snapshot → draw → vote cycle reruns for the new panel.
     /// Custodies the bond in a per-appeal `AppealBond` PDA.
     ///
+    /// `new_evidence_hash` optionally introduces fresh evidence for the new
+    /// round (stored at `evidence_hashes[current_round + 1]`); `[0u8; 32]`
+    /// sentinel = no new evidence, jurors reuse prior rounds' (milestone
+    /// accord-qp7c).
+    ///
     /// Gates: `RoundResolved` state, within the appeal window, under the
     /// `max_appeals` cap, and with enough active distinct stakers to fill the
     /// larger panel. Never pausable (ADR-0016) — pausing must not suppress the
     /// right to appeal.
-    pub fn appeal(ctx: Context<Appeal>) -> Result<()> {
+    pub fn appeal(ctx: Context<Appeal>, new_evidence_hash: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require_eq!(
             dispute.subaccord,
@@ -1597,7 +1652,7 @@ pub mod accord {
             AccordError::InvalidState
         );
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         // Cap: `current_round` is the round just resolved. Appealing opens round
         // `current_round + 1`, i.e. appeal number `current_round + 1`. The
         // number of appeals must not exceed `max_appeals`. Ugly 6: the cap is
@@ -1654,8 +1709,12 @@ pub mod accord {
         )?;
         ctx.accounts.fee_vault.reload()?;
         let after = ctx.accounts.fee_vault.amount;
-        let _delta = after
+        let delta = after
             .checked_sub(before)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        sub.fee_vault_deposited = sub
+            .fee_vault_deposited
+            .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Record the appeal bond in its own PDA for settlement. `prior_result`
@@ -1670,10 +1729,11 @@ pub mod accord {
         bond_acc.prior_result = prior_result;
         bond_acc.bump = ctx.bumps.appeal_bond;
 
-        dispute.fee_paid = dispute
-            .fee_paid
-            .checked_add(fee_new)
-            .ok_or(AccordError::ArithmeticOverflow)?;
+        // Ownership boundary (bean accord-xftx): the appeal fee lives ONLY in
+        // `AppealBond.amount` (fee + bond), never in `dispute.fee_paid`. The
+        // filer's `fee_paid` owns exclusively the round-0 filing fee; folding
+        // the appeal fee in here caused a double-refund on cancel (filer via
+        // fee_paid, appellant via the bond — same fee, two claimants).
 
         // Open the new round: bump `current_round` and reset to `Created` so the
         // snapshot → draw → vote cycle reruns for the larger panel.  Stamp
@@ -1683,6 +1743,12 @@ pub mod accord {
         dispute.current_round = new_round;
         dispute.state = DisputeState::Created;
         dispute.filed_at = now;
+        // Per-round evidence (milestone accord-qp7c): stash the appellant's
+        // new evidence at the new round's slot. `[0u8; 32]` sentinel = no new
+        // evidence this round (jurors reuse prior rounds'). The max_appeals
+        // gate above guarantees `new_round <= MAX_APPEALS`, so the index is
+        // in-bounds and the slot is virgin (sequential per-round writes).
+        dispute.evidence_hashes[new_round as usize] = new_evidence_hash;
 
         emit!(Appealed {
             dispute: dispute.key(),
@@ -1693,14 +1759,16 @@ pub mod accord {
         Ok(())
     }
 
-    /// Permissionless crank that returns a flipped appeal bond to its appellant
-    /// after the dispute is finalized (ADR-0004: bond returned if the appeal
-    /// flipped the prior ruling). `round_idx` selects which appeal's bond to
-    /// claim (the round that was current when the appeal was filed). The handler
-    /// verifies the `AppealBond` belongs to the destination ATA's owner, that the
-    /// bond is still outstanding (`amount > 0` — `finalize_dispute` zeroes
-    /// no-flip bonds), and PDA-signs the vault → ATA refund before zeroing the
-    /// bond (idempotent).
+    /// Permissionless crank that returns the appeal bond to its appellant once
+    /// the dispute is terminal (Final or Failed). The appellant ALWAYS recovers
+    /// only the bond — never the appeal fee (bean accord-xftx): on Final a
+    /// flipped bond is returned (a no-flip bond was already zeroed by
+    /// `finalize_dispute`); on Failed the bond is returned regardless (the
+    /// appeal fee is owned by the round's jurors or trapped in the vault).
+    /// `round_idx` selects which appeal's bond to claim (the round that was
+    /// current when the appeal was filed). Verifies the `AppealBond` belongs to
+    /// the destination ATA's owner, PDA-signs the vault → ATA refund, then
+    /// zeroes the bond (idempotent).
     pub fn claim_appeal_refund(ctx: Context<ClaimAppealRefund>, round_idx: u32) -> Result<()> {
         let _ = round_idx; // consumed by the `#[instruction]` PDA seeds
         let dispute = &ctx.accounts.dispute;
@@ -1715,20 +1783,21 @@ pub mod accord {
             AccordError::InvalidMembershipProof
         );
 
-        // `amount` is the total deposit (fee + bond). On Failed (cancel), the
-        // round never consumed fees — return the full deposit. On Final, the
-        // fee was consumed by settlement — return only the bond portion.
-        let refund = if dispute.state == DisputeState::Failed {
-            bond_acc.amount
-        } else {
-            let fee = (panel_size_for_round(bond_acc.round_idx)? as u64)
-                .checked_mul(dispute.terms.fee_per_juror)
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            bond_acc.amount.saturating_sub(fee)
-        };
+        // `amount` is the total deposit (appeal fee + bond). The appellant
+        // always recovers ONLY the bond — never the appeal fee — regardless of
+        // terminal state (bean accord-xftx). The appeal fee is owned by the
+        // round's jurors (credited as fees_earned if the round resolved) or
+        // trapped in the vault if it never resolved; it is never the
+        // appellant's to reclaim. On Final a no-flip bond was already zeroed
+        // by finalize_dispute, so this yields 0 → InvalidAmount (idempotent
+        // guard against claiming a forfeited bond).
+        let fee = (panel_size_for_round(bond_acc.round_idx)? as u64)
+            .checked_mul(dispute.terms.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        let refund = bond_acc.amount.saturating_sub(fee);
         require!(refund > 0, AccordError::InvalidAmount);
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -1743,12 +1812,18 @@ pub mod accord {
                 Transfer {
                     from: ctx.accounts.fee_vault.to_account_info(),
                     to: ctx.accounts.claimant_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
+                    authority: sub.to_account_info(),
                 },
                 &[signer_seeds],
             ),
             refund,
         )?;
+
+        // Parallel vault ledger (bean accord-fdad): track the bond refund out.
+        sub.fee_vault_withdrawn = sub
+            .fee_vault_withdrawn
+            .checked_add(refund)
+            .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Mark claimed (idempotent): no double-refund on re-invocation.
         ctx.accounts.appeal_bond.amount = 0;
@@ -1774,9 +1849,9 @@ pub mod accord {
     ///   drawn `JurorStake` PDAs follow (`[1..=panel]`).
     ///
     /// `Final`/`Closed`/`Failed` are terminal and revert. The filer refund is
-    /// exactly the round-1 fee (`INITIAL_NUM_JURORS · terms.fee_per_juror`);
-    /// appeal-round fees/bonds are multi-round settlement concerns
-    /// (bean accord-r6ti) and are intentionally not swept here.
+    /// exactly `dispute.fee_paid` (C-1: the per-dispute fee pool — NOT the
+    /// shared vault balance; the fee_vault is one ATA for the entire
+    /// Subaccord). Appeal bonds stay claimable via `claim_appeal_refund`.
     pub fn cancel_dispute(ctx: Context<CancelDispute>) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         let now = Clock::get()?.unix_timestamp;
@@ -1797,8 +1872,6 @@ pub mod accord {
                 | DisputeState::Reveal
                 | DisputeState::RoundResolved
         );
-
-        let reserved: u64;
 
         if post_draw {
             // remaining_accounts = [current Round, ...JurorStake PDAs,
@@ -1852,6 +1925,10 @@ pub mod accord {
                     acct_info.key == &expected_pda,
                     AccordError::InvalidMembershipProof
                 );
+                require!(
+                    acct_info.owner == &crate::ID,
+                    AccordError::InvalidMembershipProof
+                );
                 let mut data = acct_info.try_borrow_mut_data()?;
                 let draws = u32::from_le_bytes(
                     data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
@@ -1892,9 +1969,11 @@ pub mod accord {
                 AccordError::InvalidPanelSize
             );
 
-            // Read appeal bonds for vault-reserved computation.
-            reserved =
-                read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
+            // C-1: validate appeal-bond PDAs (needed for later
+            // claim_appeal_refund). Their total is NOT used for the filer refund
+            // — the fee_vault is shared across all disputes; using its balance
+            // would steal other disputes' deposits.
+            read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         } else {
             // Pre-draw stall (Created). Terminal states are rejected here.
             require!(state == DisputeState::Created, AccordError::InvalidState);
@@ -1941,6 +2020,10 @@ pub mod accord {
                         acct_info.key == &expected_pda,
                         AccordError::InvalidMembershipProof
                     );
+                    require!(
+                        acct_info.owner == &crate::ID,
+                        AccordError::InvalidMembershipProof
+                    );
                     let mut data = acct_info.try_borrow_mut_data()?;
                     let draws = u32::from_le_bytes(
                         data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
@@ -1983,15 +2066,18 @@ pub mod accord {
                 AccordError::InvalidPanelSize
             );
 
-            reserved =
-                read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
+            // C-1: validate appeal-bond PDAs (same as post-draw branch).
+            read_bond_amounts(&ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
         }
 
-        // --- Refund: fee_vault balance minus appeal-bond reserves (PDA-signed). ---
-        let vault_balance = ctx.accounts.fee_vault.amount;
-        let filer_fee = vault_balance.saturating_sub(reserved);
+        // --- Refund: per-dispute fee_paid only (C-1). The fee_vault is one
+        // shared ATA for the entire Subaccord; using vault_balance would drain
+        // other disputes' deposits. Appeal bonds stay claimable via
+        // claim_appeal_refund — not swept here. ---
+        let filer_fee = dispute.fee_paid;
+        dispute.fee_paid = 0;
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -2006,12 +2092,20 @@ pub mod accord {
                     Transfer {
                         from: ctx.accounts.fee_vault.to_account_info(),
                         to: ctx.accounts.filer_token_account.to_account_info(),
-                        authority: ctx.accounts.subaccord.to_account_info(),
+                        authority: sub.to_account_info(),
                     },
                     &[signer_seeds],
                 ),
                 filer_fee,
             )?;
+        }
+
+        // Parallel vault ledger (bean accord-fdad): track the filer refund out.
+        if filer_fee > 0 {
+            sub.fee_vault_withdrawn = sub
+                .fee_vault_withdrawn
+                .checked_add(filer_fee)
+                .ok_or(AccordError::ArithmeticOverflow)?;
         }
 
         dispute.state = DisputeState::Failed;
@@ -2032,17 +2126,29 @@ pub mod accord {
         Ok((r != u8::MAX).then_some(r))
     }
 
-    /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls the entire
-    /// `fees_earned` balance from the Subaccord's `fee_vault` → the juror's
-    /// `fee_token` ATA, then zeroes `fees_earned`. No `active_draws` gate, no
-    /// timelock — earned fees are not at-risk capital.
+    /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls earned fees
+    /// from the Subaccord's `fee_vault` → the juror's `fee_token` ATA. No
+    /// `active_draws` gate, no timelock — earned fees are not at-risk capital.
+    ///
+    /// Bean accord-fdad: no vault-balance cap. The parallel-ledger invariant
+    /// (`fee_vault.amount == fee_deposited − fee_withdrawn`, see Subaccord)
+    /// guarantees the fee-side net always covers all unwithdrawn `fees_earned`
+    /// — every fee credit was preceded by its backing deposit, and refunds
+    /// only return unconsumed portions. The SPL transfer is the last-resort
+    /// assertion: if it ever fails, it signals a missed accumulator touchpoint
+    /// (a bug), not legitimate insolvency.
     pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()> {
         let js = &mut ctx.accounts.juror_stake;
         let amt = js.fees_earned;
         require!(amt > 0, AccordError::NoFeesEarned);
         js.fees_earned = 0;
 
-        let sub = &ctx.accounts.subaccord;
+        let sub = &mut ctx.accounts.subaccord;
+        sub.fee_vault_withdrawn = sub
+            .fee_vault_withdrawn
+            .checked_add(amt)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+
         let bump = [sub.bump];
         let signer_seeds = &[
             SEED_SUBACCORD,
@@ -2056,7 +2162,7 @@ pub mod accord {
                 Transfer {
                     from: ctx.accounts.fee_vault.to_account_info(),
                     to: ctx.accounts.juror_fee_token_account.to_account_info(),
-                    authority: ctx.accounts.subaccord.to_account_info(),
+                    authority: sub.to_account_info(),
                 },
                 &[signer_seeds],
             ),
@@ -2144,6 +2250,10 @@ pub mod accord {
                 acct_info.key == &expected_pda,
                 AccordError::InvalidMembershipProof
             );
+            require!(
+                acct_info.owner == &crate::ID,
+                AccordError::InvalidMembershipProof
+            );
             let no_show = round.reveals[i] == u8::MAX;
             let mut data = acct_info.try_borrow_mut_data()?;
             // active_draws -= 1: every drawn juror is released from this round.
@@ -2198,7 +2308,7 @@ pub mod accord {
             // ADR-0020 invariant guarantees `fee_vault.balance ≥ fee_paid`).
             let refund = dispute.fee_paid;
             dispute.fee_paid = 0;
-            let sub = &ctx.accounts.subaccord;
+            let sub = &mut ctx.accounts.subaccord;
             let bump = [sub.bump];
             let signer_seeds = &[
                 SEED_SUBACCORD,
@@ -2213,12 +2323,20 @@ pub mod accord {
                         Transfer {
                             from: ctx.accounts.fee_vault.to_account_info(),
                             to: ctx.accounts.filer_token_account.to_account_info(),
-                            authority: ctx.accounts.subaccord.to_account_info(),
+                            authority: sub.to_account_info(),
                         },
                         &[signer_seeds],
                     ),
                     refund,
                 )?;
+            }
+
+            // Parallel vault ledger (bean accord-fdad): track the filer refund.
+            if refund > 0 {
+                sub.fee_vault_withdrawn = sub
+                    .fee_vault_withdrawn
+                    .checked_add(refund)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
             }
 
             round.draw_attempt = new_draw_attempt;
@@ -2261,6 +2379,41 @@ pub mod accord {
         }
         Ok(())
     }
+}
+
+/// Validate a single `UpdatePayload` variant against the same domain bounds
+/// enforced at `create_subaccord` (H-1 / shared-base §29.3: validate in every
+/// write path). Called from both `propose_subaccord_update` (early rejection)
+/// and `execute_subaccord_update` (defense-in-depth).
+fn validate_update_payload(payload: &UpdatePayload) -> Result<()> {
+    match payload {
+        UpdatePayload::AlphaBps(v) => require!(*v <= 10_000, AccordError::InvalidThreshold),
+        UpdatePayload::MaxAppeals(v) => {
+            require!(
+                *v as usize <= MAX_APPEALS,
+                AccordError::MaxAppealsLimitExceeded
+            )
+        }
+        UpdatePayload::AppealWindow(v) => {
+            require!(
+                *v >= MIN_APPEAL_WINDOW_SECS,
+                AccordError::AppealWindowTooShort
+            )
+        }
+        UpdatePayload::MinStake(v) => require!(*v > 0, AccordError::InvalidAmount),
+        UpdatePayload::FeePerJuror(v) => {
+            (INITIAL_NUM_JURORS as u64)
+                .checked_mul(*v)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
+        // Windows must be > 0 to keep the state machine reachable (§29.2).
+        UpdatePayload::ReviewWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
+        UpdatePayload::CommitWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
+        UpdatePayload::RevealWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
+        // Authority / EvidenceOperator are arbitrary Pubkeys — no domain bound.
+        UpdatePayload::Authority(_) | UpdatePayload::EvidenceOperator(_) => {}
+    }
+    Ok(())
 }
 
 // --- Accumulator MST helpers (ADR-0012) ---------------------------------------
@@ -2445,6 +2598,10 @@ fn read_bond_amounts<'info>(
             bond_info.key == &expected_pda,
             AccordError::InvalidMembershipProof
         );
+        require!(
+            bond_info.owner == &crate::ID,
+            AccordError::InvalidMembershipProof
+        );
         let d = bond_info.try_borrow_data()?;
         require!(
             d.len() >= BOND_AMOUNT_OFFSET + 8,
@@ -2516,6 +2673,10 @@ fn release_prior_rounds<'info>(
                 acct_info.key == &expected_pda,
                 AccordError::InvalidMembershipProof
             );
+            require!(
+                acct_info.owner == &crate::ID,
+                AccordError::InvalidMembershipProof
+            );
             let mut data = acct_info.try_borrow_mut_data()?;
             let draws = u32::from_le_bytes(
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
@@ -2547,11 +2708,21 @@ fn release_prior_rounds<'info>(
 ///
 /// Judges every drawn juror against `final_ruling` (NOT the round's own result),
 /// slashes incoherent/non-revealing jurors by `α·min_stake`, and redistributes
-/// two distinct pools among coherent jurors:
+/// two distinct pools:
 /// - **stake pool** (`stake_token`): slash proceeds → written to `stake_delta`.
 /// - **fee pool** (`fee_token`): non-revealer fees + forfeited bonds → written
 ///   to `fees_earned`. Revealers already received their base `fee_per_juror`
 ///   credit at `finalize_round`; only the forfeited portion redistributes here.
+///
+/// Recipient selection (bean accord-aqmw):
+/// - `coherent_count > 0`: pools split among **coherent** jurors (normal).
+/// - `coherent_count == 0, reveal_count > 0`: pools split among **revealers** —
+///   those who at least participated, even though none matched the final
+///   ruling (typically a prior round overturned on appeal). Non-revealers are
+///   slashed but receive no reward.
+/// - `coherent_count == 0, reveal_count == 0`: nobody is rewarded. Both pools
+///   are trapped in vault custody as permanent Subaccord protocol surplus
+///   (follow-up: authority-claimable withdrawal).
 /// Decrements `active_draws` for every drawn juror (releases the unstake lock).
 ///
 /// `pool_extra` is the forfeited (no-flip) appeal-bond total (final round only;
@@ -2585,6 +2756,10 @@ fn settle_round_accounts(
             accounts[i].key == &expected_pda,
             AccordError::InvalidMembershipProof
         );
+        require!(
+            accounts[i].owner == &crate::ID,
+            AccordError::InvalidMembershipProof
+        );
 
         if round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling {
             coherent_count += 1;
@@ -2605,15 +2780,28 @@ fn settle_round_accounts(
         .checked_add(pool_extra)
         .ok_or(AccordError::ArithmeticOverflow)?;
 
-    let stake_share = if coherent_count > 0 {
-        slash_total / coherent_count as u64
+    // Recipient pool: coherent jurors normally; when none are coherent
+    // (a prior round overturned on appeal, or a degenerate
+    // reveal_threshold_bps = 0 config), fall back to revealers — those
+    // who at least participated. Non-revealers are NEVER rewarded.
+    // When reveal_count is also 0 (no-show round), reward_count = 0 and
+    // both pools are trapped in vault custody as permanent Subaccord
+    // protocol surplus (bean accord-aqmw / follow-up: make claimable via
+    // authority withdrawal). Integer-div remainder → protocol surplus.
+    let reward_count: u32 = if coherent_count > 0 {
+        coherent_count
+    } else {
+        round.reveal_count as u32
+    };
+    let stake_share = if reward_count > 0 {
+        slash_total / reward_count as u64
     } else {
         0
     };
-    let fee_share = if coherent_count > 0 {
-        fee_pool / coherent_count as u64
+    let fee_share = if reward_count > 0 {
+        fee_pool / reward_count as u64
     } else {
-        0 // no coherent jurors: pools stay (accepted edge case)
+        0
     };
 
     // --- Second pass: apply slashes/rewards to stake_delta + fees_earned + decrement draws ---
@@ -2661,18 +2849,33 @@ fn settle_round_accounts(
             (stk, draws, delta, reserve, fees)
         };
 
-        let (new_delta, new_fees) = if is_coherent {
-            (
-                existing_delta.saturating_add(stake_share as i64),
-                existing_fees
-                    .checked_add(fee_share)
-                    .ok_or(AccordError::ArithmeticOverflow)?,
-            )
+        // Slash every non-coherent juror (incoherent voter or no-show).
+        // Reward eligibility: coherent normally; revealers as fallback when
+        // no juror is coherent. Non-revealers are never rewarded.
+        let is_reward_eligible = if coherent_count > 0 {
+            is_coherent
         } else {
-            (
-                existing_delta.saturating_add(-(slash_per_juror.min(staked) as i64)),
-                existing_fees,
-            )
+            round.reveals[i] != u8::MAX
+        };
+        let slash_delta = if is_coherent {
+            0i64
+        } else {
+            -(slash_per_juror.min(staked) as i64)
+        };
+        let new_delta =
+            existing_delta
+                .saturating_add(slash_delta)
+                .saturating_add(if is_reward_eligible {
+                    stake_share as i64
+                } else {
+                    0
+                });
+        let new_fees = if is_reward_eligible {
+            existing_fees
+                .checked_add(fee_share)
+                .ok_or(AccordError::ArithmeticOverflow)?
+        } else {
+            existing_fees
         };
         let new_draws = active_draws.saturating_sub(1);
         let new_reserve = slash_reserve.saturating_sub(slash_per_juror);
@@ -2754,6 +2957,11 @@ pub struct CreateSubaccord<'info> {
         bump,
     )]
     pub subaccord: Account<'info, Subaccord>,
+    /// L-4: validated as a real legacy SPL Mint — `Account<Mint>` from
+    /// `anchor_spl::token` checks ownership against the Token Program ID,
+    /// rejecting Token-2022 mints (owned by Token-2022 Program) by construction.
+    pub staking_token: Account<'info, Mint>,
+    pub fee_token: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
 }
 
@@ -2777,7 +2985,7 @@ pub struct Stake<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     /// Circuit breaker (ADR-0007): stake reverts while paused.
     #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
     pub pause_state: Account<'info, PauseState>,
@@ -2846,6 +3054,7 @@ pub struct Withdraw<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -2955,6 +3164,7 @@ pub struct CreateDispute<'info> {
     #[account(mut)]
     pub filer: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3213,6 +3423,7 @@ pub struct Appeal<'info> {
     #[account(mut)]
     pub appellant: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3251,7 +3462,7 @@ pub struct Appeal<'info> {
         associated_token::mint = fee_token,
         associated_token::authority = appellant,
     )]
-    pub appellant_token_account: Account<'info, TokenAccount>,
+    pub appellant_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         init_if_needed,
         payer = appellant,
@@ -3276,6 +3487,7 @@ pub struct ClaimAppealRefund<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3332,6 +3544,7 @@ pub struct CancelDispute<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3369,6 +3582,7 @@ pub struct WithdrawFees<'info> {
     #[account(mut)]
     pub juror: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3407,6 +3621,7 @@ pub struct Redraw<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
@@ -3434,7 +3649,7 @@ pub struct Redraw<'info> {
         associated_token::mint = fee_token,
         associated_token::authority = dispute.filer,
     )]
-    pub filer_token_account: Account<'info, TokenAccount>,
+    pub filer_token_account: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
         associated_token::mint = fee_token,

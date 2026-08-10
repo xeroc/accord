@@ -1,12 +1,18 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { type ReadonlyUint8Array } from "@solana/kit";
+import { findAppealBondPda, findPauseStatePda } from "@useaccord/sdk";
 
 import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
+import { useAccord } from "../../shared/rpc";
+import { sendInstruction } from "../../shared/transaction";
+import { getAtaAddress } from "../../shared/tokens";
 import { StateMachine } from "./StateMachine";
 import { Voting } from "./Voting";
 import { getAppealInfo } from "./useAppeal";
 import { useAppealBond, useDispute, useRound } from "./useDispute";
+import { useSubaccord } from "./useSubaccord";
 
 const FINAL_SENTINEL = 255;
 
@@ -27,10 +33,14 @@ function formatTimestamp(ts: bigint): string {
 }
 
 export function DisputeDetail() {
+  const env = useAccord();
   const { address } = useParams<{ address: string }>();
   const { data: dispute, isLoading, error } = useDispute(address);
   const { data: round } = useRound(dispute ?? undefined);
   const { data: appealBond } = useAppealBond(dispute ?? undefined);
+  const { data: subaccord } = useSubaccord(dispute?.data.subaccord);
+  const [appealSending, setAppealSending] = useState(false);
+  const [appealError, setAppealError] = useState<string | null>(null);
 
   if (isLoading) {
     return <p className="text-text-secondary">Loading dispute…</p>;
@@ -59,6 +69,50 @@ export function DisputeDetail() {
   const d = dispute.data;
   const isFinal = d.state === 6; // DisputeState.Final
   const isRoundResolved = d.state === 5; // DisputeState.RoundResolved
+
+  async function handleAppeal() {
+    if (!env || !dispute || !round || !subaccord) return;
+    setAppealError(null);
+    setAppealSending(true);
+    try {
+      const newRound = dispute.data.currentRound + 1;
+      const [appealBondPda] = await findAppealBondPda({
+        dispute: dispute.address,
+        roundIdx: newRound,
+      });
+      const [pauseState] = await findPauseStatePda();
+      const feeToken = subaccord.data.feeToken;
+      const feeVault = await getAtaAddress(subaccord.address, feeToken);
+      const appellantTokenAccount = await getAtaAddress(
+        env.signer.address,
+        feeToken,
+      );
+      const instruction = env.accord.methods.appeal(
+        {
+          appellant: env.signer.address,
+          subaccord: subaccord.address,
+          pauseState,
+          dispute: dispute.address,
+          round: round.address,
+          appealBond: appealBondPda,
+          feeToken,
+          appellantTokenAccount,
+          feeVault,
+        },
+        new Uint8Array(32), // [0u8;32] sentinel — no new evidence this round
+      );
+      await sendInstruction(
+        env.rpc,
+        env.rpcSubscriptions,
+        env.signer,
+        instruction,
+      );
+    } catch (err) {
+      setAppealError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAppealSending(false);
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -148,6 +202,51 @@ export function DisputeDetail() {
           })}
         </div>
       </div>
+
+      {/* Evidence (per round — ADR-0023) */}
+      {/* evidenceHashes is a fixed [0..=MAX_APPEALS] slot array; slot 0 = filer,
+          each appeal may write the next slot. [0u8;32] sentinel = no new evidence
+          that round (jurors reuse prior rounds'). Only slots up to the current
+          round are relevant; future slots are zero by initialization. */}
+      {(() => {
+        const slots = d.evidenceHashes.slice(0, d.currentRound + 1);
+        const filed = slots.filter(
+          (h) => !h.every((b: number) => b === 0),
+        ).length;
+        return (
+          <div className="rounded-lg border border-border-subtle bg-raised p-4">
+            <h2 className="mb-3 font-mono text-sm text-text-secondary">
+              Evidence ({filed} new package{filed === 1 ? "" : "s"} through
+              round {d.currentRound})
+            </h2>
+            <div className="space-y-2">
+              {slots.map((h, round) => {
+                const isSentinel = h.every((b: number) => b === 0);
+                return (
+                  <div
+                    key={round}
+                    className="flex items-center gap-3 rounded border border-border-subtle px-3 py-2"
+                  >
+                    <span className="w-16 shrink-0 font-mono text-xs text-text-secondary">
+                      round {round}
+                    </span>
+                    {isSentinel ? (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        no new evidence — reuses prior rounds
+                      </span>
+                    ) : (
+                      <Copyable value={hex(h)} head={8} tail={6} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 font-mono text-xs text-muted-foreground">
+              Round-N jurors receive every non-zero package from rounds 0..=N.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Final ruling */}
       {isFinal && d.finalRuling !== FINAL_SENTINEL && (
@@ -275,12 +374,21 @@ export function DisputeDetail() {
                       />
                     )}
                   </div>
-                  {/* ponytail: appeal tx needs ConnectorKit signer — accord-y5av */}
+                  {/* Appeal tx: SDK facade → sendInstruction. The ConnectorKit
+                      signer comes from useAccord(). */}
+                  {appealError && (
+                    <p className="mb-3 text-sm text-slash">{appealError}</p>
+                  )}
                   <button
-                    disabled
-                    className="rounded-md bg-amber/50 px-4 py-2 font-medium text-ink"
+                    onClick={handleAppeal}
+                    disabled={!env || !subaccord || appealSending}
+                    className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Appeal — connect wallet
+                    {!env
+                      ? "Appeal — connect wallet"
+                      : appealSending
+                        ? "Signing…"
+                        : "Appeal"}
                   </button>
                 </>
               ) : (

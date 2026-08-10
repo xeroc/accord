@@ -1,11 +1,11 @@
 ---
 # accord-uvru
 title: Accord dApp MVP — web frontend (apps/app)
-status: todo
+status: completed
 type: milestone
 priority: high
 created_at: 2026-08-07T23:07:56Z
-updated_at: 2026-08-07T23:07:56Z
+updated_at: 2026-08-08T23:41:45Z
 ---
 
 ## Accord dApp MVP — React + Vite web frontend

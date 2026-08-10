@@ -9,6 +9,7 @@
 //! same PDA (never re-derive).
 
 use anchor_lang::prelude::*;
+use anchor_spl::token::Mint;
 
 use crate::SEED_CANON_LIST;
 
@@ -27,9 +28,12 @@ use crate::SEED_CANON_LIST;
 // args positionally (no `_` skip in this anchor version).
 #[instruction(stake_mint: Pubkey, fee_mint: Pubkey, list_program: Pubkey, rules_hash: [u8; 32])]
 pub struct CreateList<'info> {
+    /// L-4: validated legacy SPL Mint forwarded to Accord create_subaccord CPI.
+    pub stake_mint_acc: Account<'info, Mint>,
+    pub fee_mint_acc: Account<'info, Mint>,
+
     #[account(mut)]
     pub creator: Signer<'info>,
-
     /// The new Canon list PDA. Seeds: `["canon", creator, rules_hash]`.
     /// `rules_hash` + `list_program` are immutable post-init.
     #[account(

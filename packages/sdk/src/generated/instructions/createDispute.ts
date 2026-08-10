@@ -82,7 +82,7 @@ export type CreateDisputeInstruction<
             AccountSignerMeta<TAccountFiler>
         : TAccountFiler,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountPauseState extends string
         ? ReadonlyAccount<TAccountPauseState>
@@ -239,7 +239,7 @@ export async function getCreateDisputeInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     filer: { value: input.filer ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     pauseState: { value: input.pauseState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
@@ -453,7 +453,7 @@ export function getCreateDisputeInstruction<
   // Original accounts.
   const originalAccounts = {
     filer: { value: input.filer ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     pauseState: { value: input.pauseState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },

@@ -61,6 +61,7 @@ function toStoreBundle(b: EvidenceBundle): StoreBundle {
   return {
     subaccord: bytesToAddr(b.subaccord),
     dispute: bytesToAddr(b.dispute),
+    round: b.round,
     ct: b.ct,
     claimantEphemPub: b.claimant_ephem_pub,
     wrapped: b.wrapped,
@@ -73,6 +74,7 @@ function fromStoreBundle(b: StoreBundle): EvidenceBundle {
   return {
     subaccord: b58ToBytes(b.subaccord),
     dispute: b58ToBytes(b.dispute),
+    round: b.round,
     ct: b.ct,
     claimant_ephem_pub: b.claimantEphemPub,
     wrapped: b.wrapped,
@@ -102,11 +104,11 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
 
   // --- store adapter: pipeline ports (Uint8Array) → EvidenceStore (Address) ---
   const ingestStore: IngestStore = {
-    async exists(sa, d) {
-      return store.exists(bytesToAddr(sa), bytesToAddr(d));
+    async exists(sa, d, round) {
+      return store.exists(bytesToAddr(sa), bytesToAddr(d), round);
     },
-    async get(sa, d) {
-      const b = await store.get(bytesToAddr(sa), bytesToAddr(d));
+    async get(sa, d, round) {
+      const b = await store.get(bytesToAddr(sa), bytesToAddr(d), round);
       return b === null ? null : fromStoreBundle(b);
     },
     async put(b) {
@@ -114,22 +116,35 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     },
   };
   const deliverStore = {
-    async get(sa: Uint8Array, d: Uint8Array) {
-      const b = await store.get(bytesToAddr(sa), bytesToAddr(d));
+    async get(sa: Uint8Array, d: Uint8Array, round: number) {
+      const b = await store.get(bytesToAddr(sa), bytesToAddr(d), round);
       return b === null ? null : fromStoreBundle(b);
     },
   };
 
   // --- chain adapter: reader functions (Accord+Address) → pipeline ports ---
-  const readDisputeBytes = async (d: Uint8Array) => {
+  const readDisputeIngest = async (d: Uint8Array) => {
     const v = await readDispute(accord, bytesToAddr(d));
     if (v === null) return null;
-    // new Uint8Array(...) copies the readonly view into a mutable pipeline value.
-    return { subaccord: b58ToBytes(v.subaccord), evidence_hash: new Uint8Array(v.evidenceHash) };
+    // Copy each readonly slot into a mutable pipeline value; the full ADR-0023
+    // array is passed so ingest can gate against evidence_hashes[round].
+    return {
+      subaccord: b58ToBytes(v.subaccord),
+      evidence_hashes: v.evidenceHashes.map((h) => new Uint8Array(h)),
+    };
   };
-  const ingestChain: IngestChainReader = { readDispute: readDisputeBytes };
+  const readDisputeDeliver = async (d: Uint8Array) => {
+    const v = await readDispute(accord, bytesToAddr(d));
+    if (v === null) return null;
+    return {
+      subaccord: b58ToBytes(v.subaccord),
+      evidence_hashes: v.evidenceHashes.map((h) => new Uint8Array(h)),
+      current_round: v.currentRound,
+    };
+  };
+  const ingestChain: IngestChainReader = { readDispute: readDisputeIngest };
   const deliverChain = {
-    readDispute: readDisputeBytes,
+    readDispute: readDisputeDeliver,
     async readSubaccord(sa: Uint8Array) {
       const v = await readSubaccord(accord, bytesToAddr(sa));
       if (v === null) return null;
@@ -184,7 +199,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
 
   // --- HTTP handlers: string/JSON ↔ pipeline bytes ---
 
-  const ingestHandler: IngestHandler = async (subaccordStr, disputeStr, body) => {
+  const ingestHandler: IngestHandler = async (subaccordStr, disputeStr, round, body) => {
     let sa: Uint8Array;
     let d: Uint8Array;
     try {
@@ -201,18 +216,23 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     const bundle: EvidenceBundle = {
       subaccord: sa,
       dispute: d,
+      round,
       ct: parsed.ct,
       claimant_ephem_pub: parsed.claimant_ephem_pub,
       wrapped: parsed.wrapped,
       plaintext_hash: parsed.plaintext_hash,
       ingested_at: 0,
     };
-    const out = await ingest(sa, d, bundle, {
+    const out = await ingest(sa, d, round, bundle, {
       store: ingestStore,
       chain: ingestChain,
     } satisfies IngestDeps);
     if (out.status === 201) {
-      return { ok: true, status: 201, location: `/evidence/${subaccordStr}/${disputeStr}` };
+      return {
+        ok: true,
+        status: 201,
+        location: `/evidence/${subaccordStr}/${disputeStr}/${round}`,
+      };
     }
     return { ok: false, status: out.status, error: out.reason };
   };
@@ -238,8 +258,11 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
         ok: true,
         status: 200,
         body: {
-          out: bytesToBase64(out.out),
-          operator_ephem_pub: bytesToBase64(out.operator_ephem_pub),
+          rounds: out.rounds.map((r) => ({
+            round: r.round,
+            out: bytesToBase64(r.out),
+            operator_ephem_pub: bytesToBase64(r.operator_ephem_pub),
+          })),
         },
       };
     }

@@ -160,7 +160,7 @@ export interface AccordMethods {
   ): Instruction;
 
   // appeal
-  appeal(accounts: AppealAccounts): Instruction;
+  appeal(accounts: AppealAccounts, newEvidenceHash: Uint8Array): Instruction;
   claimAppealRefund(
     accounts: ClaimRefundAccounts,
     roundIdx: number,
@@ -255,7 +255,8 @@ export function createAccordMethods(
       pureFinalizeDispute(adapter, programId, accounts, remainingAccounts),
 
     // appeal
-    appeal: (accounts) => pureAppeal(adapter, programId, accounts),
+    appeal: (accounts, newEvidenceHash) =>
+      pureAppeal(adapter, programId, accounts, newEvidenceHash),
     claimAppealRefund: (accounts, roundIdx) =>
       pureClaimAppealRefund(adapter, programId, accounts, roundIdx),
   };

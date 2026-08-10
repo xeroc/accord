@@ -70,7 +70,7 @@ export type WithdrawInstruction<
             AccountSignerMeta<TAccountJuror>
         : TAccountJuror,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountJurorStake extends string
         ? WritableAccount<TAccountJurorStake>
@@ -174,7 +174,7 @@ export async function getWithdrawInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
     jurorTokenAccount: {
@@ -340,7 +340,7 @@ export function getWithdrawInstruction<
   // Original accounts.
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
     jurorTokenAccount: {

@@ -5,7 +5,7 @@
 //! `Box<>`-wrapped at the instruction site to fit the BPF stack frame — the
 //! structs themselves are plain `#[account]` types.
 
-use crate::constants::{MAX_JURORS, MAX_OPTIONS};
+use crate::constants::{MAX_JURORS, MAX_OPTIONS, NUM_EVIDENCE_SLOTS};
 use anchor_lang::prelude::*;
 
 /// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
@@ -97,6 +97,19 @@ pub struct Subaccord {
     pub next_index: u32,
     /// Fixed tree depth (bounds the pool at `2^depth`). Set at `create_subaccord`.
     pub depth: u8,
+    /// Parallel vault ledger — fee side (bean accord-fdad). Tracks every
+    /// `fee_token` SPL transfer in/out of the `fee_vault`, independent of the
+    /// vault's live balance. The vault balance is a *derivable consequence*:
+    /// `fee_vault.amount == fee_vault_deposited - fee_vault_withdrawn`
+    /// (separate-mint) or the fee portion of a shared ATA (same-mint).
+    pub fee_vault_deposited: u64,
+    pub fee_vault_withdrawn: u64,
+    /// Parallel vault ledger — stake side (bean accord-fdad). Tracks every
+    /// `staking_token` SPL transfer in/out of the `stake_vault`. Bumped only by
+    /// `stake` (in) and `withdraw` (out); slashing and `request_withdraw` are
+    /// ledger-only and never touch these.
+    pub stake_vault_deposited: u64,
+    pub stake_vault_withdrawn: u64,
     pub bump: u8,
 }
 
@@ -185,7 +198,11 @@ pub struct Dispute {
     pub nonce: u64,
     pub num_options: u8,
     pub options: [[u8; 32]; MAX_OPTIONS], // option label hashes
-    pub evidence_hash: [u8; 32],          // ADR-0006: on-chain evidence commitment
+    /// Per-round evidence commitments (ADR-0006 / milestone accord-qp7c).
+    /// Index 0 = round-0 (filing); each appeal round may optionally bring new
+    /// evidence at `[current_round + 1]`. `[0u8; 32]` sentinel = no new
+    /// evidence that round (jurors reuse prior rounds').
+    pub evidence_hashes: [[u8; 32]; NUM_EVIDENCE_SLOTS],
     pub state: DisputeState,
     pub current_round: u32,
     /// Filing-time snapshot of the Subaccord's economics (Ugly 6). Immutable
@@ -205,8 +222,10 @@ pub struct Dispute {
     /// window, which must open exactly when the dispute finalizes). `0` is a
     /// safe sentinel: real Unix time is never 0 for on-chain disputes.
     pub finalized_at: i64,
-    /// Total fee deposited by the filer (N * fee_per_juror at creation; appeals
-    /// add to the round's pool). Drives the redistribution economics.
+    /// Round-0 filing fee deposited by the filer (`N · fee_per_juror` at
+    /// creation). Decremented as round-0 jurors earn (`finalize_round`). This
+    /// is the filer's refundable pool on cancel/redraw-exhaustion. Appeal-round
+    /// fees live in their `AppealBond`, NOT here (bean accord-xftx).
     pub fee_paid: u64,
     /// VRF result committed once via `commit_vrf` (ADR-0009). `None` until
     /// committed; `Some(vrf_result)` after. The draw reads this; the caller
@@ -299,12 +318,16 @@ pub struct Round {
 /// `prior_result` is the winning option of the round the appellant sought to
 /// flip (the just-resolved `current_round` at appeal time). Flip detection at
 /// final settlement is `final_ruling != prior_result`. `amount` stores the
-/// **total deposit** (fee + bond); the fee portion is derived at settlement as
-/// `panel_size_for_round(terms, round_idx) * fee_per_juror`. A no-flip bond is
-/// zeroed (`amount = 0`) by `finalize_dispute` as it folds the bond portion
-/// into the coherent pool; a flipped bond keeps its `amount` until
-/// `claim_appeal_refund` returns the bond portion (Final) or the full amount
-/// (Failed/cancel) and zeroes the record (idempotent).
+/// **total deposit** (appeal fee + bond); the appeal-fee portion is derived at
+/// settlement as `panel_size_for_round(round_idx) *
+/// fee_per_juror`. `claim_appeal_refund` ALWAYS returns only the bond — never
+/// the appeal fee — regardless of terminal state (bean accord-xftx). The
+/// appeal fee is owned by the round's jurors (credited as `fees_earned` if the
+/// round resolved) or trapped in the vault if it never resolved. A no-flip bond
+/// is zeroed (`amount = 0`) by `finalize_dispute` (bond forfeited into the
+/// coherent fee pool); a flipped or unresolved bond keeps its `amount` until
+/// `claim_appeal_refund` returns the bond portion and zeroes the record
+/// (idempotent).
 #[account]
 #[derive(InitSpace)]
 pub struct AppealBond {
@@ -382,8 +405,6 @@ pub enum DisputeState {
 /// a single named object instead of 14 positional scalars.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub struct CreateSubaccordParams {
-    pub staking_token: Pubkey,
-    pub fee_token: Pubkey,
     pub min_stake: u64,
     pub alpha_bps: u16,
     pub review_window: u64,

@@ -20,8 +20,13 @@ use canon::constants::*;
 use canon::state::CanonList;
 use canon::{accounts, instruction, ID as CANON_ID};
 use solana_program::pubkey::Pubkey;
+use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use spl_token::solana_program::program_option::COption;
+use spl_token::solana_program::program_pack::Pack;
+use spl_token::state::Mint as SplMint;
+use spl_token::ID as TOKEN_PROGRAM_ID;
 use std::path::PathBuf;
 
 /// Read a compiled program .so. Requires `anchor build`.
@@ -85,6 +90,33 @@ fn read_subaccord(ctx: &anchor_litesvm::AnchorContext, pda: &Pubkey) -> Subaccor
     Subaccord::try_deserialize(&mut &acc.data[..]).unwrap()
 }
 
+fn create_mint(svm: &mut anchor_litesvm::AnchorContext, mint: &Pubkey) {
+    let mut buf = [0u8; SplMint::LEN];
+    Pack::pack(
+        SplMint {
+            mint_authority: COption::None,
+            supply: 1_000_000_000,
+            decimals: 6,
+            is_initialized: true,
+            freeze_authority: COption::None,
+        },
+        &mut buf,
+    )
+    .unwrap();
+    svm.svm
+        .set_account(
+            *mint,
+            SvmAccount {
+                lamports: 1_000_000_000,
+                data: buf.to_vec(),
+                owner: TOKEN_PROGRAM_ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
 /// Build + send a `create_list` instruction.
 fn do_create_list(
     ctx: &mut anchor_litesvm::AnchorContext,
@@ -94,10 +126,14 @@ fn do_create_list(
 ) -> TransactionResult {
     let stake_mint = Pubkey::new_unique();
     let fee_mint = Pubkey::new_unique();
+    create_mint(ctx, &stake_mint);
+    create_mint(ctx, &fee_mint);
     let ix = ctx
         .program()
         .accounts(accounts::CreateList {
             creator: creator.pubkey(),
+            stake_mint_acc: stake_mint,
+            fee_mint_acc: fee_mint,
             list: canon_list_pda(&creator.pubkey(), &rules),
             subaccord: subaccord_pda(&creator.pubkey(), &rules),
             accord_program: ACCORD_ID,

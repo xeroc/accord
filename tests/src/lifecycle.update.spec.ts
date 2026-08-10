@@ -34,6 +34,7 @@ import type { Address } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
 import { warpForwardSlots, setAccountRaw } from "./setup/cheats.js";
+import { createMint } from "./setup/tokens.js";
 import { fetchDecoded } from "./setup/assertions.js";
 import { defaultSubaccordArgs } from "./setup/fixtures.js";
 
@@ -64,9 +65,11 @@ async function setClockSlot(env: TestEnv, slot: bigint): Promise<void> {
 
 describe("e2e: lifecycle.update (requires Surfpool)", () => {
   let env: TestEnv;
+  let mint!: Address;
 
   beforeAll(async () => {
     env = await createTestEnv();
+    if (env.up) mint = (await createMint(env, 6)).mint;
   }, 60_000);
 
   it("propose → (revert before timelock) → advance clock → execute applies MinStake", async () => {
@@ -78,8 +81,8 @@ describe("e2e: lifecycle.update (requires Surfpool)", () => {
 
     // ── 2. Mutable Subaccord with our authority ───────────────────────────
     const args = defaultSubaccordArgs(
-      env.payer.address,
-      env.payer.address,
+      mint,
+      mint,
       env.payer.address,
       {
         authority: authority.address,

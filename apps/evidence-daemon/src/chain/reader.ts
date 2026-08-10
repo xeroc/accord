@@ -6,8 +6,9 @@
  *
  *   - `Subaccord` → `evidence_operator` (resolves the per-Subaccord key) +
  *     `evidence_spec` (pins the evidence/watermark scheme).
- *   - `Dispute`   → `subaccord` (locates the Subaccord), `evidence_hash`
- *     (integrity gate), `state` (delivery gate), `current_round`.
+ *   - `Dispute`   → `subaccord` (locates the Subaccord), `evidence_hashes`
+ *     (per-round integrity gate, ADR-0023), `state` (delivery gate),
+ *     `current_round`.
  *   - `Round`     → `jurors[]` — the **authoritative** drawn set. Events
  *     (`JurorsDrawn`) are cache hints only; this account is the truth.
  *
@@ -43,8 +44,12 @@ export interface SubaccordView {
 export interface DisputeView {
   /** Parent Subaccord — lookup key for the operator. */
   readonly subaccord: Address;
-  /** On-chain evidence commitment; integrity gate target (`sha256(plaintext)`). */
-  readonly evidenceHash: ReadonlyUint8Array;
+  /**
+   * Per-round evidence commitments (ADR-0023): index 0 = filer, 1..MAX_APPEALS
+   * = appeal rounds; `[0u8;32]` = sentinel ("no new evidence this round"). The
+   * per-round integrity gate target is `sha256(plaintext) == evidenceHashes[k]`.
+   */
+  readonly evidenceHashes: readonly ReadonlyUint8Array[];
   /** Lifecycle state; delivery requires `state >= Drawn`. */
   readonly state: DisputeState;
   /** Active round index — selects which `Round` PDA holds the drawn set. */
@@ -90,7 +95,7 @@ export async function readDispute(accord: Accord, dispute: Address): Promise<Dis
   if (!m.exists) return null;
   return {
     subaccord: m.data.subaccord,
-    evidenceHash: m.data.evidenceHash,
+    evidenceHashes: m.data.evidenceHashes,
     state: m.data.state,
     currentRound: m.data.currentRound,
   };

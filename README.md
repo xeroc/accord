@@ -156,17 +156,18 @@ solana config set --url devnet         # devnet
 
 ### 5. Run the tests
 
-Fast in-process unit tests (no validator needed):
+The full suite (Rust unit tests + LiteSVM + jest e2e) runs in a single command —
+`anchor test` auto-starts a Surfpool instance, deploys the program, and runs
+everything:
+
+```bash
+make test             # full suite (anchor test — auto-starts Surfpool)
+```
+
+For fast iteration on Rust/​LiteSVM tests only (no validator):
 
 ```bash
 make test_unit
-```
-
-Full end-to-end suite against a live validator (start Surfpool first):
-
-```bash
-make run_surfpool     # in a separate terminal
-make test_surfpool
 ```
 
 See [Testing](#testing) for the two-harness philosophy.
@@ -382,10 +383,10 @@ scripts by design.
 | ----------------------------------------- | ------------------------------------------------------------------------- |
 | `make prep`                               | Install Solana `3.1.10` + Anchor `1.0.2` (via `avm`), then `pnpm install` |
 | `make build`                              | `anchor build` (programs) then `pnpm -r run build` (packages/apps)        |
-| `make test`                               | Rust unit tests + jest suite against a local validator (`anchor test`)    |
+| `make test`                               | Full suite: Rust unit + LiteSVM + jest e2e (`anchor test` auto-starts Surfpool) |
 | `make test_unit`                          | LiteSVM Rust unit/TDD tests (fast, no validator)                          |
-| `make run_surfpool`                       | Start a Surfpool local fork (separate terminal)                           |
-| `make test_surfpool`                      | Full suite against a running Surfpool instance                            |
+| `make run_surfpool`                       | Start a Surfpool Surfnet manually (for isolated e2e debugging)            |
+| `make test_surfpool`                      | Run jest e2e suite only (needs a running Surfpool/validator)             |
 | `make lint`                               | Lint every workspace that declares a lint script                          |
 | `make clean`                              | Remove build artifacts and `node_modules`                                 |
 | `cd programs/accord && cargo test`        | Rust unit tests in isolation                                              |
@@ -417,9 +418,12 @@ The project uses **two complementary harnesses** (decision `veridao-8ys4`):
 ### jest + Surfpool — full end-to-end
 
 - **Location:** `tests/*.spec.ts`
-- **Run:** `make run_surfpool` (start the fork), then `make test_surfpool`
+- **Run:** `make test` (runs the full suite including e2e; `anchor test`
+  auto-starts Surfpool, deploys the program, and runs jest). For isolated e2e
+  iteration: `make run_surfpool` then `make test_surfpool`.
 - **What it is:** the real validator behaviour — CPI chains, VRF, token
-  transfers. Long-running (`testTimeout: 120000`).
+  transfers, Surfpool cheatcodes (time-warp, token injection). Long-running
+  (`testTimeout: 120000`).
 
 ### TDD workflow
 

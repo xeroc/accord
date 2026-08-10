@@ -71,7 +71,7 @@ export type CancelDisputeInstruction<
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
@@ -179,7 +179,7 @@ export async function getCancelDisputeInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
@@ -308,7 +308,7 @@ export function getCancelDisputeInstruction<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {

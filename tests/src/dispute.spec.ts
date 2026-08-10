@@ -19,6 +19,7 @@
 import {
   Accord,
   createDispute,
+  cancelDispute,
   requiredFee,
   stake,
   initializePause,
@@ -44,6 +45,7 @@ import {
 } from "./setup/tokens.js";
 import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
 import { expectAccordAccount, fetchDecoded } from "./setup/assertions.js";
+import { warpForwardSeconds } from "./setup/cheats.js";
 
 /** SPL Associated Token Account program (`ATokenGPvbd…`). */
 const ATA_PROGRAM_ID =
@@ -223,6 +225,12 @@ describe("e2e: dispute (requires Surfpool)", () => {
     };
   }
 
+  /** Read a token account's raw amount via RPC. */
+  async function tokenAmount(ata: Address): Promise<bigint> {
+    const res = await env.rpc.getTokenAccountBalance(ata).send();
+    return BigInt(res.value.amount);
+  }
+
   it("happy createDispute inits the Dispute PDA + custodies the fee", async () => {
     if (!env.up) return;
     const opt0 = randomBytes32();
@@ -256,7 +264,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
     expect(d!.nonce).toBe(nonce);
     expect(Array.from(d!.options[0]!)).toEqual(Array.from(opt0));
     expect(Array.from(d!.options[1]!)).toEqual(Array.from(opt1));
-    expect(Array.from(d!.evidenceHash)).toEqual(Array.from(evidence));
+    expect(Array.from(d!.evidenceHashes[0]!)).toEqual(Array.from(evidence));
     expect(d!.feePaid).toBe(REQUIRED_FEE);
     expect(d!.currentRound).toBe(0);
     // final_ruling: read straight off the decoded Dispute (the `getRuling` facade
@@ -333,4 +341,70 @@ describe("e2e: dispute (requires Surfpool)", () => {
     const acc = await env.rpc.getAccountInfo(dispute).send();
     expect(acc.value).toBeNull();
   }, 60_000);
+
+  // ── C-1 regression: shared fee_vault drain ─────────────────────────────────
+
+  it("C-1: cancel refunds only this dispute's fee_paid, not the shared vault", async () => {
+    if (!env.up) return;
+
+    // File two disputes under the same Subaccord (shared fee_vault).
+    const nonceA = nextNonce();
+    const { instruction: ixA } = await createDispute(
+      env.accord.adapter,
+      disputeAccounts(mainSub, mainVault),
+      {
+        options: [randomBytes32(), randomBytes32()],
+        evidenceHash: randomBytes32(),
+        nonce: nonceA,
+        fee: REQUIRED_FEE,
+      },
+      env.programId,
+    );
+    await env.sendIx(ixA);
+
+    const nonceB = nextNonce();
+    const { instruction: ixB, dispute: disputeB } = await createDispute(
+      env.accord.adapter,
+      disputeAccounts(mainSub, mainVault),
+      {
+        options: [randomBytes32(), randomBytes32()],
+        evidenceHash: randomBytes32(),
+        nonce: nonceB,
+        fee: REQUIRED_FEE,
+      },
+      env.programId,
+    );
+    await env.sendIx(ixB);
+
+    // Record balances before cancel.
+    const vaultBefore = await tokenAmount(mainVault);
+    const filerBefore = await tokenAmount(filerAta);
+
+    // Warp past the pre-draw cancel timeout (3 days + buffer).
+    await warpForwardSeconds(env, BigInt(3 * 24 * 60 * 60 + 10));
+
+    // Cancel dispute B (pre-draw Created → empty remaining_accounts).
+    const cancelIx = cancelDispute(
+      env.accord.adapter,
+      env.programId,
+      {
+        caller: env.payer.address,
+        subaccord: mainSub,
+        dispute: disputeB,
+        feeToken: mint,
+        filerTokenAccount: filerAta,
+        feeVault: mainVault,
+      },
+      [],
+    );
+    await env.sendIx(cancelIx);
+
+    // Filer received exactly dispute B's fee_paid — not the entire vault.
+    const filerAfter = await tokenAmount(filerAta);
+    expect(filerAfter - filerBefore).toBe(REQUIRED_FEE);
+
+    // Vault retains dispute A's fees + juror collateral.
+    const vaultAfter = await tokenAmount(mainVault);
+    expect(vaultBefore - vaultAfter).toBe(REQUIRED_FEE);
+  }, 120_000);
 });
