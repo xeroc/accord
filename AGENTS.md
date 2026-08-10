@@ -139,6 +139,7 @@ signature after the SDK had already moved to two.)
 | Evidence daemon | `apps/evidence-daemon/` | Consumes `@useaccord/sdk` + `@useaccord/sdk/evidence`. |
 | App | `apps/app/` | Frontend — consumes the SDK. |
 | Docs | `programs/*/SPEC.md`, `apps/docs/`, ADRs, `README.md` | Must describe the code as it is. |
+| Agent skills | `.agents/skills/useaccord/` | CLI command + flag reference consumed by agents; mirrors `useaccord …` invocations + flag tables. |
 
 ### When you change X, also touch Y
 
@@ -167,6 +168,16 @@ signature after the SDK had already moved to two.)
   `apps/app`) to it. No parallel hand-rolled implementations — the SDK is the
   single source for PDA/ATA derivation, codecs, and account fetchers.
 
+- **CLI command or flag** (add/rename/remove a command, or rename/make-optional
+  a flag): the `.agents/skills/useaccord/` skill documents exact `useaccord …`
+  invocations + flag tables (`SKILL.md` routing + `references/*.md`). Update
+  every example + flag list there in the same change — a renamed or newly-
+  optional flag makes the skill's copy-paste commands fail or silently behave
+  differently. Cross-check the SDK fn + source line each skill cites, too (they
+  drift on program changes). _E.g. making `draw:request-vrf --program-identity`
+  optional, or adding `appeal:open --evidence`, must update the skill's command
+  examples._
+
 - **Error code / enum variant:** `programs/accord` `#[error_code]` →
   `make codegen` → `packages/sdk` error map → any consumer that switches on the
   name.
@@ -179,6 +190,10 @@ signature after the SDK had already moved to two.)
   done. The §Documentation rule "Renames/drops are doc changes too" is the
   **docs** half; the matrix above is the **code** half — both apply on every
   rename.
+- CLI command/flag change ⇒ `grep -rn "<flag>" .agents/skills/useaccord` — the
+  skill's command examples and flag tables must carry the new name/arity. (A
+  `SKILL.md` routing-table link to a missing reference is itself a drift
+  signal.)
 
 ## Testing Instructions
 
