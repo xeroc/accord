@@ -1,3 +1,4 @@
+export { EvidenceEditor } from "./EvidenceEditor.js";
 export {
   SHA256_ZERO,
   buildManifest,
