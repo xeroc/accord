@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, beforeAll, afterAll } from "bun:test";
 import { ed25519PublicKeyFromSeed } from "@useaccord/sdk/evidence";
 import bs58 from "bs58";
 import { EnvKeyring } from "../src/keys/keyring";
@@ -209,4 +209,101 @@ test("config: asymmetric TLS halves throw (loud misconfig surfacing)", () => {
 
 test("config: TLS absent entirely when neither half is set", () => {
   expect(loadConfig(FULL_ENV).tls).toBeUndefined();
+});
+
+// --- file-path key sources --------------------------------------------------
+
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+let tmpDir: string;
+beforeAll(() => {
+  tmpDir = mkdtempSync(join(tmpdir(), "evidence-keyring-"));
+});
+afterAll(() => {
+  rmSync(tmpDir, { recursive: true, force: true });
+});
+
+function writeKeyFile(name: string, data: unknown): string {
+  const p = join(tmpDir, name);
+  writeFileSync(p, JSON.stringify(data));
+  return p;
+}
+
+test("EnvKeyring: reads a 32-byte seed from a .json file (plain array)", async () => {
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const path = writeKeyFile("seed32.json", Array.from(seed));
+  const pub = ed25519PublicKeyFromSeed(seed);
+  const kr = EnvKeyring.fromEnv(path);
+  expect(kr.size).toBe(1);
+  const kp = await kr.forOperator(pub);
+  expect(kp).not.toBeNull();
+  expect([...kp!.secretKey]).toEqual([...seed]);
+});
+
+test("EnvKeyring: reads a 64-byte Solana expanded key (first 32 bytes = seed)", async () => {
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const pub = ed25519PublicKeyFromSeed(seed);
+  const expanded = new Uint8Array(64);
+  expanded.set(seed, 0);
+  expanded.set(pub, 32);
+  const path = writeKeyFile("expanded64.json", Array.from(expanded));
+  const kr = EnvKeyring.fromEnv(path);
+  expect(kr.size).toBe(1);
+  const kp = await kr.forOperator(pub);
+  expect(kp).not.toBeNull();
+  expect([...kp!.secretKey]).toEqual([...seed]);
+});
+
+test("EnvKeyring: reads a { secretKey: [...] } Solana keypair file", async () => {
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const pub = ed25519PublicKeyFromSeed(seed);
+  const expanded = new Uint8Array(64);
+  expanded.set(seed, 0);
+  expanded.set(pub, 32);
+  const path = writeKeyFile("solana-keypair.json", {
+    secretKey: Array.from(expanded),
+    publicKey: Array.from(pub),
+  });
+  const kr = EnvKeyring.fromEnv(path);
+  expect(kr.size).toBe(1);
+  const kp = await kr.forOperator(pub);
+  expect(kp).not.toBeNull();
+  expect([...kp!.secretKey]).toEqual([...seed]);
+});
+
+test("EnvKeyring: reads a { seed: [...] } object file", async () => {
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const pub = ed25519PublicKeyFromSeed(seed);
+  const path = writeKeyFile("seed-obj.json", { seed: Array.from(seed) });
+  const kr = EnvKeyring.fromEnv(path);
+  expect(kr.size).toBe(1);
+  const kp = await kr.forOperator(pub);
+  expect(kp).not.toBeNull();
+});
+
+test("EnvKeyring: mixed base58 seed + .json file path in one env var", async () => {
+  const seed1 = crypto.getRandomValues(new Uint8Array(32));
+  const seed2 = crypto.getRandomValues(new Uint8Array(32));
+  const path2 = writeKeyFile("second.json", Array.from(seed2));
+  const kr = EnvKeyring.fromEnv(`${b58(seed1)},${path2}`);
+  expect(kr.size).toBe(2);
+  expect(await kr.forOperator(ed25519PublicKeyFromSeed(seed1))).not.toBeNull();
+  expect(await kr.forOperator(ed25519PublicKeyFromSeed(seed2))).not.toBeNull();
+});
+
+test("EnvKeyring: rejects a key file with the wrong byte count", () => {
+  const path = writeKeyFile("bad-len.json", Array.from(crypto.getRandomValues(new Uint8Array(16))));
+  expect(() => EnvKeyring.fromEnv(path)).toThrow(/32 or 64 bytes/);
+});
+
+test("EnvKeyring: rejects a key file that is not valid JSON", () => {
+  const p = join(tmpDir, "bad.json");
+  writeFileSync(p, "not json {{{");
+  expect(() => EnvKeyring.fromEnv(p)).toThrow(/not valid JSON/);
+});
+
+test("EnvKeyring: rejects a non-existent key file", () => {
+  expect(() => EnvKeyring.fromEnv("/nonexistent/key.json")).toThrow();
 });
