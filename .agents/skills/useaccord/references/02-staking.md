@@ -17,6 +17,7 @@ signing juror for all six.
 | `staking:request-withdraw` | `requestWithdraw` | yes (ledger-only tx) |
 | `staking:withdraw` | `withdraw` | yes |
 | `staking:reconcile` | `reconcileStake` | yes (any caller) |
+| `staking:reclaim-slot` | `reclaimSlot` | yes (any caller, permissionless crank) |
 | `staking:withdraw-fees` | `withdrawFees` | yes |
 | `staking:can-unstake` | `canUnstake` | **no — pure pre-check** |
 
@@ -38,8 +39,11 @@ advanced use: `--path-from <file>` (a JSON path from `accumulator:proof`).
 Subaccord `stake_vault` → **reload the vault** (fee-on-transfer safe; credits the
 real delta received) → `verify_and_recompute` against `rootHash` → write new
 `staked` + `root_hash` + `total_stake`. A first-time staker is appended at
-`subaccord.next_index` (a full tree ⇒ `TreeFull`); a top-up / re-stake updates
-the existing `tree_index`.
+`subaccord.next_index` **or pops a recycled slot from the free list** if one is
+available (RECLAIM-LEAF — closes the permanent-DoS hole where `next_index` only
+grows). A full tree with an empty free list ⇒ `TreeFull`; a top-up / re-stake
+updates the existing `tree_index`. When popping a recycled slot, pass
+`--freed-slot <addr>` (the freed JurorStake PDA whose `tree_index == freeHead`).
 
 ```bash
 useaccord staking:stake \
@@ -112,6 +116,22 @@ useaccord staking:reconcile --subaccord subAxK9…rd1
 # → { "signature": "…", "staked": 5032000000, "stake_delta": 0 }
 ```
 
+## `staking:reclaim-slot` — recycle a drained slot (permissionless crank)
+
+`reclaimSlot` (lib.rs `reclaim_slot`, RECLAIM-LEAF). Pushes a fully-drained
+JurorStake's `tree_index` onto the Subaccord's free-list, blanking the leaf
+identity to `(default, 0)`. This recycles the tree slot for reuse by a new
+staker — closing the permanent-DoS hole where `next_index` only grows and can be
+exhausted by a griefing attacker.
+
+**Preconditions:** `staked == 0`, `active_draws == 0`, `stake_delta == 0`,
+`fees_earned == 0`. Double-reclaim is prevented by root verification.
+
+```bash
+useaccord staking:reclaim-slot --subaccord subAxK9…rd1
+# → { "signature": "…", "reclaimed_index": 7 }
+```
+
 ## `staking:withdraw-fees` — pull earned fees
 
 `withdrawFees` (lib.rs `withdraw_fees`, ADR-0020 two-mint model). Per-juror pull
@@ -148,5 +168,5 @@ useaccord staking:can-unstake --subaccord subAxK9…rd1 --amount 1_000_000_000
 
 > **SDK escape hatch:** every command here is reachable directly via
 > `@useaccord/sdk` (`stake`, `requestWithdraw`, `withdraw`, `reconcileStake`,
-> `withdrawFees`, `canUnstake`). The CLI is the thin, single-signer wrapper;
-> multi-signer or batched flows use the SDK.
+> `reclaimSlot`, `withdrawFees`, `canUnstake`). The CLI is the thin, single-signer
+> wrapper; multi-signer or batched flows use the SDK.

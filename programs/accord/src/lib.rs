@@ -88,7 +88,7 @@ pub(crate) mod layout {
     const PUBKEY: usize = 32;
 
     // --- JurorStake (state.rs) ---
-    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned
+    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned | next_free
     const JS_STAKED_W: usize = 8;
     const JS_ACTIVE_DRAWS_W: usize = 4;
     const JS_BUMP_W: usize = 1;
@@ -151,6 +151,7 @@ mod layout_tests {
             withdraw_requested_at: 0x2223_2425_2627_2829,
             pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
             fees_earned: 0x3233_3435_3637_3839,
+            next_free: 0x3A3B_3C3D,
         };
         let mut buf = Vec::new();
         js.try_serialize(&mut buf).unwrap();
@@ -396,6 +397,8 @@ pub mod accord {
         acc.next_index = 0;
         acc.total_stake = 0;
         acc.root_hash = empty_tree_root(depth);
+        // RECLAIM-LEAF: free list starts empty (no reclaimed slots).
+        acc.free_head = u32::MAX;
 
         emit!(SubaccordCreated {
             creator: ctx.accounts.creator.key(),
@@ -456,15 +459,64 @@ pub mod accord {
         // unstake) already has its `tree_index`.
         let is_new_leaf = js.subaccord == Pubkey::default();
         let old_stake = js.staked;
-        let index = if is_new_leaf {
-            require!(
-                (sub.next_index as u64) < (1u64 << sub.depth.min(31)),
-                AccordError::TreeFull
-            );
-            sub.next_index
+        let (index, popped_from_free_list) = if is_new_leaf {
+            if sub.free_head != u32::MAX {
+                // --- RECLAIM-LEAF: pop from free list ---
+                // The freed JurorStake at free_head is remaining_accounts[0].
+                // The caller discovers it off-chain (read sub.free_head → find
+                // the JurorStake with tree_index == free_head). The program
+                // verifies ownership, PDA derivation, and head identity.
+                require!(
+                    !ctx.remaining_accounts.is_empty(),
+                    AccordError::FreeListHeadMismatch
+                );
+                let freed_info = &ctx.remaining_accounts[0];
+                require!(
+                    freed_info.owner == &crate::ID,
+                    AccordError::FreeListHeadMismatch
+                );
+                let (freed_tree_index, freed_next_free, freed_juror) = {
+                    let data = freed_info.try_borrow_data()?;
+                    let freed_js = JurorStake::try_deserialize(&mut &data[..])?;
+                    require!(
+                        freed_js.tree_index == sub.free_head,
+                        AccordError::FreeListHeadMismatch
+                    );
+                    require!(freed_js.staked == 0, AccordError::SlotNotDrained);
+                    (freed_js.tree_index, freed_js.next_free, freed_js.juror)
+                };
+                let expected_pda = Pubkey::find_program_address(
+                    &[SEED_JUROR_STAKE, sub.key().as_ref(), freed_juror.as_ref()],
+                    &crate::ID,
+                )
+                .0;
+                require!(
+                    freed_info.key == &expected_pda,
+                    AccordError::FreeListHeadMismatch
+                );
+                // Advance head + close the freed account (rent bounty → caller).
+                sub.free_head = freed_next_free;
+                {
+                    let src_lamports = **freed_info.lamports.borrow();
+                    **freed_info.lamports.borrow_mut() = 0;
+                    **ctx.accounts.juror.lamports.borrow_mut() += src_lamports;
+                    let mut data = freed_info.try_borrow_mut_data()?;
+                    for b in data.iter_mut() {
+                        *b = 0;
+                    }
+                }
+                (freed_tree_index, true)
+            } else {
+                // --- Bump allocate (unchanged) ---
+                require!(
+                    (sub.next_index as u64) < (1u64 << sub.depth.min(31)),
+                    AccordError::TreeFull
+                );
+                (sub.next_index, false)
+            }
         } else {
             require!(js.juror == juror_key, AccordError::InvalidMembershipProof);
-            js.tree_index
+            (js.tree_index, false)
         };
 
         // The accumulator leaf currently at `index`: a fresh slot is the
@@ -517,10 +569,22 @@ pub mod accord {
             js.juror = juror_key;
             js.bump = ctx.bumps.juror_stake;
             js.tree_index = index;
-            sub.next_index = sub
-                .next_index
-                .checked_add(1)
-                .ok_or(AccordError::ArithmeticOverflow)?;
+            js.next_free = u32::MAX; // active juror, not on the free list
+                                     // Only bump next_index on a fresh bump-allocate — a free-list pop
+                                     // recycles an existing index.
+            if !popped_from_free_list {
+                sub.next_index = sub
+                    .next_index
+                    .checked_add(1)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
+            if popped_from_free_list {
+                emit!(SlotAllocated {
+                    subaccord: sub.key(),
+                    juror: juror_key,
+                    index,
+                });
+            }
         }
         // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
 
@@ -724,6 +788,64 @@ pub mod accord {
         js.stake_delta = 0;
         sub.root_hash = new_root;
         sub.total_stake = new_total;
+
+        Ok(())
+    }
+
+    /// **Permissionless crank** (RECLAIM-LEAF): pushes a fully-drained
+    /// JurorStake's `tree_index` onto the free list, blanking the leaf identity
+    /// to `(Pubkey::default(), 0)`. This recycles the tree slot for reuse by a
+    /// new staker — closing the permanent-DoS hole where `next_index` only ever
+    /// grows and can be exhausted by a griefing attacker.
+    ///
+    /// Preconditions: the juror must be fully drained (`staked == 0`,
+    /// `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`). A double
+    /// reclaim is prevented by root verification (see handler comment).
+    ///
+    /// Any caller may trigger this — no tokens move, it's pure ledger + root
+    /// accounting. The cranker supplies the juror's Merkle path.
+    pub fn reclaim_slot(ctx: Context<ReclaimSlot>, path: Vec<MSTNode>) -> Result<()> {
+        let js = &mut ctx.accounts.juror_stake;
+        let sub = &mut ctx.accounts.subaccord;
+
+        // Preconditions: fully drained. Double-reclaim is prevented by root
+        // verification: after reclaim the leaf is (default, 0), but we hash
+        // (js.juror, 0) as old_juror — a second reclaim fails InvalidMerklePath
+        // because the root no longer contains (juror, 0) at this index.
+        require!(js.staked == 0, AccordError::SlotNotDrained);
+        require!(js.active_draws == 0, AccordError::SlotNotDrained);
+        require!(js.stake_delta == 0, AccordError::SlotNotDrained);
+        require!(js.fees_earned == 0, AccordError::SlotNotDrained);
+
+        let juror = js.juror;
+        let index = js.tree_index;
+
+        // Root update: blank the leaf identity from (juror, 0) to (default, 0).
+        // total_stake does not change (0 → 0). Only the root hash changes
+        // (leaf hash input: H(juror ‖ 0) → H(default ‖ 0)).
+        let (new_root, new_total) = verify_and_recompute(
+            &juror,
+            0,
+            &Pubkey::default(),
+            0,
+            index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        // Linked-list push: this JurorStake becomes the new head.
+        js.next_free = sub.free_head;
+        sub.free_head = index;
+
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
+        emit!(SlotReclaimed {
+            subaccord: sub.key(),
+            juror,
+            index,
+        });
 
         Ok(())
     }
@@ -3135,6 +3257,27 @@ pub struct Withdraw<'info> {
 /// caller may trigger. No token accounts needed (pure ledger + root update).
 #[derive(Accounts)]
 pub struct ReconcileStake<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror_stake.juror.as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+}
+
+/// Account context for `reclaim_slot` (RECLAIM-LEAF). Permissionless — any
+/// caller may trigger. No token accounts needed (pure ledger + root update).
+/// Same shape as `ReconcileStake`.
+#[derive(Accounts)]
+pub struct ReclaimSlot<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(

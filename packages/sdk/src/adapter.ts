@@ -45,6 +45,7 @@ import { getStakeInstruction } from "./generated/instructions/stake.js";
 import { getRequestWithdrawInstruction } from "./generated/instructions/requestWithdraw.js";
 import { getWithdrawInstruction } from "./generated/instructions/withdraw.js";
 import { getReconcileStakeInstruction } from "./generated/instructions/reconcileStake.js";
+import { getReclaimSlotInstruction } from "./generated/instructions/reclaimSlot.js";
 import { getWithdrawFeesInstruction } from "./generated/instructions/withdrawFees.js";
 import { getSettleRoundInstruction } from "./generated/instructions/settleRound.js";
 import { getCancelDisputeInstruction } from "./generated/instructions/cancelDispute.js";
@@ -265,6 +266,17 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
     },
     buildReconcileStake(input) {
       return getReconcileStakeInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          jurorStake: input.accounts.jurorStake,
+          path: mapPath(input.path),
+        },
+        { programAddress: input.programId },
+      );
+    },
+    buildReclaimSlot(input) {
+      return getReclaimSlotInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,

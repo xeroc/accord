@@ -128,6 +128,12 @@ export const ACCORD_ERROR__NOT_REDRAW_ELIGIBLE = 0x17a6; // 6054
 export const ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED = 0x17a7; // 6055
 /** InvalidThreshold: Reveal threshold (bps) must be <= 10_000. */
 export const ACCORD_ERROR__INVALID_THRESHOLD = 0x17a8; // 6056
+/** SlotNotDrained: JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0). */
+export const ACCORD_ERROR__SLOT_NOT_DRAINED = 0x17a9; // 6057
+/** SlotAlreadyReclaimed: JurorStake slot is already on the free list (next_free != MAX). */
+export const ACCORD_ERROR__SLOT_ALREADY_RECLAIMED = 0x17aa; // 6058
+/** FreeListHeadMismatch: Provided freed-slot account does not match the free-list head. */
+export const ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH = 0x17ab; // 6059
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -144,6 +150,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__DISPUTE_NOT_FINAL
   | typeof ACCORD_ERROR__DUPLICATE_JUROR
   | typeof ACCORD_ERROR__FEE_MISMATCH
+  | typeof ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH
   | typeof ACCORD_ERROR__IMMUTABLE_SUBACCORD
   | typeof ACCORD_ERROR__INFLATED_STAKE
   | typeof ACCORD_ERROR__INSUFFICIENT_BALANCE
@@ -176,6 +183,8 @@ export type AccordError =
   | typeof ACCORD_ERROR__ROUND_ALREADY_SETTLED
   | typeof ACCORD_ERROR__ROUND_NOT_FINALIZABLE
   | typeof ACCORD_ERROR__ROUND_NOT_SETTLABLE
+  | typeof ACCORD_ERROR__SLOT_ALREADY_RECLAIMED
+  | typeof ACCORD_ERROR__SLOT_NOT_DRAINED
   | typeof ACCORD_ERROR__SORTITION_MISMATCH
   | typeof ACCORD_ERROR__STAKE_LOCKED
   | typeof ACCORD_ERROR__SUBACCORD_MISMATCH
@@ -205,6 +214,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__DISPUTE_NOT_FINAL]: `Dispute is not in a finalizable state.`,
     [ACCORD_ERROR__DUPLICATE_JUROR]: `Draw selected a duplicate Juror.`,
     [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).`,
+    [ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH]: `Provided freed-slot account does not match the free-list head.`,
     [ACCORD_ERROR__IMMUTABLE_SUBACCORD]: `Subaccord is immutable (authority == default).`,
     [ACCORD_ERROR__INFLATED_STAKE]: `Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012).`,
     [ACCORD_ERROR__INSUFFICIENT_BALANCE]: `Withdrawal exceeds the Juror's free stake (amount - slash_reserve).`,
@@ -237,6 +247,8 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__ROUND_ALREADY_SETTLED]: `Round has already been settled.`,
     [ACCORD_ERROR__ROUND_NOT_FINALIZABLE]: `Round cannot be finalized yet (window not elapsed).`,
     [ACCORD_ERROR__ROUND_NOT_SETTLABLE]: `Round index out of range for settlement (must be < current_round).`,
+    [ACCORD_ERROR__SLOT_ALREADY_RECLAIMED]: `JurorStake slot is already on the free list (next_free != MAX).`,
+    [ACCORD_ERROR__SLOT_NOT_DRAINED]: `JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0).`,
     [ACCORD_ERROR__SORTITION_MISMATCH]: `Submitted membership does not match the VRF-derived sortition selection (ADR-0009).`,
     [ACCORD_ERROR__STAKE_LOCKED]: `Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle).`,
     [ACCORD_ERROR__SUBACCORD_MISMATCH]: `Dispute does not belong to this Subaccord (cross-pool substitution rejected).`,

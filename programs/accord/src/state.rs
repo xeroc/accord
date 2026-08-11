@@ -110,6 +110,11 @@ pub struct Subaccord {
     /// ledger-only and never touch these.
     pub stake_vault_deposited: u64,
     pub stake_vault_withdrawn: u64,
+    /// Head of the free-slot linked list (RECLAIM-LEAF). `u32::MAX` = list empty.
+    /// When non-MAX, points to a JurorStake whose slot has been reclaimed and is
+    /// available for reuse by a new staker. Maintained by `reclaim_slot` (push)
+    /// and `stake` (pop).
+    pub free_head: u32,
     pub bump: u8,
 }
 
@@ -155,6 +160,12 @@ pub struct JurorStake {
     /// `withdraw_fees` instruction. No `active_draws` gate (fees are earned,
     /// not at-risk capital).
     pub fees_earned: u64,
+    /// Next free index in the free-slot linked list (RECLAIM-LEAF).
+    /// `u32::MAX` = this account is NOT a free-list node (active juror, or never
+    /// reclaimed). Any other value = this slot is reclaimed and `next_free` is
+    /// the next free index after this one. Set by `reclaim_slot`, consumed by
+    /// `stake`.
+    pub next_free: u32,
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**

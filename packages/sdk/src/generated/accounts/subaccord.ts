@@ -155,6 +155,13 @@ export type Subaccord = {
    */
   stakeVaultDeposited: bigint;
   stakeVaultWithdrawn: bigint;
+  /**
+   * Head of the free-slot linked list (RECLAIM-LEAF). `u32::MAX` = list empty.
+   * When non-MAX, points to a JurorStake whose slot has been reclaimed and is
+   * available for reuse by a new staker. Maintained by `reclaim_slot` (push)
+   * and `stake` (pop).
+   */
+  freeHead: number;
   bump: number;
 };
 
@@ -251,6 +258,13 @@ export type SubaccordArgs = {
    */
   stakeVaultDeposited: number | bigint;
   stakeVaultWithdrawn: number | bigint;
+  /**
+   * Head of the free-slot linked list (RECLAIM-LEAF). `u32::MAX` = list empty.
+   * When non-MAX, points to a JurorStake whose slot has been reclaimed and is
+   * available for reuse by a new staker. Maintained by `reclaim_slot` (push)
+   * and `stake` (pop).
+   */
+  freeHead: number;
   bump: number;
 };
 
@@ -287,6 +301,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["feeVaultWithdrawn", getU64Encoder()],
       ["stakeVaultDeposited", getU64Encoder()],
       ["stakeVaultWithdrawn", getU64Encoder()],
+      ["freeHead", getU32Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBACCORD_DISCRIMINATOR }),
@@ -325,6 +340,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["feeVaultWithdrawn", getU64Decoder()],
     ["stakeVaultDeposited", getU64Decoder()],
     ["stakeVaultWithdrawn", getU64Decoder()],
+    ["freeHead", getU32Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -388,5 +404,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 370;
+  return 374;
 }

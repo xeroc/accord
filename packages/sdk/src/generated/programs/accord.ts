@@ -75,6 +75,7 @@ import {
   getPauseInstructionAsync,
   getProposeSubaccordUpdateInstructionAsync,
   getProposeUnpauseInstructionAsync,
+  getReclaimSlotInstruction,
   getReconcileStakeInstruction,
   getRedrawInstructionAsync,
   getRequestVrfInstructionAsync,
@@ -102,6 +103,7 @@ import {
   parsePauseInstruction,
   parseProposeSubaccordUpdateInstruction,
   parseProposeUnpauseInstruction,
+  parseReclaimSlotInstruction,
   parseReconcileStakeInstruction,
   parseRedrawInstruction,
   parseRequestVrfInstruction,
@@ -144,6 +146,7 @@ import {
   type ParsedPauseInstruction,
   type ParsedProposeSubaccordUpdateInstruction,
   type ParsedProposeUnpauseInstruction,
+  type ParsedReclaimSlotInstruction,
   type ParsedReconcileStakeInstruction,
   type ParsedRedrawInstruction,
   type ParsedRequestVrfInstruction,
@@ -156,6 +159,7 @@ import {
   type PauseAsyncInput,
   type ProposeSubaccordUpdateAsyncInput,
   type ProposeUnpauseAsyncInput,
+  type ReclaimSlotInput,
   type ReconcileStakeInput,
   type RedrawAsyncInput,
   type RequestVrfAsyncInput,
@@ -296,6 +300,7 @@ export enum AccordInstruction {
   Pause,
   ProposeSubaccordUpdate,
   ProposeUnpause,
+  ReclaimSlot,
   ReconcileStake,
   Redraw,
   RequestVrf,
@@ -513,6 +518,17 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([44, 216, 234, 229, 129, 82, 98, 5]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.ReclaimSlot;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([40, 103, 128, 85, 211, 11, 34, 80]),
       ),
       0,
@@ -672,6 +688,9 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.ProposeUnpause;
     } & ParsedProposeUnpauseInstruction<TProgram>)
   | ({
+      instructionType: AccordInstruction.ReclaimSlot;
+    } & ParsedReclaimSlotInstruction<TProgram>)
+  | ({
       instructionType: AccordInstruction.ReconcileStake;
     } & ParsedReconcileStakeInstruction<TProgram>)
   | ({
@@ -828,6 +847,13 @@ export function parseAccordInstruction<TProgram extends string>(
       return {
         instructionType: AccordInstruction.ProposeUnpause,
         ...parseProposeUnpauseInstruction(instruction),
+      };
+    }
+    case AccordInstruction.ReclaimSlot: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.ReclaimSlot,
+        ...parseReclaimSlotInstruction(instruction),
       };
     }
     case AccordInstruction.ReconcileStake: {
@@ -994,6 +1020,9 @@ export type AccordPluginInstructions = {
     input: ProposeUnpauseAsyncInput,
   ) => ReturnType<typeof getProposeUnpauseInstructionAsync> &
     SelfPlanAndSendFunctions;
+  reclaimSlot: (
+    input: ReclaimSlotInput,
+  ) => ReturnType<typeof getReclaimSlotInstruction> & SelfPlanAndSendFunctions;
   reconcileStake: (
     input: ReconcileStakeInput,
   ) => ReturnType<typeof getReconcileStakeInstruction> &
@@ -1139,6 +1168,11 @@ export function accordProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getProposeUnpauseInstructionAsync(input),
+            ),
+          reclaimSlot: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getReclaimSlotInstruction(input),
             ),
           reconcileStake: (input) =>
             addSelfPlanAndSendFunctions(
