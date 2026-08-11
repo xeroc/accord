@@ -14,6 +14,7 @@ import { Voting } from "./Voting";
 import { getAppealInfo } from "./useAppeal";
 import { useAppealBond, useDispute, useRound } from "./useDispute";
 import { useSubaccord } from "./useSubaccord";
+import { PublishEvidence } from "./evidence/PublishEvidence";
 
 const FINAL_SENTINEL = 255;
 
@@ -248,6 +249,11 @@ export function DisputeDetail() {
           </div>
         );
       })()}
+
+      {/* Publish evidence (recovery) — upload manifest.yaml, hash-gate, POST.
+          Additive (accord-9df9): only renders when a round-0 evidence hash
+          exists and the subaccord is loaded. See features/dispute/evidence/. */}
+      {subaccord && <PublishEvidence dispute={dispute} subaccord={subaccord} />}
 
       {/* Final ruling */}
       {isFinal && d.finalRuling !== FINAL_SENTINEL && (
