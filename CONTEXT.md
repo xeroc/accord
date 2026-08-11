@@ -62,6 +62,22 @@ _Avoid_: client, consumer (of the accord)
 A Subaccord-designated off-chain service that re-encrypts the filer's evidence for the drawn Jurors of that Subaccord.
 _Avoid_: evidence relay, decryption service, coordinator
 
+**Credential Authority**:
+A trusted off-chain service that issues Solana Attestation Service (SAS) attestations binding a Juror's wallet to a credential under a schema. A peer of the Evidence Operator: where the Evidence Operator controls evidence delivery, the Credential Authority controls who may sit on a gated Subaccord's panel. A Subaccord opts into the gate by setting `juror_credential`/`juror_schema` at creation; thereafter every Juror must hold a valid, unexpired attestation from this authority to stake and be drawn. Like the Evidence Operator, the trust is explicit and off-chain — the Accord verifies the attestation's on-chain binding, not the authority's judgment.
+_Avoid_: attestation issuer, KYC provider (unless it literally is one), identity oracle
+
+**SAS (Solana Attestation Service)**:
+The on-chain attestation framework — a Pinocchio program — that records credential-to-wallet bindings as `Attestation` accounts. The Accord reads these as read-only proof and never trusts the issuer beyond the binding a Subaccord opts into: it checks the account's owner, discriminator, credential, schema, subject wallet, and expiry.
+_Avoid_: attestation service, attestation program, identity program
+
+**Attestation gate (`juror_credential` / `juror_schema`)**:
+An optional, immutable Subaccord credential binding. When both fields are `Pubkey::default()` the Subaccord is stake-only (today's behavior, unchanged); when set together — both-or-neither, a half-bound pool is rejected at `create_subaccord` — a Juror must present a matching SAS attestation to `stake` and at every `draw_seat`. `expiry == 0` means the credential never expires; otherwise it must outlive the maximum dispute lifecycle horizon at stake time.
+_Avoid_: KYC gate, credential filter, identity gate
+
+**prune_juror**:
+A permissionless crank that evicts a Juror whose attestation has a real expiry (`!= 0`) that has passed (`≤ now`) from a gated Subaccord's accumulator. It mirrors `request_withdraw` for the full staked amount — zeros the leaf's selection weight, recomputes the root, banks the tokens into `pending_withdrawal` — so the evicted Juror completes the two-phase `withdraw` (or re-stakes with a renewed attestation). Without it, an expired Juror left in the tree is a dead zone that stalls the draw.
+_Avoid_: eviction, force-unstake, kick
+
 ---
 
 ## Platform

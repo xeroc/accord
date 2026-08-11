@@ -302,6 +302,8 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
                 authority: creator.pubkey(),
                 evidence_operator: creator.pubkey(),
                 depth: TEST_DEPTH,
+                juror_credential: Pubkey::default(),
+                juror_schema: Pubkey::default(),
             },
         })
         .instruction()
@@ -948,6 +950,7 @@ fn draw_seat_fills_round_against_frozen_root() {
             .accounts(accounts::DrawSeat {
                 caller: env.creator.pubkey(),
                 dispute,
+                subaccord: env.subaccord,
                 round: round_pda,
                 system_program: system_program::ID,
             })
@@ -1472,6 +1475,8 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
                 authority: env.creator.pubkey(),
                 evidence_operator: env.creator.pubkey(),
                 depth: TEST_DEPTH,
+                juror_credential: Pubkey::default(),
+                juror_schema: Pubkey::default(),
             },
         })
         .instruction()
@@ -3785,6 +3790,7 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
             .accounts(accounts::DrawSeat {
                 caller: caller2.pubkey(),
                 dispute,
+                subaccord: env.subaccord,
                 round: rnd,
                 system_program: system_program::ID,
             })
@@ -4549,6 +4555,7 @@ fn submit_draw_seat(
         .accounts(accounts::DrawSeat {
             caller: caller.pubkey(),
             dispute,
+            subaccord: env.subaccord,
             round: round_pda,
             system_program: system_program::ID,
         })
@@ -4636,6 +4643,8 @@ fn try_create_subaccord(
                 authority: creator.pubkey(),
                 evidence_operator: creator.pubkey(),
                 depth: TEST_DEPTH,
+                juror_credential: Pubkey::default(),
+                juror_schema: Pubkey::default(),
             },
         })
         .instruction()

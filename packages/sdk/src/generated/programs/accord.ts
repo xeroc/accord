@@ -75,6 +75,7 @@ import {
   getPauseInstructionAsync,
   getProposeSubaccordUpdateInstructionAsync,
   getProposeUnpauseInstructionAsync,
+  getPruneJurorInstructionAsync,
   getReconcileStakeInstruction,
   getRedrawInstructionAsync,
   getRequestVrfInstructionAsync,
@@ -102,6 +103,7 @@ import {
   parsePauseInstruction,
   parseProposeSubaccordUpdateInstruction,
   parseProposeUnpauseInstruction,
+  parsePruneJurorInstruction,
   parseReconcileStakeInstruction,
   parseRedrawInstruction,
   parseRequestVrfInstruction,
@@ -144,6 +146,7 @@ import {
   type ParsedPauseInstruction,
   type ParsedProposeSubaccordUpdateInstruction,
   type ParsedProposeUnpauseInstruction,
+  type ParsedPruneJurorInstruction,
   type ParsedReconcileStakeInstruction,
   type ParsedRedrawInstruction,
   type ParsedRequestVrfInstruction,
@@ -156,6 +159,7 @@ import {
   type PauseAsyncInput,
   type ProposeSubaccordUpdateAsyncInput,
   type ProposeUnpauseAsyncInput,
+  type PruneJurorAsyncInput,
   type ReconcileStakeInput,
   type RedrawAsyncInput,
   type RequestVrfAsyncInput,
@@ -296,6 +300,7 @@ export enum AccordInstruction {
   Pause,
   ProposeSubaccordUpdate,
   ProposeUnpause,
+  PruneJuror,
   ReconcileStake,
   Redraw,
   RequestVrf,
@@ -513,6 +518,17 @@ export function identifyAccordInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([49, 219, 100, 132, 202, 120, 18, 167]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.PruneJuror;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([40, 103, 128, 85, 211, 11, 34, 80]),
       ),
       0,
@@ -672,6 +688,9 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.ProposeUnpause;
     } & ParsedProposeUnpauseInstruction<TProgram>)
   | ({
+      instructionType: AccordInstruction.PruneJuror;
+    } & ParsedPruneJurorInstruction<TProgram>)
+  | ({
       instructionType: AccordInstruction.ReconcileStake;
     } & ParsedReconcileStakeInstruction<TProgram>)
   | ({
@@ -828,6 +847,13 @@ export function parseAccordInstruction<TProgram extends string>(
       return {
         instructionType: AccordInstruction.ProposeUnpause,
         ...parseProposeUnpauseInstruction(instruction),
+      };
+    }
+    case AccordInstruction.PruneJuror: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.PruneJuror,
+        ...parsePruneJurorInstruction(instruction),
       };
     }
     case AccordInstruction.ReconcileStake: {
@@ -994,6 +1020,10 @@ export type AccordPluginInstructions = {
     input: ProposeUnpauseAsyncInput,
   ) => ReturnType<typeof getProposeUnpauseInstructionAsync> &
     SelfPlanAndSendFunctions;
+  pruneJuror: (
+    input: PruneJurorAsyncInput,
+  ) => ReturnType<typeof getPruneJurorInstructionAsync> &
+    SelfPlanAndSendFunctions;
   reconcileStake: (
     input: ReconcileStakeInput,
   ) => ReturnType<typeof getReconcileStakeInstruction> &
@@ -1035,8 +1065,8 @@ export type AccordPluginPdas = {
   dispute: typeof findDisputePda;
   subaccord: typeof findSubaccordPda;
   pendingUpdate: typeof findPendingUpdatePda;
-  programIdentity: typeof findProgramIdentityPda;
   jurorStake: typeof findJurorStakePda;
+  programIdentity: typeof findProgramIdentityPda;
   round: typeof findRoundPda;
 };
 
@@ -1140,6 +1170,11 @@ export function accordProgram() {
               client,
               getProposeUnpauseInstructionAsync(input),
             ),
+          pruneJuror: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getPruneJurorInstructionAsync(input),
+            ),
           reconcileStake: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1189,8 +1224,8 @@ export function accordProgram() {
           dispute: findDisputePda,
           subaccord: findSubaccordPda,
           pendingUpdate: findPendingUpdatePda,
-          programIdentity: findProgramIdentityPda,
           jurorStake: findJurorStakePda,
+          programIdentity: findProgramIdentityPda,
           round: findRoundPda,
         },
         identifyAccount: identifyAccordAccount,

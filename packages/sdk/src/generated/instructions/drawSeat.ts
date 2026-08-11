@@ -64,6 +64,7 @@ export type DrawSeatInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
+  TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
@@ -79,6 +80,9 @@ export type DrawSeatInstruction<
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
+      TAccountSubaccord extends string
+        ? ReadonlyAccount<TAccountSubaccord>
+        : TAccountSubaccord,
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
         : TAccountRound,
@@ -144,11 +148,17 @@ export function getDrawSeatInstructionDataCodec(): Codec<
 export type DrawSeatInput<
   TAccountCaller extends string = string,
   TAccountDispute extends string = string,
+  TAccountSubaccord extends string = string,
   TAccountRound extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   caller: TransactionSigner<TAccountCaller>;
   dispute: Address<TAccountDispute>;
+  /**
+   * PROG-ATTESTTION: the backing Subaccord. Always passed; the credential
+   * re-check activates only when `juror_credential != default`.
+   */
+  subaccord: Address<TAccountSubaccord>;
   round: Address<TAccountRound>;
   systemProgram?: Address<TAccountSystemProgram>;
   seat: DrawSeatInstructionDataArgs["seat"];
@@ -161,6 +171,7 @@ export type DrawSeatInput<
 export function getDrawSeatInstruction<
   TAccountCaller extends string,
   TAccountDispute extends string,
+  TAccountSubaccord extends string,
   TAccountRound extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
@@ -168,6 +179,7 @@ export function getDrawSeatInstruction<
   input: DrawSeatInput<
     TAccountCaller,
     TAccountDispute,
+    TAccountSubaccord,
     TAccountRound,
     TAccountSystemProgram
   >,
@@ -176,6 +188,7 @@ export function getDrawSeatInstruction<
   TProgramAddress,
   TAccountCaller,
   TAccountDispute,
+  TAccountSubaccord,
   TAccountRound,
   TAccountSystemProgram
 > {
@@ -186,6 +199,7 @@ export function getDrawSeatInstruction<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
     dispute: { value: input.dispute ?? null, isWritable: true },
+    subaccord: { value: input.subaccord ?? null, isWritable: false },
     round: { value: input.round ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
@@ -208,6 +222,7 @@ export function getDrawSeatInstruction<
     accounts: [
       getAccountMeta("caller", accounts.caller),
       getAccountMeta("dispute", accounts.dispute),
+      getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("round", accounts.round),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
@@ -219,6 +234,7 @@ export function getDrawSeatInstruction<
     TProgramAddress,
     TAccountCaller,
     TAccountDispute,
+    TAccountSubaccord,
     TAccountRound,
     TAccountSystemProgram
   >);
@@ -232,8 +248,13 @@ export type ParsedDrawSeatInstruction<
   accounts: {
     caller: TAccountMetas[0];
     dispute: TAccountMetas[1];
-    round: TAccountMetas[2];
-    systemProgram: TAccountMetas[3];
+    /**
+     * PROG-ATTESTTION: the backing Subaccord. Always passed; the credential
+     * re-check activates only when `juror_credential != default`.
+     */
+    subaccord: TAccountMetas[2];
+    round: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
   };
   data: DrawSeatInstructionData;
 };
@@ -246,12 +267,12 @@ export function parseDrawSeatInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDrawSeatInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+  if (instruction.accounts.length < 5) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 4,
+        expectedAccountMetas: 5,
       },
     );
   }
@@ -266,6 +287,7 @@ export function parseDrawSeatInstruction<
     accounts: {
       caller: getNextAccount(),
       dispute: getNextAccount(),
+      subaccord: getNextAccount(),
       round: getNextAccount(),
       systemProgram: getNextAccount(),
     },

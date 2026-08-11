@@ -123,6 +123,13 @@ export type CreateSubaccordInstructionData = {
   authority: Address;
   evidenceOperator: Address;
   depth: number;
+  /**
+   * Attestation credential binding (PROG-ATTESTTION). `Pubkey::default()`
+   * ⇒ stake-only (today's behavior). Both-or-neither with `juror_schema`.
+   * Immutable once set on the Subaccord; absent from `UpdatePayload`.
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
 };
 
 export type CreateSubaccordInstructionDataArgs = {
@@ -146,6 +153,13 @@ export type CreateSubaccordInstructionDataArgs = {
   authority: Address;
   evidenceOperator: Address;
   depth: number;
+  /**
+   * Attestation credential binding (PROG-ATTESTTION). `Pubkey::default()`
+   * ⇒ stake-only (today's behavior). Both-or-neither with `juror_schema`.
+   * Immutable once set on the Subaccord; absent from `UpdatePayload`.
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
 };
 
 export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<CreateSubaccordInstructionDataArgs> {
@@ -169,6 +183,8 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["depth", getU8Encoder()],
+      ["jurorCredential", getAddressEncoder()],
+      ["jurorSchema", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: CREATE_SUBACCORD_DISCRIMINATOR }),
   );
@@ -194,6 +210,8 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["depth", getU8Decoder()],
+    ["jurorCredential", getAddressDecoder()],
+    ["jurorSchema", getAddressDecoder()],
   ]);
 }
 
@@ -241,6 +259,8 @@ export type CreateSubaccordAsyncInput<
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
+  jurorCredential: CreateSubaccordInstructionDataArgs["jurorCredential"];
+  jurorSchema: CreateSubaccordInstructionDataArgs["jurorSchema"];
 };
 
 export async function getCreateSubaccordInstructionAsync<
@@ -360,6 +380,8 @@ export type CreateSubaccordInput<
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
+  jurorCredential: CreateSubaccordInstructionDataArgs["jurorCredential"];
+  jurorSchema: CreateSubaccordInstructionDataArgs["jurorSchema"];
 };
 
 export function getCreateSubaccordInstruction<

@@ -87,6 +87,7 @@ export function emitAccountRead<T extends object>(
   flags: ReadOutFlags,
   maybe: { exists: true; address: string; data: T } | { exists: false; address: string },
   label: string,
+  extraHuman?: string[],
 ): void {
   const address = maybe.address;
   if (maybe.exists) {
@@ -97,6 +98,7 @@ export function emitAccountRead<T extends object>(
       human: [
         `${label.padEnd(18)}: ${truncateAddress(address)}`,
         ...summarizeFields(maybe.data as Record<string, unknown>),
+        ...(extraHuman ?? []),
       ],
     });
   } else {

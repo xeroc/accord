@@ -70,6 +70,10 @@ pub fn create_list_handler(
             authority: Pubkey::default(),
             evidence_operator: Pubkey::default(),
             depth: DEFAULT_TREE_DEPTH,
+            // PROG-ATTESTTION: stake-only backing court (no credential gate).
+            // Canon lists do not gate jurors by attestation in v1.
+            juror_credential: Pubkey::default(),
+            juror_schema: Pubkey::default(),
         },
     )?;
 

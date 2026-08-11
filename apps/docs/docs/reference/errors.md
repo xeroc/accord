@@ -83,6 +83,18 @@
 | `RoundNotFinalizable`     | Round cannot be finalized yet (window not elapsed).                      | `finalize_round`   |
 | `DisputeNotFinal`         | Dispute is not in a finalizable state.                                   | (reserved)         |
 
+## Attestation-gated Subaccords ([ADR-0024](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0024-attestation-gated-subaccords.md))
+
+| Code                        | Message                                                                                        | Raised by                  |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------- |
+| `AttestationMissing`        | Subaccord is credential-gated but no attestation account was provided.                         | `stake`, `prune_juror`     |
+| `AttestationBindingPartial` | Credential and schema must be set together (both-or-neither).                                  | `create_subaccord`         |
+| `AttestationMalformed`      | Attestation account is malformed (wrong owner, discriminator, or too short).                   | `stake`, `draw_seat`, `prune_juror` |
+| `AttestationMismatch`       | Attestation credential or schema does not match the Subaccord binding.                         | `stake`, `draw_seat`, `prune_juror` |
+| `AttestationSubjectMismatch`| Attestation subject wallet does not match the juror.                                           | `stake`, `draw_seat`, `prune_juror` |
+| `AttestationExpired`        | Attestation has expired or will expire before the dispute lifecycle completes.                 | `stake`, `draw_seat`       |
+| `AttestationNotExpired`     | Attestation has not expired; prune_juror requires an actually-expired credential.              | `prune_juror`              |
+
 ## Arithmetic
 
 | Code                 | Message              | Raised by                          |

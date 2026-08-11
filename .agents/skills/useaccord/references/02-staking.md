@@ -9,7 +9,8 @@ in `programs/accord/src/lib.rs`; constants in `constants.rs`.
 `--pause-state <addr|auto>` (auto-derives the PauseState singleton). Global
 flags (`--rpc`, `--keypair`, `--commitment`, `--dry-run`, `--json`, `--quiet`)
 apply to every command. The loaded `--keypair` wallet is fee payer **and**
-signing juror for all six.
+signing juror for the staking commands (`staking:prune-juror` excepted: there
+the wallet signs as the caller, not the juror).
 
 | Command | SDK fn (`methods/staking.ts`) | Sends? |
 | --- | --- | --- |
@@ -17,6 +18,7 @@ signing juror for all six.
 | `staking:request-withdraw` | `requestWithdraw` | yes (ledger-only tx) |
 | `staking:withdraw` | `withdraw` | yes |
 | `staking:reconcile` | `reconcileStake` | yes (any caller) |
+| `staking:prune-juror` | `pruneJuror` | yes (any caller) |
 | `staking:withdraw-fees` | `withdrawFees` | yes |
 | `staking:can-unstake` | `canUnstake` | **no — pure pre-check** |
 
@@ -46,7 +48,18 @@ useaccord staking:stake \
   --subaccord subAxK9…rd1 \
   --amount 5_000_000_000          # 5 tokens (9 decimals)
 # → { "signature": "…", "subaccord": "subAxK9…", "juror": "…", "staked": 5000000000 }
+
+# Credential-gated Subaccord (PROG-ATTESTTION): forward the juror's SAS attestation
+useaccord staking:stake \
+  --subaccord subAxK9…rd1 \
+  --amount 5_000_000_000 \
+  --attestation <sas-addr>           # required only on gated pools
 ```
+
+> **PROG-ATTESTTION:** `--attestation <addr>` forwards the juror's SAS
+> attestation account (6th facade arg) and is only valid on credential-gated
+> Subaccords. On a stake-only pool, omit it — the program rejects an attestation
+> it doesn't expect. Stale/expired attestations are evicted by `staking:prune-juror`.
 
 ## `staking:request-withdraw` — phase 1 (declare intent)
 
@@ -112,6 +125,28 @@ useaccord staking:reconcile --subaccord subAxK9…rd1
 # → { "signature": "…", "staked": 5032000000, "stake_delta": 0 }
 ```
 
+## `staking:prune-juror` — evict an attestation-expired juror (permissionless crank)
+
+`pruneJuror` (lib.rs `prune_juror`, PROG-ATTESTTION). Removes a juror whose SAS
+attestation has expired from a **credential-gated** Subaccord: deletes the stake
+leaf, recomputes the accumulator root via the expired juror's Merkle `path`, and
+reads the expired attestation from `remaining_accounts[0]`. **The caller signs;
+the juror does not** — any account may run this crank.
+
+`--juror` is REQUIRED and is the expired juror (not the caller). The MST path is
+the expired juror's accumulator proof — auto-built by default, or
+`--path-from <file>` for offline/advanced (mirrors `staking:request-withdraw`).
+
+```bash
+useaccord staking:prune-juror \
+  --subaccord subAxK9…rd1 \
+  --juror 9aJb…expired \
+  --attestation <sas-addr>           # the expired SAS attestation
+# → { "signature": "…", "jurorStake": "…", "juror": "9aJb…", "attestation": "<sas>" }
+```
+
+SDK: `pruneJuror(client, programId, { caller, juror, subaccord, jurorStake }, path, attestation)` → `Instruction`.
+
 ## `staking:withdraw-fees` — pull earned fees
 
 `withdrawFees` (lib.rs `withdraw_fees`, ADR-0020 two-mint model). Per-juror pull
@@ -147,6 +182,6 @@ useaccord staking:can-unstake --subaccord subAxK9…rd1 --amount 1_000_000_000
 ```
 
 > **SDK escape hatch:** every command here is reachable directly via
-> `@useaccord/sdk` (`stake`, `requestWithdraw`, `withdraw`, `reconcileStake`,
+> `@useaccord/sdk` (`stake`, `requestWithdraw`, `withdraw`, `reconcileStake`, `pruneJuror`,
 > `withdrawFees`, `canUnstake`). The CLI is the thin, single-signer wrapper;
 > multi-signer or batched flows use the SDK.

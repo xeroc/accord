@@ -111,6 +111,17 @@ export type Subaccord = {
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
+   * Attestation-gated juror pool (PROG-ATTESTTION). When both are
+   * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
+   * unchanged). When set, jurors must hold a valid SAS attestation from
+   * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
+   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
+   * at `create_subaccord` (`AttestationBindingPartial`).
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
+  /**
    * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
    * positive→0 decrements). This is a *coarse* intake gate for
@@ -207,6 +218,17 @@ export type SubaccordArgs = {
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
+   * Attestation-gated juror pool (PROG-ATTESTTION). When both are
+   * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
+   * unchanged). When set, jurors must hold a valid SAS attestation from
+   * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
+   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
+   * at `create_subaccord` (`AttestationBindingPartial`).
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
+  /**
    * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
    * positive→0 decrements). This is a *coarse* intake gate for
@@ -278,6 +300,8 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["evidenceOperator", getAddressEncoder()],
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
+      ["jurorCredential", getAddressEncoder()],
+      ["jurorSchema", getAddressEncoder()],
       ["stakerCount", getU32Encoder()],
       ["rootHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["totalStake", getU64Encoder()],
@@ -316,6 +340,8 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["evidenceOperator", getAddressDecoder()],
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
+    ["jurorCredential", getAddressDecoder()],
+    ["jurorSchema", getAddressDecoder()],
     ["stakerCount", getU32Decoder()],
     ["rootHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["totalStake", getU64Decoder()],
@@ -388,5 +414,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 370;
+  return 434;
 }

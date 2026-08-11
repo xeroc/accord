@@ -75,6 +75,15 @@ pub struct Subaccord {
     pub risk_type: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
+    /// Attestation-gated juror pool (PROG-ATTESTTION). When both are
+    /// `Pubkey::default()` the Subaccord is stake-only (today's behavior,
+    /// unchanged). When set, jurors must hold a valid SAS attestation from
+    /// `juror_credential` under `juror_schema` to stake and be drawn. Immutable
+    /// at creation — joins `risk_type` + `evidence_spec` as the identity
+    /// triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
+    /// at `create_subaccord` (`AttestationBindingPartial`).
+    pub juror_credential: Pubkey,
+    pub juror_schema: Pubkey,
     /// Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
     /// Maintained O(1) by `stake`/`unstake` (0→positive increments,
     /// positive→0 decrements). This is a *coarse* intake gate for
@@ -423,6 +432,11 @@ pub struct CreateSubaccordParams {
     pub authority: Pubkey,
     pub evidence_operator: Pubkey,
     pub depth: u8,
+    /// Attestation credential binding (PROG-ATTESTTION). `Pubkey::default()`
+    /// ⇒ stake-only (today's behavior). Both-or-neither with `juror_schema`.
+    /// Immutable once set on the Subaccord; absent from `UpdatePayload`.
+    pub juror_credential: Pubkey,
+    pub juror_schema: Pubkey,
 }
 
 /// Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are

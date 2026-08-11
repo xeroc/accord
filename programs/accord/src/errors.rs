@@ -152,4 +152,19 @@ pub enum AccordError {
     MaxDrawAttemptsLimitExceeded,
     #[msg("Reveal threshold (bps) must be <= 10_000.")]
     InvalidThreshold,
+    // --- attestation-gated Subaccords (PROG-ATTESTTION) ---
+    #[msg("Subaccord is credential-gated but no attestation account was provided.")]
+    AttestationMissing,
+    #[msg("Credential and schema must be set together (both-or-neither).")]
+    AttestationBindingPartial,
+    #[msg("Attestation account is malformed (wrong owner, discriminator, or too short).")]
+    AttestationMalformed,
+    #[msg("Attestation credential or schema does not match the Subaccord binding.")]
+    AttestationMismatch,
+    #[msg("Attestation subject wallet does not match the juror.")]
+    AttestationSubjectMismatch,
+    #[msg("Attestation has expired or will expire before the dispute lifecycle completes.")]
+    AttestationExpired,
+    #[msg("Attestation has not expired; prune_juror requires an actually-expired credential.")]
+    AttestationNotExpired,
 }

@@ -37,8 +37,10 @@ import {
   withdraw as pureWithdraw,
   reconcileStake as pureReconcileStake,
   withdrawFees as pureWithdrawFees,
+  pruneJuror as purePruneJuror,
   type StakingAccounts,
   type WithdrawFeesAccounts,
+  type PruneJurorAccounts,
 } from "./methods/staking.js";
 import {
   settleRound as pureSettleRound,
@@ -112,6 +114,7 @@ export interface AccordMethods {
     accounts: StakingAccounts,
     amount: bigint,
     path: MSTNode[],
+    attestation?: Address,
   ): Instruction;
   requestWithdraw(
     accounts: StakingAccounts,
@@ -121,6 +124,11 @@ export interface AccordMethods {
   withdraw(accounts: StakingAccounts): Instruction;
   reconcileStake(accounts: StakingAccounts, path: MSTNode[]): Instruction;
   withdrawFees(accounts: WithdrawFeesAccounts): Instruction;
+  pruneJuror(
+    accounts: PruneJurorAccounts,
+    path: MSTNode[],
+    attestation: Address,
+  ): Instruction;
 
   // settlement (per-round crank + dispute cancellation)
   settleRound(
@@ -223,14 +231,16 @@ export function createAccordMethods(
       pureExecuteUnpause(adapter, programId, caller, pauseState),
 
     // staking
-    stake: (accounts, amount, path) =>
-      pureStake(adapter, programId, accounts, amount, path),
+    stake: (accounts, amount, path, attestation) =>
+      pureStake(adapter, programId, accounts, amount, path, attestation),
     requestWithdraw: (accounts, amount, path) =>
       pureRequestWithdraw(adapter, programId, accounts, amount, path),
     withdraw: (accounts) => pureWithdraw(adapter, programId, accounts),
     reconcileStake: (accounts, path) =>
       pureReconcileStake(adapter, programId, accounts, path),
     withdrawFees: (accounts) => pureWithdrawFees(adapter, programId, accounts),
+    pruneJuror: (accounts, path, attestation) =>
+      purePruneJuror(adapter, programId, accounts, path, attestation),
 
     // settlement
     settleRound: (accounts, roundIdx, remainingAccounts) =>

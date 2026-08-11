@@ -41,6 +41,7 @@ export default class StakingStake extends ChainCommand {
     "<%= config.bin %> staking:stake --subaccord 7vrF… --amount 1_000_000",
     "<%= config.bin %> staking:stake --subaccord 7vrF… --amount 1000 --path-from proof.json",
     "<%= config.bin %> staking:stake --subaccord 7vrF… --amount 1000 --dry-run",
+    "<%= config.bin %> staking:stake --subaccord 7vrF… --amount 1000 --attestation <sas>  # credential-gated",
   ];
 
   static flags = {
@@ -63,6 +64,11 @@ export default class StakingStake extends ChainCommand {
       description:
         "Read the MST proof from a JSON file instead of auto-building (offline / advanced)",
     }),
+    attestation: Flags.string({
+      description:
+        "PROG-ATTESTTION: the juror's SAS attestation account. Forwarded as the " +
+        "6th facade arg; valid only on credential-gated Subaccords (omit for stake-only).",
+    }),
   };
 
   async run(): Promise<void> {
@@ -83,7 +89,13 @@ export default class StakingStake extends ChainCommand {
       ? { path: manualPath, index: null }
       : await resolveProof(ctx, r);
 
-    const instruction = ctx.accord.methods.stake(stakingAccounts(r), amount, path);
+    const attestation = flags["attestation"] as Address | undefined;
+    const instruction = ctx.accord.methods.stake(
+      stakingAccounts(r),
+      amount,
+      path,
+      attestation,
+    );
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);
