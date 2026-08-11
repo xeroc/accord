@@ -32,7 +32,6 @@ jobs:
 
   tests:
     name: Tests
-    needs: detect-changes
     uses: ./.github/workflows/tests.yml
 
   build-evidence-docker:
