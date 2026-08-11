@@ -60,13 +60,18 @@ export type DeliverResult =
 
 export type ManifestResult =
   | { readonly ok: true; readonly status: 200; readonly body: unknown }
-  | { readonly ok: false; readonly status: 404; readonly error: string };
+  | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
 
 /**
- * Manifest = GET /evidence/{subaccord}/{dispute}[/{round}]. Returns the stored
- * ciphertext bundle as-is — no re-encryption, no auth, no chain read. The
- * response is ciphertext (safe to expose per ADR-0006); `round` defaults to 0.
- * 200+bundle, or 404 (no bundle stored for this dispute+round).
+ * Manifest = GET /evidence/{subaccord}/{dispute}[/{round}]. Decrypts the stored
+ * bundle in memory and returns the plaintext manifest — no auth, no
+ * re-encryption. `round` defaults to 0.
+ * 200+decrypted manifest, or 404 (no bundle / subaccord / unknown operator)
+ * / 409 (ciphertext undecryptable — tampered bundle).
+ *
+ * TODO: once the manifest schema defines public vs private components, parse
+ * the decrypted plaintext and publish ONLY the public parts. For now the entire
+ * manifest is returned in the clear.
  */
 export type ManifestHandler = (
   subaccord: string,

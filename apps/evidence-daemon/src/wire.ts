@@ -34,7 +34,6 @@ import {
   bytesToBase64,
   type EvidenceStore,
   type EvidenceBundle as StoreBundle,
-  serializeBundle,
 } from "./store/store";
 import type { DeliverHandler, IngestHandler, ManifestHandler, ServerDeps } from "./server/handlers";
 
@@ -269,9 +268,14 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     }
     return { ok: false, status: out.status, error: out.reason };
   };
-  // Manifest — public read of the raw stored ciphertext bundle. No chain read,
-  // no crypto, no auth. The response is ciphertext only (ADR-0006); safe to
-  // expose. Returns 404 when no bundle is stored for the dispute+round.
+  // Manifest — decrypts the stored ciphertext bundle in memory and returns the
+  // plaintext manifest. No auth; the daemon holds the operator key and decrypts
+  // on behalf of any caller. The plaintext exists ephemerally in memory only
+  // (ADR-0006); nothing is persisted decrypted.
+  //
+  // TODO: once the manifest schema defines public vs private components, parse
+  // the decrypted plaintext and publish ONLY the public parts. For now the
+  // entire manifest is returned in the clear (MVP).
   const manifestHandler: ManifestHandler = async (subaccordStr, disputeStr, round) => {
     let sa: Address;
     let d: Address;
@@ -281,12 +285,49 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     } catch {
       return { ok: false, status: 404, error: "invalid address" };
     }
-    const bundle = await store.get(sa, d, round);
-    if (bundle === null) {
+    const storeBundle = await store.get(sa, d, round);
+    if (storeBundle === null) {
       return { ok: false, status: 404, error: "evidence bundle not found" };
     }
-    // Byte-identical to the stored serialized bundle — the canonical wire format.
-    return { ok: true, status: 200, body: JSON.parse(serializeBundle(bundle)) };
+
+    // Resolve the operator secret key (same path as deliver: chain → keyring).
+    const sub = await readSubaccord(accord, sa);
+    if (sub === null) {
+      return { ok: false, status: 404, error: "subaccord not found" };
+    }
+    const kp = await keyring.forOperator(b58ToBytes(sub.evidenceOperator));
+    if (kp === null) {
+      return { ok: false, status: 404, error: "unknown evidence operator" };
+    }
+
+    // Decrypt the stored ciphertext in memory (ADR-0006).
+    const pb = fromStoreBundle(storeBundle);
+    let plaintext: Uint8Array;
+    try {
+      plaintext = await operatorDecrypt(
+        {
+          ct: pb.ct,
+          claimant_ephem_pub: pb.claimant_ephem_pub,
+          wrapped: pb.wrapped,
+          plaintext_hash: pb.plaintext_hash,
+        },
+        kp.secretKey,
+      );
+    } catch {
+      return { ok: false, status: 409, error: "ciphertext undecryptable (tampered bundle)" };
+    }
+
+    // Decode + return the full decrypted manifest. If the plaintext is JSON
+    // (the expected manifest format), return the parsed object; otherwise the
+    // raw UTF-8 string.
+    const text = new TextDecoder().decode(plaintext);
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+    return { ok: true, status: 200, body };
   };
 
   return {

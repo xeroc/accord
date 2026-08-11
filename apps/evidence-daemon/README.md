@@ -277,17 +277,19 @@ Pull all deliverable evidence packages for a drawn juror.
 
 ### `GET /evidence/{subaccord}/{dispute}[/{round}]`
 
-Public read of the raw stored evidence bundle — **no auth, no re-encryption**. Returns the ciphertext bundle as-is (the same bytes written by `POST`). `round` defaults to `0`.
+Decrypts the stored evidence bundle in memory and returns the **plaintext manifest** — no auth, no re-encryption to a juror key. The daemon holds the operator key and decrypts on behalf of any caller. `round` defaults to `0`.
 
-The response is ciphertext only (ADR-0006); confidentiality rests on key possession, not API access control. This endpoint exists for public verifiability — anyone can confirm a bundle's `plaintext_hash` matches the on-chain `evidence_hash`.
+> [!WARNING]
+> **MVP — full plaintext exposure.** This endpoint currently returns the entire decrypted manifest in the clear. Once the manifest schema defines public vs private components, the daemon will parse the decrypted plaintext and publish **only the public parts**. Until then, treat this endpoint as serving the full manifest to any caller.
 
 **Responses:**
 
-| Status | Meaning                                                            |
-| ------ | ----------------------------------------------------------------- |
-| `200`  | The stored `EvidenceBundle` JSON (ciphertext fields, base64)      |
-| `400`  | Invalid base58 address or round                                   |
-| `404`  | No bundle stored for this `(subaccord, dispute, round)`           |
+| Status | Meaning                                                                 |
+| ------ | ---------------------------------------------------------------------- |
+| `200`  | The decrypted manifest (JSON object if the plaintext is JSON, else raw UTF-8 string) |
+| `400`  | Invalid base58 address or round                                        |
+| `404`  | No bundle stored, subaccord not found, or unknown evidence operator    |
+| `409`  | Ciphertext undecryptable (tampered bundle)                             |
 
 ### `GET /healthz`
 
