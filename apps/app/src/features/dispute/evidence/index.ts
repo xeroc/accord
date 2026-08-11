@@ -11,3 +11,8 @@ export {
   generateSalt,
   verifyOptionHashes,
 } from "./options.js";
+export {
+  publishEvidence,
+  verifyManifestHash,
+  type PublishEvidenceArgs,
+} from "./publish.js";
