@@ -128,6 +128,20 @@ export const ACCORD_ERROR__NOT_REDRAW_ELIGIBLE = 0x17a6; // 6054
 export const ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED = 0x17a7; // 6055
 /** InvalidThreshold: Reveal threshold (bps) must be <= 10_000. */
 export const ACCORD_ERROR__INVALID_THRESHOLD = 0x17a8; // 6056
+/** AttestationMissing: Subaccord is credential-gated but no attestation account was provided. */
+export const ACCORD_ERROR__ATTESTATION_MISSING = 0x17a9; // 6057
+/** AttestationBindingPartial: Credential and schema must be set together (both-or-neither). */
+export const ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL = 0x17aa; // 6058
+/** AttestationMalformed: Attestation account is malformed (wrong owner, discriminator, or too short). */
+export const ACCORD_ERROR__ATTESTATION_MALFORMED = 0x17ab; // 6059
+/** AttestationMismatch: Attestation credential or schema does not match the Subaccord binding. */
+export const ACCORD_ERROR__ATTESTATION_MISMATCH = 0x17ac; // 6060
+/** AttestationSubjectMismatch: Attestation subject wallet does not match the juror. */
+export const ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH = 0x17ad; // 6061
+/** AttestationExpired: Attestation has expired or will expire before the dispute lifecycle completes. */
+export const ACCORD_ERROR__ATTESTATION_EXPIRED = 0x17ae; // 6062
+/** AttestationNotExpired: Attestation has not expired; prune_juror requires an actually-expired credential. */
+export const ACCORD_ERROR__ATTESTATION_NOT_EXPIRED = 0x17af; // 6063
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -136,6 +150,13 @@ export type AccordError =
   | typeof ACCORD_ERROR__APPEAL_WINDOW_OPEN
   | typeof ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT
   | typeof ACCORD_ERROR__ARITHMETIC_OVERFLOW
+  | typeof ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL
+  | typeof ACCORD_ERROR__ATTESTATION_EXPIRED
+  | typeof ACCORD_ERROR__ATTESTATION_MALFORMED
+  | typeof ACCORD_ERROR__ATTESTATION_MISMATCH
+  | typeof ACCORD_ERROR__ATTESTATION_MISSING
+  | typeof ACCORD_ERROR__ATTESTATION_NOT_EXPIRED
+  | typeof ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH
   | typeof ACCORD_ERROR__CANCEL_TOO_EARLY
   | typeof ACCORD_ERROR__COMMIT_ALREADY_EXISTS
   | typeof ACCORD_ERROR__COMMIT_MISSING
@@ -197,6 +218,13 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__APPEAL_WINDOW_OPEN]: `Appeal window has not elapsed yet.`,
     [ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT]: `Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS).`,
     [ACCORD_ERROR__ARITHMETIC_OVERFLOW]: `Arithmetic overflow.`,
+    [ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL]: `Credential and schema must be set together (both-or-neither).`,
+    [ACCORD_ERROR__ATTESTATION_EXPIRED]: `Attestation has expired or will expire before the dispute lifecycle completes.`,
+    [ACCORD_ERROR__ATTESTATION_MALFORMED]: `Attestation account is malformed (wrong owner, discriminator, or too short).`,
+    [ACCORD_ERROR__ATTESTATION_MISMATCH]: `Attestation credential or schema does not match the Subaccord binding.`,
+    [ACCORD_ERROR__ATTESTATION_MISSING]: `Subaccord is credential-gated but no attestation account was provided.`,
+    [ACCORD_ERROR__ATTESTATION_NOT_EXPIRED]: `Attestation has not expired; prune_juror requires an actually-expired credential.`,
+    [ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH]: `Attestation subject wallet does not match the juror.`,
     [ACCORD_ERROR__CANCEL_TOO_EARLY]: `Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.`,
     [ACCORD_ERROR__COMMIT_ALREADY_EXISTS]: `Juror has already committed.`,
     [ACCORD_ERROR__COMMIT_MISSING]: `No commit to reveal for this Juror.`,

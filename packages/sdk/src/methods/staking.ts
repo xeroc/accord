@@ -149,6 +149,7 @@ export interface AccordStakingClient {
     accounts: StakingAccounts;
     amount: bigint;
     path: MSTNode[];
+    attestation?: Address;
   }): Instruction;
   buildRequestWithdraw(input: {
     programId: Address;
@@ -172,6 +173,18 @@ export interface AccordStakingClient {
     programId: Address;
     accounts: WithdrawFeesAccounts;
   }): Instruction;
+  /**
+   * Build `prune_juror` (PROG-ATTESTATION) — permissionless crank that evicts
+   * an expired juror's stake from a credential-gated Subaccord. The cranker
+   * signs; the expired `juror` does not. `attestation` is appended as
+   * `remaining_accounts[0]` (read-only).
+   */
+  buildPruneJuror(input: {
+    programId: Address;
+    accounts: PruneJurorAccounts;
+    path: MSTNode[];
+    attestation: Address;
+  }): Instruction;
 }
 
 /** Build `stake` (lib.rs). SPL-transfers `amount` into the vault. */
@@ -181,12 +194,14 @@ export function stake(
   accounts: StakingAccounts,
   amount: bigint,
   path: MSTNode[],
+  /** PROG-ATTESTATION: juror SAS attestation (required on credential-gated Subaccords). */
+  attestation?: Address,
 ): Instruction {
   assertValidAmount(amount);
   // An empty `path` is the canonical proof for a depth-0 Subaccord (single
   // leaf = root). The on-chain verifier authenticates the path against the
   // stored root + depth; do not reject it here (REVIEW #13).
-  return client.buildStake({ programId, accounts, amount, path });
+  return client.buildStake({ programId, accounts, amount, path, attestation });
 }
 
 /**
@@ -265,6 +280,19 @@ export interface WithdrawFeesAccounts {
 }
 
 /**
+ * Accounts for `prune_juror` (PROG-ATTESTATION). `caller` is the cranker
+ * (signer = the adapter's wallet); `juror` is the EXPIRED juror being pruned
+ * (NOT a signer — read-only on chain). Mirrors the on-chain `PruneJuror` struct
+ * (lib.rs).
+ */
+export interface PruneJurorAccounts {
+  caller: Address;
+  juror: Address;
+  subaccord: Address;
+  jurorStake: Address;
+}
+
+/**
  * Build `withdraw_fees` (ADR-0020). Per-juror: pulls aggregate `fees_earned`
  * from the Subaccord's `fee_vault` → the juror's `fee_token` ATA. No
  * `active_draws` gate, no timelock — earned fees are not at-risk capital.
@@ -275,4 +303,26 @@ export function withdrawFees(
   accounts: WithdrawFeesAccounts,
 ): Instruction {
   return client.buildWithdrawFees({ programId, accounts });
+}
+
+/**
+ * Build `prune_juror` (PROG-ATTESTATION) — permissionless crank. Evicts an
+ * expired juror's `JurorStake` from a credential-gated Subaccord and recomputes
+ * the accumulator root via `path`. The cranker (`caller`) signs; the expired
+ * `juror` does NOT. `attestation` is the expired juror's SAS attestation,
+ * passed as `remaining_accounts[0]` (read-only) so the handler can revoke it.
+ */
+export function pruneJuror(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: PruneJurorAccounts,
+  path: MSTNode[],
+  attestation: Address,
+): Instruction {
+  if (!attestation) {
+    throw new Error(
+      "PruneJurorMissingAttestation: pruneJuror requires the expired juror's SAS attestation",
+    );
+  }
+  return client.buildPruneJuror({ programId, accounts, path, attestation });
 }

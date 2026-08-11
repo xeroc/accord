@@ -112,6 +112,13 @@ export interface CreateSubaccordArgs {
    * `2^depth`; the tree never grows a level during operation. Default 20.
    */
   depth: number; // u8
+  /**
+   * PROG-ATTESTTION: optional credential gate. Omit (or set both to the default
+   * pubkey) ⇒ stake-only Subaccord (today's behaviour). Set both ⇒ jurors must
+   * hold a valid SAS attestation to stake/draw. Both-or-neither.
+   */
+  jurorCredential?: Address;
+  jurorSchema?: Address;
 }
 
 /**

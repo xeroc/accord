@@ -57,6 +57,8 @@ const SUBACCORD_DEFAULT = {
   evidenceOperator: ZERO,
   riskType: z32(),
   evidenceSpec: z32(),
+  jurorCredential: ZERO,
+  jurorSchema: ZERO,
   stakerCount: 0,
   rootHash: z32(),
   totalStake: 0n,

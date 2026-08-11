@@ -1,7 +1,7 @@
 ---
 name: useaccord
 description: Work with the Accord arbitration protocol — create Subaccords, stake jurors, file disputes, draw panels, vote, appeal, and settle rulings via the `useaccord` CLI and `@useaccord/sdk`. Covers the full dispute lifecycle, the two-phase withdraw, MST accumulator proofs, and the cranker service.
-when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point voting, the useaccord CLI, or any instruction in the Accord program (create_subaccord, stake, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
+when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point voting, attestation-gated / credential-gated juror pools, the useaccord CLI, or any instruction in the Accord program (create_subaccord, stake, prune_juror, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
 version: 0.1.0
 ---
 
@@ -17,6 +17,7 @@ commit-reveal votes, and emits a Ruling.
 | ------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
 | Create a Subaccord (juror pool) | `useaccord lifecycle:create-subaccord`               | [01-lifecycle.md](references/01-lifecycle.md)     |
 | Stake juror capital             | `useaccord staking:stake`                            | [02-staking.md](references/02-staking.md)         |
+| Evict an attestation-expired juror | `useaccord staking:prune-juror`                      | [02-staking.md](references/02-staking.md)         |
 | File a dispute                  | `useaccord dispute:create`                           | [04-dispute.md](references/04-dispute.md)         |
 | Draw jurors (VRF + per-seat)    | `useaccord draw:resolve-panel` + `draw:submit-panel` | [05-vrf-draw.md](references/05-vrf-draw.md)       |
 | Commit / reveal votes           | `useaccord vote:commit` + `vote:reveal`              | [06-voting.md](references/06-voting.md)           |
@@ -37,6 +38,11 @@ Final`. Permissionless cranks advance each state when its window elapses.
 - **MST accumulator (ADR-0012)**: a Merkle-Sum Tree maintained on every
   `stake`/`request_withdraw`/`reconcile_stake`. The root is canonical — no
   posted root, no bond, no challenge window.
+- **Attestation gate (PROG-ATTESTTION)**: a Subaccord may optionally require
+  jurors to hold a valid SAS attestation (`juror_credential` issuer +
+  `juror_schema`). Omit both at creation ⇒ stake-only (default, unchanged). On
+  a gated pool, `stake` needs the juror's `--attestation`; expired
+  attestations are pruned by the permissionless `staking:prune-juror` crank.
 - **Cranker service** (`apps/cranker/`, milestone `accord-27r5`): automates all
   permissionless instructions (request_vrf, draw_seat, finalize, settle,
   cancel, redraw). Reconciler loop (60s) is authoritative; WS is optimization.

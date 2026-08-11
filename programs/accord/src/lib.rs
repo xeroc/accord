@@ -126,6 +126,200 @@ pub(crate) mod layout {
     const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
     const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
 }
+// ===========================================================================
+// SAS (Solana Attestation Service) attestation parsing (PROG-ATTESTTION)
+// ===========================================================================
+//
+// The SAS program is a Pinocchio program deployed at
+// `22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG`. Its `Attestation` account
+// has a variable-length layout — `expiry` follows the variable `data` blob, so
+// (unlike the fixed-offset `layout` reads above) `expiry` needs a dynamic
+// parser. The fixed-offset fields (`credential`, `schema`, `data[0..32]`
+// wallet) reuse the same named-offset idiom.
+
+/// Dynamic-offset parser for SAS Attestation accounts. `expiry` sits *after*
+/// the variable `data` blob + signer, so its byte offset depends on `data_len`
+/// — it is NOT a compile-time constant and cannot be modelled by the fixed-
+/// offset `layout` mod. The credential/schema/wallet reads ARE fixed-offset.
+pub(crate) mod sas_layout {
+    use crate::AccordError;
+    use anchor_lang::prelude::*;
+
+    /// SAS program ID (solana-attestation-service).
+    pub(crate) const SAS_PROGRAM_ID: Pubkey =
+        pubkey!("22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG");
+    /// `AttestationDiscriminator` (program/src/state/attestation.rs in SAS).
+    pub(crate) const SAS_ATTESTATION_DISCRIMINATOR: u8 = 2;
+
+    // Fixed byte offsets within a SAS Attestation account body.
+    const DISC_OFF: usize = 0; // u8
+    const CREDENTIAL_OFF: usize = 33; // 32
+    const SCHEMA_OFF: usize = 65; // 32
+    const DATA_LEN_OFF: usize = 97; // u32 LE
+    const DATA_OFF: usize = 101; // variable-length `data` starts here
+    const WALLET_W: usize = 32; // subject binding = data[0..32]
+    const SIGNER_W: usize = 32;
+    const EXPIRY_W: usize = 8; // i64 LE; 0 ⇒ never expires
+
+    /// Minimum account length carrying a 32-byte wallet subject + expiry.
+    const MIN_LEN: usize = DATA_OFF + WALLET_W + SIGNER_W + EXPIRY_W; // 173
+
+    /// Parsed view of a SAS Attestation — the four fields the gate checks.
+    #[derive(Clone, Copy)]
+    pub(crate) struct SasAttestationView {
+        pub credential: Pubkey,
+        pub schema: Pubkey,
+        /// Subject wallet — `data[0..32]` (schema convention: first field).
+        pub wallet: Pubkey,
+        /// i64 expiry; `0` ⇒ never expires.
+        pub expiry: i64,
+    }
+
+    impl SasAttestationView {
+        /// Parse a raw SAS Attestation account body. Validates the
+        /// discriminator and that the account carries a 32-byte wallet + the
+        /// expiry tail. Does NOT check credential/schema/wallet equality — the
+        /// caller knows the expected values and applies those checks.
+        pub(crate) fn parse(data: &[u8]) -> Result<Self> {
+            require!(data.len() >= MIN_LEN, AccordError::AttestationMalformed);
+            require!(
+                data[DISC_OFF] == SAS_ATTESTATION_DISCRIMINATOR,
+                AccordError::AttestationMalformed
+            );
+            let data_len = u32::from_le_bytes(
+                data[DATA_LEN_OFF..DATA_LEN_OFF + 4]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            // Subject binding requires a 32-byte wallet field at data[0..32].
+            require!(
+                data_len >= WALLET_W as u32,
+                AccordError::AttestationMalformed
+            );
+            // `expiry` follows the variable data blob + signer.
+            let expiry_off = DATA_OFF + data_len as usize + SIGNER_W;
+            require!(
+                data.len() >= expiry_off + EXPIRY_W,
+                AccordError::AttestationMalformed
+            );
+            let credential = Pubkey::new_from_array(
+                data[CREDENTIAL_OFF..CREDENTIAL_OFF + 32]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            let schema = Pubkey::new_from_array(
+                data[SCHEMA_OFF..SCHEMA_OFF + 32]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            let wallet = Pubkey::new_from_array(
+                data[DATA_OFF..DATA_OFF + WALLET_W]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            let expiry = i64::from_le_bytes(
+                data[expiry_off..expiry_off + EXPIRY_W]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            Ok(Self {
+                credential,
+                schema,
+                wallet,
+                expiry,
+            })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// `expiry` lives at a dynamic offset (after variable `data`); the
+        /// parse must locate it correctly across `data_len` values. Mirrors
+        /// `layout_tests::offsets_match_borsh` — this is the SAS analog.
+        #[test]
+        fn sas_expiry_offset_is_dynamic() {
+            for &data_len in &[32u32, 48, 100, 256] {
+                let mut buf = vec![0u8; DATA_OFF + data_len as usize + SIGNER_W + EXPIRY_W];
+                buf[DISC_OFF] = SAS_ATTESTATION_DISCRIMINATOR;
+                buf[DATA_LEN_OFF..DATA_LEN_OFF + 4].copy_from_slice(&data_len.to_le_bytes());
+                let expiry_off = DATA_OFF + data_len as usize + SIGNER_W;
+                let expiry = 1_700_000_000i64 + data_len as i64;
+                buf[expiry_off..expiry_off + EXPIRY_W].copy_from_slice(&expiry.to_le_bytes());
+                let view = SasAttestationView::parse(&buf).expect("parse");
+                assert_eq!(view.expiry, expiry, "data_len={data_len}");
+            }
+        }
+
+        #[test]
+        fn sas_never_expires_is_zero() {
+            let mut buf = vec![0u8; MIN_LEN];
+            buf[DISC_OFF] = SAS_ATTESTATION_DISCRIMINATOR;
+            buf[DATA_LEN_OFF..DATA_LEN_OFF + 4].copy_from_slice(&32u32.to_le_bytes());
+            let view = SasAttestationView::parse(&buf).expect("parse");
+            assert_eq!(view.expiry, 0);
+        }
+
+        #[test]
+        fn sas_bad_discriminator_rejected() {
+            let mut buf = vec![0u8; MIN_LEN];
+            buf[DISC_OFF] = 9; // wrong discriminator
+            buf[DATA_LEN_OFF..DATA_LEN_OFF + 4].copy_from_slice(&32u32.to_le_bytes());
+            assert!(SasAttestationView::parse(&buf).is_err());
+        }
+    }
+}
+
+/// Validate a SAS attestation `AccountInfo` against the Subaccord's credential
+/// binding and the juror's wallet. Returns the parsed `expiry` (i64; `0` ⇒
+/// never expires) on success. Shared by `stake`, `draw_seat`, and `prune_juror`
+/// so the offset math is unit-tested once (via `sas_layout::tests`).
+fn validate_sas_attestation(
+    info: &AccountInfo,
+    expected_credential: &Pubkey,
+    expected_schema: &Pubkey,
+    juror: &Pubkey,
+) -> Result<i64> {
+    require!(
+        info.owner == &sas_layout::SAS_PROGRAM_ID,
+        AccordError::AttestationMalformed
+    );
+    let data = info.try_borrow_data()?;
+    let view = sas_layout::SasAttestationView::parse(&data)?;
+    require!(
+        view.credential == *expected_credential,
+        AccordError::AttestationMismatch
+    );
+    require!(
+        view.schema == *expected_schema,
+        AccordError::AttestationMismatch
+    );
+    require!(
+        view.wallet == *juror,
+        AccordError::AttestationSubjectMismatch
+    );
+    Ok(view.expiry)
+}
+
+/// Maximum dispute lifecycle `(review + commit + reveal + appeal) ×
+/// (max_appeals + 1)`, in seconds. The stake-time gate requires the juror's
+/// attestation to outlive this horizon so it cannot lapse mid-dispute.
+fn attestation_horizon(sub: &Subaccord) -> Result<i64> {
+    let cycle = sub
+        .review_window
+        .checked_add(sub.commit_window)
+        .and_then(|v| v.checked_add(sub.reveal_window))
+        .and_then(|v| v.checked_add(sub.appeal_window))
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let rounds = (sub.max_appeals as u64)
+        .checked_add(1)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let h = cycle
+        .checked_mul(rounds)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    Ok(h as i64)
+}
 
 #[cfg(test)]
 mod layout_tests {
@@ -338,6 +532,8 @@ pub mod accord {
             authority,
             evidence_operator,
             depth,
+            juror_credential,
+            juror_schema,
         } = params;
         // Namespace guard: reject the degenerate zero-hash risk_type so the
         // default identity can't be silently squatting a namespace.
@@ -369,6 +565,13 @@ pub mod accord {
             appeal_window >= MIN_APPEAL_WINDOW_SECS,
             AccordError::AppealWindowTooShort
         );
+        // PROG-ATTESTTION: credential binding is both-or-neither. A half-bound
+        // Subaccord (credential set, schema unset — or vice versa) is rejected;
+        // both `Pubkey::default()` ⇒ stake-only (today's behavior, unchanged).
+        require!(
+            (juror_credential == Pubkey::default()) == (juror_schema == Pubkey::default()),
+            AccordError::AttestationBindingPartial
+        );
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
@@ -390,6 +593,9 @@ pub mod accord {
         acc.evidence_operator = evidence_operator;
         acc.risk_type = risk_type;
         acc.evidence_spec = evidence_spec;
+        // Immutable identity-triplet extension (PROG-ATTESTTION).
+        acc.juror_credential = juror_credential;
+        acc.juror_schema = juror_schema;
         acc.bump = ctx.bumps.subaccord;
         // ADR-0012 accumulator: start as an all-zero tree at the fixed depth.
         acc.depth = depth;
@@ -420,6 +626,38 @@ pub mod accord {
     pub fn stake(ctx: Context<Stake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
         require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
         require!(amount > 0, AccordError::InvalidAmount);
+        // PROG-ATTESTTION: optional credential gate. On a credential-gated
+        // Subaccord (`juror_credential != default`), the juror must supply a
+        // valid SAS attestation in `remaining_accounts[0]`. On a stake-only
+        // Subaccord (both fields `default()`) this block is skipped entirely —
+        // today's behavior is unchanged. Scoped so the immutable borrow ends
+        // before the mutable `sub` borrow below.
+        {
+            let sub_acc = &ctx.accounts.subaccord;
+            if sub_acc.juror_credential != Pubkey::default() {
+                require!(
+                    !ctx.remaining_accounts.is_empty(),
+                    AccordError::AttestationMissing
+                );
+                let att = &ctx.remaining_accounts[0];
+                let now = Clock::get()?.unix_timestamp;
+                let cutoff = now
+                    .checked_add(attestation_horizon(sub_acc)?)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                let expiry = validate_sas_attestation(
+                    att,
+                    &sub_acc.juror_credential,
+                    &sub_acc.juror_schema,
+                    &ctx.accounts.juror.key(),
+                )?;
+                // `expiry == 0` ⇒ never expires; otherwise it must outlive the
+                // max dispute lifecycle so the credential can't lapse mid-dispute.
+                require!(
+                    expiry == 0 || expiry > cutoff,
+                    AccordError::AttestationExpired
+                );
+            }
+        }
 
         let before = ctx.accounts.stake_vault.amount;
 
@@ -725,6 +963,97 @@ pub mod accord {
         sub.root_hash = new_root;
         sub.total_stake = new_total;
 
+        Ok(())
+    }
+
+    /// Permissionless crank (PROG-ATTESTTION): evicts an **expired-credential**
+    /// juror from a gated Subaccord's accumulator. Without it, an expired juror
+    /// still in the tree is a dead zone — if the VRF lands on them, `draw_seat`
+    /// reverts at the freshness check and the cranker cannot advance. Anyone
+    /// may call; the caller supplies the juror's Merkle `path` + the expired
+    /// SAS attestation in `remaining_accounts[0]`.
+    ///
+    /// The body mirrors `request_withdraw` for the **full** `staked` amount:
+    /// zeros the leaf's selection weight, recomputes the root, banks the tokens
+    /// into `pending_withdrawal`, and decrements `staker_count`. The juror then
+    /// completes the normal two-phase `withdraw` (or re-stakes with a renewed
+    /// attestation). Only the trigger + signer differ from `request_withdraw`:
+    /// the caller signs (permissionless), the juror does not — so `PruneJuror`
+    /// is its own account struct, not `RequestWithdraw`.
+    ///
+    /// Gates: gated Subaccords only; the attestation must have a real expiry
+    /// (`!= 0`) that has passed (`<= now`) — a never-expiring credential can
+    /// never be pruned. Banking the full stake requires no outstanding slash
+    /// reserve (⇔ no in-flight draws), so a drawn juror settles those first.
+    pub fn prune_juror(ctx: Context<PruneJuror>, path: Vec<MSTNode>) -> Result<()> {
+        let sub = &mut ctx.accounts.subaccord;
+        // Only meaningful for gated pools (stake-only Subaccords have nothing
+        // to expire).
+        require!(
+            sub.juror_credential != Pubkey::default(),
+            AccordError::AttestationMissing
+        );
+
+        // Expiry proof: the juror's attestation must be actually expired.
+        require!(
+            !ctx.remaining_accounts.is_empty(),
+            AccordError::AttestationMissing
+        );
+        let att = &ctx.remaining_accounts[0];
+        let expiry = validate_sas_attestation(
+            att,
+            &sub.juror_credential,
+            &sub.juror_schema,
+            &ctx.accounts.juror.key(),
+        )?;
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            expiry != 0 && expiry <= now,
+            AccordError::AttestationNotExpired
+        );
+
+        let juror_key = ctx.accounts.juror.key();
+        let js = &mut ctx.accounts.juror_stake;
+        // DRY with request_withdraw: the ledger must be canonical first.
+        require!(js.stake_delta == 0, AccordError::PendingSettlement);
+        // No double-exit while a withdrawal is already pending.
+        require!(js.pending_withdrawal == 0, AccordError::WithdrawalPending);
+        let amount = js.staked;
+        require!(amount > 0, AccordError::InvalidAmount);
+
+        // Free-stake discipline (mirrors request_withdraw): banking the full
+        // stake requires no slash reserve outstanding (⇔ no in-flight draws).
+        let free_stake = js.staked.saturating_sub(js.slash_reserve);
+        require!(amount <= free_stake, AccordError::InsufficientBalance);
+
+        let old_stake = js.staked;
+        let index = js.tree_index;
+        let (new_root, new_total) = verify_and_recompute(
+            &juror_key,
+            old_stake,
+            &juror_key,
+            0,
+            index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        js.staked = 0;
+        js.pending_withdrawal = js
+            .pending_withdrawal
+            .checked_add(amount)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        js.withdraw_requested_at = now;
+        sub.staker_count = sub.staker_count.saturating_sub(1);
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
+        emit!(Unstaked {
+            subaccord: sub.key(),
+            juror: juror_key,
+            amount,
+        });
         Ok(())
     }
 
@@ -1162,8 +1491,11 @@ pub mod accord {
         round.seat_stake[seat as usize] = leaf.stake;
 
         // Inflation guard + slash reserve check via remaining_accounts[0].
+        // PROG-ATTESTTION: gated pools also carry the juror's SAS attestation
+        // as remaining_accounts[1] (defense-in-depth draw-time re-check below).
+        let gated = ctx.accounts.subaccord.juror_credential != Pubkey::default();
         require!(
-            ctx.remaining_accounts.len() == 1,
+            ctx.remaining_accounts.len() == if gated { 2 } else { 1 },
             AccordError::InvalidPanelSize
         );
         let js_info = &ctx.remaining_accounts[0];
@@ -1221,6 +1553,23 @@ pub mod accord {
                 .copy_from_slice(&new_draws.to_le_bytes());
             data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
                 .copy_from_slice(&new_slash_reserve.to_le_bytes());
+        }
+        // PROG-ATTESTTION: defense-in-depth credential re-check. With the prune
+        // crank an expired juror should already be evicted from the accumulator;
+        // this catches the race (credential expired between prune-eligible and
+        // prune-called). One attestation read + one timestamp compare, only on
+        // gated pools. At draw time only `expiry > now` is required (the
+        // stake-time horizon gate already bounded the entry).
+        if gated {
+            let att = &ctx.remaining_accounts[1];
+            let now = Clock::get()?.unix_timestamp;
+            let expiry = validate_sas_attestation(
+                att,
+                &ctx.accounts.subaccord.juror_credential,
+                &ctx.accounts.subaccord.juror_schema,
+                &leaf.juror,
+            )?;
+            require!(expiry == 0 || expiry > now, AccordError::AttestationExpired);
         }
 
         round.jurors[seat as usize] = leaf.juror;
@@ -3107,7 +3456,7 @@ pub struct Withdraw<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(
         mut,
         seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
@@ -3149,6 +3498,36 @@ pub struct ReconcileStake<'info> {
         bump = juror_stake.bump,
     )]
     pub juror_stake: Account<'info, JurorStake>,
+}
+
+/// Account context for `prune_juror` (PROG-ATTESTTION). Permissionless — the
+/// `caller` signs (any cranker); the expired `juror` does NOT sign. The
+/// `JurorStake` PDA is seeded off the passed `juror`, so derivation links the
+/// stake record to the juror identity used for the attestation subject check.
+/// `remaining_accounts[0]` carries the expired SAS attestation (read-only
+/// proof). No token accounts — prune is ledger-only (the SPL transfer happens
+/// at the two-phase `withdraw`).
+#[derive(Accounts)]
+pub struct PruneJuror<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    /// CHECK: the expired juror — NOT a signer (prune is permissionless). Its
+    /// address seeds the `JurorStake` PDA below, linking the two.
+    pub juror: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+    pub system_program: Program<'info, System>,
+    // remaining_accounts[0] = the expired SAS attestation (read-only proof).
 }
 
 /// Account context for `propose_subaccord_update` (veridao-y63e).
@@ -3217,7 +3596,7 @@ pub struct CreateDispute<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
     pub pause_state: Account<'info, PauseState>,
     #[account(
@@ -3313,6 +3692,14 @@ pub struct DrawSeat<'info> {
         bump = dispute.bump,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
+    /// PROG-ATTESTTION: the backing Subaccord. Always passed; the credential
+    /// re-check activates only when `juror_credential != default`.
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+        constraint = dispute.subaccord == subaccord.key() @ AccordError::SubaccordMismatch,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(
         init_if_needed,
         payer = caller,
