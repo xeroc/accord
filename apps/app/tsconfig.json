@@ -10,7 +10,7 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "types": ["vite/client", "node"],
+    "types": ["vite/client", "node", "bun"],
     "useDefineForClassFields": true,
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
