@@ -10,6 +10,9 @@ import { extractDisputeCandidates, ProgramLogListener } from "../src/listener";
 import type { Address } from "@solana/kit";
 
 const DISPUTE = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed" as Address;
+// A realistic dispute PDA — distinct from the program id so it isn't dropped
+// by IGNORE_DISPUTE_ADDRESSES (which filters the program's own address).
+const DISPUTE_PDA = "Dispute111111111111111111111111111111111111" as Address;
 
 test("extractDisputeCandidates pulls base58 address tokens out of program log lines", () => {
   const logs = [
@@ -50,7 +53,7 @@ test("ProgramLogListener fires reconcileDispute per candidate and is start/stop-
       subscribe: async ({ abortSignal }: { abortSignal: AbortSignal }) => {
         subscribed = true;
         return (async function* () {
-          yield { value: { logs: [`Program data: ${DISPUTE}`] } };
+          yield { value: { logs: [`Program data: ${DISPUTE} ${DISPUTE_PDA}`] } };
           await new Promise<void>((resolve) => {
             if (abortSignal.aborted) return resolve();
             abortSignal.addEventListener("abort", () => resolve(), { once: true });
@@ -71,7 +74,9 @@ test("ProgramLogListener fires reconcileDispute per candidate and is start/stop-
   // Wait for the fake stream to be consumed.
   await waitFor(() => subscribed && reconciled.length > 0);
   listener.stop();
-  expect(reconciled).toContain(DISPUTE);
+  expect(reconciled).toContain(DISPUTE_PDA);
+  // The program id is in IGNORE_DISPUTE_ADDRESSES — it must NOT be reconciled.
+  expect(reconciled).not.toContain(DISPUTE);
 });
 
 function waitFor(cond: () => boolean, timeoutMs = 1000): Promise<void> {
