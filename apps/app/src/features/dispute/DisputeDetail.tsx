@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
-import { isSome, type ReadonlyUint8Array } from "@solana/kit";
+import {
+  isSome,
+  type ReadonlyUint8Array,
+  getAddressEncoder,
+} from "@solana/kit";
 import { findAppealBondPda, findPauseStatePda } from "@useaccord/sdk";
 
 import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
@@ -14,6 +18,11 @@ import { Voting } from "./Voting";
 import { getAppealInfo } from "./useAppeal";
 import { useAppealBond, useDispute, useRound } from "./useDispute";
 import { useSubaccord } from "./useSubaccord";
+import {
+  publishEvidence,
+  verifyManifestHash,
+  EVIDENCE_DAEMON_URL,
+} from "./evidence";
 
 const FINAL_SENTINEL = 255;
 
@@ -42,6 +51,12 @@ export function DisputeDetail() {
   const { data: subaccord } = useSubaccord(dispute?.data.subaccord);
   const [appealSending, setAppealSending] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
+  const [evidencePublishing, setEvidencePublishing] = useState(false);
+  const [evidencePublishError, setEvidencePublishError] = useState<
+    string | null
+  >(null);
+  const [evidencePublished, setEvidencePublished] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (isLoading) {
     return <p className="text-text-secondary">Loading dispute…</p>;
@@ -70,6 +85,34 @@ export function DisputeDetail() {
   const d = dispute.data;
   const isFinal = d.state === 6; // DisputeState.Final
   const isRoundResolved = d.state === 5; // DisputeState.RoundResolved
+
+  // Evidence recovery: upload manifest.yaml → verify hash → publish to daemon.
+  async function handleUploadManifest(file: File) {
+    if (!subaccord || !dispute) return;
+    setEvidencePublishError(null);
+    setEvidencePublishing(true);
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const slot0 = d.evidenceHashes[0]!;
+      const evidenceHash0 = new Uint8Array(slot0);
+      await verifyManifestHash(buf, evidenceHash0);
+      const operatorBytes = new Uint8Array(
+        getAddressEncoder().encode(subaccord.data.evidenceOperator),
+      );
+      await publishEvidence({
+        endpoint: EVIDENCE_DAEMON_URL,
+        subaccord: subaccord.address,
+        dispute: dispute.address,
+        manifest: buf,
+        operatorPub: operatorBytes,
+      });
+      setEvidencePublished(true);
+    } catch (err) {
+      setEvidencePublishError(describeError(err));
+    } finally {
+      setEvidencePublishing(false);
+    }
+  }
 
   async function handleAppeal() {
     if (!env || !dispute || !round || !subaccord) return;
@@ -160,7 +203,10 @@ export function DisputeDetail() {
         <InfoRow label="State" value={DISPUTE_STATE_LABELS[d.state]} />
         <InfoRow label="Current round" value={`${d.currentRound}`} mono />
         <InfoRow label="Fee paid" value={formatLamports(d.feePaid)} mono />
-        <InfoRow label="VRF" value={isSome(d.committedVrf) ? "Committed" : "Pending"} />
+        <InfoRow
+          label="VRF"
+          value={isSome(d.committedVrf) ? "Committed" : "Pending"}
+        />
         <InfoRow
           label="Frozen root"
           value={
@@ -398,6 +444,60 @@ export function DisputeDetail() {
             </div>
           );
         })()}
+
+      {/* Evidence publish recovery — upload manifest.yaml + publish to daemon. */}
+      {(() => {
+        const hasRound0 = !d.evidenceHashes[0]!.every((b: number) => b === 0);
+        if (!hasRound0) return null;
+        return (
+          <div className="rounded-lg border border-border-subtle bg-raised p-4">
+            <h2 className="mb-2 font-mono text-sm text-text-secondary">
+              Publish evidence
+            </h2>
+            {evidencePublished ? (
+              <p className="text-sm text-confirm">
+                Evidence published to the daemon.
+              </p>
+            ) : (
+              <>
+                <p className="mb-3 text-sm text-text-secondary">
+                  Upload the <code className="font-mono">manifest.yaml</code>{" "}
+                  downloaded at dispute creation to publish the encrypted
+                  evidence to the operator.
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".yaml,.yml"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadManifest(f);
+                    e.target.value = "";
+                  }}
+                />
+                {evidencePublishError && (
+                  <p className="mb-2 text-sm text-slash">
+                    {evidencePublishError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={evidencePublishing || !subaccord}
+                  className="rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
+                >
+                  {evidencePublishing
+                    ? "Publishing…"
+                    : !subaccord
+                      ? "Loading subaccord…"
+                      : "Publish evidence"}
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Commit/reveal voting (inline — accord-7mkb) */}
       {round && round.data.jurorCount > 0 && (
