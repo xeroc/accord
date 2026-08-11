@@ -56,7 +56,7 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
     "<%= config.bin %> lifecycle:create-subaccord --random-risk-type \\\n" +
       "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
       "  --min-stake 1000 --juror-credential <issuer> --juror-schema <schema> \\\n" +
-      "  --evidence-operator <addr>  # credential-gated (attestation required to stake)"
+      "  --evidence-operator <addr>  # credential-gated (attestation required to stake)",
   ];
 
   static flags = {

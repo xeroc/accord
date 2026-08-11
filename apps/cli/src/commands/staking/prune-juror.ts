@@ -17,11 +17,7 @@ import { Flags } from "@oclif/core";
 import type { Address } from "@solana/kit";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
-import {
-  resolveStaking,
-  resolveProof,
-  readProofFile,
-} from "../../staking-context.js";
+import { resolveStaking, resolveProof, readProofFile } from "../../staking-context.js";
 
 export default class StakingPruneJuror extends ChainCommand {
   static summary = "Evict an attestation-expired juror from a gated Subaccord (permissionless)";
@@ -83,11 +79,7 @@ export default class StakingPruneJuror extends ChainCommand {
       subaccord: r.subaccord,
       jurorStake: r.jurorStake,
     };
-    const instruction = ctx.accord.methods.pruneJuror(
-      accounts,
-      path,
-      flags.attestation as Address,
-    );
+    const instruction = ctx.accord.methods.pruneJuror(accounts, path, flags.attestation as Address);
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);

@@ -90,12 +90,7 @@ export default class StakingStake extends ChainCommand {
       : await resolveProof(ctx, r);
 
     const attestation = flags["attestation"] as Address | undefined;
-    const instruction = ctx.accord.methods.stake(
-      stakingAccounts(r),
-      amount,
-      path,
-      attestation,
-    );
+    const instruction = ctx.accord.methods.stake(stakingAccounts(r), amount, path, attestation);
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);

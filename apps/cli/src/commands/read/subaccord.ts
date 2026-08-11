@@ -56,8 +56,7 @@ const ZERO_PUBKEY = "11111111111111111111111111111111";
  * attestation must satisfy to stake and be drawn.
  */
 function subaccordGateLine(data: Subaccord): string {
-  const stakeOnly =
-    data.jurorCredential === ZERO_PUBKEY && data.jurorSchema === ZERO_PUBKEY;
+  const stakeOnly = data.jurorCredential === ZERO_PUBKEY && data.jurorSchema === ZERO_PUBKEY;
   const value = stakeOnly
     ? "stake-only"
     : `credential-gated (credential=${truncateAddress(data.jurorCredential)}, ` +
