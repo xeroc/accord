@@ -1,10 +1,11 @@
 ---
 # accord-ebel
 title: Evidence-UI integration — manifest authoring + daemon publish
-status: todo
+status: completed
 type: milestone
+priority: normal
 created_at: 2026-08-11T00:56:10Z
-updated_at: 2026-08-11T00:56:10Z
+updated_at: 2026-08-11T04:00:08Z
 ---
 
 ## Evidence-UI integration — manifest authoring + daemon publish

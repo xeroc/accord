@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Accord,
   INITIAL_NUM_JURORS,
   MAX_OPTIONS,
+  findDisputePda,
   findPauseStatePda,
   requiredFee,
 } from "@useaccord/sdk";
+import { type Address, getAddressEncoder } from "@solana/kit";
 
 import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
@@ -17,6 +19,19 @@ import { useTokenMeta } from "../../shared/useTokenMeta";
 import { formatBigInt } from "../../shared/format";
 import { useSubaccord } from "./useSubaccord";
 import { useFeeTokenBalance } from "./useFeeTokenBalance";
+import {
+  EvidenceEditor,
+  downloadManifest,
+  deriveOptionHashes,
+  verifyOptionHashes,
+  publishEvidence,
+  EVIDENCE_DAEMON_URL,
+  type EvidenceEditorOutput,
+  type ManifestCtx,
+} from "./evidence";
+import { sha256 } from "@useaccord/sdk/evidence";
+
+type Mode = "format" | "manual";
 
 function isValidHex32(s: string): boolean {
   return /^[0-9a-fA-F]{64}$/.test(s);
@@ -46,10 +61,55 @@ export function CreateDispute() {
     searchParams.get("subaccord") || "",
   );
   const [nonce, setNonce] = useState(randomNonce());
+  const [mode, setMode] = useState<Mode>("format");
+
+  // Manual-mode state (status quo preserved).
   const [evidenceHash, setEvidenceHash] = useState("0".repeat(64));
   const [options, setOptions] = useState<string[]>(["", ""]);
+
+  // Format-mode state.
+  const [formatOutput, setFormatOutput] = useState<EvidenceEditorOutput | null>(
+    null,
+  );
+
+  // Publish-failure recovery state.
+  const [publishFail, setPublishFail] = useState<{
+    error: string;
+    dispute: string;
+    manifest: Uint8Array;
+  } | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Dispute PDA for manifest ctx (async — depends on signer + nonce).
+  const filedAt = useRef(new Date().toISOString());
+  const [disputePda, setDisputePda] = useState<string | null>(null);
+  useEffect(() => {
+    if (!signer) {
+      setDisputePda(null);
+      return;
+    }
+    let cancelled = false;
+    try {
+      findDisputePda({
+        filer: signer.address,
+        nonce: BigInt(nonce),
+      })
+        .then(([address]) => {
+          if (!cancelled) setDisputePda(address);
+        })
+        .catch(() => {
+          if (!cancelled) setDisputePda(null);
+        });
+    } catch {
+      setDisputePda(null);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [signer, nonce]);
 
   const { data: subaccord } = useSubaccord(
     subaccordAddr.length > 32 ? subaccordAddr : undefined,
@@ -68,13 +128,16 @@ export function CreateDispute() {
   );
   const sufficient = balance !== undefined && fee !== null && balance >= fee;
   const validOptions = options.filter(isValidHex32);
-  const canSubmit =
-    validOptions.length >= MIN_OPTIONS &&
-    validOptions.length <= MAX_OPTIONS &&
-    isValidHex32(evidenceHash) &&
-    !!subaccord &&
-    sufficient &&
-    !submitting;
+
+  const canSubmit = (() => {
+    if (submitting || !subaccord || !sufficient) return false;
+    if (mode === "format") return formatOutput !== null && disputePda !== null;
+    return (
+      validOptions.length >= MIN_OPTIONS &&
+      validOptions.length <= MAX_OPTIONS &&
+      isValidHex32(evidenceHash)
+    );
+  })();
 
   function addOption() {
     if (options.length < MAX_OPTIONS) {
@@ -108,23 +171,10 @@ export function CreateDispute() {
       setError("No RPC cluster active.");
       return;
     }
-
-    const validOpts = options.filter(isValidHex32);
-    if (validOpts.length < MIN_OPTIONS) {
-      setError(`At least ${MIN_OPTIONS} valid option hashes required.`);
-      return;
-    }
-
-    if (!isValidHex32(evidenceHash)) {
-      setError("Evidence hash must be 64 hex characters (32 bytes).");
-      return;
-    }
-
     if (!fee) {
       setError("Could not compute fee — check subaccord feePerJuror.");
       return;
     }
-
     if (balance === undefined) {
       setError("Fee-token balance not loaded yet.");
       return;
@@ -134,8 +184,50 @@ export function CreateDispute() {
       return;
     }
 
+    // --- mode-specific resolve ---
+    let resolvedOptions: Uint8Array[] = [];
+    let resolvedEvidenceHash: Uint8Array = new Uint8Array(32);
+    let manifest: Uint8Array | null = null;
+
+    if (mode === "format") {
+      if (!formatOutput) {
+        setError("Complete the evidence manifest before submitting.");
+        return;
+      }
+      // DOWNLOAD SYNCHRONOUSLY — before any await (browser gesture protection).
+      downloadManifest(formatOutput.manifest);
+      manifest = formatOutput.manifest;
+    } else {
+      const validOpts = options.filter(isValidHex32);
+      if (validOpts.length < MIN_OPTIONS) {
+        setError(`At least ${MIN_OPTIONS} valid option hashes required.`);
+        return;
+      }
+      if (!isValidHex32(evidenceHash)) {
+        setError("Evidence hash must be 64 hex characters (32 bytes).");
+        return;
+      }
+      resolvedOptions = validOpts.map(hexToBytes32);
+      resolvedEvidenceHash = hexToBytes32(evidenceHash);
+    }
+
     setSubmitting(true);
     try {
+      // Format mode: derive option hashes + verify (async, after sync download).
+      if (mode === "format" && manifest && formatOutput) {
+        resolvedOptions = await deriveOptionHashes(
+          formatOutput.salt,
+          formatOutput.labels,
+        );
+        await verifyOptionHashes(
+          formatOutput.salt,
+          formatOutput.labels,
+          resolvedOptions,
+        );
+        resolvedEvidenceHash = await sha256(manifest);
+      }
+
+      // --- SPINE (unchanged — only the source of options/evidenceHash differs) ---
       const feeToken = subaccord.data.feeToken;
       const [pauseState] = await findPauseStatePda();
       const feeVault = await getAtaAddress(subaccord.address, feeToken);
@@ -152,8 +244,8 @@ export function CreateDispute() {
           pauseState,
         },
         {
-          options: validOpts.map(hexToBytes32),
-          evidenceHash: hexToBytes32(evidenceHash),
+          options: resolvedOptions,
+          evidenceHash: resolvedEvidenceHash,
           nonce: BigInt(nonce),
           fee,
         },
@@ -164,6 +256,31 @@ export function CreateDispute() {
         signer,
         instruction,
       );
+
+      // Format mode: publish encrypted manifest to the evidence daemon.
+      if (mode === "format" && manifest) {
+        const operatorBytes = new Uint8Array(
+          getAddressEncoder().encode(subaccord.data.evidenceOperator),
+        );
+        try {
+          await publishEvidence({
+            endpoint: EVIDENCE_DAEMON_URL,
+            subaccord: subaccord.address,
+            dispute,
+            manifest,
+            operatorPub: operatorBytes,
+          });
+        } catch (publishErr) {
+          // Dispute exists on-chain — stay on form for POST-only retry.
+          setPublishFail({
+            error: describeError(publishErr),
+            dispute,
+            manifest,
+          });
+          return;
+        }
+      }
+
       navigate(`/disputes/${dispute}`);
     } catch (err) {
       setError(describeError(err));
@@ -171,6 +288,39 @@ export function CreateDispute() {
       setSubmitting(false);
     }
   }
+
+  async function handleRetryPublish() {
+    if (!publishFail || !subaccord) return;
+    setPublishing(true);
+    try {
+      const operatorBytes = new Uint8Array(
+        getAddressEncoder().encode(subaccord.data.evidenceOperator),
+      );
+      await publishEvidence({
+        endpoint: EVIDENCE_DAEMON_URL,
+        subaccord: subaccord.address,
+        dispute: publishFail.dispute,
+        manifest: publishFail.manifest,
+        operatorPub: operatorBytes,
+      });
+      navigate(`/disputes/${publishFail.dispute}`);
+    } catch (err) {
+      setPublishFail({ ...publishFail, error: describeError(err) });
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  // Manifest ctx for EvidenceEditor.
+  const manifestCtx: ManifestCtx | null =
+    signer && subaccord && disputePda
+      ? {
+          dispute: disputePda as Address,
+          subaccord: subaccord.address,
+          filer: signer.address,
+          filedAt: filedAt.current,
+        }
+      : null;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -184,6 +334,38 @@ export function CreateDispute() {
       </div>
 
       <h1 className="text-xl font-semibold">File a dispute.</h1>
+
+      {/* Publish-failure recovery banner */}
+      {publishFail && (
+        <div className="rounded-md border border-slash/40 bg-slash/5 p-4">
+          <p className="text-sm font-medium text-slash">
+            Dispute created but evidence publish failed.
+          </p>
+          <p className="mt-1 text-sm text-text-secondary">
+            {publishFail.error}
+          </p>
+          <p className="mt-1 font-mono text-xs text-text-secondary">
+            Dispute: {publishFail.dispute}
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={handleRetryPublish}
+              disabled={publishing}
+              className="rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
+            >
+              {publishing ? "Publishing…" : "Retry publish"}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/disputes/${publishFail.dispute}`)}
+              className="rounded-md border border-border-subtle px-4 py-2 text-sm text-text-secondary hover:text-text-primary"
+            >
+              View dispute
+            </button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Subaccord selector */}
@@ -263,54 +445,6 @@ export function CreateDispute() {
           </div>
         )}
 
-        {/* Options */}
-        <div>
-          <label className="mb-2 block font-mono text-sm text-text-secondary">
-            Option hashes ({validOptions.length}/{MAX_OPTIONS}, min{" "}
-            {MIN_OPTIONS})
-          </label>
-          <div className="space-y-2">
-            {options.map((opt, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <span className="w-6 font-mono text-xs text-text-secondary">
-                  {idx}
-                </span>
-                <input
-                  type="text"
-                  value={opt}
-                  onChange={(e) => updateOption(idx, e.target.value)}
-                  placeholder={`${"0".repeat(64)} (64 hex chars)`}
-                  className={`flex-1 rounded-md border bg-raised px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus:outline-none ${
-                    opt && !isValidHex32(opt)
-                      ? "border-slash"
-                      : isValidHex32(opt)
-                        ? "border-confirm/50"
-                        : "border-border-subtle focus:border-amber"
-                  }`}
-                />
-                {options.length > MIN_OPTIONS && (
-                  <button
-                    type="button"
-                    onClick={() => removeOption(idx)}
-                    className="font-mono text-sm text-slash hover:text-text-primary"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {options.length < MAX_OPTIONS && (
-            <button
-              type="button"
-              onClick={addOption}
-              className="mt-2 font-mono text-sm text-amber hover:underline"
-            >
-              + Add option
-            </button>
-          )}
-        </div>
-
         {/* Nonce */}
         <div>
           <label className="mb-1 block font-mono text-sm text-text-secondary">
@@ -333,22 +467,114 @@ export function CreateDispute() {
           </div>
         </div>
 
-        {/* Evidence hash */}
-        <div>
-          <label className="mb-1 block font-mono text-sm text-text-secondary">
-            Evidence hash (defaults to all-zeros)
-          </label>
-          <input
-            type="text"
-            value={evidenceHash}
-            onChange={(e) => setEvidenceHash(e.target.value)}
-            className={`w-full rounded-md border bg-raised px-3 py-2 font-mono text-sm focus:outline-none ${
-              isValidHex32(evidenceHash)
-                ? "border-border-subtle focus:border-amber"
-                : "border-slash"
+        {/* Mode toggle */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("format")}
+            className={`rounded-md px-3 py-1.5 font-mono text-sm ${
+              mode === "format"
+                ? "bg-amber text-ink"
+                : "border border-border-subtle text-text-secondary hover:text-text-primary"
             }`}
-          />
+          >
+            Format mode
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("manual")}
+            className={`rounded-md px-3 py-1.5 font-mono text-sm ${
+              mode === "manual"
+                ? "bg-amber text-ink"
+                : "border border-border-subtle text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            Manual mode
+          </button>
         </div>
+
+        {/* Mode-conditional inputs */}
+        {mode === "format" ? (
+          manifestCtx ? (
+            <div className="rounded-md border border-border-subtle bg-raised p-4">
+              <h2 className="mb-3 font-mono text-sm text-text-secondary">
+                Evidence manifest
+              </h2>
+              <EvidenceEditor ctx={manifestCtx} onChange={setFormatOutput} />
+            </div>
+          ) : (
+            <p className="text-sm text-text-secondary">
+              Connect a wallet and select a subaccord to author evidence.
+            </p>
+          )
+        ) : (
+          <>
+            {/* Options (manual) */}
+            <div>
+              <label className="mb-2 block font-mono text-sm text-text-secondary">
+                Option hashes ({validOptions.length}/{MAX_OPTIONS}, min{" "}
+                {MIN_OPTIONS})
+              </label>
+              <div className="space-y-2">
+                {options.map((opt, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="w-6 font-mono text-xs text-text-secondary">
+                      {idx}
+                    </span>
+                    <input
+                      type="text"
+                      value={opt}
+                      onChange={(e) => updateOption(idx, e.target.value)}
+                      placeholder={`${"0".repeat(64)} (64 hex chars)`}
+                      className={`flex-1 rounded-md border bg-raised px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus:outline-none ${
+                        opt && !isValidHex32(opt)
+                          ? "border-slash"
+                          : isValidHex32(opt)
+                            ? "border-confirm/50"
+                            : "border-border-subtle focus:border-amber"
+                      }`}
+                    />
+                    {options.length > MIN_OPTIONS && (
+                      <button
+                        type="button"
+                        onClick={() => removeOption(idx)}
+                        className="font-mono text-sm text-slash hover:text-text-primary"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {options.length < MAX_OPTIONS && (
+                <button
+                  type="button"
+                  onClick={addOption}
+                  className="mt-2 font-mono text-sm text-amber hover:underline"
+                >
+                  + Add option
+                </button>
+              )}
+            </div>
+
+            {/* Evidence hash (manual) */}
+            <div>
+              <label className="mb-1 block font-mono text-sm text-text-secondary">
+                Evidence hash (defaults to all-zeros)
+              </label>
+              <input
+                type="text"
+                value={evidenceHash}
+                onChange={(e) => setEvidenceHash(e.target.value)}
+                className={`w-full rounded-md border bg-raised px-3 py-2 font-mono text-sm focus:outline-none ${
+                  isValidHex32(evidenceHash)
+                    ? "border-border-subtle focus:border-amber"
+                    : "border-slash"
+                }`}
+              />
+            </div>
+          </>
+        )}
 
         {/* Error */}
         {error && <p className="text-sm text-slash">{error}</p>}
