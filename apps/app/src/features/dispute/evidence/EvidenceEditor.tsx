@@ -120,7 +120,7 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Milestone 3 (auth module) — delivered or not?"
+          placeholder="Dispute title"
           className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
         />
       </div>
