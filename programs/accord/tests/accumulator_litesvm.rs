@@ -585,7 +585,9 @@ fn off_chain_rebuild_matches_on_chain_root() {
     for i in 0..4u8 {
         let juror = Keypair::new();
         arm_juror(&mut env, &juror, 10_000);
-        let stake_amt = (i as u64 + 1) * 1_000;
+        // Stakes must clear the initial-stake floor (min_stake + α·min_stake = 1_100,
+        // the REVIEW #5 backstop). Varying amounts still exercise the rebuild.
+        let stake_amt = (i as u64 + 2) * 1_000;
 
         // Path for index `i` against the current tree (leaves so far).
         let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
@@ -3658,11 +3660,16 @@ fn settle_round_zero_reveals_traps_surplus() {
 #[test]
 fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
     let mut env = setup_accumulator();
-    // Stake 3 jurors (panel gate). Juror 0 at exactly min_stake.
+    // Stake 3 jurors (panel gate). Juror 0 stakes the 1_100 floor then partially
+    // withdraws 100 → free stake 1_000, below the draw-time min+slash (1_100).
+    // (A bare 1_000 stake is now rejected by the REVIEW #5 initial-stake gate.)
     let j0 = Keypair::new();
     arm_juror(&mut env, &j0, 10_000);
     let (_, _, p0) = build_root_and_path(&[], TEST_DEPTH, 0);
-    do_stake(&mut env, &j0, 1_000, p0).assert_success();
+    do_stake(&mut env, &j0, 1_100, p0).assert_success();
+    // Drop free stake to 1_000 (< 1_100) via a partial request_withdraw.
+    let (_, _, pw) = build_root_and_path(&[(j0.pubkey(), 1_100)], TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &j0, 100, pw).assert_success();
     let j1 = Keypair::new();
     arm_juror(&mut env, &j1, 10_000);
     let (_, _, p1) = build_root_and_path(&[(j0.pubkey(), 1_000)], TEST_DEPTH, 1);
