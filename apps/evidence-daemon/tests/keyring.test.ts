@@ -98,8 +98,17 @@ test("config: parses a full valid env", () => {
   expect(cfg.rpcUrl).toBe("https://rpc.example");
   expect(cfg.programId).toBe(FULL_ENV.EVIDENCE_PROGRAM_ID!);
   expect(cfg.keyring).toBe(FULL_ENV.EVIDENCE_KEYRING!);
-  expect(cfg.s3.bucket).toBe("evidence");
-  expect(cfg.s3.forcePathStyle).toBe(false);
+  expect(cfg.storage).toEqual({
+    kind: "s3",
+    s3: {
+      endpoint: "https://s3.example",
+      bucket: "evidence",
+      region: "eu-central-1",
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      forcePathStyle: false,
+    },
+  });
   expect(cfg.port).toBe(443);
 });
 
@@ -130,9 +139,52 @@ test("config: PORT parsed as integer", () => {
 
 test("config: FORCE_PATH_STYLE true is honoured", () => {
   const cfg = loadConfig({ ...FULL_ENV, EVIDENCE_S3_FORCE_PATH_STYLE: "true" });
-  expect(cfg.s3.forcePathStyle).toBe(true);
+  expect(cfg.storage.kind).toBe("s3");
+  if (cfg.storage.kind !== "s3") return;
+  expect(cfg.storage.s3.forcePathStyle).toBe(true);
 });
 
+// --- storage backend selection (EVIDENCE_STORAGE) -------------------------
+
+const FS_ENV: Record<string, string> = {
+  EVIDENCE_RPC_URL: "https://rpc.example",
+  EVIDENCE_PROGRAM_ID: "Acco11111111111111111111111111111111111112",
+  EVIDENCE_KEYRING: b58(crypto.getRandomValues(new Uint8Array(32))),
+  EVIDENCE_STORAGE: "fs",
+  EVIDENCE_FS_ROOT_DIR: "/var/lib/evidence",
+};
+
+test("config: fs backend boots WITHOUT any S3 vars", () => {
+  const cfg = loadConfig(FS_ENV);
+  expect(cfg.storage).toEqual({ kind: "fs", fs: { rootDir: "/var/lib/evidence" } });
+});
+
+test("config: fs backend throws when EVIDENCE_FS_ROOT_DIR is missing", () => {
+  const env = { ...FS_ENV };
+  delete env.EVIDENCE_FS_ROOT_DIR;
+  expect(() => loadConfig(env)).toThrow(/EVIDENCE_FS_ROOT_DIR/);
+});
+
+test("config: fs backend ignores S3 vars (presence of S3 creds is not validated)", () => {
+  // A partial S3 config that would THROW under the s3 backend (asymmetric
+  // access key) is accepted untouched when the backend is fs.
+  const cfg = loadConfig({ ...FS_ENV, EVIDENCE_S3_ACCESS_KEY_ID: "only-one-half" });
+  expect(cfg.storage.kind).toBe("fs");
+});
+
+test("config: s3 backend ignores EVIDENCE_FS_ROOT_DIR (fs vars not required)", () => {
+  const cfg = loadConfig({ ...FULL_ENV, EVIDENCE_FS_ROOT_DIR: "/unused" });
+  expect(cfg.storage.kind).toBe("s3");
+});
+
+test("config: default backend is s3 when EVIDENCE_STORAGE is unset", () => {
+  const cfg = loadConfig(FULL_ENV);
+  expect(cfg.storage.kind).toBe("s3");
+});
+
+test("config: unknown EVIDENCE_STORAGE value throws", () => {
+  expect(() => loadConfig({ ...FULL_ENV, EVIDENCE_STORAGE: "ipfs" })).toThrow(/EVIDENCE_STORAGE/);
+});
 test("config: optional numeric limits parsed", () => {
   const cfg = loadConfig({
     ...FULL_ENV,

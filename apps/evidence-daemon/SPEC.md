@@ -23,25 +23,26 @@ The daemon is **evidence-only**. It signs no governance. The Subaccord
 **Plaintext is never persisted.** The only thing ever written to storage is the
 encrypted `EvidenceBundle` (ciphertext). Decrypt → re-encrypt happens
 **in-memory per request** and the plaintext is discarded immediately after.
-Storage (S3/MinIO) holds ciphertext objects only.
+Storage (S3/MinIO or local FS) holds ciphertext objects only.
 
 ### In scope (v1)
 
 - Per-Subaccord Ed25519 keyring loaded from env (`EVIDENCE_KEYRING`,
   comma-separated raw secrets).
-- Ciphertext ingest into **S3/MinIO** (encrypted-at-rest by construction).
+- Ciphertext ingest into **S3/MinIO or a local filesystem** (encrypted-at-rest
+  by construction; backend selected by `EVIDENCE_STORAGE`).
 - Decrypt → integrity-gate against on-chain `evidence_hash` → re-encrypt to a
   drawn Juror's pubkey → deliver (pull, no auth).
-- Stateless HA replicas; shared keyring (env) + shared S3/MinIO backend.
-- Pluggable `Storage`, `Keyring`, and `Watermark` seams (v1: S3/MinIO +
-  env-keyring + no-op watermark).
+- Stateless HA replicas; shared keyring (env) + shared storage backend (S3 for
+  HA; FS for single-node).
+- Pluggable `Storage`, `Keyring`, and `Watermark` seams (v1: S3/MinIO + local FS
+  - env-keyring + no-op watermark).
 
 ### Out of scope (v1)
 
 - Per-Juror watermarking (v1.1 — bean `accord-1acp`; rides inside the
   Juror-encrypted payload, no program change).
-- `Keyring` sources beyond env (encrypted file / KMS — trait-pluggable later).
-- `Storage` backends beyond S3/MinIO (IPFS/Arweave — trait-pluggable later).
+- `Storage` backends beyond S3/MinIO and local FS (IPFS/Arweave — trait-pluggable later).
 - Shamir m-of-n key escrow for permanent operator failure (v1.1).
 - Push delivery; signature-authenticated delivery.
 - Threshold PRE / TEE trustless delivery (future ADR; ADR-0006 upgrade target).
@@ -183,7 +184,7 @@ No plaintext field exists. Idempotency key: `(round, plaintext_hash)`. Round 0
 is today's single bundle; rounds `1..MAX_APPEALS` exist only when ADR-0023's
 on-chain array is live and an appeal posts a non-sentinel `new_evidence_hash`.
 
-### Storage trait (pluggable) — v1: S3/MinIO
+### Storage trait (pluggable) — v1: S3/MinIO or local FS
 
 ```ts
 interface EvidenceStore {
@@ -194,14 +195,17 @@ interface EvidenceStore {
 }
 ```
 
-**v1 impl — S3/MinIO (`S3Store`):**
+Backend is selected by `EVIDENCE_STORAGE` (`s3` default, or `fs`). Only the
+selected backend's env vars are required — an `fs` deployment needs no S3
+credentials (and vice versa).
+
+**v1 impl A — S3/MinIO (`S3Store`, default):**
 
 - Object key: `{subaccord}/{dispute}/{round}` (URL-safe base58). One object per
   `(dispute, round)` — round 0 is the filer's package, appeal rounds append
   `{1..MAX_APPEALS}` only when ADR-0023 is live (ADR-0023).
-- Object body: the serialized `EvidenceBundle` (CBOR/JSON) — **ciphertext only**.
-- Object user-metadata: `x-amz-meta-plaintext-hash`, `x-amz-meta-subaccord`,
-  `x-amz-meta-ingested-at`.
+- Object body: the serialized `EvidenceBundle` (JSON + base64) — **ciphertext only**.
+- Object user-metadata: `plaintext-hash`, `subaccord`, `ingested-at`.
 - **Idempotent put:** `HEAD` the key first. Missing → `PutObject`. Present →
   compare `plaintext-hash` metadata: equal ⇒ no-op (`201` idempotent); differ ⇒
   `409` (refuse re-upload of a different hash for the same dispute).
@@ -210,6 +214,20 @@ interface EvidenceStore {
   physical media access, not against the operator (who holds `k_evidence`).
 - No database/index for v1 — S3 object metadata is the index. (A Postgres index
   is a trait alternative if query patterns later demand it.)
+
+**v1 impl B — local filesystem (`FsStore`, `EVIDENCE_STORAGE=fs`):**
+
+- Object path: `{EVIDENCE_FS_ROOT_DIR}/{subaccord}/{dispute}/{round}.json`. One
+  file per `(dispute, round)`, same key shape as S3.
+- Object body: byte-identical to the S3 body (`serializeBundle`) — **ciphertext only**.
+  No sidecar metadata: `plaintext_hash` lives in the serialized bundle itself.
+- **Idempotent put:** read the file first. Missing → `mkdir -p` + write. Present
+  → deserialize + compare `plaintext_hash`: equal ⇒ no-op; differ ⇒ `409`. A
+  foreign (non-bundle) file at the path ⇒ `409` (colliding path / tamper).
+- `/healthz` probes `stat(rootDir).isDirectory()`; the root is created on boot.
+- Race semantics match S3Store (read-then-write; last-writer-wins on the
+  metastable race — a conflicting PUT does not occur in the protocol).
+- **Single-node only.** For HA / multi-replica, use S3 (or a shared volume).
 
 ### Keyring (pluggable) — v1: env var
 
@@ -250,7 +268,8 @@ apps/evidence-daemon/
       keyring.ts               // EnvKeyring impl (Keyring trait + Ed25519Keypair → @useaccord/sdk/evidence)
     store/
       store.ts                 // EvidenceStore trait
-      s3.ts                    // v1 S3/MinIO impl
+      s3.ts                    // S3/MinIO impl (default)
+      fs.ts                    // local filesystem impl (EVIDENCE_STORAGE=fs)
     chain/
       reader.ts                // @useaccord/sdk reads (Subaccord/Dispute/Round)
       events.ts                // log subscriber (DisputeCreated/JurorsDrawn/RulingFinalized)
@@ -299,11 +318,15 @@ Twelve-factor; no secrets in code. Secret vars injected by the orchestrator.
 EVIDENCE_RPC_URL=              // Solana RPC (read-only ok)
 EVIDENCE_PROGRAM_ID=           // Accord program id
 EVIDENCE_KEYRING=              // comma-separated base58 Ed25519 raw secrets (v1)
+EVIDENCE_STORAGE=              // s3 (default) or fs — picks the ciphertext backend
+#   S3 backend (required when EVIDENCE_STORAGE=s3):
 EVIDENCE_S3_ENDPOINT=          // S3 or MinIO (https://…)
 EVIDENCE_S3_BUCKET=
 EVIDENCE_S3_REGION=
 EVIDENCE_S3_ACCESS_KEY_ID=, EVIDENCE_S3_SECRET_ACCESS_KEY=   // or IAM/IRSA in prod
 EVIDENCE_S3_FORCE_PATH_STYLE=  // true for MinIO
+#   FS backend (required when EVIDENCE_STORAGE=fs):
+EVIDENCE_FS_ROOT_DIR=          // absolute path; created on first put
 EVIDENCE_PORT=443
 EVIDENCE_RATE_LIMIT_PER_MIN=   // per-IP
 EVIDENCE_TRUST_PROXY=          // true → honor X-Forwarded-For (only behind a trusted LB/Ingress); default false
@@ -318,9 +341,10 @@ EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
 operator_key)`; ingest is an object PUT. Run N replicas behind a TCP/TLS load
   balancer. No session affinity.
 - **Shared state.** All replicas share the same `EVIDENCE_KEYRING` env (injected
-  by the orchestrator) and the same S3/MinIO bucket.
-- **Health.** `/healthz` probes S3 reachability (HEAD bucket) + RPC reachability;
-  LB drains on `503`.
+  by the orchestrator) and the same storage backend (S3 bucket for HA; the FS
+  backend is single-node — share via a volume at your own discretion).
+- **Health.** `/healthz` probes the storage backend (S3 HEAD bucket / FS `stat`)
+  - RPC reachability; LB drains on `503`.
 - **Retention.** A scheduled sweep lists objects and deletes those whose dispute
   is `EVIDENCE_RETENTION_DAYS` past `RulingFinalized`.
 - Ship a `Dockerfile` and a `systemd` unit (or k8s manifest) in the package;
@@ -342,9 +366,9 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   pending disputes whose bundles were encrypted to the old key are unrecoverable
   by the new operator — accepted (ADR-0011); claimants re-file or the dispute
   takes its fee-refund path. New uploads use the new key.
-- **Replica / S3 outage:** HA absorbs transient loss; if S3 is down, `/healthz`
-  → `503` and the LB drains. Review-window overlap risk is minimized, not
-  eliminated.
+- **Replica / storage outage:** HA absorbs transient loss; if the storage
+  backend (S3 or FS volume) is down, `/healthz` → `503` and the LB drains.
+  Review-window overlap risk is minimized, not eliminated.
 - **Large evidence:** stream decrypt/re-encrypt; enforce `EVIDENCE_MAX_EVIDENCE_BYTES`.
 - **Replay / double-fetch:** each delivery uses a fresh ephemeral key →
   different ciphertext bytes, same plaintext. Idempotent and harmless.
@@ -357,9 +381,10 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   sourced from env** (ADR-0011). Hardening: minimal process privileges, dedicated
   service user, no secret/plaintext logging, no core dumps, env injected by the
   orchestrator (never committed). `Keyring` trait enables a file/KMS migration.
-- **Encrypted-at-rest:** S3/MinIO objects are application-level ciphertext;
-  plaintext exists only ephemerally in memory during delivery. SSE-S3/SSE-KMS is
-  additional defense-in-depth against media access.
+- **Encrypted-at-rest:** the storage backend (S3/MinIO or local FS) holds
+  application-level ciphertext; plaintext exists only ephemerally in memory
+  during delivery. SSE-S3/SSE-KMS is additional defense-in-depth (S3 backend
+  only); for the FS backend, rely on OS-level disk encryption (LUKS).
 - The daemon is **trusted** (sees plaintext in memory) per ADR-0006. Mitigations:
   open-source, attributability, per-Juror watermarking in v1.1.
 - **DoS:** public read endpoint. Per-IP rate limit; response-size cap; optional
