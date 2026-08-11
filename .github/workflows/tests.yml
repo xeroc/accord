@@ -10,14 +10,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        path: ${{ fromJson(inputs.paths) }}
-
-    defaults:
-      run:
-        working-directory: ./${{ matrix.path }}
 
     steps:
       - name: Checkout repository

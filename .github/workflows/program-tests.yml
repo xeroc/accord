@@ -34,10 +34,6 @@ jobs:
           anchor_version: ${{ steps.versions.outputs.anchor_version }}
           node_version: 20
 
-      - name: Run Surfpool installation script
-        run: |
-          curl -sL https://run.surfpool.run/ | bash
-
       - uses: xeroc/github-actions/run-tests@main
         with:
           solana_version: ${{ steps.versions.outputs.solana_version }}
