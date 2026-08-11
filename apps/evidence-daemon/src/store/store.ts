@@ -73,9 +73,9 @@ export class EvidenceConflictError extends Error {
 }
 
 /**
- * Pluggable ciphertext store. v1 implementation: {@link ./s3.ts S3Store}
- * (S3/MinIO). The trait enables IPFS/Arweave/Postgres swaps without touching
- * callers.
+ * Pluggable ciphertext store. v1 implementations: {@link ./s3.ts S3Store}
+ * (S3/MinIO, default) and {@link ./fs.ts FsStore} (local filesystem). The trait
+ * enables IPFS/Arweave/Postgres swaps without touching callers.
  *
  * Invariants every implementation MUST uphold:
  *  - Persist ciphertext only — never accept or store a plaintext field

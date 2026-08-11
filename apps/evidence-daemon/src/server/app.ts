@@ -4,6 +4,7 @@
  * session affinity (ADR-0011 §HA).
  */
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type { ServerDeps } from "./handlers.js";
 import { evidenceRoutes } from "./routes.js";
 
@@ -25,6 +26,11 @@ export interface AppOptions {
    */
   readonly trustProxy?: boolean;
   readonly log?: (msg: string, fields?: Record<string, unknown>) => void;
+  /**
+   * Value for the Access-Control-Allow-Origin response header. Defaults to
+   * `"*"` (allow any origin). Set to a specific origin to restrict.
+   */
+  readonly corsOrigin?: string;
 }
 
 interface RateBucket {
@@ -57,6 +63,11 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
   const maxBytes = opts.maxBytes ?? 0;
   const accountKeyEnabled = opts.accountKeyEnabled ?? false;
   const trustProxy = opts.trustProxy ?? false;
+  const corsOrigin = opts.corsOrigin ?? "*";
+
+  // CORS — applied first so OPTIONS preflight is handled (204 + headers) before
+  // the rate limiter or body cap can reject the request.
+  app.use("*", cors({ origin: corsOrigin }));
 
   // ponytail: in-process fixed-window counter — per-replica, not shared.
   // Adequate for basic DoS; a shared limiter (Redis) is a v1+ ops upgrade and

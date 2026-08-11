@@ -65,6 +65,14 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
 - `cd packages/sdk && pnpm run build` — build the SDK
 - `cd programs/accord && cargo test` — Rust unit tests for the Accord in isolation
 
+### Workflow tests
+
+The github pipeline runs these tests and requires them to succeed!
+
+        pnpm run -r --filter "./packages/*" --filter "./apps/*" lint
+        pnpm run -r --filter "./packages/*" --filter "./apps/*" build
+        pnpm run -r --filter "./packages/*" --filter "./apps/*" test
+
 ## Code Style
 
 ### TypeScript
@@ -128,18 +136,18 @@ signature after the SDK had already moved to two.)
 
 ### Parts
 
-| Part | Path | Role |
-| --- | --- | --- |
-| Program | `programs/accord/` (`lib.rs`, `state.rs`), `programs/canon/` | Source of truth; IDL emitted by `anchor build`. |
-| Generated clients | `packages/sdk/src/generated/`, `packages/canon/` | Codama output from the IDL — regenerated, never hand-edited. |
-| SDK facades | `packages/sdk/src/methods/*.ts`, `pda.ts`, `token.ts`, `fetch.ts`, `index.ts` | Hand-written public surface over the generated client. |
-| e2e tests | `tests/src/` | Drives the program through the SDK facade (Surfpool). |
-| CLI | `apps/cli/` | `useaccord` — consumes the SDK. |
-| Cranker | `apps/cranker/` | Lifecycle cranker — consumes the SDK. |
-| Evidence daemon | `apps/evidence-daemon/` | Consumes `@useaccord/sdk` + `@useaccord/sdk/evidence`. |
-| App | `apps/app/` | Frontend — consumes the SDK. |
-| Docs | `programs/*/SPEC.md`, `apps/docs/`, ADRs, `README.md` | Must describe the code as it is. |
-| Agent skills | `.agents/skills/useaccord/` | CLI command + flag reference consumed by agents; mirrors `useaccord …` invocations + flag tables. |
+| Part              | Path                                                                          | Role                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Program           | `programs/accord/` (`lib.rs`, `state.rs`), `programs/canon/`                  | Source of truth; IDL emitted by `anchor build`.                                                   |
+| Generated clients | `packages/sdk/src/generated/`, `packages/canon/`                              | Codama output from the IDL — regenerated, never hand-edited.                                      |
+| SDK facades       | `packages/sdk/src/methods/*.ts`, `pda.ts`, `token.ts`, `fetch.ts`, `index.ts` | Hand-written public surface over the generated client.                                            |
+| e2e tests         | `tests/src/`                                                                  | Drives the program through the SDK facade (Surfpool).                                             |
+| CLI               | `apps/cli/`                                                                   | `useaccord` — consumes the SDK.                                                                   |
+| Cranker           | `apps/cranker/`                                                               | Lifecycle cranker — consumes the SDK.                                                             |
+| Evidence daemon   | `apps/evidence-daemon/`                                                       | Consumes `@useaccord/sdk` + `@useaccord/sdk/evidence`.                                            |
+| App               | `apps/app/`                                                                   | Frontend — consumes the SDK.                                                                      |
+| Docs              | `programs/*/SPEC.md`, `apps/docs/`, ADRs, `README.md`                         | Must describe the code as it is.                                                                  |
+| Agent skills      | `.agents/skills/useaccord/`                                                   | CLI command + flag reference consumed by agents; mirrors `useaccord …` invocations + flag tables. |
 
 ### When you change X, also touch Y
 
@@ -286,10 +294,10 @@ feature that touches the chain.
     `anchor test` auto-starts Surfpool, deploys, and runs everything.
   - Isolated debugging: `make run_surfpool` (terminal 1), then
     `make test_surfpool` (terminal 2) — every touched spec green.
-  Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
-  change**. Shipping an instruction without a green e2e spec is a blocker, not a
-  follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
-  SDK↔program↔Surfpool integration.
+    Adding or changing an instruction ⇒ add/extend its e2e spec **in the same
+    change**. Shipping an instruction without a green e2e spec is a blocker, not a
+    follow-up. LiteSVM proves the unit contract first; the e2e spec proves the
+    SDK↔program↔Surfpool integration.
 
 ## Accord (Program B — built first)
 

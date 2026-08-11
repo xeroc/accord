@@ -9,7 +9,7 @@
  * SSE:            SSE-S3 (`AES256`, default) or SSE-KMS (`aws:kms`) —
  *                 defense-in-depth; the body is already application ciphertext.
  *
- * Authority: apps/evidence-daemon/SPEC.md §"Storage trait (pluggable) — v1: S3/MinIO".
+ * Authority: apps/evidence-daemon/SPEC.md §"Storage trait (pluggable) — v1: S3/MinIO or local FS".
  */
 
 import {

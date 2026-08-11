@@ -29,3 +29,32 @@ jobs:
     uses: ./.github/workflows/program-tests.yml
     with:
       program: accord
+
+  tests:
+    name: Tests
+    needs: detect-changes
+    uses: ./.github/workflows/tests.yml
+
+  build-evidence-docker:
+    name: Build API Docker Image
+    needs: [tests]
+    permissions:
+      packages: write
+      contents: read
+    uses: ./.github/workflows/build-docker-image.yaml
+    with:
+      registry: ghcr.io
+      package: evidence-daemon
+      version: "${{ github.ref_name }}.${{ github.run_number }}"
+
+  build-cranker-docker:
+    name: Build API Docker Image
+    needs: [tests]
+    permissions:
+      packages: write
+      contents: read
+    uses: ./.github/workflows/build-docker-image.yaml
+    with:
+      registry: ghcr.io
+      package: cranker
+      version: "${{ github.ref_name }}.${{ github.run_number }}"

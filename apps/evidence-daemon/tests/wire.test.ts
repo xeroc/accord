@@ -200,3 +200,25 @@ test("wire: a different juror's seed cannot decrypt the delivered bundle", async
     ),
   ).rejects.toThrow();
 });
+
+// --- manifest (decrypted public read) ---------------------------------------
+
+test("wire: manifest decrypts the stored bundle and returns the plaintext", async () => {
+  const { deps } = await rig();
+  await deps.ingest(SUB, DISPUTE, 0, await postBody());
+
+  const res = await deps.manifest(SUB, DISPUTE, 0);
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(200);
+  // PLAINTEXT is a UTF-8 string that is not valid JSON → returned as raw string.
+  expect(res.body).toBe(new TextDecoder().decode(PLAINTEXT));
+});
+
+test("wire: manifest before ingest (no bundle) → 404", async () => {
+  const { deps } = await rig();
+  const res = await deps.manifest(SUB, DISPUTE, 0);
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(404);
+});

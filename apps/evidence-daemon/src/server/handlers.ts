@@ -58,6 +58,27 @@ export type DeliverResult =
   | { readonly ok: true; readonly status: 200; readonly body: DeliveryBody }
   | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
 
+export type ManifestResult =
+  | { readonly ok: true; readonly status: 200; readonly body: unknown }
+  | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
+
+/**
+ * Manifest = GET /evidence/{subaccord}/{dispute}[/{round}]. Decrypts the stored
+ * bundle in memory and returns the plaintext manifest — no auth, no
+ * re-encryption. `round` defaults to 0.
+ * 200+decrypted manifest, or 404 (no bundle / subaccord / unknown operator)
+ * / 409 (ciphertext undecryptable — tampered bundle).
+ *
+ * TODO: once the manifest schema defines public vs private components, parse
+ * the decrypted plaintext and publish ONLY the public parts. For now the entire
+ * manifest is returned in the clear.
+ */
+export type ManifestHandler = (
+  subaccord: string,
+  dispute: string,
+  round: number,
+) => Promise<ManifestResult>;
+
 /**
  * Ingest = POST /evidence/{subaccord}/{dispute}[/{round}]. Validates,
  * integrity-gates against the on-chain evidence_hashes[round], stores the
@@ -94,5 +115,6 @@ export type HealthProbe = () => Promise<
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly deliver: DeliverHandler;
+  readonly manifest: ManifestHandler;
   readonly health: HealthProbe;
 }

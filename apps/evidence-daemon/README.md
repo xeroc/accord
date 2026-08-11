@@ -10,7 +10,7 @@ The **Evidence Operator Daemon** (`@useaccord/evidence-daemon`) is the standalon
 The on-chain program stores only `evidence_hash`; this daemon holds the only copy of the decryption key and the ciphertext. It signs nothing on-chain and writes nothing to the chain — all reads are via `@useaccord/sdk`.
 
 > [!IMPORTANT]
-> **Encrypted-at-rest invariant (non-negotiable):** plaintext is never persisted. S3/MinIO holds ciphertext objects only. Decrypt → re-encrypt happens **in memory per request** and is discarded immediately. (ADR-0006)
+> **Encrypted-at-rest invariant (non-negotiable):** plaintext is never persisted. The storage backend (S3/MinIO or local filesystem) holds ciphertext objects only. Decrypt → re-encrypt happens **in memory per request** and is discarded immediately. (ADR-0006)
 
 ---
 
@@ -37,8 +37,7 @@ The on-chain program stores only `evidence_hash`; this daemon holds the only cop
 - **Language:** TypeScript 5.5+ (strict)
 - **HTTP framework:** [Hono](https://hono.dev) v4
 - **Solana client:** [`@solana/kit`](https://github.com/anza-xyz/kit) v7 (read-only)
-- **Accord SDK:** `@useaccord/sdk` + `@useaccord/sdk/evidence` (ECIES / AES-256-GCM / HKDF-SHA256 / Ed↔X25519 protocol)
-- **Object storage:** [`@aws-sdk/client-s3`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) (S3 or MinIO)
+- **Object storage:** [`@aws-sdk/client-s3`](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/client/s3/) (S3/MinIO) or the local filesystem (`node:fs`) — selectable via `EVIDENCE_STORAGE`
 - **Container:** `oven/bun:1.3-debian` (non-root, no new privileges)
 - **Package manager:** pnpm (workspace) / bun (runtime)
 
@@ -48,11 +47,12 @@ The on-chain program stores only `evidence_hash`; this daemon holds the only cop
 
 - [Bun](https://bun.sh/docs/installation) 1.3 or higher
 - Access to a Solana RPC endpoint (mainnet, devnet, or a local Surfpool instance — read-only is sufficient)
-- An S3-compatible bucket (AWS S3, MinIO, Cloudflare R2, etc.)
+- A ciphertext storage backend (pick one via `EVIDENCE_STORAGE`):
+  - **S3-compatible** (`EVIDENCE_STORAGE=s3`, default): AWS S3, MinIO, Cloudflare R2, etc.
+  - **Local filesystem** (`EVIDENCE_STORAGE=fs`): any writable directory — handy for local dev / single-node self-hosting.
 - A 32-byte Ed25519 seed for each Subaccord you operate (see [`EVIDENCE_KEYRING`](#EVIDENCE_KEYRING))
 - The Accord program deployed at a known `EVIDENCE_PROGRAM_ID`
 
-> [!TIP]
 > For local development, run [Surfpool](https://surfpool.dev) (`make run_surfpool` from the repo root) to get a local Solana RPC + deployed Accord program.
 
 ---
@@ -82,16 +82,24 @@ bun install
 cp .env.example .env
 ```
 
-Edit `.env` and fill in the [required values](#configuration). At minimum you need:
+Edit `.env` and fill in the [required values](#configuration). At minimum:
 
 ```ini
 EVIDENCE_RPC_URL=http://127.0.0.1:8899
 EVIDENCE_PROGRAM_ID=<deployed Accord program id>
 EVIDENCE_KEYRING=<base58 32-byte Ed25519 seed>
+EVIDENCE_PORT=8080
+
+# Pick ONE backend:
+#   S3/MinIO (default):
+EVIDENCE_STORAGE=s3
 EVIDENCE_S3_ENDPOINT=http://localhost:9000
 EVIDENCE_S3_BUCKET=accord-evidence
 EVIDENCE_S3_REGION=us-east-1
-EVIDENCE_PORT=8080
+
+#   Local filesystem (no S3 credentials needed):
+# EVIDENCE_STORAGE=fs
+# EVIDENCE_FS_ROOT_DIR=/var/lib/evidence
 ```
 
 > [!CAUTION]
@@ -137,7 +145,7 @@ A `503` means S3 or the RPC is unreachable; see [`/healthz`](#get-healthz).
                                        evidence_hash      │ evidence_hash
                                                           ▼
                                                 ┌──────────────────┐
-                                                │  S3 / MinIO      │
+                                                │  S3 / MinIO / FS │
                                                 │  (ciphertext)    │
                                                 └──────────────────┘
                                                           ▲
@@ -196,7 +204,8 @@ apps/evidence-daemon/
 │   │   └── keyring.ts       # EnvKeyring — base58 seeds → pubkey-indexed map
 │   ├── store/
 │   │   ├── store.ts         # EvidenceStore trait (Address-typed)
-│   │   └── s3.ts            # v1 S3/MinIO backend
+│   │   ├── s3.ts            # S3/MinIO backend (default)
+│   │   └── fs.ts            # Local filesystem backend (EVIDENCE_STORAGE=fs)
 │   ├── chain/
 │   │   ├── reader.ts        # Read-only Subaccord/Dispute/Round via @useaccord/sdk
 │   │   └── events.ts        # Log subscriber (DisputeCreated/JurorsDrawn/RulingFinalized)
@@ -217,7 +226,7 @@ apps/evidence-daemon/
 └── EVIDENCE-FORMAT.md       # Wire format reference
 ```
 
-The daemon is **stateless**: every replica is identical and derives all state from `EVIDENCE_KEYRING` (env) and the shared S3 bucket. Run N replicas behind a TLS-terminating load balancer — no session affinity required.
+The daemon is **stateless**: every replica is identical and derives all state from `EVIDENCE_KEYRING` (env) and the shared storage backend (S3 bucket or FS root). Run N replicas behind a TLS-terminating load balancer — no session affinity required (S3 backend; the FS backend is single-node).
 
 ---
 
@@ -266,9 +275,25 @@ Pull all deliverable evidence packages for a drawn juror.
 - `{juror}` ∈ `Round.jurors[]` for that round
 - A bundle exists for each `(dispute.subaccord, dispute, round)` where `evidence_hashes[round]` is non-zero and `round ≤ juror's round`
 
+### `GET /evidence/{subaccord}/{dispute}[/{round}]`
+
+Decrypts the stored evidence bundle in memory and returns the **plaintext manifest** — no auth, no re-encryption to a juror key. The daemon holds the operator key and decrypts on behalf of any caller. `round` defaults to `0`.
+
+> [!WARNING]
+> **MVP — full plaintext exposure.** This endpoint currently returns the entire decrypted manifest in the clear. Once the manifest schema defines public vs private components, the daemon will parse the decrypted plaintext and publish **only the public parts**. Until then, treat this endpoint as serving the full manifest to any caller.
+
+**Responses:**
+
+| Status | Meaning                                                                 |
+| ------ | ---------------------------------------------------------------------- |
+| `200`  | The decrypted manifest (JSON object if the plaintext is JSON, else raw UTF-8 string) |
+| `400`  | Invalid base58 address or round                                        |
+| `404`  | No bundle stored, subaccord not found, or unknown evidence operator    |
+| `409`  | Ciphertext undecryptable (tampered bundle)                             |
+
 ### `GET /healthz`
 
-Probes S3 (HEAD bucket) and RPC reachability. Returns `200 {"status":"ok"}` or `503 {"status":"degraded","detail":...}`. The load balancer should drain on `503`.
+Probes the storage backend (S3 HEAD bucket, or `stat` on the FS root) and RPC reachability. Returns `200 {"status":"ok"}` or `503 {"status":"degraded","detail":...}`. The load balancer should drain on `503`.
 
 ---
 
@@ -282,15 +307,15 @@ All configuration is twelve-factor — no secrets in code. See [`.env.example`](
 | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `EVIDENCE_RPC_URL`                              | Solana RPC endpoint. Read-only is sufficient.                                                                                                                                                                                                |
 | `EVIDENCE_PROGRAM_ID`                           | Deployed Accord program id (base58).                                                                                                                                                                                                         |
-| <a id="EVIDENCE_KEYRING"></a>`EVIDENCE_KEYRING` | Comma-separated **base58-encoded 32-byte Ed25519 seeds** (one per operated Subaccord). The on-chain `Subaccord.evidence_operator` pubkey is the binding — the daemon derives each seed's pubkey and indexes by it. Unknown operator ⇒ `404`. |
-| `EVIDENCE_S3_ENDPOINT`                          | S3 or MinIO endpoint (`https://…`).                                                                                                                                                                                                          |
-| `EVIDENCE_S3_BUCKET`                            | Bucket name.                                                                                                                                                                                                                                 |
-| `EVIDENCE_S3_REGION`                            | AWS region (use any value for MinIO).                                                                                                                                                                                                        |
+| <a id="EVIDENCE_KEYRING"></a>`EVIDENCE_KEYRING` | Comma-separated list, one entry per operated Subaccord. Each entry is EITHER a **base58-encoded 32-byte Ed25519 seed**, OR a **path to a `.json` key file** containing the seed as a JSON byte array (`[...32]`, `[...64]` Solana expanded, or `{ "secretKey": [...64] }`). The two formats may be mixed. The on-chain `Subaccord.evidence_operator` pubkey is the binding — the daemon derives each seed's pubkey and indexes by it. Unknown operator ⇒ `404`. |
+| `EVIDENCE_STORAGE`                              | Ciphertext backend selector: `s3` (default — S3/MinIO) or `fs` (local filesystem). Only the selected backend's vars are required.                                                                                                            |
 
 ### Conditionally Required
 
 | Variable                                                      | Notes                                                                                                 |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `EVIDENCE_S3_ENDPOINT` / `EVIDENCE_S3_BUCKET` / `EVIDENCE_S3_REGION` | Required when `EVIDENCE_STORAGE=s3`. Ignored when `fs`. MinIO: set region to any value.       |
+| `EVIDENCE_FS_ROOT_DIR`                                        | Required when `EVIDENCE_STORAGE=fs`. Absolute path to the evidence directory; created on first put. Single-node only. Ignored when `s3`. |
 | `EVIDENCE_S3_ACCESS_KEY_ID` / `EVIDENCE_S3_SECRET_ACCESS_KEY` | Set **both together** when not using IAM/IRSA. Omit both for IAM.                                     |
 | `EVIDENCE_TLS_CERT` / `EVIDENCE_TLS_KEY`                      | Paths to PEM files. Set **both together** for end-to-end TLS. Terminate at the LB/Ingress by default. |
 
@@ -299,13 +324,14 @@ All configuration is twelve-factor — no secrets in code. See [`.env.example`](
 | Variable                       | Default                            | Description                                                                                           |
 | ------------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `EVIDENCE_PORT`                | `443` (code) / `8080` (Dockerfile) | Listen port.                                                                                          |
-| `EVIDENCE_S3_FORCE_PATH_STYLE` | `false`                            | `true` for MinIO.                                                                                     |
+| `EVIDENCE_S3_FORCE_PATH_STYLE` | `false`                            | `true` for MinIO (s3 backend only).                                                                   |
 | `EVIDENCE_RATE_LIMIT_PER_MIN`  | `0` (disabled)                     | Per-IP requests/min. `0` disables the limiter.                                                        |
 | `EVIDENCE_MAX_EVIDENCE_BYTES`  | `0` (no cap)                       | Request body size cap in bytes.                                                                       |
 | `EVIDENCE_RETENTION_DAYS`      | unset                              | Delete ciphertext N days after `RulingFinalized`. Sweep not yet wired in v1.                          |
 | `EVIDENCE_HEALTH_TIMEOUT_MS`   | `2000`                             | Per-backend (S3 + RPC) health-probe timeout.                                                          |
 | `EVIDENCE_ACCOUNT_KEY_ENABLED` | `false`                            | `true` ⇒ log `X-Account-Key` for accounting. Never denies.                                            |
 | `EVIDENCE_TRUST_PROXY`         | `false`                            | `true` ⇒ honor `X-Forwarded-For` for rate limiting. **Only** behind a trusted LB that overwrites XFF. |
+| `EVIDENCE_CORS_ORIGIN`         | `*`                                | `Access-Control-Allow-Origin` value. Set to a specific origin to restrict cross-origin access.        |
 
 > [!WARNING]
 > `EVIDENCE_TRUST_PROXY=true` is unsafe in front of an untrusted network — a direct client can spoof `X-Forwarded-For` to evade the per-IP rate limit. Only enable behind an Ingress/LB you control.
@@ -348,7 +374,8 @@ bun test --filter "ingest"          # by name pattern
 | `tests/events.test.ts`      | Log subscriber.                                                                   |
 | `src/server/app.test.ts`    | HTTP layer: rate limit, body cap, X-Account-Key, /healthz.                        |
 | `src/server/health.test.ts` | Liveness probe logic.                                                             |
-| `src/store/s3.test.ts`      | S3 store put/get/exists.                                                          |
+| `src/store/s3.test.ts`      | S3 store put/get/exists/conflict.                                                 |
+| `src/store/fs.test.ts`      | Filesystem store put/get/exists/conflict (mirrors s3.test.ts).                    |
 
 ---
 
@@ -379,8 +406,8 @@ The manifest uses a ConfigMap for non-secret config and an empty Secret placehol
 ### High Availability
 
 - **N stateless replicas** behind a TCP/TLS load balancer. No session affinity.
-- **Shared state:** all replicas share the same `EVIDENCE_KEYRING` (Secret) and the same S3 bucket.
-- **Health:** `/healthz` probes S3 (HEAD bucket) + RPC reachability. LB drains on `503`.
+- **Shared state:** all replicas share the same `EVIDENCE_KEYRING` (Secret) and the same storage backend (S3 bucket or a shared FS volume). The FS backend is single-node only — for HA, use S3.
+- **Health:** `/healthz` probes the storage backend + RPC reachability. LB drains on `503`.
 - **TLS:** terminated at the Ingress/LB by default. For end-to-end TLS, mount a TLS Secret and set `EVIDENCE_TLS_CERT` / `EVIDENCE_TLS_KEY`.
 
 ### Bare-Metal / VM (systemd)
@@ -395,7 +422,7 @@ A systemd unit running the container (or `bun run src/main.ts` directly) with `E
 > The daemon is a **trusted** component (ADR-0006): it sees plaintext in memory during delivery. Mitigations: open-source, attributability, per-Juror watermarking in v1.1.
 
 - **`k_evidence` (per-Subaccord) is the crown jewel.** v1 holds it raw in-process, sourced from env (ADR-0011). Hardening: minimal process privileges, dedicated service user, no secret/plaintext logging, no core dumps, env injected by the orchestrator (never committed). The `Keyring` trait enables a file/KMS migration without touching callers.
-- **Encrypted-at-rest:** S3/MinIO objects are application-level ciphertext; plaintext exists only ephemerally in memory during delivery. SSE-S3/SSE-KMS is additional defense-in-depth.
+- **Encrypted-at-rest:** the storage backend (S3/MinIO or local FS) holds application-level ciphertext; plaintext exists only ephemerally in memory during delivery. SSE-S3/SSE-KMS is additional defense-in-depth (S3 backend only). For the FS backend, rely on OS-level disk encryption (LUKS) for at-rest protection of the ciphertext directory.
 - **Raw secrets in env is an explicit v1 stopgap.** Env vars can leak via `/proc/<pid>/environ`, crash dumps, and process listings. Mitigate v1 with a dedicated service user and orchestrator-injected secrets.
 - **DoS:** public read endpoint. Per-IP rate limit, response-size cap, optional accounting-only API key. No auth path exists to brute-force.
 - **TLS is mandatory in production** — ciphertext is the confidentiality layer, but TLS prevents metadata/traffic analysis and request enumeration.
@@ -417,6 +444,7 @@ A systemd unit running the container (or `bun run src/main.ts` directly) with `E
 ### `/healthz` returns `503`
 
 - **S3 unreachable:** verify `EVIDENCE_S3_ENDPOINT`, `EVIDENCE_S3_BUCKET`, and credentials. For MinIO, set `EVIDENCE_S3_FORCE_PATH_STYLE=true`. Tune timeout via `EVIDENCE_HEALTH_TIMEOUT_MS`.
+- **FS backend unreachable:** verify `EVIDENCE_FS_ROOT_DIR` exists and is writable by the daemon process. The root is created on boot; a missing/unmounted volume makes the probe fail.
 - **RPC unreachable:** verify `EVIDENCE_RPC_URL` with `curl "$EVIDENCE_RPC_URL" -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}'`.
 
 ### `404` on Delivery

@@ -1,9 +1,3 @@
-/**
- * Twelve-factor env parsing (RPC, program id, keyring, S3, port, limits).
- * No secrets are logged here; values are only surfaced to the caller for wiring.
- * See SPEC §Configuration for the full variable list.
- */
-
 export interface S3Config {
   endpoint: string;
   bucket: string;
@@ -13,12 +7,26 @@ export interface S3Config {
   forcePathStyle: boolean;
 }
 
+export interface FsConfig {
+  /** Directory holding evidence files (created lazily on first put). */
+  rootDir: string;
+}
+
+/**
+ * Discriminated storage configuration. Selected by `EVIDENCE_STORAGE`
+ * (default `s3`). Only the selected backend's env vars are required, so a
+ * filesystem deployment never needs S3 credentials (and vice versa).
+ */
+export type StorageConfig =
+  { readonly kind: "s3"; readonly s3: S3Config } | { readonly kind: "fs"; readonly fs: FsConfig };
+
 export interface Config {
   rpcUrl: string;
   programId: string;
   /** Raw `EVIDENCE_KEYRING` value; {@link EnvKeyring} parses + validates it. */
   keyring: string;
-  s3: S3Config;
+  /** Selected ciphertext backend (S3 default; local FS when EVIDENCE_STORAGE=fs). */
+  storage: StorageConfig;
   port: number;
   rateLimitPerMin?: number;
   maxEvidenceBytes?: number;
@@ -40,6 +48,41 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error("EVIDENCE_KEYRING must list at least one base58 Ed25519 secret");
   }
 
+  const storage = parseStorage(env);
+
+  const tlsCert = env.EVIDENCE_TLS_CERT;
+  const tlsKey = env.EVIDENCE_TLS_KEY;
+  if ((tlsCert === undefined) !== (tlsKey === undefined)) {
+    throw new Error("EVIDENCE_TLS_CERT and EVIDENCE_TLS_KEY must be set together");
+  }
+
+  return {
+    rpcUrl,
+    programId,
+    keyring,
+    storage,
+    port: intFlag(env.EVIDENCE_PORT, 443, "EVIDENCE_PORT"),
+    rateLimitPerMin: optionalInt(env.EVIDENCE_RATE_LIMIT_PER_MIN, "EVIDENCE_RATE_LIMIT_PER_MIN"),
+    maxEvidenceBytes: optionalInt(env.EVIDENCE_MAX_EVIDENCE_BYTES, "EVIDENCE_MAX_EVIDENCE_BYTES"),
+    retentionDays: optionalInt(env.EVIDENCE_RETENTION_DAYS, "EVIDENCE_RETENTION_DAYS"),
+    tls: tlsCert !== undefined && tlsKey !== undefined ? { cert: tlsCert, key: tlsKey } : undefined,
+  };
+}
+
+/**
+ * Parse the selected storage backend. `EVIDENCE_STORAGE` selects `s3`
+ * (default) or `fs`; only the selected backend's vars are required. Throws
+ * on an unknown backend or a missing required var for the selected one.
+ */
+function parseStorage(env: Record<string, string | undefined>): StorageConfig {
+  const backend = (env.EVIDENCE_STORAGE ?? "s3").trim().toLowerCase();
+  if (backend === "fs") {
+    return { kind: "fs", fs: { rootDir: required(env, "EVIDENCE_FS_ROOT_DIR") } };
+  }
+  if (backend !== "s3") {
+    throw new Error(`EVIDENCE_STORAGE must be "s3" or "fs", got: ${JSON.stringify(backend)}`);
+  }
+
   const endpoint = required(env, "EVIDENCE_S3_ENDPOINT");
   const bucket = required(env, "EVIDENCE_S3_BUCKET");
   const region = required(env, "EVIDENCE_S3_REGION");
@@ -52,16 +95,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     );
   }
 
-  const tlsCert = env.EVIDENCE_TLS_CERT;
-  const tlsKey = env.EVIDENCE_TLS_KEY;
-  if ((tlsCert === undefined) !== (tlsKey === undefined)) {
-    throw new Error("EVIDENCE_TLS_CERT and EVIDENCE_TLS_KEY must be set together");
-  }
-
   return {
-    rpcUrl,
-    programId,
-    keyring,
+    kind: "s3",
     s3: {
       endpoint,
       bucket,
@@ -70,11 +105,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       secretAccessKey,
       forcePathStyle: boolFlag(env.EVIDENCE_S3_FORCE_PATH_STYLE),
     },
-    port: intFlag(env.EVIDENCE_PORT, 443, "EVIDENCE_PORT"),
-    rateLimitPerMin: optionalInt(env.EVIDENCE_RATE_LIMIT_PER_MIN, "EVIDENCE_RATE_LIMIT_PER_MIN"),
-    maxEvidenceBytes: optionalInt(env.EVIDENCE_MAX_EVIDENCE_BYTES, "EVIDENCE_MAX_EVIDENCE_BYTES"),
-    retentionDays: optionalInt(env.EVIDENCE_RETENTION_DAYS, "EVIDENCE_RETENTION_DAYS"),
-    tls: tlsCert !== undefined && tlsKey !== undefined ? { cert: tlsCert, key: tlsKey } : undefined,
   };
 }
 
@@ -130,6 +160,8 @@ export interface ServerConfig {
   readonly trustProxy: boolean;
   /** Per-backend (storage/rpc) health-check timeout in ms. */
   readonly healthTimeoutMs: number;
+  /** CORS Access-Control-Allow-Origin value. Defaults to "*" (allow all). */
+  readonly corsOrigin: string;
 }
 
 function num(env: Record<string, string | undefined>, key: string, fallback: number): number {
@@ -157,5 +189,6 @@ export function loadServerConfig(
     accountKeyEnabled: (env.EVIDENCE_ACCOUNT_KEY_ENABLED ?? "").toLowerCase() === "true",
     trustProxy: (env.EVIDENCE_TRUST_PROXY ?? "").toLowerCase() === "true",
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
+    corsOrigin: env.EVIDENCE_CORS_ORIGIN ?? "*",
   };
 }
