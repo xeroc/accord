@@ -20,7 +20,7 @@
  *   - Stake / Unstake accounts: programs/accord/src/lib.rs (1716-1798)
  *   - JurorStake struct + seeds: programs/accord/src/state.rs (60-70)
  */
-import type { Address, Instruction } from "@solana/kit";
+import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import type { MSTNode } from "./mst.js";
 
 /** JurorStake PDA seed prefix (state.rs: SEED_JUROR_STAKE = b"stake"). */
@@ -166,6 +166,11 @@ export interface AccordStakingClient {
     accounts: StakingAccounts;
     path: MSTNode[];
   }): Instruction;
+  buildReclaimSlot(input: {
+    programId: Address;
+    accounts: { subaccord: Address; jurorStake: Address };
+    path: MSTNode[];
+  }): Instruction;
   /** Fetch the decoded JurorStake fields the guard needs. */
   fetchJurorStake(jurorStake: Address): Promise<JurorStakeView | null>;
   /** Build `withdraw_fees` (ADR-0020). */
@@ -187,7 +192,9 @@ export interface AccordStakingClient {
   }): Instruction;
 }
 
-/** Build `stake` (lib.rs). SPL-transfers `amount` into the vault. */
+/** Build `stake` (lib.rs). SPL-transfers `amount` into the vault.
+ * RECLAIM-LEAF: when `freedSlotAccount` is provided, the stake pops from the
+ * free list (the freed JurorStake is appended as a remaining account). */
 export function stake(
   client: AccordStakingClient,
   programId: Address,
@@ -196,12 +203,28 @@ export function stake(
   path: MSTNode[],
   /** PROG-ATTESTATION: juror SAS attestation (required on credential-gated Subaccords). */
   attestation?: Address,
+  /** RECLAIM-LEAF: freed JurorStake PDA to pop from the free list when staking into a recycled slot. */
+  freedSlotAccount?: Address,
 ): Instruction {
   assertValidAmount(amount);
   // An empty `path` is the canonical proof for a depth-0 Subaccord (single
   // leaf = root). The on-chain verifier authenticates the path against the
   // stored root + depth; do not reject it here (REVIEW #13).
-  return client.buildStake({ programId, accounts, amount, path, attestation });
+  const ix = client.buildStake({ programId, accounts, amount, path, attestation });
+  // RECLAIM-LEAF: append the freed JurorStake PDA as a remaining account when
+  // staking into a recycled slot. The adapter placed the attestation (if any)
+  // at remaining_accounts[0]; the freed slot follows at [1] on gated pools, or
+  // sits at [0] on stake-only pools — matching the on-chain gated-aware layout.
+  if (freedSlotAccount) {
+    return {
+      ...ix,
+      accounts: [
+        ...(ix.accounts ?? []),
+        { address: freedSlotAccount, role: AccountRole.WRITABLE },
+      ],
+    };
+  }
+  return ix;
 }
 
 /**
@@ -265,6 +288,25 @@ export function reconcileStake(
 ): Instruction {
   // Empty `path` is valid for depth-0 Subaccords (REVIEW #13).
   return client.buildReconcileStake({ programId, accounts, path });
+}
+
+/**
+ * Build `reclaim_slot` (RECLAIM-LEAF) — permissionless crank that pushes a
+ * fully-drained JurorStake's `tree_index` onto the free list, blanking the
+ * leaf identity to `(default, 0)`. This recycles the tree slot for reuse by a
+ * new staker. No tokens move; any caller may trigger it. `path` is the juror's
+ * accumulator proof (ADR-0012).
+ *
+ * Preconditions: the juror must be fully drained (`staked == 0`,
+ * `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`).
+ */
+export function reclaimSlot(
+  client: AccordStakingClient,
+  programId: Address,
+  accounts: { subaccord: Address; jurorStake: Address },
+  path: MSTNode[],
+): Instruction {
+  return client.buildReclaimSlot({ programId, accounts, path });
 }
 
 /** Accounts for `withdraw_fees` (ADR-0020). */

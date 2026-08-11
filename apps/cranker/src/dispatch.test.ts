@@ -19,6 +19,7 @@ import { register as registerRedraw } from "./cranks/redraw.js";
 import { register as registerExecuteUpdate } from "./cranks/execute-update.js";
 import { register as registerExecuteUnpause } from "./cranks/execute-unpause.js";
 import { register as registerClaimRefund } from "./cranks/claim-refund.js";
+import { register as registerReclaimSlot } from "./cranks/reclaim-slot.js";
 import { registerDrawSeatCrank } from "./cranks/draw-seat.js";
 
 const ALL_KINDS: CrankKind[] = [
@@ -30,8 +31,8 @@ const ALL_KINDS: CrankKind[] = [
   "cancel_dispute",
   "redraw",
   "execute_update",
-  "execute_unpause",
   "claim_refund",
+  "reclaim_slot",
 ];
 
 /** Build a dispatch with every crank registered — the production wiring. */
@@ -47,6 +48,7 @@ function fullDispatch() {
   registerExecuteUpdate(d);
   registerExecuteUnpause(d);
   registerClaimRefund(d);
+  registerReclaimSlot(d);
   return d;
 }
 

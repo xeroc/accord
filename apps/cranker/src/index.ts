@@ -35,6 +35,7 @@ import { register as registerClaimRefund } from "./cranks/claim-refund.js";
 import { registerDrawSeatCrank } from "./cranks/draw-seat.js";
 import { register as registerExecuteUnpause } from "./cranks/execute-unpause.js";
 import { register as registerExecuteUpdate } from "./cranks/execute-update.js";
+import { register as registerReclaimSlot } from "./cranks/reclaim-slot.js";
 import { register as registerFinalizeDispute } from "./cranks/finalize-dispute.js";
 import { register as registerFinalizeRound } from "./cranks/finalize-round.js";
 import { register as registerRedraw } from "./cranks/redraw.js";
@@ -58,6 +59,7 @@ function fullDispatch() {
   registerRedraw(d);
   registerExecuteUpdate(d);
   registerExecuteUnpause(d);
+  registerReclaimSlot(d);
   registerClaimRefund(d);
   return d;
 }

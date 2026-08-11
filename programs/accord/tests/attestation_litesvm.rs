@@ -16,7 +16,7 @@
 //! program as owner and the confirmed variable-length layout (see
 //! `sas_layout` in lib.rs). Run via `make test_unit`.
 
-use accord::constants::{SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD};
+use accord::constants::{SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD, WITHDRAWAL_DELAY};
 use accord::state::{
     Aggregation, CreateSubaccordParams, JurorStake, MSTNode, ShortfallPolicy, Subaccord,
 };
@@ -484,6 +484,140 @@ fn do_prune(
     };
     env.ctx.execute_instruction(ix, &[&caller]).unwrap()
 }
+/// Overwrite the Clock sysvar unix_timestamp (advance wall-clock for timelocks).
+fn warp_seconds(env: &mut Env, secs: i64) {
+    let mut clock = env.ctx.svm.get_sysvar::<Clock>();
+    clock.unix_timestamp = clock.unix_timestamp.saturating_add(secs);
+    env.ctx.svm.set_sysvar::<Clock>(&clock);
+}
+
+/// `request_withdraw` — phase-1 ledger-only withdraw: zeros the leaf's
+/// selection weight, banks `amount` into `pending_withdrawal`, recomputes the
+/// root. No token move, no attestation gate.
+fn do_request_withdraw(
+    env: &mut Env,
+    juror: &Keypair,
+    amount: u64,
+    path: Vec<MSTNode>,
+) -> TransactionResult {
+    let js = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::RequestWithdraw {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js,
+        })
+        .args(instruction::RequestWithdraw { amount, path })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[juror]).unwrap()
+}
+
+/// `withdraw` — phase-2 SPL transfer out of the vault (consumes pending_withdrawal).
+fn do_withdraw(env: &mut Env, juror: &Keypair) -> TransactionResult {
+    let jata = juror_ata(&juror.pubkey(), &env.mint);
+    let vata = vault_ata(&env.subaccord, &env.mint);
+    let js = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Withdraw {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js,
+            staking_token: env.mint,
+            juror_token_account: jata,
+            stake_vault: vata,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::Withdraw {})
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[juror]).unwrap()
+}
+
+/// `reclaim_slot` — permissionless crank pushing a drained juror's slot onto
+/// the free list. `caller` is an arbitrary funded account.
+fn do_reclaim_slot(
+    env: &mut Env,
+    caller: &Keypair,
+    juror: &Pubkey,
+    path: Vec<MSTNode>,
+) -> TransactionResult {
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+    let js = juror_stake_pda(&env.subaccord, juror);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ReclaimSlot {
+            caller: caller.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js,
+        })
+        .args(instruction::ReclaimSlot { path })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[caller]).unwrap()
+}
+
+/// `stake` into a gated pool's recycled slot: attestation at
+/// `remaining_accounts[0]` (read-only) + the freed JurorStake PDA at `[1]`
+/// (writable). Exercises the gated-aware freed-slot index in the handler.
+fn do_stake_gated_recycled(
+    env: &mut Env,
+    juror: &Keypair,
+    amount: u64,
+    path: Vec<MSTNode>,
+    attestation: Pubkey,
+    freed_slot: Pubkey,
+) -> TransactionResult {
+    let jata = juror_ata(&juror.pubkey(), &env.mint);
+    let vata = vault_ata(&env.subaccord, &env.mint);
+    let js = juror_stake_pda(&env.subaccord, &juror.pubkey());
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Stake {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            juror_stake: js,
+            staking_token: env.mint,
+            juror_token_account: jata,
+            stake_vault: vata,
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::Stake { amount, path })
+        .instruction()
+        .unwrap();
+    let ix = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut a = ix.accounts;
+            // [0] = SAS attestation (read-only); [1] = freed JurorStake (writable).
+            a.push(AccountMeta {
+                pubkey: attestation,
+                is_signer: false,
+                is_writable: false,
+            });
+            a.push(AccountMeta {
+                pubkey: freed_slot,
+                is_signer: false,
+                is_writable: true,
+            });
+            a
+        },
+        data: ix.data,
+    };
+    env.ctx.execute_instruction(ix, &[juror]).unwrap()
+}
 
 /// Assert a result failed and name the expected error in the logs.
 fn assert_failed(r: &TransactionResult, needle: &str) {
@@ -821,4 +955,82 @@ fn prune_rejects_stake_only_subaccord() {
     assert_failed(&r, "AttestationMissing");
     // Stake untouched.
     assert_eq!(read_juror_stake(&env, &juror.pubkey()).staked, 5_000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  gated pool + recycled slot: attestation and freed-slot coexist
+//  (regression for the auto-merge collision where both read remaining_accounts[0])
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn gated_stake_pops_recycled_slot_with_attestation_at_distinct_indices() {
+    let mut env = setup(true);
+    let now = now_of(&env.ctx);
+
+    // --- Juror A: stake into the gated pool, then fully drain + reclaim. ---
+    let juror_a = Keypair::new();
+    arm_juror(&mut env, &juror_a, 10_000);
+    let att_a = Pubkey::new_unique();
+    set_sas_attestation(
+        &mut env.ctx,
+        &att_a,
+        &env.credential,
+        &env.schema,
+        &juror_a.pubkey(),
+        now + 10 * 365 * 24 * 3600,
+    );
+    let (_, _, path_a) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror_a, 5_000, path_a, Some(att_a)).assert_success();
+    // tree: [(A, 5000)] @ index 0
+
+    // Drain A: request_withdraw zeros the leaf weight, withdraw moves tokens.
+    let (_, _, path_rw) = build_root_and_path(&[(juror_a.pubkey(), 5_000)], TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &juror_a, 5_000, path_rw).assert_success();
+    warp_seconds(&mut env, WITHDRAWAL_DELAY + 1);
+    do_withdraw(&mut env, &juror_a).assert_success();
+    // tree: [(A, 0)] — A fully drained, slot occupied but zero weight.
+
+    // Reclaim A's slot → free-list head = 0, leaf identity blanked to (default, 0).
+    let (_, _, path_reclaim) = build_root_and_path(&[(juror_a.pubkey(), 0)], TEST_DEPTH, 0);
+    let caller = Keypair::new();
+    do_reclaim_slot(&mut env, &caller, &juror_a.pubkey(), path_reclaim).assert_success();
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.free_head, 0, "recycled slot 0 is now the free-list head");
+    // tree: [(default, 0)] — empty again.
+
+    // --- Juror B: stake into the recycled slot on the SAME gated pool. ---
+    // This is the collision point: B must pass its attestation AND A's freed
+    // JurorStake PDA. Before the gated-aware index fix the handler read the
+    // attestation (SAS-owned) at [0] as the freed slot → FreeListHeadMismatch.
+    let juror_b = Keypair::new();
+    arm_juror(&mut env, &juror_b, 10_000);
+    let att_b = Pubkey::new_unique();
+    set_sas_attestation(
+        &mut env.ctx,
+        &att_b,
+        &env.credential,
+        &env.schema,
+        &juror_b.pubkey(),
+        now + 10 * 365 * 24 * 3600,
+    );
+    let freed_slot = juror_stake_pda(&env.subaccord, &juror_a.pubkey());
+    let (_, _, path_b) = build_root_and_path(&[(Pubkey::default(), 0)], TEST_DEPTH, 0);
+    let r = do_stake_gated_recycled(&mut env, &juror_b, 5_000, path_b, att_b, freed_slot);
+    r.assert_success();
+
+    // B inherited the recycled index 0; next_index was NOT bumped (pop, not bump).
+    let js_b = read_juror_stake(&env, &juror_b.pubkey());
+    assert_eq!(js_b.staked, 5_000);
+    assert_eq!(js_b.tree_index, 0, "B reused A's recycled slot");
+    assert_eq!(js_b.next_free, u32::MAX);
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.next_index, 1, "next_index unchanged by a free-list pop");
+    assert_eq!(sub.free_head, u32::MAX, "free list drained back to empty");
+    assert_eq!(sub.staker_count, 1);
+    // A's freed JurorStake account was closed by the pop (lamports drained).
+    let freed_after = env.ctx.svm.get_account(&freed_slot);
+    assert!(
+        freed_after.is_none() || freed_after.unwrap().lamports == 0,
+        "freed slot account should be closed (drained)"
+    );
 }

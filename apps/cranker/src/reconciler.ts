@@ -29,7 +29,9 @@ import {
   fetchMaybeRound,
   findAllDisputes,
   findAllPendingUpdates,
+  findAllSubaccords,
   findAppealBondPda,
+  findJurorStakesBySubaccord,
   findPauseStatePda,
   findRoundPda,
   type AppealBond,
@@ -69,7 +71,18 @@ export interface ReconcilerConfig {
   slot?: () => Promise<bigint>;
   /** Override the pause-state check (tests). Defaults to the SDK PauseState PDA read. */
   fetchPauseState?: () => Promise<Account<PauseState> | null>;
+  /** Override the reclaimable-slot scan (tests). Defaults to scanning all subaccords. */
+  fetchReclaimableSlots?: () => Promise<ReclaimableSlot[]>;
 }
+
+/** A drained JurorStake eligible for reclaim_slot (RECLAIM-LEAF discovery). */
+export interface ReclaimableSlot {
+  subaccord: Address;
+  jurorStake: Address;
+}
+
+/** u32::MAX sentinel — nextFree === this means "not on the free list". */
+const UINT32_MAX = 4294967295;
 
 export interface ReconcilerHandle {
   /** Stop the poll timer. Idempotent. */
@@ -95,6 +108,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     fetchPendingUpdates = () => findAllPendingUpdates(accord.rpc),
     slot = async () => BigInt((await accord.rpc.getSlot().send()).valueOf()),
     fetchPauseState = async () => fetchPauseStateAccount(accord.rpc),
+    fetchReclaimableSlots = async () => scanReclaimableSlots(accord.rpc),
   } = config;
 
   const rpc = accord.rpc;
@@ -214,6 +228,20 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     if (handled) fired++;
   }
 
+  // --- Phase 4: reclaim_slot discovery (RECLAIM-LEAF) ---
+  // Scan all Subaccords for fully-drained JurorStakes not yet on the free
+  // list. One reclaim per cycle (the next cycle picks up the next slot).
+  const reclaimable = await fetchReclaimableSlots();
+  for (const slotInfo of reclaimable) {
+    const action: CrankAction = {
+      kind: "reclaim_slot",
+      subaccord: slotInfo.subaccord,
+      jurorStake: slotInfo.jurorStake,
+    };
+    const handled = await dispatch.execute(baseCtx, action);
+    if (handled) fired++;
+  }
+
   return fired;
 }
 
@@ -258,6 +286,33 @@ async function fetchPauseStateAccount(rpc: Rpc<SolanaRpcApi>): Promise<Account<P
   const maybe = await fetchMaybePauseState(rpc, pda);
   if (maybe.exists) return maybe as Account<PauseState>;
   return null;
+}
+
+/**
+ * Default reclaimable-slot scan: fetch all Subaccords, then for each fetch
+ * its JurorStakes and filter for fully-drained accounts not yet reclaimed
+ * (RECLAIM-LEAF). Returns at most one per subaccord (one reclaim per cycle).
+ */
+async function scanReclaimableSlots(rpc: Rpc<SolanaRpcApi>): Promise<ReclaimableSlot[]> {
+  const subs = await findAllSubaccords(rpc);
+  const result: ReclaimableSlot[] = [];
+  for (const sub of subs) {
+    const stakes = await findJurorStakesBySubaccord(rpc, sub.address);
+    for (const s of stakes) {
+      const d = s.data;
+      if (
+        d.staked === 0n &&
+        d.activeDraws === 0 &&
+        d.stakeDelta === 0n &&
+        d.feesEarned === 0n &&
+        d.nextFree === UINT32_MAX
+      ) {
+        result.push({ subaccord: sub.address, jurorStake: s.address });
+        break; // one reclaim per subaccord per cycle
+      }
+    }
+  }
+  return result;
 }
 
 /**

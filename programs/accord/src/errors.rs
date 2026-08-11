@@ -167,4 +167,14 @@ pub enum AccordError {
     AttestationExpired,
     #[msg("Attestation has not expired; prune_juror requires an actually-expired credential.")]
     AttestationNotExpired,
+
+    // --- slot reclamation (RECLAIM-LEAF) ---
+    #[msg(
+        "JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0)."
+    )]
+    SlotNotDrained,
+    #[msg("JurorStake slot is already on the free list (next_free != MAX).")]
+    SlotAlreadyReclaimed,
+    #[msg("Provided freed-slot account does not match the free-list head.")]
+    FreeListHeadMismatch,
 }
