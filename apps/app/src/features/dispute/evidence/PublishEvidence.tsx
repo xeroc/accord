@@ -19,7 +19,11 @@
  * Authority: milestone accord-ebel HANDOFF §1 recovery; ADR-0006/0011/0023.
  */
 import { useState } from "react";
-import { type Account, type ReadonlyUint8Array } from "@solana/kit";
+import {
+  type Account,
+  type ReadonlyUint8Array,
+  getAddressEncoder,
+} from "@solana/kit";
 import { type Dispute, type Subaccord } from "@useaccord/sdk";
 
 import { describeError } from "../../../shared/errors";
@@ -64,13 +68,15 @@ export function PublishEvidence({
     try {
       const manifest = await readFileBytes(file);
       // Fails closed: a tampered / wrong manifest throws before any POST.
-      await verifyManifestHash(manifest, evidenceHash);
+      await verifyManifestHash(manifest, new Uint8Array(evidenceHash));
       await publishEvidence({
         endpoint: EVIDENCE_DAEMON_URL,
         subaccord: subaccord.address,
         dispute: dispute.address,
         manifest,
-        operatorPub: subaccord.data.evidenceOperator,
+        operatorPub: new Uint8Array(
+          getAddressEncoder().encode(subaccord.data.evidenceOperator),
+        ),
       });
       setResult({ kind: "ok", fileName: file.name });
     } catch (err) {

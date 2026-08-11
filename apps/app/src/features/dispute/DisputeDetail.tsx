@@ -161,7 +161,10 @@ export function DisputeDetail() {
         <InfoRow label="State" value={DISPUTE_STATE_LABELS[d.state]} />
         <InfoRow label="Current round" value={`${d.currentRound}`} mono />
         <InfoRow label="Fee paid" value={formatLamports(d.feePaid)} mono />
-        <InfoRow label="VRF" value={isSome(d.committedVrf) ? "Committed" : "Pending"} />
+        <InfoRow
+          label="VRF"
+          value={isSome(d.committedVrf) ? "Committed" : "Pending"}
+        />
         <InfoRow
           label="Frozen root"
           value={

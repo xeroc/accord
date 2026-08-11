@@ -1,18 +1,23 @@
-export { EvidenceEditor } from "./EvidenceEditor.js";
 export {
-  SHA256_ZERO,
   buildManifest,
-  type ManifestCtx,
-  type ManifestEntry,
+  SHA256_ZERO,
   type ManifestInput,
-} from "./manifest.js";
+  type ManifestEntryInput,
+  type ManifestCtx,
+} from "./manifest";
 export {
-  deriveOptionHashes,
   generateSalt,
+  deriveOptionHashes,
   verifyOptionHashes,
-} from "./options.js";
+} from "./options";
 export {
   publishEvidence,
   verifyManifestHash,
-  type PublishEvidenceArgs,
-} from "./publish.js";
+  EVIDENCE_DAEMON_URL,
+  type PublishParams,
+} from "./publish";
+export {
+  EvidenceEditor,
+  downloadManifest,
+  type EvidenceEditorOutput,
+} from "./EvidenceEditor";

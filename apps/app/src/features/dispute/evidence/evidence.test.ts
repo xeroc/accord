@@ -13,6 +13,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 import { ed25519PublicKeyFromSeed } from "@useaccord/sdk/evidence";
+import type { Address } from "@solana/kit";
 
 import {
   buildManifest,
@@ -49,9 +50,9 @@ function makeInput(salt: Uint8Array): ManifestInput {
 const OPERATOR_PUB = ed25519PublicKeyFromSeed(new Uint8Array(32).fill(42));
 
 const CTX: ManifestCtx = {
-  dispute: "DisputePubkey123456789",
-  subaccord: "SubaccordPubkey1234",
-  filer: "FilerPubkey123456789",
+  dispute: "DisputePubkey123456789" as Address,
+  subaccord: "SubaccordPubkey1234" as Address,
+  filer: "FilerPubkey123456789" as Address,
   filedAt: "2026-08-11T12:00:00Z",
 };
 

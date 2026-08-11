@@ -1,102 +1,80 @@
 /**
- * evidence/manifest.ts — single-buffer `accord-evidence/v1` manifest
- * serialization (ADR-0017, EVIDENCE-FORMAT.md §2–3).
+ * manifest.ts — serialize the `accord-evidence/v1` manifest into a single
+ * deterministic Uint8Array buffer. That one buffer feeds the YAML preview,
+ * `sha256`→`evidence_hash`, and `claimantEncrypt`→POST. Never re-serialize.
  *
- * **Single-buffer invariant (non-negotiable, §3):** `buildManifest`
- * serializes ONCE into one `Uint8Array`. That exact buffer feeds the YAML
- * preview, `sha256` → `evidence_hash`, and `claimantEncrypt` → POST. Never
- * re-serialize — the hash is over the delivered bytes, so a second
- * serialization with different formatting would produce a different hash.
- *
- * No canonicalization rules are needed (EVIDENCE-FORMAT.md §2): the manifest
- * is delivered verbatim to Jurors. Our YAML formatting is deterministic
- * (fixed key order, fixed quoting), which is sufficient for byte-stability.
- *
- * MVP scope (milestone §7): entries carry `{ path, sha256 }` where `path`
- * accepts a URL or relative POSIX path and `sha256` defaults to the all-zero
- * sentinel (`SHA256_ZERO`) — Jurors skip leaf verification, the root gate
- * still applies. No `public` block (v1 ships fully-confidential-only).
+ * Authority: EVIDENCE-FORMAT.md §2 (no canonicalization needed — manifest
+ * delivered verbatim), milestone accord-ebel §3 (single-buffer invariant).
  */
-import { generateSalt } from "./options.js";
+import type { Address } from "@solana/kit";
 
-/** All-zero `[u8;32]` sentinel — `sha256` field placeholder (§3.2, §9.3). */
-export const SHA256_ZERO: Uint8Array = new Uint8Array(32);
+/** All-zero `[u8;32]` sentinel — juror skips leaf verification (root gate still applies). */
+export const SHA256_ZERO = new Uint8Array(32);
 
-export interface ManifestEntry {
-  /** URL or relative POSIX path to the evidence file. */
+export interface ManifestEntryInput {
+  /** URL or relative POSIX path to the evidence resource. */
   path: string;
-  /** Leaf sha256 (32 bytes). Defaults to `SHA256_ZERO` (Juror skips leaf check). */
+  /** Leaf sha256 (32 bytes). Defaults to {@link SHA256_ZERO} when unknown. */
   sha256?: Uint8Array;
 }
 
 export interface ManifestInput {
-  /** Dispute title (human-readable, one line). */
+  /** Per-dispute 32-byte random salt (app-generated). */
+  salt: Uint8Array;
   title: string;
-  /** Ordered option labels — `Dispute.options[i] = sha256(salt ‖ label_i)`. */
+  /** Ordered option labels; `Dispute.options[i] = sha256(salt ‖ utf8(label_i))`. */
   labels: string[];
-  /** Evidence file entries (the bill of materials). */
-  entries: ManifestEntry[];
-  /** 32-byte option salt. Generated if absent (use `generateSalt()`). */
-  salt?: Uint8Array;
+  entries: ManifestEntryInput[];
 }
 
 export interface ManifestCtx {
-  /** Base58 Dispute pubkey. */
-  dispute: string;
-  /** Base58 Subaccord pubkey. */
-  subaccord: string;
-  /** Base58 filer pubkey. */
-  filer: string;
-  /** ISO-8601 UTC timestamp. */
+  dispute: Address;
+  subaccord: Address;
+  filer: Address;
+  /** ISO-8601 UTC timestamp string. */
   filedAt: string;
 }
 
-const te = new TextEncoder();
+function hex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Minimal YAML double-quote escaping for a string value. */
+function yamlQuote(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
 
 /**
- * Serialize the manifest into a single deterministic `Uint8Array` (UTF-8 YAML).
- * This IS creating `evidence_hash` — `sha256(buildManifest(...))` is the root.
- *
- * The same `(input, ctx)` always produces byte-identical output (modulo the
- * salt, which is random if generated internally — pass `input.salt` for
- * reproducibility).
+ * Serialize manifest input + ctx into a single `Uint8Array` (UTF-8 YAML).
+ * Hand-serialized — the manifest is a flat object with two list fields; no YAML
+ * library needed (EVIDENCE-FORMAT.md §2: no canonicalization, delivered verbatim).
  */
 export function buildManifest(
   input: ManifestInput,
   ctx: ManifestCtx,
 ): Uint8Array {
-  const salt = input.salt ?? generateSalt();
-  const lines: string[] = [];
-
-  lines.push(`schema: "accord-evidence/v1"`);
-  lines.push(`dispute: ${q(ctx.dispute)}`);
-  lines.push(`subaccord: ${q(ctx.subaccord)}`);
-  lines.push(`filer: ${q(ctx.filer)}`);
-  lines.push(`filed_at: ${q(ctx.filedAt)}`);
-  lines.push(`language: "en"`);
-  lines.push(`title: ${q(input.title)}`);
-  lines.push(`option_salt: ${q(hex(salt))}`);
-  lines.push("options:");
-  for (let i = 0; i < input.labels.length; i++) {
-    lines.push(`  - index: ${i}`);
-    lines.push(`    label: ${q(input.labels[i]!)}`);
-  }
-  lines.push("entries:");
-  for (const entry of input.entries) {
-    lines.push(`  - path: ${q(entry.path)}`);
-    lines.push(`    sha256: ${q(hex(entry.sha256 ?? SHA256_ZERO))}`);
-  }
-
-  return te.encode(lines.join("\n") + "\n");
-}
-
-function hex(b: Uint8Array): string {
-  let s = "";
-  for (const x of b) s += x.toString(16).padStart(2, "0");
-  return s;
-}
-
-/** YAML double-quote with minimal escaping (backslash, quote, newline, CR, tab). */
-function q(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}"`;
+  const lines: string[] = [
+    "schema: accord-evidence/v1",
+    `dispute: ${ctx.dispute}`,
+    `subaccord: ${ctx.subaccord}`,
+    `filer: ${ctx.filer}`,
+    `filed_at: ${ctx.filedAt}`,
+    "language: en",
+    `title: ${yamlQuote(input.title)}`,
+    "",
+    `option_salt: ${hex(input.salt)}`,
+    "options:",
+    ...input.labels.map(
+      (label, index) => `  - { index: ${index}, label: ${yamlQuote(label)} }`,
+    ),
+    "",
+    "entries:",
+    ...input.entries.map(
+      (e) =>
+        `  - { path: ${yamlQuote(e.path)}, sha256: "${hex(e.sha256 ?? SHA256_ZERO)}" }`,
+    ),
+  ];
+  return new TextEncoder().encode(lines.join("\n") + "\n");
 }

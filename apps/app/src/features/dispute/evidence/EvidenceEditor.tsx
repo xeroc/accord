@@ -1,77 +1,116 @@
 /**
- * evidence/EvidenceEditor.tsx — structured manifest authoring UI.
+ * EvidenceEditor.tsx — structured form for authoring the `accord-evidence/v1`
+ * manifest in format mode. Collects title, option labels, and URL entries;
+ * builds the manifest buffer (single serialization); shows a read-only YAML
+ * preview; provides a manual Download button.
  *
- * Lets the filer author the `accord-evidence/v1` manifest: title, option
- * labels, and evidence URL entries. Shows a live read-only YAML preview
- * (serialized via `buildManifest` — the single buffer) and a Download button
- * for `manifest.yaml`.
- *
- * Emits `ManifestInput` upward via `onInput` on every change. The parent
- * (`CreateDispute`) owns the `ManifestCtx` (dispute PDA, subaccord, filer,
- * filedAt) and derives the on-chain commitments from the emitted input.
- *
- * Milestone §1, §3 (HANDOFF). The salt is generated once on mount and stays
- * stable — it feeds both option-hash derivation and the manifest.
+ * Authority: milestone accord-ebel §1 (format-mode submit), §2 (module contract),
+ * §3 (single-buffer invariant — buildManifest runs once in useMemo, that same
+ * Uint8Array feeds preview + hash + encrypt downstream).
  */
-import { useEffect, useState } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 
 import {
   buildManifest,
-  generateSalt,
   type ManifestCtx,
   type ManifestInput,
-} from "./index.js";
+} from "./manifest";
+import { generateSalt } from "./options";
 
-const MIN_LABELS = 2;
-const MAX_LABELS = 8;
+const MIN_OPTIONS = 2;
+const MAX_OPTIONS = 5;
+const MIN_ENTRIES = 1;
 
-interface EvidenceEditorProps {
-  /** Full context for manifest serialization. */
-  ctx: ManifestCtx;
-  /** Called with the current manifest input on every form change. */
-  onInput: (input: ManifestInput) => void;
+export interface EvidenceEditorOutput {
+  /** The single manifest buffer — feeds sha256→evidence_hash + claimantEncrypt→POST. */
+  manifest: Uint8Array;
+  /** Option labels in order. */
+  labels: string[];
+  /** The per-dispute salt (already embedded in manifest). */
+  salt: Uint8Array;
 }
 
-export function EvidenceEditor({ ctx, onInput }: EvidenceEditorProps) {
+interface EvidenceEditorProps {
+  ctx: ManifestCtx;
+  /** Called with the output when valid, or null when invalid. */
+  onChange: (output: EvidenceEditorOutput | null) => void;
+}
+
+export function downloadManifest(manifest: Uint8Array) {
+  const blob = new Blob([new Uint8Array(manifest)], { type: "text/yaml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "manifest.yaml";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
+  // Salt is generated once and kept stable across edits.
+  const salt = useRef(generateSalt());
+
   const [title, setTitle] = useState("");
   const [labels, setLabels] = useState<string[]>(["", ""]);
-  const [paths, setPaths] = useState<string[]>([""]);
-  const [salt] = useState(() => generateSalt());
+  const [entries, setEntries] = useState<string[]>([""]);
 
-  const input: ManifestInput = {
-    title,
-    labels,
-    entries: paths.map((path) => ({ path })),
-    salt,
-  };
+  const validLabels = labels.filter((l) => l.trim().length > 0);
+  const validEntries = entries.filter((e) => e.trim().length > 0);
+  const isValid =
+    title.trim().length > 0 &&
+    validLabels.length >= MIN_OPTIONS &&
+    validLabels.length <= MAX_OPTIONS &&
+    validEntries.length >= MIN_ENTRIES;
 
-  // Live YAML preview — same single buffer that feeds evidence_hash + encrypt.
-  const manifestBytes = buildManifest(input, ctx);
-  const yamlPreview = new TextDecoder().decode(manifestBytes);
+  // Single-buffer invariant: buildManifest runs once per input change.
+  // That same Uint8Array feeds the YAML preview here and (via onChange) the
+  // hash + encrypt downstream. Never re-serialize.
+  const manifest = useMemo(() => {
+    if (!isValid) return null;
+    const input: ManifestInput = {
+      salt: salt.current,
+      title: title.trim(),
+      labels: validLabels.map((l) => l.trim()),
+      entries: validEntries.map((e) => ({ path: e.trim() })),
+    };
+    return buildManifest(input, ctx);
+  }, [isValid, title, validLabels, validEntries, ctx]);
 
+  // Propagate output to parent.
   useEffect(() => {
-    onInput(input);
+    if (manifest && isValid) {
+      onChange({
+        manifest,
+        labels: validLabels.map((l) => l.trim()),
+        salt: salt.current,
+      });
+    } else {
+      onChange(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, labels, paths, salt, onInput]);
+  }, [manifest, isValid]);
 
-  function downloadManifest() {
-    // ponytail: copy into a fresh ArrayBuffer — TS 5.7+ types Uint8Array as
-    // generic over buffer type; Blob requires ArrayBuffer-backed.
-    const blob = new Blob([new Uint8Array(manifestBytes)], {
-      type: "text/yaml",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "manifest.yaml";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const yamlPreview = manifest ? new TextDecoder().decode(manifest) : "";
+
+  function addLabel() {
+    if (labels.length < MAX_OPTIONS) setLabels([...labels, ""]);
+  }
+  function removeLabel(idx: number) {
+    if (labels.length > MIN_OPTIONS)
+      setLabels(labels.filter((_, i) => i !== idx));
+  }
+  function addEntry() {
+    setEntries([...entries, ""]);
+  }
+  function removeEntry(idx: number) {
+    if (entries.length > MIN_ENTRIES)
+      setEntries(entries.filter((_, i) => i !== idx));
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Title */}
       <div>
         <label className="mb-1 block font-mono text-sm text-text-secondary">
@@ -82,14 +121,14 @@ export function EvidenceEditor({ ctx, onInput }: EvidenceEditorProps) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Milestone 3 (auth module) — delivered or not?"
-          className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-amber focus:outline-none"
+          className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
         />
       </div>
 
       {/* Option labels */}
       <div>
         <label className="mb-2 block font-mono text-sm text-text-secondary">
-          Option labels ({labels.length}/{MAX_LABELS}, min {MIN_LABELS})
+          Option labels ({validLabels.length}/{MAX_OPTIONS}, min {MIN_OPTIONS})
         </label>
         <div className="space-y-2">
           {labels.map((label, idx) => (
@@ -106,12 +145,12 @@ export function EvidenceEditor({ ctx, onInput }: EvidenceEditorProps) {
                   )
                 }
                 placeholder={`Option ${idx} label (e.g. ${idx === 0 ? "Not delivered" : "Delivered"})`}
-                className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-amber focus:outline-none"
+                className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
               />
-              {labels.length > MIN_LABELS && (
+              {labels.length > MIN_OPTIONS && (
                 <button
                   type="button"
-                  onClick={() => setLabels(labels.filter((_, i) => i !== idx))}
+                  onClick={() => removeLabel(idx)}
                   className="font-mono text-sm text-slash hover:text-text-primary"
                 >
                   ✕
@@ -120,10 +159,10 @@ export function EvidenceEditor({ ctx, onInput }: EvidenceEditorProps) {
             </div>
           ))}
         </div>
-        {labels.length < MAX_LABELS && (
+        {labels.length < MAX_OPTIONS && (
           <button
             type="button"
-            onClick={() => setLabels([...labels, ""])}
+            onClick={addLabel}
             className="mt-2 font-mono text-sm text-amber hover:underline"
           >
             + Add option
@@ -131,29 +170,29 @@ export function EvidenceEditor({ ctx, onInput }: EvidenceEditorProps) {
         )}
       </div>
 
-      {/* Evidence entries */}
+      {/* Evidence entries (URLs) */}
       <div>
         <label className="mb-2 block font-mono text-sm text-text-secondary">
           Evidence URLs
         </label>
         <div className="space-y-2">
-          {paths.map((path, idx) => (
+          {entries.map((entry, idx) => (
             <div key={idx} className="flex items-center gap-2">
               <input
                 type="url"
-                value={path}
+                value={entry}
                 onChange={(e) =>
-                  setPaths(
-                    paths.map((p, i) => (i === idx ? e.target.value : p)),
+                  setEntries(
+                    entries.map((en, i) => (i === idx ? e.target.value : en)),
                   )
                 }
-                placeholder="https://example.com/evidence/claim.md"
-                className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-amber focus:outline-none"
+                placeholder="https://example.com/evidence/claim.pdf"
+                className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
               />
-              {paths.length > 1 && (
+              {entries.length > MIN_ENTRIES && (
                 <button
                   type="button"
-                  onClick={() => setPaths(paths.filter((_, i) => i !== idx))}
+                  onClick={() => removeEntry(idx)}
                   className="font-mono text-sm text-slash hover:text-text-primary"
                 >
                   ✕
@@ -164,35 +203,33 @@ export function EvidenceEditor({ ctx, onInput }: EvidenceEditorProps) {
         </div>
         <button
           type="button"
-          onClick={() => setPaths([...paths, ""])}
+          onClick={addEntry}
           className="mt-2 font-mono text-sm text-amber hover:underline"
         >
           + Add URL
         </button>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Leaf sha256 defaults to all-zero sentinel — jurors skip per-file
-          verification, root gate still applies.
-        </p>
       </div>
 
       {/* YAML preview + download */}
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <label className="font-mono text-sm text-text-secondary">
-            manifest.yaml preview
-          </label>
-          <button
-            type="button"
-            onClick={downloadManifest}
-            className="rounded-md border border-border-subtle px-3 py-1 font-mono text-xs text-text-secondary hover:border-amber hover:text-amber"
-          >
-            Download
-          </button>
+      {yamlPreview && (
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="font-mono text-sm text-text-secondary">
+              manifest.yaml preview
+            </label>
+            <button
+              type="button"
+              onClick={() => manifest && downloadManifest(manifest)}
+              className="font-mono text-xs text-amber hover:underline"
+            >
+              ↓ Download
+            </button>
+          </div>
+          <pre className="max-h-64 overflow-auto rounded-md border border-border-subtle bg-raised p-3 font-mono text-xs text-text-secondary">
+            {yamlPreview}
+          </pre>
         </div>
-        <pre className="max-h-64 overflow-auto rounded-md border border-border-subtle bg-raised p-3 font-mono text-xs text-text-primary">
-          {yamlPreview}
-        </pre>
-      </div>
+      )}
     </div>
   );
 }
