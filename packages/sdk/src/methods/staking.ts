@@ -167,7 +167,7 @@ export interface AccordStakingClient {
   }): Instruction;
   buildReclaimSlot(input: {
     programId: Address;
-    accounts: StakingAccounts;
+    accounts: { subaccord: Address; jurorStake: Address };
     path: MSTNode[];
   }): Instruction;
   /** Fetch the decoded JurorStake fields the guard needs. */
@@ -282,7 +282,7 @@ export function reconcileStake(
 export function reclaimSlot(
   client: AccordStakingClient,
   programId: Address,
-  accounts: StakingAccounts,
+  accounts: { subaccord: Address; jurorStake: Address },
   path: MSTNode[],
 ): Instruction {
   return client.buildReclaimSlot({ programId, accounts, path });
