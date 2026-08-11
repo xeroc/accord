@@ -315,11 +315,9 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       ),
     );
 
-    // B should be at tree_index 0 (recycled).
-    await tree.setLeaf(b.juror.address, STAKE_AMT);
-    // setLeaf advances nextIndex locally, but on-chain it should NOT advance
-    // because the slot was popped from the free list. Compensate:
-    tree.nextIndex--; // undo the bump — the slot was recycled, not bump-allocated.
+    // B went into the recycled slot 0 (NOT nextIndex). Update the leaf at
+    // index 0 — do NOT advance nextIndex (the slot was popped, not allocated).
+    await tree.updateLeaf(0, b.juror.address, STAKE_AMT);
 
     const bStake = await readStake(b.jurorStake);
     expect(bStake!.treeIndex).toBe(0);
