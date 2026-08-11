@@ -315,6 +315,7 @@ All configuration is twelve-factor — no secrets in code. See [`.env.example`](
 | `EVIDENCE_HEALTH_TIMEOUT_MS`   | `2000`                             | Per-backend (S3 + RPC) health-probe timeout.                                                          |
 | `EVIDENCE_ACCOUNT_KEY_ENABLED` | `false`                            | `true` ⇒ log `X-Account-Key` for accounting. Never denies.                                            |
 | `EVIDENCE_TRUST_PROXY`         | `false`                            | `true` ⇒ honor `X-Forwarded-For` for rate limiting. **Only** behind a trusted LB that overwrites XFF. |
+| `EVIDENCE_CORS_ORIGIN`         | `*`                                | `Access-Control-Allow-Origin` value. Set to a specific origin to restrict cross-origin access.        |
 
 > [!WARNING]
 > `EVIDENCE_TRUST_PROXY=true` is unsafe in front of an untrusted network — a direct client can spoof `X-Forwarded-For` to evade the per-IP rate limit. Only enable behind an Ingress/LB you control.

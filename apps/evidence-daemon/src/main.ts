@@ -123,6 +123,7 @@ function main(): void {
     accountKeyEnabled: srv.accountKeyEnabled,
     trustProxy: srv.trustProxy,
     log: (msg, fields) => console.log(JSON.stringify({ msg, ...fields })),
+    corsOrigin: srv.corsOrigin,
   });
 
   const hasTls = cfg.tls !== undefined;

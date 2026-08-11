@@ -356,3 +356,53 @@ describe("TLS config wiring", () => {
     expect(cfg.tls.keyPath).toBeUndefined();
   });
 });
+
+/* ------------------------------------------------------------- CORS ------ */
+
+describe("CORS", () => {
+  it("defaults to Access-Control-Allow-Origin: * on all responses", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(post({ ct: "x" }));
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  it("honours a custom corsOrigin (echoes when Origin matches)", async () => {
+    const app = createApp(makeDeps(), { corsOrigin: "https://accord.example" });
+    const res = await app.request(
+      new Request("http://x/evidence/sub/dispute", {
+        method: "POST",
+        body: JSON.stringify({ ct: "x" }),
+        headers: {
+          "content-type": "application/json",
+          origin: "https://accord.example",
+        },
+      }),
+    );
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://accord.example");
+  });
+
+  it("handles OPTIONS preflight with CORS headers (short-circuits to 204)", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(
+      new Request("http://x/evidence/sub/dispute", {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://app.example",
+          "access-control-request-method": "POST",
+        },
+      }),
+    );
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+  });
+
+  it("config: EVIDENCE_CORS_ORIGIN parsed into ServerConfig", () => {
+    const cfg = loadServerConfig({ EVIDENCE_CORS_ORIGIN: "https://foo.bar" });
+    expect(cfg.corsOrigin).toBe("https://foo.bar");
+  });
+
+  it("config: CORS defaults to * when EVIDENCE_CORS_ORIGIN unset", () => {
+    expect(loadServerConfig({}).corsOrigin).toBe("*");
+  });
+});

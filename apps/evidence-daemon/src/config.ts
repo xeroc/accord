@@ -160,6 +160,8 @@ export interface ServerConfig {
   readonly trustProxy: boolean;
   /** Per-backend (storage/rpc) health-check timeout in ms. */
   readonly healthTimeoutMs: number;
+  /** CORS Access-Control-Allow-Origin value. Defaults to "*" (allow all). */
+  readonly corsOrigin: string;
 }
 
 function num(env: Record<string, string | undefined>, key: string, fallback: number): number {
@@ -187,5 +189,6 @@ export function loadServerConfig(
     accountKeyEnabled: (env.EVIDENCE_ACCOUNT_KEY_ENABLED ?? "").toLowerCase() === "true",
     trustProxy: (env.EVIDENCE_TRUST_PROXY ?? "").toLowerCase() === "true",
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
+    corsOrigin: env.EVIDENCE_CORS_ORIGIN ?? "*",
   };
 }
