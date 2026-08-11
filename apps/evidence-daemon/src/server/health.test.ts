@@ -17,6 +17,7 @@ function okDeps(health: ServerDeps["health"]): ServerDeps {
       status: 200,
       body: { rounds: [{ round: 0, out: "b3V0", operator_ephem_pub: "cHVi" }] },
     }),
+    manifest: async () => ({ ok: true, status: 200, body: {} }),
     health,
   };
 }

@@ -58,6 +58,22 @@ export type DeliverResult =
   | { readonly ok: true; readonly status: 200; readonly body: DeliveryBody }
   | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
 
+export type ManifestResult =
+  | { readonly ok: true; readonly status: 200; readonly body: unknown }
+  | { readonly ok: false; readonly status: 404; readonly error: string };
+
+/**
+ * Manifest = GET /evidence/{subaccord}/{dispute}[/{round}]. Returns the stored
+ * ciphertext bundle as-is — no re-encryption, no auth, no chain read. The
+ * response is ciphertext (safe to expose per ADR-0006); `round` defaults to 0.
+ * 200+bundle, or 404 (no bundle stored for this dispute+round).
+ */
+export type ManifestHandler = (
+  subaccord: string,
+  dispute: string,
+  round: number,
+) => Promise<ManifestResult>;
+
 /**
  * Ingest = POST /evidence/{subaccord}/{dispute}[/{round}]. Validates,
  * integrity-gates against the on-chain evidence_hashes[round], stores the
@@ -94,5 +110,6 @@ export type HealthProbe = () => Promise<
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly deliver: DeliverHandler;
+  readonly manifest: ManifestHandler;
   readonly health: HealthProbe;
 }

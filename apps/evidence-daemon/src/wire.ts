@@ -34,8 +34,9 @@ import {
   bytesToBase64,
   type EvidenceStore,
   type EvidenceBundle as StoreBundle,
+  serializeBundle,
 } from "./store/store";
-import type { DeliverHandler, IngestHandler, ServerDeps } from "./server/handlers";
+import type { DeliverHandler, IngestHandler, ManifestHandler, ServerDeps } from "./server/handlers";
 
 // ---------------------------------------------------------------------------
 // base58 / Address codec. Path params arrive as base58 strings; the pipeline
@@ -268,8 +269,32 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     }
     return { ok: false, status: out.status, error: out.reason };
   };
+  // Manifest — public read of the raw stored ciphertext bundle. No chain read,
+  // no crypto, no auth. The response is ciphertext only (ADR-0006); safe to
+  // expose. Returns 404 when no bundle is stored for the dispute+round.
+  const manifestHandler: ManifestHandler = async (subaccordStr, disputeStr, round) => {
+    let sa: Address;
+    let d: Address;
+    try {
+      sa = bytesToAddr(b58ToBytes(subaccordStr));
+      d = bytesToAddr(b58ToBytes(disputeStr));
+    } catch {
+      return { ok: false, status: 404, error: "invalid address" };
+    }
+    const bundle = await store.get(sa, d, round);
+    if (bundle === null) {
+      return { ok: false, status: 404, error: "evidence bundle not found" };
+    }
+    // Byte-identical to the stored serialized bundle — the canonical wire format.
+    return { ok: true, status: 200, body: JSON.parse(serializeBundle(bundle)) };
+  };
 
-  return { ingest: ingestHandler, deliver: deliverHandler, health: deps.health };
+  return {
+    ingest: ingestHandler,
+    deliver: deliverHandler,
+    manifest: manifestHandler,
+    health: deps.health,
+  };
 }
 
 // ---------------------------------------------------------------------------

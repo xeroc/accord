@@ -5,6 +5,7 @@
  *
  *   POST /evidence/:subaccord/:dispute[/:round]   → ingest handler (round default 0)
  *   GET  /evidence/:dispute/for/:juror            → deliver handler
+ *   GET  /evidence/:subaccord/:dispute[/:round]   → manifest handler (public, round default 0)
  */
 import { Hono } from "hono";
 import type { ServerDeps } from "./handlers.js";
@@ -75,6 +76,33 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     if (res.ok) {
       return Response.json(res.body, { status: 200 });
     }
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  // Manifest — GET the raw stored ciphertext bundle (no auth, no re-encryption).
+  // Registered after the deliver route so /evidence/:dispute/for/:juror (literal
+  // "for") takes priority over /evidence/:subaccord/:dispute/:round.
+  app.get("/evidence/:subaccord/:dispute/:round", async (c) => {
+    const subaccord = c.req.param("subaccord");
+    const dispute = c.req.param("dispute");
+    const roundStr = c.req.param("round");
+    if (!ADDRESS.test(subaccord)) return badAddress("subaccord");
+    if (!ADDRESS.test(dispute)) return badAddress("dispute");
+    if (!ROUND.test(roundStr)) {
+      return Response.json({ error: "invalid round" }, { status: 400 });
+    }
+    const res = await deps.manifest(subaccord, dispute, Number(roundStr));
+    if (res.ok) return Response.json(res.body, { status: 200 });
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  app.get("/evidence/:subaccord/:dispute", async (c) => {
+    const subaccord = c.req.param("subaccord");
+    const dispute = c.req.param("dispute");
+    if (!ADDRESS.test(subaccord)) return badAddress("subaccord");
+    if (!ADDRESS.test(dispute)) return badAddress("dispute");
+    const res = await deps.manifest(subaccord, dispute, 0);
+    if (res.ok) return Response.json(res.body, { status: 200 });
     return Response.json({ error: res.error }, { status: res.status });
   });
 

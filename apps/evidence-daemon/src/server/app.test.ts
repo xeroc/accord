@@ -29,6 +29,7 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
       status: 200,
       body: { rounds: [{ round: 0, out: "b3V0", operator_ephem_pub: "cHVi" }] },
     }),
+    manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
     health: async () => ({ ok: true }),
     ...overrides,
   };
@@ -404,5 +405,85 @@ describe("CORS", () => {
 
   it("config: CORS defaults to * when EVIDENCE_CORS_ORIGIN unset", () => {
     expect(loadServerConfig({}).corsOrigin).toBe("*");
+  });
+});
+
+/* -------------------------------------------------------- Manifest (GET) -- */
+
+describe("GET /evidence/:subaccord/:dispute[/:round] — manifest", () => {
+  it("returns 200 + the stored bundle body", async () => {
+    const app = createApp(
+      makeDeps({
+        manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
+      }),
+    );
+    const res = await app.request(`http://x/evidence/${ADDR}/${ADDR}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    if (typeof body === "object" && body !== null && "v" in body) {
+      expect(body.v).toBe(1);
+    } else {
+      throw new Error("expected bundle object");
+    }
+  });
+
+  it("returns 404 when no bundle is stored", async () => {
+    const app = createApp(
+      makeDeps({
+        manifest: async () => ({ ok: false, status: 404, error: "not found" }),
+      }),
+    );
+    const res = await app.request(`http://x/evidence/${ADDR}/${ADDR}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("accepts an explicit round segment", async () => {
+    let receivedRound = -1;
+    const app = createApp(
+      makeDeps({
+        manifest: async (_sa, _d, round) => {
+          receivedRound = round;
+          return { ok: true, status: 200, body: { v: 1, round } };
+        },
+      }),
+    );
+    const res = await app.request(`http://x/evidence/${ADDR}/${ADDR}/2`);
+    expect(res.status).toBe(200);
+    expect(receivedRound).toBe(2);
+  });
+
+  it("defaults round to 0 when omitted", async () => {
+    let receivedRound = -1;
+    const app = createApp(
+      makeDeps({
+        manifest: async (_sa, _d, round) => {
+          receivedRound = round;
+          return { ok: true, status: 200, body: {} };
+        },
+      }),
+    );
+    await app.request(`http://x/evidence/${ADDR}/${ADDR}`);
+    expect(receivedRound).toBe(0);
+  });
+
+  it("does not collide with GET /evidence/:dispute/for/:juror", async () => {
+    // The literal "for" segment must route to deliver, not manifest.
+    let manifestCalled = false;
+    const app = createApp(
+      makeDeps({
+        manifest: async () => {
+          manifestCalled = true;
+          return { ok: true, status: 200, body: {} };
+        },
+      }),
+    );
+    await app.request(`http://x/evidence/${ADDR}/for/${ADDR}`);
+    expect(manifestCalled).toBe(false);
+  });
+
+  it("rejects a bad address with 400", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(`http://x/evidence/bad!/${ADDR}`);
+    expect(res.status).toBe(400);
   });
 });

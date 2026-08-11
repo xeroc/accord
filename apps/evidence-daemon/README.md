@@ -275,6 +275,20 @@ Pull all deliverable evidence packages for a drawn juror.
 - `{juror}` ∈ `Round.jurors[]` for that round
 - A bundle exists for each `(dispute.subaccord, dispute, round)` where `evidence_hashes[round]` is non-zero and `round ≤ juror's round`
 
+### `GET /evidence/{subaccord}/{dispute}[/{round}]`
+
+Public read of the raw stored evidence bundle — **no auth, no re-encryption**. Returns the ciphertext bundle as-is (the same bytes written by `POST`). `round` defaults to `0`.
+
+The response is ciphertext only (ADR-0006); confidentiality rests on key possession, not API access control. This endpoint exists for public verifiability — anyone can confirm a bundle's `plaintext_hash` matches the on-chain `evidence_hash`.
+
+**Responses:**
+
+| Status | Meaning                                                            |
+| ------ | ----------------------------------------------------------------- |
+| `200`  | The stored `EvidenceBundle` JSON (ciphertext fields, base64)      |
+| `400`  | Invalid base58 address or round                                   |
+| `404`  | No bundle stored for this `(subaccord, dispute, round)`           |
+
 ### `GET /healthz`
 
 Probes the storage backend (S3 HEAD bucket, or `stat` on the FS root) and RPC reachability. Returns `200 {"status":"ok"}` or `503 {"status":"degraded","detail":...}`. The load balancer should drain on `503`.
