@@ -21,7 +21,7 @@
  *   - single-signer model: the loaded wallet is `caller` for every send.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { getAddressDecoder, getAddressEncoder, type Address } from "@solana/kit";
+import { getAddressDecoder, getAddressEncoder, isSome, type Address } from "@solana/kit";
 import {
   buildAccumulator,
   fetchMaybeDispute,
@@ -240,7 +240,7 @@ export async function loadDrawTree(ctx: ChainContext, dispute: Address): Promise
   }
   const d = m.data;
   const vrfOpt = d.committedVrf;
-  const committedVrf = vrfOpt && vrfOpt.__option === "Some" ? new Uint8Array(vrfOpt.value) : null;
+  const committedVrf = isSome(vrfOpt) ? new Uint8Array(vrfOpt.value) : null;
   if (!committedVrf) {
     throw new Error(
       `VrfNotCommitted: dispute ${dispute} has no committed_vrf — run ` +

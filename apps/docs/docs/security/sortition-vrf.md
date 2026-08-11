@@ -7,7 +7,7 @@ step is on-chain verifiable.
 ## Trust chain
 
 ```
-1. request_vrf         ─►  VRF oracle (magicblock, ephemeral_vrf_sdk)
+1. request_vrf         ─►  VRF oracle (magicblock, ephemeral_rollups_sdk::vrf)
 2. commit_vrf_callback ◄─  oracle writes committed_vrf AND freezes dispute.frozen_root = subaccord.root
 3. draw_seat × N       ─►  on-chain verifies MST membership + sortition + inflation + distinctness (per seat)
 ```
@@ -85,4 +85,4 @@ for (let seat = 0; seat < panel; seat++) {
 }
 ```
 
-Why: [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Accumulator trust model: [stake accumulator](fraud-proofs.md).
+Why: [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md). Accumulator trust model: [stake accumulator](fraud-proofs.md).

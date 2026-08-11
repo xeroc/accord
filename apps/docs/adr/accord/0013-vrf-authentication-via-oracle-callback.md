@@ -26,9 +26,10 @@ integration, **still deferred**." The ADR-0008 addendum repeats the
 The code does not match either statement. It integrated authenticated VRF
 (commit `a23198c` / bean `veridao-crbf`):
 
-- `request_vrf` (`lib.rs:793`) CPIs into the MagicBlock VRF program.
-- `commit_vrf_callback` (`lib.rs:832`) is the callback the oracle invokes; its
-  signer is constrained to `VRF_PROGRAM_IDENTITY` (`lib.rs:2059`).
+- `request_vrf` (`lib.rs:886`) CPIs into the MagicBlock VRF program.
+- `commit_vrf_callback` (`lib.rs:941`) is the callback the oracle invokes; its
+  signer is constrained to `scoped_vrf_identity(&crate::ID)` (`lib.rs:3236`) — a
+  per-program identity PDA, not the deprecated global constant.
 
 ADR-0010 already assumes the callback flow (`request_vrf → commit_vrf_callback
 → draw`), and ADR-0012 and the README describe it correctly. ADR-0009 and the
@@ -48,11 +49,17 @@ delivery tamper-proof, and a one-shot guard makes it immutable once landed.
 `commit_vrf_callback` carries `vrf_program_identity: Signer` constrained by
 
 ```rust
-#[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
+#[account(address = ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity(&crate::ID))]
 pub vrf_program_identity: Signer<'info>,
 ```
 
-(`lib.rs:2059-2060`). Only the VRF program can sign this instruction, so the
+(`lib.rs:3236`). The VRF request is **scoped**
+(`create_request_high_priority_scoped_randomness_ix`), so the oracle fulfills by
+signing with the per-program identity PDA
+`scoped_vrf_identity(callback_program_id) = PDA([b"identity", accord_program_id], vrf_program)`.
+The callback validates exactly that PDA, binding the randomness to the Accord
+program: a fulfillment scoped for a _different_ program cannot satisfy this
+constraint. Only the VRF program can sign with the identity, so the
 `randomness: [u8; 32]` argument arrives as a value the oracle vouches for. A
 caller cannot forge the callback and cannot substitute its own bytes.
 
@@ -146,17 +153,24 @@ refund, not capture a ruling.
   has no input that influences the random value — only the `draw_attempt`
   counter, which uniformly re-derives all panel slots.
 
-- **The VRF program identity is an accepted dependency.** The protocol's
-  randomness integrity rests on `VRF_PROGRAM_IDENTITY` being the MagicBlock
-  program. This is now an explicit, recorded dependency rather than an
-  undocumented implementation detail.
+- **The scoped VRF identity is an accepted dependency.** The protocol's
+  randomness integrity rests on the VRF program's scoped identity PDA
+  (`scoped_vrf_identity(&crate::ID)`) being the signer on the callback. The
+  request is scoped, so fulfillment is signed with this per-program PDA — not
+  the deprecated global `VRF_PROGRAM_IDENTITY`. The program depends on
+  `ephemeral-rollups-sdk 0.16.2`, which re-exports the VRF SDK under
+  `ephemeral_rollups_sdk::vrf`. This is an explicit, recorded dependency.
 
 - **Liveness depends on the provider, bounded by the escape path.** Provider
   non-response is recoverable via `cancel_dispute` (bean `accord-18fb`), not via
   the VRF layer itself.
 
-- **No code change.** This ADR documents the code as it already behaves
-  (`lib.rs:793-847`, `lib.rs:2026-2067`).
+- **Scoped-identity correction (amendment, 2026-08-10).** The original as-built
+  pinned the global `VRF_PROGRAM_IDENTITY`; that mismatches the scoped request
+  the program issues, so the oracle's scoped-identity fulfillment would have
+  failed the constraint in production — the callback was never exercised
+  end-to-end (every test injects the VRF directly). The callback now validates
+  `scoped_vrf_identity(&crate::ID)`, matching the scoped fulfillment path.
 
 ## References
 

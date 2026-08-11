@@ -11,7 +11,7 @@
 import { test, expect } from "bun:test";
 import { address, type Address } from "@solana/kit";
 import bs58 from "bs58";
-import { DisputeState, type Accord } from "@useaccord/sdk";
+import { DisputeState } from "@useaccord/sdk";
 
 import {
   claimantEncrypt,
@@ -27,6 +27,7 @@ import {
   type EvidenceStore,
 } from "../src/store/store";
 import { createServerDeps } from "../src/wire";
+import { stubAccord } from "./helpers/accordStub.ts";
 
 // --- key fixtures: real Ed25519 keys (crypto needs genuine material) -------
 const operatorSeed = crypto.getRandomValues(new Uint8Array(32));
@@ -39,27 +40,6 @@ const SUB: Address = address("11111111111111111111111111111111");
 const DISPUTE: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 const PLAINTEXT = new TextEncoder().encode("top-secret evidence payload");
-
-/** Minimal Accord stub returning controlled maybe-accounts (cf. reader.test.ts). */
-function stubAccord(accounts: {
-  subaccord?: { exists: true; data: Record<string, unknown> } | { exists: false };
-  dispute?: { exists: true; data: Record<string, unknown> } | { exists: false };
-  round?: { exists: true; data: Record<string, unknown> } | { exists: false };
-}): Accord {
-  const mk = (m: { exists: true; data: unknown } | { exists: false } | undefined) => async () =>
-    m ?? { exists: false };
-  return {
-    client: {
-      accord: {
-        accounts: {
-          subaccord: { fetchMaybe: mk(accounts.subaccord) },
-          dispute: { fetchMaybe: mk(accounts.dispute) },
-          round: { fetchMaybe: mk(accounts.round) },
-        },
-      },
-    },
-  } as unknown as Accord;
-}
 
 /** In-memory EvidenceStore stand-in (exercises the bundle-shape adapter). */
 function memoryStore(): EvidenceStore & { size: () => number } {
@@ -84,16 +64,16 @@ function memoryStore(): EvidenceStore & { size: () => number } {
 
 async function rig() {
   const evidenceHash = await sha256(PLAINTEXT);
-  const accord = stubAccord({
+  const accord = await stubAccord({
     subaccord: {
-      exists: true,
+      address: SUB,
       data: {
         evidenceOperator: address(bs58.encode(operatorPub)),
         evidenceSpec: new Uint8Array(32),
       },
     },
     dispute: {
-      exists: true,
+      address: DISPUTE,
       data: {
         subaccord: SUB,
         evidenceHashes: [evidenceHash, new Uint8Array(32), new Uint8Array(32), new Uint8Array(32)],
@@ -102,7 +82,8 @@ async function rig() {
       },
     },
     round: {
-      exists: true,
+      dispute: DISPUTE,
+      roundIdx: 0,
       data: { roundIdx: 0, jurorCount: 1, jurors: [address(bs58.encode(jurorPub))] },
     },
   });
@@ -187,7 +168,7 @@ test("wire: deliver before ingest (no bundle) → 404", async () => {
 test("wire: ingest against a missing on-chain dispute → 404", async () => {
   const store = memoryStore();
   const keyring = EnvKeyring.fromEnv(bs58.encode(operatorSeed));
-  const accord = stubAccord({ dispute: { exists: false } });
+  const accord = await stubAccord({});
   const deps = createServerDeps({ store, accord, keyring, health: async () => ({ ok: true }) });
   const res = await deps.ingest(SUB, DISPUTE, 0, await postBody());
   expect(res.ok).toBe(false);

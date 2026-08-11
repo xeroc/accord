@@ -12,30 +12,17 @@ import { Flags } from "@oclif/core";
 import { randomBytes } from "node:crypto";
 import type { Address, Commitment, Rpc, SolanaRpcApi } from "@solana/kit";
 
-import { fetchMaybeSubaccord, findPauseStatePda, requiredFee } from "@useaccord/sdk";
+import {
+  fetchMaybeSubaccord,
+  findAssociatedTokenAddress,
+  findPauseStatePda,
+  requiredFee,
+} from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 import { parseLamports } from "./required-fee.js";
 
 const ZERO_EVIDENCE = new Uint8Array(32);
-
-// Well-known SPL addresses (not exported by @solana/kit v7).
-const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ATA_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-
-/** Derive the Associated Token Account for `mint` owned by `owner`. */
-async function deriveAta(mint: Address, owner: Address): Promise<Address> {
-  const { getAddressEncoder, getProgramDerivedAddress } = await import("@solana/kit");
-  const [ata] = await getProgramDerivedAddress({
-    programAddress: ATA_PROGRAM_ADDRESS,
-    seeds: [
-      getAddressEncoder().encode(owner),
-      getAddressEncoder().encode(TOKEN_PROGRAM_ADDRESS),
-      getAddressEncoder().encode(mint),
-    ],
-  });
-  return ata;
-}
 
 /** Fetch the Subaccord's fee economics (feeToken + feeVault ATA + feePerJuror). */
 async function readSubaccordEcons(
@@ -50,7 +37,7 @@ async function readSubaccordEcons(
     );
   }
   const feeToken = account.data.feeToken;
-  const feeVault = await deriveAta(feeToken, subaccord);
+  const feeVault = await findAssociatedTokenAddress(feeToken, subaccord);
   return { feeToken, feeVault, feePerJuror: account.data.feePerJuror };
 }
 
@@ -140,9 +127,9 @@ export default class DisputeCreate extends ChainCommand {
       fee = computed;
     }
 
-    const filerTokenAccount = await deriveAta(feeToken, filer);
+    const filerTokenAccount = await findAssociatedTokenAddress(feeToken, filer);
     const [pauseState] = await findPauseStatePda();
-    const feeVault = await deriveAta(feeToken, flags.subaccord as Address);
+    const feeVault = await findAssociatedTokenAddress(feeToken, flags.subaccord as Address);
 
     const { instruction, dispute, bump } = await ctx.accord.methods.createDispute(
       {

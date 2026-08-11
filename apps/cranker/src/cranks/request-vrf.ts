@@ -3,6 +3,7 @@
  * the magicblock VRF oracle CPI to fire (one-shot; the callback freezes the
  * accumulator root). The cranker pays. (ADR-0009, milestone accord-27r5.)
  */
+import { isSome } from "@solana/kit";
 import { requestVrf, type VrfDrawAccounts } from "@useaccord/sdk";
 import { registerCrank, type CrankDispatch } from "../dispatch.js";
 import type { ActionOf, CrankContext, CrankResult } from "../types.js";
@@ -13,7 +14,7 @@ export async function execute(
   action: ActionOf<"request_vrf">,
 ): Promise<CrankResult> {
   const d = await fetchDispute(ctx.accord.rpc, action.dispute);
-  if (d.data.committedVrf != null) {
+  if (isSome(d.data.committedVrf)) {
     return { skipped: "committed_vrf already set" };
   }
   const accounts: VrfDrawAccounts = {

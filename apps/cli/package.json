@@ -8,7 +8,7 @@
     "useaccord": "./bin/run.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --noEmit && tsup",
     "dev": "bun run bin/dev.js",
     "start": "bun run bin/run.js",
     "lint": "eslint .",
@@ -19,8 +19,7 @@
   "dependencies": {
     "@oclif/core": "^4.2.0",
     "@oclif/plugin-help": "^6.2.0",
-    "@solana/kit": "^7.0.0",
-    "@useaccord/sdk": "workspace:*"
+    "@solana/kit": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
@@ -34,7 +33,9 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "@useaccord/sdk": "workspace:*",
+    "tsup": "^8.3.0"
   },
   "oclif": {
     "bin": "useaccord",

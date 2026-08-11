@@ -10,17 +10,18 @@
  * auto-derivable from `(staking-token, subaccord)` when omitted.
  */
 import { Flags } from "@oclif/core";
-import { getAddressEncoder, getProgramDerivedAddress, type Address } from "@solana/kit";
+import { type Address } from "@solana/kit";
 
-import { Accord, findRoundPda, type VotingAccounts } from "@useaccord/sdk";
+import {
+  Accord,
+  findAssociatedTokenAddress,
+  findRoundPda,
+  type VotingAccounts,
+} from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 import { resolveSalt } from "./commit.js";
 import { toHex } from "./commit-hash.js";
-
-// Fixed SPL program ids (not exported by @solana/kit v7).
-const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ATA_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 
 export default class VoteReveal extends ChainCommand {
   static summary = "Reveal {vote, salt} for the loaded juror (signer)";
@@ -80,7 +81,10 @@ export default class VoteReveal extends ChainCommand {
 
     const vault =
       (flags.vault as Address | undefined) ??
-      (await deriveAta(flags.subaccord as Address, flags["staking-token"] as Address));
+      (await findAssociatedTokenAddress(
+        flags["staking-token"] as Address,
+        flags.subaccord as Address,
+      ));
 
     const accounts: VotingAccounts = {
       signer: ctx.signer.address,
@@ -105,17 +109,4 @@ export default class VoteReveal extends ChainCommand {
     const signature = await this.sendInstruction(ctx, instruction);
     this.emitSend(signature, { round, salt: toHex(salt) });
   }
-}
-
-/** Derive the associated token account (ATA) address for (owner, mint). */
-export async function deriveAta(owner: Address, mint: Address): Promise<Address> {
-  const [ata] = await getProgramDerivedAddress({
-    programAddress: ATA_PROGRAM_ADDRESS,
-    seeds: [
-      getAddressEncoder().encode(owner),
-      getAddressEncoder().encode(TOKEN_PROGRAM_ADDRESS),
-      getAddressEncoder().encode(mint),
-    ],
-  });
-  return ata;
 }

@@ -761,15 +761,13 @@ fn commit_vrf_callback_freezes_live_root() {
         .unwrap()
         .assert_success();
 
-    // commit_vrf_callback: the VRF program identity is the signer.
-    // We need to spoof the VRF program identity constraint. The constraint is
-    // `address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY`. In LiteSVM
-    // we can't change that — but we CAN set the account directly. Instead, we
-    // verify the freeze by checking the dispute state directly via set_account.
-    //
-    // Since the VRF identity is a fixed pubkey we don't control, we simulate
-    // the freeze by writing the frozen root directly (mirrors injectCommittedVrf
-    // in the e2e setup).
+    // commit_vrf_callback: the VRF program's scoped identity PDA is the signer.
+    // The constraint is
+    // `address = ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity(&crate::ID)`
+    // (ADR-0013) — a per-program PDA, not the deprecated global constant. In
+    // LiteSVM we can't have the VRF program (a different program) sign with its
+    // own PDA, so we simulate the freeze by writing the frozen root directly
+    // (mirrors injectCommittedVrf in the e2e setup) and verify the dispute state.
     let vrf_randomness = [99u8; 32];
     inject_vrf_freeze(
         &mut env.ctx,

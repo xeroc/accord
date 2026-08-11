@@ -103,9 +103,97 @@ rust-toolchain.toml Host rust (Solana BPF SDK bundles its own)
   `security-checklist.md`, `apps/docs/`, `README.md`, beans, ADRs) and update
   every reference in the same change. The MkDocs site (`apps/docs/docs/`) and
   `README.md` are part of this surface — stale names there are reality-mismatches.
+  **Code** renames ripple further still — see §Change Coupling.
 - **When behavior and docs disagree, trust the code — then reconcile.** Don't
   bend a test to match a stale doc; don't rewrite a doc to match a bug. Decide
   which is correct, fix the wrong one, update the other.
+
+## Change Coupling — touch every affected part
+
+The on-chain program is the **source of truth**; every downstream layer is
+derived from it or binds to it. `anchor build` emits each program's IDL into
+`target/idl/<program>.json`; `make codegen` runs `codama run js` in
+`packages/sdk` to regenerate `src/generated/` from the Accord IDL. (`canon` has
+its own `codama.json` + client under `packages/canon` — regenerate it the same
+way when `programs/canon` changes.) **Never hand-edit `src/generated/`** —
+change the program, regenerate, commit the regenerated output.
+
+**A change that compiles in the part you edited is not done.** The SDK is the
+contract every consumer binds to; a signature drift between the program, the
+SDK facade, and a consumer is a bug even if your one package builds. After any
+IDL-touching change, run `make codegen && pnpm -r run build` and the relevant
+tests — **the whole workspace must stay green**, not just the package you
+touched. (The `appeal` build break was a consumer left on the old one-arg
+signature after the SDK had already moved to two.)
+
+### Parts
+
+| Part | Path | Role |
+| --- | --- | --- |
+| Program | `programs/accord/` (`lib.rs`, `state.rs`), `programs/canon/` | Source of truth; IDL emitted by `anchor build`. |
+| Generated clients | `packages/sdk/src/generated/`, `packages/canon/` | Codama output from the IDL — regenerated, never hand-edited. |
+| SDK facades | `packages/sdk/src/methods/*.ts`, `pda.ts`, `token.ts`, `fetch.ts`, `index.ts` | Hand-written public surface over the generated client. |
+| e2e tests | `tests/src/` | Drives the program through the SDK facade (Surfpool). |
+| CLI | `apps/cli/` | `useaccord` — consumes the SDK. |
+| Cranker | `apps/cranker/` | Lifecycle cranker — consumes the SDK. |
+| Evidence daemon | `apps/evidence-daemon/` | Consumes `@useaccord/sdk` + `@useaccord/sdk/evidence`. |
+| App | `apps/app/` | Frontend — consumes the SDK. |
+| Docs | `programs/*/SPEC.md`, `apps/docs/`, ADRs, `README.md` | Must describe the code as it is. |
+| Agent skills | `.agents/skills/useaccord/` | CLI command + flag reference consumed by agents; mirrors `useaccord …` invocations + flag tables. |
+
+### When you change X, also touch Y
+
+- **Instruction signature** (add/rename/remove an arg or account in `lib.rs`):
+  `make codegen` → update the hand-written facade in
+  `packages/sdk/src/methods/<area>.ts` → **every call site** in
+  `apps/cli/src/commands/`, `apps/cranker/`, and `tests/src/<area>.spec.ts` →
+  the LiteSVM unit contract (`programs/accord/tests/`) → the SPEC instruction
+  table (and an ADR if architectural). _E.g. adding `new_evidence_hash` to
+  `appeal` means the SDK `appeal(accounts, newEvidenceHash)` signature, the CLI
+  `appeal:open` call, and every e2e `appeal()` call must all pass it._
+
+- **Account field** (add/rename/remove a field in `state.rs`): `make codegen`
+  → every **object literal** constructing that account —
+  `apps/cranker/src/*.test.ts` fixtures, `tests/src/setup/fixtures.ts` — plus
+  any pure helper in `packages/sdk/src/methods/` that reads the field → the SPEC
+  account table. _E.g. `Dispute.evidence_hash` → `evidence_hashes[]` ripples
+  into every fixture that builds a `Dispute`._
+
+- **New instruction:** all of the above, plus a new `apps/cli` command, a new
+  e2e spec (mandated in §Testing Instructions), and an update to
+  `programs/accord/accord.qedspec` (§Beans #4).
+
+- **SDK public surface** (new/renamed export — a PDA, ATA helper, codec):
+  migrate **every consumer** (`apps/cli`, `apps/cranker`, `apps/evidence-daemon`,
+  `apps/app`) to it. No parallel hand-rolled implementations — the SDK is the
+  single source for PDA/ATA derivation, codecs, and account fetchers.
+
+- **CLI command or flag** (add/rename/remove a command, or rename/make-optional
+  a flag): the `.agents/skills/useaccord/` skill documents exact `useaccord …`
+  invocations + flag tables (`SKILL.md` routing + `references/*.md`). Update
+  every example + flag list there in the same change — a renamed or newly-
+  optional flag makes the skill's copy-paste commands fail or silently behave
+  differently. Cross-check the SDK fn + source line each skill cites, too (they
+  drift on program changes). _E.g. making `draw:request-vrf --program-identity`
+  optional, or adding `appeal:open --evidence`, must update the skill's command
+  examples._
+
+- **Error code / enum variant:** `programs/accord` `#[error_code]` →
+  `make codegen` → `packages/sdk` error map → any consumer that switches on the
+  name.
+
+### How to know you got them all
+
+- `make codegen && pnpm -r run build` is the primary guard — a stale facade or
+  consumer call site fails the type-check workspace-wide.
+- `grep -rn "<old-name>" programs packages tests apps` before calling a rename
+  done. The §Documentation rule "Renames/drops are doc changes too" is the
+  **docs** half; the matrix above is the **code** half — both apply on every
+  rename.
+- CLI command/flag change ⇒ `grep -rn "<flag>" .agents/skills/useaccord` — the
+  skill's command examples and flag tables must carry the new name/arity. (A
+  `SKILL.md` routing-table link to a missing reference is itself a drift
+  signal.)
 
 ## Testing Instructions
 

@@ -10,6 +10,7 @@
  * The dispute + round fetchers are injectable so the loop is unit-testable with
  * no validator; they default to the SDK (`findAllDisputes` + `fetchMaybeRound`).
  */
+import { isSome } from "@solana/kit";
 import type {
   Account,
   Address,
@@ -22,10 +23,19 @@ import type {
 import {
   Accord,
   DisputeState,
+  canExecuteAt,
+  fetchMaybeAppealBond,
+  fetchMaybePauseState,
   fetchMaybeRound,
   findAllDisputes,
+  findAllPendingUpdates,
+  findAppealBondPda,
+  findPauseStatePda,
   findRoundPda,
+  type AppealBond,
   type Dispute,
+  type PauseState,
+  type PendingUpdate,
   type Round,
 } from "@useaccord/sdk";
 
@@ -34,9 +44,6 @@ import type { CrankAction as ResolveAction } from "./state.js";
 import { sendIx } from "./send.js";
 import { resolveNextAction } from "./state.js";
 import type { CrankerWallet } from "./wallet.js";
-
-/** Terminal states — never scanned (nothing left to crank). */
-const TERMINAL = new Set<DisputeState>([DisputeState.Closed, DisputeState.Failed]);
 
 export interface ReconcilerConfig {
   /** SDK facade — owns the RPC, signer, and adapter the cranks build with. */
@@ -56,6 +63,12 @@ export interface ReconcilerConfig {
   fetchDisputes?: () => Promise<Account<Dispute>[]>;
   /** Override the round fetch (tests). Defaults to the SDK round PDA read. */
   fetchRound?: (dispute: Address, roundIdx: number) => Promise<Account<Round> | null>;
+  /** Override the pending-update scan (tests). Defaults to `findAllPendingUpdates(rpc)`. */
+  fetchPendingUpdates?: () => Promise<Account<PendingUpdate>[]>;
+  /** Slot clock for timelock cranks (execute_update, execute_unpause). Defaults to `rpc.getSlot()`. */
+  slot?: () => Promise<bigint>;
+  /** Override the pause-state check (tests). Defaults to the SDK PauseState PDA read. */
+  fetchPauseState?: () => Promise<Account<PauseState> | null>;
 }
 
 export interface ReconcilerHandle {
@@ -79,6 +92,9 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     now = defaultNow,
     fetchDisputes = () => findAllDisputes(accord.rpc),
     fetchRound = (dispute, roundIdx) => fetchRoundAccount(accord.rpc, dispute, roundIdx),
+    fetchPendingUpdates = () => findAllPendingUpdates(accord.rpc),
+    slot = async () => BigInt((await accord.rpc.getSlot().send()).valueOf()),
+    fetchPauseState = async () => fetchPauseStateAccount(accord.rpc),
   } = config;
 
   const rpc = accord.rpc;
@@ -98,7 +114,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
   let fired = 0;
   const disputes = await fetchDisputes();
   for (const dispute of disputes) {
-    if (TERMINAL.has(dispute.data.state)) continue;
+    if (dispute.data.state === DisputeState.Closed) continue;
 
     // 1) Resolve against the current round.
     const currentRound = await fetchRound(dispute.address, dispute.data.currentRound);
@@ -116,6 +132,25 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
         if (a !== null) {
           action = stampDispute(a, dispute.address);
           round = prior;
+          break;
+        }
+      }
+    }
+    // 3) No lifecycle action and Final/Failed with appeals? Sweep appeal bonds
+    //    for an outstanding refund (one round per cycle; idempotent on-chain).
+    if (
+      action === null &&
+      dispute.data.currentRound > 0 &&
+      (dispute.data.state === DisputeState.Final || dispute.data.state === DisputeState.Failed)
+    ) {
+      for (let r = 1; r <= dispute.data.currentRound; r++) {
+        const [bondAddr] = await findAppealBondPda({
+          dispute: dispute.address,
+          roundIdx: r,
+        });
+        const bond = await fetchMaybeAppealBond(rpc, bondAddr);
+        if (bond.exists && (bond as Account<AppealBond>).data.amount > 0n) {
+          action = { kind: "claim_refund", dispute: dispute.address, roundIdx: r };
           break;
         }
       }
@@ -143,6 +178,42 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     });
     if (handled) fired++;
   }
+
+  // --- Phase 2: PendingUpdate timelock crank (execute_subaccord_update) ---
+  const baseCtx: CrankContext = {
+    accord,
+    programId,
+    cranker: wallet.address,
+    oracleQueue,
+    programIdentity,
+    sendIx: send,
+    log: ctxLog,
+    rpc,
+    rpcSubscriptions: config.rpcSubscriptions,
+  };
+  const updates = await fetchPendingUpdates();
+  const currentSlot = await slot();
+  for (const pending of updates) {
+    if (canExecuteAt(pending.data.executeAfterSlot, currentSlot)) {
+      const action: CrankAction = { kind: "execute_update", subaccord: pending.data.subaccord };
+      const handled = await dispatch.execute(baseCtx, action);
+      if (handled) fired++;
+    }
+  }
+
+  // --- Phase 3: PauseState unpause crank (execute_unpause) ---
+  const pauseState = await fetchPauseState();
+  const pendingUnpauseAfter = pauseState?.data.pendingUnpauseAfter;
+  if (
+    pendingUnpauseAfter &&
+    isSome(pendingUnpauseAfter) &&
+    canExecuteAt(pendingUnpauseAfter.value, currentSlot)
+  ) {
+    const action: CrankAction = { kind: "execute_unpause" };
+    const handled = await dispatch.execute(baseCtx, action);
+    if (handled) fired++;
+  }
+
   return fired;
 }
 
@@ -178,6 +249,14 @@ async function fetchRoundAccount(
   const [pda] = await findRoundPda({ dispute, roundIdx });
   const maybe = await fetchMaybeRound(rpc, pda);
   if (maybe.exists) return maybe;
+  return null;
+}
+
+/** Default SDK PauseState fetch: derive the singleton PDA, read + decode, null if absent. */
+async function fetchPauseStateAccount(rpc: Rpc<SolanaRpcApi>): Promise<Account<PauseState> | null> {
+  const [pda] = await findPauseStatePda({});
+  const maybe = await fetchMaybePauseState(rpc, pda);
+  if (maybe.exists) return maybe as Account<PauseState>;
   return null;
 }
 

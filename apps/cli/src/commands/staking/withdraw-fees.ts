@@ -9,13 +9,10 @@
  */
 import { Flags } from "@oclif/core";
 import type { Address } from "@solana/kit";
+import { findAssociatedTokenAddress } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
-import {
-  associatedTokenAddress,
-  resolveStaking,
-  type ResolvedStaking,
-} from "../../staking-context.js";
+import { resolveStaking, type ResolvedStaking } from "../../staking-context.js";
 
 export default class StakingWithdrawFees extends ChainCommand {
   static summary = "Withdraw accumulated juror fees (ADR-0020)";
@@ -69,8 +66,8 @@ export default class StakingWithdrawFees extends ChainCommand {
 
 /** Derive the fee_token ATAs the withdraw_fees instruction needs. */
 async function withdrawFeesAccounts(r: ResolvedStaking) {
-  const jurorFeeTokenAccount = await associatedTokenAddress(r.feeToken, r.juror);
-  const feeVault = await associatedTokenAddress(r.feeToken, r.subaccord);
+  const jurorFeeTokenAccount = await findAssociatedTokenAddress(r.feeToken, r.juror);
+  const feeVault = await findAssociatedTokenAddress(r.feeToken, r.subaccord);
   return {
     juror: r.juror,
     subaccord: r.subaccord,

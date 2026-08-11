@@ -14,14 +14,17 @@
 import { Flags } from "@oclif/core";
 import { type Address } from "@solana/kit";
 
-import { Accord, findRoundPda, redraw, type RedrawAccounts } from "@useaccord/sdk";
+import {
+  Accord,
+  findAssociatedTokenAddress,
+  findRoundPda,
+  redraw,
+  TOKEN_PROGRAM_ADDRESS,
+  type RedrawAccounts,
+} from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
-import { deriveAta } from "./reveal.js";
 import { splitAddressList } from "./finalize-round.js";
-
-/** SPL Token program id (not exported by @solana/kit v7). */
-const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
 export default class VoteRedraw extends ChainCommand {
   static summary = "Permissionless shortfall-redraw crank (ADR-0021)";
@@ -74,7 +77,7 @@ export default class VoteRedraw extends ChainCommand {
 
     const feeVault =
       (flags["fee-vault"] as Address | undefined) ??
-      (await deriveAta(flags.subaccord as Address, flags["fee-token"] as Address));
+      (await findAssociatedTokenAddress(flags["fee-token"] as Address, flags.subaccord as Address));
 
     const remaining = flags["remaining-accounts"]
       ? splitAddressList(flags["remaining-accounts"])

@@ -29,11 +29,11 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-use ephemeral_vrf_sdk::anchor::vrf;
-use ephemeral_vrf_sdk::instructions::{
+use ephemeral_rollups_sdk::anchor::vrf;
+use ephemeral_rollups_sdk::vrf::instructions::{
     create_request_high_priority_scoped_randomness_ix, RequestRandomnessParams,
 };
-use ephemeral_vrf_sdk::types::SerializableAccountMeta;
+use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 
 pub mod constants;
 pub mod errors;
@@ -195,6 +195,28 @@ mod layout_tests {
             &ab.amount.to_le_bytes()[..]
         );
         assert_eq!(buf[layout::AB_PRIOR_OFF], ab.prior_result);
+    }
+}
+
+#[cfg(test)]
+mod vrf_identity_tests {
+    /// ADR-0013: the callback validates the SCOPED per-program identity, not the
+    /// deprecated global one. `request_vrf` issues a scoped request
+    /// (`create_request_high_priority_scoped_randomness_ix`), so the oracle
+    /// fulfills by signing with `scoped_vrf_identity(callback_program_id)`. This
+    /// pins that the per-program PDA differs from the global
+    /// `VRF_PROGRAM_IDENTITY` — the unit-level regression guard for the
+    /// `CommitVrfCallback` `address =` constraint. The real oracle→callback path
+    /// is never exercised in tests (they inject the VRF directly), so this delta
+    /// is what catches a revert to the global constant.
+    #[test]
+    fn scoped_identity_differs_from_global() {
+        let scoped = ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity(&crate::ID);
+        let global = ephemeral_rollups_sdk::vrf::consts::VRF_PROGRAM_IDENTITY;
+        assert_ne!(
+            scoped, global,
+            "scoped per-program identity must differ from the deprecated global constant"
+        );
     }
 }
 
@@ -457,6 +479,24 @@ pub mod accord {
         let new_stake = old_stake
             .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
+
+        // REVIEW #5 backstop: the position-opening deposit must clear the
+        // draw-time free-stake threshold — min_stake + α·min_stake — or the
+        // juror can never be drawn (each draw_seat reserves α·min_stake and
+        // requires free stake ≥ min_stake + α·min_stake). Staking exactly
+        // min_stake is the footgun this closes. Top-ups are NOT gated: only the
+        // first deposit that opens the JurorStake leaf.
+        if is_new_leaf {
+            let slash_per_juror = (sub.alpha_bps as u64)
+                .checked_mul(sub.min_stake)
+                .and_then(|v| v.checked_div(10_000))
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            let min_initial = sub
+                .min_stake
+                .checked_add(slash_per_juror)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            require!(new_stake >= min_initial, AccordError::InsufficientStake);
+        }
 
         // Verify the supplied path against the stored root, then recompute the
         // root for the new leaf stake. The juror identity may change
@@ -908,16 +948,24 @@ pub mod accord {
             callback_program_id: crate::ID,
             callback_discriminator: instruction::CommitVrfCallback::DISCRIMINATOR.to_vec(),
             caller_seed: dispute_key.to_bytes(),
+            // ORDER IS LOAD-BEARING: the VRF oracle prepends the scoped
+            // vrf_program_identity, then appends these metas positionally onto
+            // the CommitVrfCallback struct fields. So this list MUST mirror the
+            // callback struct field order AFTER the identity: [subaccord,
+            // dispute]. A swap lands `dispute` on the `subaccord` field and
+            // fails the callback with AccountDiscriminatorMismatch — which the
+            // oracle observes via pre-simulation and never submits (the request
+            // then stalls at its queue index indefinitely).
             accounts_metas: Some(vec![
-                SerializableAccountMeta {
-                    pubkey: dispute_key,
-                    is_signer: false,
-                    is_writable: true,
-                },
                 SerializableAccountMeta {
                     pubkey: subaccord_key,
                     is_signer: false,
                     is_writable: false,
+                },
+                SerializableAccountMeta {
+                    pubkey: dispute_key,
+                    is_signer: false,
+                    is_writable: true,
                 },
             ]),
             ..Default::default()
@@ -934,8 +982,9 @@ pub mod accord {
 
     /// VRF callback: stores the oracle-verified random value (ADR-0009) AND
     /// atomically freezes the accumulator root (ADR-0012). ONLY the VRF program
-    /// can call this — `vrf_program_identity` is constrained to
-    /// `VRF_PROGRAM_IDENTITY`. Freezing here (not at `create_dispute`) closes
+    /// can call this — `vrf_program_identity` is constrained to the scoped
+    /// per-program identity `scoped_vrf_identity(&crate::ID)` (ADR-0013), not
+    /// the deprecated global constant. Freezing here (not at `create_dispute`) closes
     /// the manipulation window: pre-callback the VRF is blind, post-callback
     /// the root is inert. One VRF + one frozen root serve the whole dispute.
     pub fn commit_vrf_callback(
@@ -3222,7 +3271,7 @@ pub struct RequestVrf<'info> {
     )]
     pub dispute: Box<Account<'info, Dispute>>,
     /// CHECK: VRF oracle queue (mainnet default).
-    #[account(mut, address = ephemeral_vrf_sdk::consts::DEFAULT_QUEUE)]
+    #[account(mut, address = ephemeral_rollups_sdk::vrf::consts::DEFAULT_QUEUE)]
     pub oracle_queue: UncheckedAccount<'info>,
 }
 
@@ -3233,7 +3282,7 @@ pub struct RequestVrf<'info> {
 /// frozen root.
 #[derive(Accounts)]
 pub struct CommitVrfCallback<'info> {
-    #[account(address = ephemeral_vrf_sdk::consts::VRF_PROGRAM_IDENTITY)]
+    #[account(address = ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity(&crate::ID))]
     pub vrf_program_identity: Signer<'info>,
     #[account(
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],

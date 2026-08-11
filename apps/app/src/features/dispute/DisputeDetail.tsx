@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { type ReadonlyUint8Array } from "@solana/kit";
+import { isSome, type ReadonlyUint8Array } from "@solana/kit";
 import { findAppealBondPda, findPauseStatePda } from "@useaccord/sdk";
 
 import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
+import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { StateMachine } from "./StateMachine";
 import { Voting } from "./Voting";
@@ -108,7 +109,7 @@ export function DisputeDetail() {
         instruction,
       );
     } catch (err) {
-      setAppealError(err instanceof Error ? err.message : String(err));
+      setAppealError(describeError(err));
     } finally {
       setAppealSending(false);
     }
@@ -159,7 +160,7 @@ export function DisputeDetail() {
         <InfoRow label="State" value={DISPUTE_STATE_LABELS[d.state]} />
         <InfoRow label="Current round" value={`${d.currentRound}`} mono />
         <InfoRow label="Fee paid" value={formatLamports(d.feePaid)} mono />
-        <InfoRow label="VRF" value={d.committedVrf ? "Committed" : "Pending"} />
+        <InfoRow label="VRF" value={isSome(d.committedVrf) ? "Committed" : "Pending"} />
         <InfoRow
           label="Frozen root"
           value={

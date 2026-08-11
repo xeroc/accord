@@ -34,4 +34,4 @@ stateDiagram-v2
     note right of Paused: create_dispute/stake/appeal halt; unstake + in-flight OK
 ```
 
-Why: [ADR-0007](../adr/0007-upgrade-authority-multisig-then-freeze.md) (Squads multisig → post-audit freeze). Constant: [`UNPAUSE_TIMELOCK_SLOTS`](../reference/constants.md).
+Why: [ADR-0007](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0007-upgrade-authority-multisig-then-freeze.md) (Squads multisig → post-audit freeze). Constant: [`UNPAUSE_TIMELOCK_SLOTS`](../reference/constants.md).

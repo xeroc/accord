@@ -1,6 +1,6 @@
 # Draw & Voting
 
-The crank sequence from `Created` to `RoundResolved`. Every step after `commit_vrf_callback` is permissionless or Juror-driven. The juror-set root is the Subaccord's live **stake accumulator**, frozen on the dispute at VRF-commit ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)). `finalize_round` only resolves the round if enough drawn jurors reveal (reveal-quorum threshold, [ADR-0021](../../adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md)); a shortfall hands the round to `redraw` instead.
+The crank sequence from `Created` to `RoundResolved`. Every step after `commit_vrf_callback` is permissionless or Juror-driven. The juror-set root is the Subaccord's live **stake accumulator**, frozen on the dispute at VRF-commit ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)). `finalize_round` only resolves the round if enough drawn jurors reveal (reveal-quorum threshold, [ADR-0021](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md)); a shortfall hands the round to `redraw` instead.
 
 | Step | Instruction           | Caller     | Gate                                                         | Next state                                              |
 | ---- | --------------------- | ---------- | ------------------------------------------------------------ | ------------------------------------------------------- |
@@ -39,7 +39,7 @@ r_i        = u64::from_le_bytes(r_hash[0..8]) % total_stake
 chosen     = leaf where prefix ≤ r_i < prefix + stake      (prefix = sum of left-sibling sums on the proof path)
 ```
 
-`draw_attempt` ([ADR-0021](../../adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md)) is
+`draw_attempt` ([ADR-0021](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md)) is
 orthogonal to `round_idx`: a shortfall redraw increments it to re-seed the panel
 at the **same** size (no appeal consumed, no bigger fee). `(round_idx=0, draw_attempt=0)`
 is the initial draw; each redraw bumps `draw_attempt` while `round_idx` is unchanged.
@@ -105,4 +105,4 @@ await commit(accord.adapter, accord.PROGRAM_ID, {
 await reveal(accord.adapter, accord.PROGRAM_ID, { dispute, vote, salt });
 ```
 
-Why: [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) (accumulator — supersedes the snapshot layer of 0003/0008/0009). Trust chain detail: [sortition & VRF](../security/sortition-vrf.md).
+Why: [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) (accumulator — supersedes the snapshot layer of 0003/0008/0009). Trust chain detail: [sortition & VRF](../security/sortition-vrf.md).

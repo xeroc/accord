@@ -113,6 +113,7 @@ export async function sendIx(instruction: Instruction, config: SendConfig): Prom
       const logs = extractLogs(e);
       if (logs !== undefined) {
         // Simulation or on-chain error — state moved; skip (do not retry).
+        log("crank tx simulation failed", { attempt, error: errorDigest(e), logs });
         throw new SimulationError(
           `crank tx failed on-chain (attempt ${attempt}): ${errorDigest(e)}`,
           logs,
@@ -139,30 +140,46 @@ function defaultLog(msg: string, fields: Record<string, unknown> = {}): void {
 }
 
 /**
- * Walk an error's cause chain for transaction simulation logs. Kit wraps RPC
- * errors in nested `cause` layers; presence of logs means the tx was simulated
- * (and failed) — the signal that the on-chain state no longer matches the ix.
- * Returns `undefined` when no logs are found (transient send/confirm failure).
+ * Walk a kit error graph for transaction simulation logs. `@solana/kit` nests
+ * them differently per failure mode: preflight simulation failures (the
+ * `sendTransaction` path) carry logs on `error.context.logs` — a `SolanaError`
+ * built from the JSON-RPC `{ data: { logs } }` envelope — while confirmation-
+ * time failures expose `transactionLogs` directly. Either's presence means the
+ * tx was simulated/executed and failed: the signal that on-chain state no
+ * longer matches the ix, so it must NOT be retried. Returns `undefined` when no
+ * logs are found (a transient send/confirm failure with no program trace).
+ *
+ * Traverses `.cause`, `.context`, `.data`, and `.error` edges with a visited
+ * set + node budget so circular cause chains can't loop.
  */
-function extractLogs(e: unknown): string[] | undefined {
-  let cur: unknown = e;
-  for (let depth = 0; depth < 6 && cur !== null && cur !== undefined; depth++) {
-    if (typeof cur !== "object") break;
-    if ("transactionLogs" in cur) {
-      const candidate = cur.transactionLogs;
-      if (Array.isArray(candidate)) {
-        const logs = candidate.filter((v): v is string => typeof v === "string");
-        if (logs.length > 0) return logs;
-      }
+export function extractLogs(e: unknown): string[] | undefined {
+  const seen = new Set<object>();
+  const queue: unknown[] = [e];
+  let budget = 32;
+  while (queue.length > 0 && budget-- > 0) {
+    const cur = queue.shift();
+    if (cur === null || cur === undefined || typeof cur !== "object") continue;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    const node = cur as Record<string, unknown>;
+    const found = readLogArray(node);
+    if (found !== undefined) return found;
+    for (const key of ["cause", "context", "data", "error"] as const) {
+      const next = node[key];
+      if (next !== null && typeof next === "object") queue.push(next);
     }
-    if ("logs" in cur) {
-      const candidate = cur.logs;
-      if (Array.isArray(candidate)) {
-        const logs = candidate.filter((v): v is string => typeof v === "string");
-        if (logs.length > 0) return logs;
-      }
+  }
+  return undefined;
+}
+
+/** Read a non-empty string `logs`/`transactionLogs` array off one node, if any. */
+function readLogArray(node: Record<string, unknown>): string[] | undefined {
+  for (const key of ["transactionLogs", "logs"] as const) {
+    const candidate = node[key];
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      const logs = candidate.filter((v): v is string => typeof v === "string");
+      if (logs.length > 0) return logs;
     }
-    cur = "cause" in cur ? cur.cause : null;
   }
   return undefined;
 }

@@ -2,12 +2,12 @@
 
 Permissionless escalation to a larger panel. Anyone may appeal a resolved round within the appeal window.
 
-> The appeal window is **per-Subaccord** (`dispute.terms.appeal_window`, frozen at filing; default 3 days, floor 1 hour — [ADR-0022](../adr/0022-per-subaccord-configurable-appeal-window.md)). Set `max_appeals == 0` to disable appeals entirely.
+> The appeal window is **per-Subaccord** (`dispute.terms.appeal_window`, frozen at filing; default 3 days, floor 1 hour — [ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)). Set `max_appeals == 0` to disable appeals entirely.
 
 ## `appeal()`
 
 `appeal(ctx, new_evidence_hash)` — the `new_evidence_hash: [u8; 32]` argument is the
-evidence-on-appeal channel ([ADR-0023](../adr/0023-per-round-evidence-hashes.md)). It is
+evidence-on-appeal channel ([ADR-0023](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0023-per-round-evidence-hashes.md)). It is
 stored at `dispute.evidence_hashes[current_round + 1]` (the round this appeal opens). Pass
 `[0u8; 32]` to appeal on the existing evidence only — the sentinel means "no new evidence this
 round," and round-N jurors reuse the accumulated `evidence_hashes[0..=N]`.
@@ -51,7 +51,7 @@ total   = fee_new + bond                  // appellant ATA → vault
 `evidence_hashes[current_round]` (the new round's slot), and resets `state → Created`,
 so the VRF → draw → vote cycle reruns for the larger panel. The same `committed_vrf` and
 `frozen_root` are reused — appeals draw a larger panel from the same fixed pool (no new VRF,
-no re-grind; [ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
+no re-grind; [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
 ```rust
 accord::appeal(ctx.contexts, new_evidence_hash)?;   // [u8; 32]; [0u8; 32] = no new evidence
@@ -71,4 +71,4 @@ await claimAppealRefund(accord.adapter, accord.PROGRAM_ID, {
 });
 ```
 
-Why permissionless + bond economics: [ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md). Cross-round settlement against the final ruling: Kleros §4.6.
+Why permissionless + bond economics: [ADR-0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md). Cross-round settlement against the final ruling: Kleros §4.6.

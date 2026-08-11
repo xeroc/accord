@@ -31,9 +31,15 @@ export {
   findJurorStakePda,
   findPauseStatePda,
   findPendingUpdatePda,
+  findProgramIdentityPda,
   findRoundPda,
   findSubaccordPda,
 } from "./pda";
+export {
+  ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+  TOKEN_PROGRAM_ADDRESS,
+  findAssociatedTokenAddress,
+} from "./token";
 export * from "./constants";
 export {
   fetchAppealBond,
@@ -132,12 +138,23 @@ export {
 } from "./methods/disputePhase.js";
 
 // Account codecs — exposed for advanced/test use (e.g. e2e VRF injection via
-// `surfnet_setAccount`: decode → set committedVrf → re-encode). Generated surface.
+// `surfnet_setAccount`: decode → set committedVrf → re-encode; daemon unit
+// tests encode fixtures over a stubbed RPC). Generated surface.
 export {
   getDisputeEncoder,
   getDisputeCodec,
   DISPUTE_DISCRIMINATOR,
 } from "./generated/accounts/dispute.js";
+export {
+  getRoundEncoder,
+  getRoundCodec,
+  ROUND_DISCRIMINATOR,
+} from "./generated/accounts/round.js";
+export {
+  getSubaccordEncoder,
+  getSubaccordCodec,
+  SUBACCORD_DISCRIMINATOR,
+} from "./generated/accounts/subaccord.js";
 
 // Account decoders — pure (no `client.rpc`). The facade's typed fetchers
 // (`fetchX`) currently require a `ClientWithRpc` and break when the facade is
@@ -172,4 +189,4 @@ export {
 
 // Typed getProgramAccounts query wrappers — no raw bytes leak to the caller
 // (ADR-0010, bean accord-3f19/accord-bp9y).
-export { findAllDisputes, type QueryConfig } from "./queries.js";
+export { findAllDisputes, findAllPendingUpdates, type QueryConfig } from "./queries.js";

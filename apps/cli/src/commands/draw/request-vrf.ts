@@ -5,7 +5,8 @@
  *
  * The loaded `--keypair` wallet is `caller` (fee payer + the cranker that
  * signs `request_vrf`). `--subaccord`/`--dispute` identify the case;
- * `--oracle-queue` + `--program-identity` are the VRF oracle CPI accounts.
+ * `--oracle-queue` is the VRF oracle queue; `--program-identity` (the Accord
+ * program-identity PDA, CPI authority) is auto-derived when omitted.
  *
  * ⚠ Surfpool caveat: `request_vrf` CPIs the magicblock VRF oracle, which is
  * NOT deployed on a Surfnet — so this command REVERTS there. For local e2e,
@@ -16,6 +17,7 @@ import { Flags } from "@oclif/core";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 import { parseAddress } from "../../lib/draw-shared.js";
+import { findProgramIdentityPda } from "@useaccord/sdk";
 
 export default class DrawRequestVrf extends ChainCommand {
   static summary = "Request the magicblock VRF for a Dispute (reverts on Surfpool)";
@@ -33,7 +35,7 @@ export default class DrawRequestVrf extends ChainCommand {
 
   static examples = [
     "<%= config.bin %> draw:request-vrf --subaccord <addr> --dispute <addr> " +
-      "--oracle-queue <addr> --program-identity <addr>",
+      "--oracle-queue <addr>",
     "<%= config.bin %> draw:request-vrf --dispute <addr> --subaccord <addr> " +
       "--oracle-queue <addr> --program-identity <addr> --dry-run",
   ];
@@ -53,8 +55,9 @@ export default class DrawRequestVrf extends ChainCommand {
       required: true,
     }),
     "program-identity": Flags.string({
-      description: "Accord program-identity PDA (CPI authority for the VRF oracle)",
-      required: true,
+      description:
+        "Accord program-identity PDA (CPI authority for the VRF oracle). " +
+        "Optional — defaults to the canonical derived PDA.",
     }),
   };
 
@@ -65,6 +68,9 @@ export default class DrawRequestVrf extends ChainCommand {
     this.applyOutput(flags);
 
     const ctx = await this.loadChain(flags);
+    const programIdentity = flags["program-identity"]
+      ? parseAddress(flags["program-identity"], "program-identity")
+      : (await findProgramIdentityPda())[0];
     const instruction = ctx.accord.methods.requestVrf(
       {
         caller: ctx.signer.address,
@@ -73,7 +79,7 @@ export default class DrawRequestVrf extends ChainCommand {
       },
       {
         oracleQueue: parseAddress(flags["oracle-queue"], "oracle-queue"),
-        programIdentity: parseAddress(flags["program-identity"], "program-identity"),
+        programIdentity,
       },
     );
 

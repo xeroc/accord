@@ -10,6 +10,7 @@
 import { writeFileSync } from "node:fs";
 
 import { Flags } from "@oclif/core";
+import { isNone, isOption, isSome } from "@solana/kit";
 
 import { groupBigInt, isoFromUnixSeconds, truncateAddress } from "./lib/format.js";
 
@@ -39,8 +40,8 @@ const TS_FIELD_RE = /(End|At)$/;
 export function jsonSafe(value: unknown): unknown {
   if (typeof value === "bigint") return String(value);
   if (value instanceof Uint8Array) return toHex(value);
-  if (isSomeOption(value)) return jsonSafe(value.value);
-  if (isNoneOption(value)) return null;
+  if (isOption(value) && isSome(value)) return jsonSafe(value.value);
+  if (isOption(value) && isNone(value)) return null;
   if (Array.isArray(value)) return value.map(jsonSafe);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -149,8 +150,8 @@ function firstLineSummary(data: Record<string, unknown>): string {
 // --- internals --------------------------------------------------------------
 
 function humanField(key: string, value: unknown): string {
-  if (isSomeOption(value)) return humanField(key, value.value);
-  if (isNoneOption(value)) return "none";
+  if (isOption(value) && isSome(value)) return humanField(key, value.value);
+  if (isOption(value) && isNone(value)) return "none";
   if (value instanceof Uint8Array) return `${truncateHex(toHex(value))} (${value.byteLength}B)`;
   if (typeof value === "bigint") {
     if (TS_FIELD_RE.test(key)) {
@@ -186,14 +187,6 @@ function humanField(key: string, value: unknown): string {
   }
   if (value === null || value === undefined) return "—";
   return String(value);
-}
-
-function isSomeOption(v: unknown): v is { __option: "Some"; value: unknown } {
-  return !!v && typeof v === "object" && (v as { __option?: string }).__option === "Some";
-}
-
-function isNoneOption(v: unknown): v is { __option: "None" } {
-  return !!v && typeof v === "object" && (v as { __option?: string }).__option === "None";
 }
 
 function toHex(b: Uint8Array): string {

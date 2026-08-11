@@ -2,7 +2,7 @@
 
 `AccordError` variants (verbatim from `errors.rs`). Anchor numeric codes are sequential from the program's error base; reference by name.
 
-## Authority / timelock ([ADR-0005](../adr/0005-subaccord-authority-pubkey-timelock.md))
+## Authority / timelock ([ADR-0005](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0005-subaccord-authority-pubkey-timelock.md))
 
 | Code                 | Message                                        | Raised by                  |
 | -------------------- | ---------------------------------------------- | -------------------------- |
@@ -11,7 +11,7 @@
 | `TimelockNotElapsed` | Timelock has not elapsed yet.                  | `execute_subaccord_update` |
 | `NoPendingUpdate`    | No pending update to execute.                  | `execute_subaccord_update` |
 
-## Circuit breaker ([ADR-0007](../adr/0007-upgrade-authority-multisig-then-freeze.md))
+## Circuit breaker ([ADR-0007](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0007-upgrade-authority-multisig-then-freeze.md))
 
 | Code                        | Message                                        | Raised by                           |
 | --------------------------- | ---------------------------------------------- | ----------------------------------- |
@@ -44,9 +44,9 @@
 > `SnapshotChallengeWindowOpen`, `SnapshotChallengeWindowExpired`,
 > `FraudProofInvalid`, `TreeNotSorted`, `OmissionProofInvalid`) are removed — the
 > juror-set root is canonical by construction, so there is no posted root, bond,
-> challenge window, or fraud proof ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
+> challenge window, or fraud proof ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 
-## Draw / sortition ([ADR-0012](../adr/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md))
+## Draw / sortition ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md))
 
 | Code                     | Message                                                                      | Raised by                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -71,7 +71,7 @@
 | `InvalidVote`         | Revealed vote index is out of range.        | `reveal`           |
 | `AlreadyRevealed`     | Juror has already revealed.                 | `reveal`           |
 
-## Appeals / finalization ([ADR-0004](../adr/0004-accord-party-agnostic-permissionless-appeal.md))
+## Appeals / finalization ([ADR-0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md))
 
 | Code                      | Message                                                                  | Raised by          |
 | ------------------------- | ------------------------------------------------------------------------ | ------------------ |

@@ -89,7 +89,7 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 - **Program language**: Rust (Anchor framework)
 - **Framework**: Anchor `1.0.2`
 - **Runtime**: Solana `3.1.10` (BPF; host Rust via `rust-toolchain.toml` = stable)
-- **Randomness**: Magicblock / Solana VRF (`ephemeral-vrf-sdk 0.4.1`)
+- **Randomness**: Magicblock / Solana VRF (`ephemeral-rollups-sdk 0.16.2`, scoped per-program identity via `ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity`)
 - **Token layer**: SPL Token + Associated Token (`anchor-spl 1.0.2`)
 - **SDK**: TypeScript (`@solana/web3.js`, `@anchor-lang/core`) — Codama +
   Solana Kit codegen pipeline (ADR-0010, in progress)

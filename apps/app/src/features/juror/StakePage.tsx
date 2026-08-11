@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { useClusterRpc } from "../../shared/rpc";
 import { useSigner } from "../../shared/wallet";
 import { sendInstruction } from "../../shared/transaction";
-import { unwrapError } from "../../shared/errors";
+import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { formatTokenAmount } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
@@ -170,7 +170,14 @@ function InitialStakeForm({
 
   if (!subaccord || !signer || !crpc) return null;
   const minStake = subaccord.data.minStake;
-  const meetsMin = amount && BigInt(amount) >= minStake;
+  // Draw-eligibility floor: draw_seat requires free stake ≥ min_stake + α·min_stake
+  // (each draw reserves α·min_stake and needs min_stake free afterwards). Staking
+  // exactly min_stake can never be drawn — the on-chain `stake` ix enforces this
+  // same floor on the first deposit; this mirrors it client-side. Top-ups
+  // (StakeActions) are not gated.
+  const minInitial =
+    minStake + (BigInt(subaccord.data.alphaBps) * minStake) / 10_000n;
+  const meetsMin = amount && BigInt(amount) >= minInitial;
   const proofLoading = proof.isLoading;
   const ready = !!amount && meetsMin && proof.data && !sending;
 
@@ -207,7 +214,7 @@ function InitialStakeForm({
       toast.success(`Staked ${amount}. You are now draw-eligible.`);
       setAmount("");
     } catch (err) {
-      toast.error(unwrapError(err));
+      toast.error(describeError(err));
     } finally {
       setSending(false);
     }
@@ -241,17 +248,17 @@ function InitialStakeForm({
           pattern="[0-9]+"
           value={amount}
           onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
-          placeholder={minStake.toString()}
+          placeholder={minInitial.toString()}
           required
           className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
         />
         <span className="mt-1 block text-xs text-text-secondary">
-          Minimum stake: {formatTokenAmount(minStake)} (staking token{" "}
-          <Copyable value={subaccord.data.stakingToken} />)
+          Minimum to be draw-eligible: {formatTokenAmount(minInitial)} (min stake{" "}
+          + α·min stake; staking token <Copyable value={subaccord.data.stakingToken} />)
         </span>
         {amount && !meetsMin && (
           <span className="mt-1 block text-xs text-slash">
-            Below the minimum.
+            Below the draw-eligibility minimum.
           </span>
         )}
       </label>

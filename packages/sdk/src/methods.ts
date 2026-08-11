@@ -58,7 +58,9 @@ import {
   commit as pureCommit,
   finalizeDispute as pureFinalizeDispute,
   finalizeRound as pureFinalizeRound,
+  redraw as pureRedraw,
   reveal as pureReveal,
+  type RedrawAccounts,
   type VoteArgs,
   type VotingAccounts,
 } from "./methods/voting.js";
@@ -158,6 +160,10 @@ export interface AccordMethods {
     accounts: VotingAccounts,
     remainingAccounts: Address[],
   ): Instruction;
+  redraw(
+    accounts: RedrawAccounts,
+    remainingAccounts?: Address[],
+  ): Instruction;
 
   // appeal
   appeal(accounts: AppealAccounts, newEvidenceHash: Uint8Array): Instruction;
@@ -253,6 +259,8 @@ export function createAccordMethods(
       pureFinalizeRound(adapter, programId, accounts, remainingAccounts),
     finalizeDispute: (accounts, remainingAccounts) =>
       pureFinalizeDispute(adapter, programId, accounts, remainingAccounts),
+    redraw: (accounts, remainingAccounts = []) =>
+      pureRedraw(adapter, programId, accounts, remainingAccounts),
 
     // appeal
     appeal: (accounts, newEvidenceHash) =>

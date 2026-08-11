@@ -19,6 +19,7 @@
 import {
   getAddressDecoder,
   getAddressEncoder,
+  isNone,
   type Address,
   type ReadonlyUint8Array,
 } from "@solana/kit";
@@ -106,33 +107,66 @@ export async function resolvePanel(opts: {
 // --- module-level singleton (one RPC for the process lifetime) --------------
 
 let _treeCache: TreeCache | null = null;
+// Refreshed each call so the singleton's `config.log` always reflects the live
+// ctx — the cache outlives a single CrankContext (one RPC per process).
+let _ctxLog: CrankContext["log"] | null = null;
 
 function getTreeCache(ctx: CrankContext): TreeCache {
-  if (!_treeCache) _treeCache = new TreeCache(ctx.rpc);
+  _ctxLog = ctx.log;
+  if (!_treeCache) {
+    _treeCache = new TreeCache(ctx.rpc, {
+      log: (msg) => _ctxLog?.("draw_seat", null, msg),
+    });
+  }
   return _treeCache;
 }
 
 /** The draw_seat handler. Draws all remaining seats from `action.seat`. */
 export const drawSeatHandler: CrankHandler = async (ctx, action) => {
   if (action.kind !== "draw_seat") return;
-  const { dispute, round } = ctx;
+  const dispute = ctx.dispute;
+  const round = ctx.round ?? null;
+  if (!dispute) {
+    // draw_seat is always dispatched from the dispute loop.
+    ctx.log("draw_seat", null, "skip: no dispute resolved in ctx");
+    return;
+  }
   const d = dispute.data;
 
   // 1. Verify the live tree matches the frozen root (skip on mismatch).
   const tree = await getTreeCache(ctx).getVerifiedForDispute(d);
-  if (tree === null) return;
+  if (tree === null) {
+    // Live accumulator ≠ frozenRoot: a juror staked/withdrew between VRF-commit
+    // and draw. Can't sortition against a moved tree — retry next cycle.
+    ctx.log(
+      "draw_seat",
+      dispute.address,
+      "skip: live stake tree ≠ frozenRoot (post-freeze stake movement)",
+    );
+    return;
+  }
 
   // 2. No stake frozen — can't sortition.
-  if (tree.rootSum <= 0n) return;
+  if (tree.rootSum <= 0n) {
+    ctx.log("draw_seat", dispute.address, "skip: no frozen stake to sortition");
+    return;
+  }
 
   // 3. Extract sortition params.
-  if (d.committedVrf.__option !== "Some") return;
-  const committedVrf = new Uint8Array(d.committedVrf.value);
+  const vrfOpt = d.committedVrf;
+  if (isNone(vrfOpt)) {
+    ctx.log("draw_seat", dispute.address, "skip: VRF not committed yet");
+    return;
+  }
+  const committedVrf = new Uint8Array(vrfOpt.value);
   const disputeBytes = addressBytes(dispute.address);
   const roundIdx = d.currentRound;
   const drawAttempt = round?.data.drawAttempt ?? 0;
   const panel = panelSizeForRound(roundIdx);
-  if (panel === null) return;
+  if (panel === null) {
+    ctx.log("draw_seat", dispute.address, "skip: round idx out of range");
+    return;
+  }
 
   // 4. Already-drawn jurors (collision set) from the on-chain round state.
   const alreadyDrawn = jurorsDrawn(round?.data ?? null);
@@ -176,7 +210,12 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
     try {
       await ctx.sendIx(ix);
     } catch (e) {
-      if (e instanceof SimulationError) return; // state moved — next cycle retries
+      if (e instanceof SimulationError) {
+        // State moved under us (concurrent cranker) OR a real on-chain revert
+        // (e.g. InsufficientStake). Surface the reason instead of dying silent.
+        ctx.log("draw_seat", dispute.address, `seat ${seat} tx failed: ${e.message}`);
+        return; // next cycle retries from round.juror_count
+      }
       throw e;
     }
     drawn.push(r.leaf.juror);

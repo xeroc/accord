@@ -58,11 +58,11 @@ Your Program (Arbitrable)
 - [Security Model](security/index.md) — why the mechanism is trustworthy
 - [Trust Profile](security/trust-profile.md) — what's trusted and the
   security-value ceiling
-- [Architecture Decisions](adr/index.md) — the _why_ behind every design choice
+- [Architecture Decisions](https://github.com/xeroc/accord/blob/main/apps/docs/adr/index.md) — the _why_ behind every design choice
 
 ## Deep reads
 
-- [Project Rationale](../../../PROJECT.md) — why this exists
-- [Domain Language](../../../CONTEXT.md) — glossary of terms
-- [Build Spec](../../../programs/accord/SPEC.md) — account model, instructions,
+- [Project Rationale](https://github.com/xeroc/accord/blob/main/PROJECT.md) — why this exists
+- [Domain Language](https://github.com/xeroc/accord/blob/main/CONTEXT.md) — glossary of terms
+- [Build Spec](https://github.com/xeroc/accord/blob/main/programs/accord/SPEC.md) — account model, instructions,
   economics

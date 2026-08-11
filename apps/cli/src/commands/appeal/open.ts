@@ -18,31 +18,33 @@
  *   - appellantTokenAccount / feeVault : derived ATAs of feeToken
  */
 import { Flags } from "@oclif/core";
-import { getAddressEncoder, getProgramDerivedAddress, type Address } from "@solana/kit";
+import { type Address } from "@solana/kit";
 
 import {
   Accord,
   fetchMaybeDispute,
   fetchMaybeSubaccord,
   findAppealBondPda,
+  findAssociatedTokenAddress,
   findPauseStatePda,
   findRoundPda,
 } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 
-// Well-known SPL addresses (not exported by @solana/kit v7).
-const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
+const ZERO_EVIDENCE = new Uint8Array(32);
 
-/** Derive the associated token account (ATA) for `owner` under `mint`. */
-async function ataOf(mint: Address, owner: Address): Promise<Address> {
-  const enc = getAddressEncoder();
-  const [addr] = await getProgramDerivedAddress({
-    programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [enc.encode(owner), enc.encode(TOKEN_PROGRAM_ADDRESS), enc.encode(mint)],
-  });
-  return addr;
+/** Parse a 32-byte hex string (optional `0x` prefix). Mirrors dispute/create.ts. */
+function parseHash32(raw: string, label: string): Uint8Array {
+  const hex = raw.startsWith("0x") ? raw.slice(2) : raw;
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+    throw new Error(`Invalid${label}: expected 32-byte hex (64 chars), got "${raw}"`);
+  }
+  const out = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
 }
 
 export default class AppealOpen extends ChainCommand {
@@ -70,6 +72,11 @@ export default class AppealOpen extends ChainCommand {
     appellant: Flags.string({
       description: "Appellant address (defaults to the loaded wallet)",
     }),
+    evidence: Flags.string({
+      description:
+        "Per-round evidence commitment as 32-byte hex (64 chars, optional 0x prefix). " +
+        "Defaults to the zero sentinel (no new evidence this round).",
+    }),
   };
 
   async run(): Promise<void> {
@@ -96,20 +103,27 @@ export default class AppealOpen extends ChainCommand {
     const [round] = await findRoundPda({ dispute, roundIdx: currentRound });
     // AppealBond is seeded by the round BEING appealed (currentRound, pre-increment).
     const [appealBond] = await findAppealBondPda({ dispute, roundIdx: currentRound });
-    const appellantTokenAccount = await ataOf(feeToken, appellant);
-    const feeVault = await ataOf(feeToken, subaccord);
+    const appellantTokenAccount = await findAssociatedTokenAddress(feeToken, appellant);
+    const feeVault = await findAssociatedTokenAddress(feeToken, subaccord);
 
-    const instruction = ctx.accord.methods.appeal({
-      appellant,
-      subaccord,
-      pauseState,
-      dispute,
-      round,
-      appealBond,
-      feeToken,
-      appellantTokenAccount,
-      feeVault,
-    });
+    const newEvidenceHash = flags.evidence
+      ? parseHash32(flags.evidence, "evidence")
+      : ZERO_EVIDENCE;
+
+    const instruction = ctx.accord.methods.appeal(
+      {
+        appellant,
+        subaccord,
+        pauseState,
+        dispute,
+        round,
+        appealBond,
+        feeToken,
+        appellantTokenAccount,
+        feeVault,
+      },
+      newEvidenceHash,
+    );
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);
