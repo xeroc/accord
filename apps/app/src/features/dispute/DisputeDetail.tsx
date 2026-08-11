@@ -15,6 +15,7 @@ import { getAppealInfo } from "./useAppeal";
 import { useAppealBond, useDispute, useRound } from "./useDispute";
 import { useSubaccord } from "./useSubaccord";
 import { PublishEvidence } from "./evidence/PublishEvidence";
+import { EvidenceManifest } from "./evidence/EvidenceManifest";
 
 const FINAL_SENTINEL = 255;
 
@@ -252,6 +253,14 @@ export function DisputeDetail() {
           </div>
         );
       })()}
+
+      {/* Evidence manifest — decrypted, public. Fetched from the evidence
+          daemon so jurors and the public can inspect the dispute metadata. */}
+      <EvidenceManifest
+        subaccord={d.subaccord}
+        dispute={dispute.address}
+        round={0}
+      />
 
       {/* Publish evidence (recovery) — upload manifest.yaml, hash-gate, POST.
           Additive (accord-9df9): only renders when a round-0 evidence hash
