@@ -35,16 +35,8 @@ jobs:
       - name: Run linter
         run: pnpm run -r --filter "./packages/*" --filter "./apps/*" lint
 
-      # Throwaway signer (pubkey Em3zj6e7a1UxyyB2WtHLjCVHN3CN1eVJm5d7vUAzgvb6) so
-      # apps/cli tests that resolve the wallet via the default path
-      # (~/.config/solana/id.json) — i.e. without --keypair / $ANCHOR_WALLET /
-      # $ACCORD_KEYPAIR_PATH — find a loadable keypair. No funds; never used on
-      # a real network. Negative-path tests override HOME/ANCHOR_WALLET locally,
-      # so this does not mask them.
-      - name: Provision CI wallet
-        run: |
-          mkdir -p "$HOME/.config/solana"
-          cp .github/ci-wallet/id.json "$HOME/.config/solana/id.json"
-
       - name: Run tests
         run: pnpm run -r --filter "./packages/*" --filter "./apps/*" test
+        env:
+          ANCHOR_WALLET: /home/runner/work/accord/accord/.github/ci-wallet/id.json
+          ACCORD_KEYPAIR_PATH: /home/runner/work/accord/accord/.github/ci-wallet/id.json

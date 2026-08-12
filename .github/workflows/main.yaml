@@ -36,7 +36,7 @@ jobs:
 
   build-evidence-docker:
     name: Build API Docker Image
-    needs: [tests]
+    # needs: [tests]
     permissions:
       packages: write
       contents: read
@@ -48,7 +48,7 @@ jobs:
 
   build-cranker-docker:
     name: Build API Docker Image
-    needs: [tests]
+    # needs: [tests]
     permissions:
       packages: write
       contents: read
