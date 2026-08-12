@@ -58,7 +58,7 @@ export const ACCORD_ERROR__INSUFFICIENT_JURORS = 0x1783; // 6019
 export const ACCORD_ERROR__INVALID_OPTIONS = 0x1784; // 6020
 /** InvalidState: Dispute is not in the required state for this instruction. */
 export const ACCORD_ERROR__INVALID_STATE = 0x1785; // 6021
-/** FeeMismatch: Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror). */
+/** FeeMismatch: Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror). */
 export const ACCORD_ERROR__FEE_MISMATCH = 0x1786; // 6022
 /** InvalidMerklePath: Accumulator Merkle path does not authenticate against the stored root. */
 export const ACCORD_ERROR__INVALID_MERKLE_PATH = 0x1787; // 6023
@@ -148,6 +148,10 @@ export const ACCORD_ERROR__SLOT_NOT_DRAINED = 0x17b0; // 6064
 export const ACCORD_ERROR__SLOT_ALREADY_RECLAIMED = 0x17b1; // 6065
 /** FreeListHeadMismatch: Provided freed-slot account does not match the free-list head. */
 export const ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH = 0x17b2; // 6066
+/** EvenJurySize: Round-1 jury size (min_jury_size) must be odd (tie avoidance). */
+export const ACCORD_ERROR__EVEN_JURY_SIZE = 0x17b3; // 6067
+/** LadderExceedsMaxJurors: The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round. */
+export const ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS = 0x17b4; // 6068
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -170,6 +174,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__DISPUTE_FAILED
   | typeof ACCORD_ERROR__DISPUTE_NOT_FINAL
   | typeof ACCORD_ERROR__DUPLICATE_JUROR
+  | typeof ACCORD_ERROR__EVEN_JURY_SIZE
   | typeof ACCORD_ERROR__FEE_MISMATCH
   | typeof ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH
   | typeof ACCORD_ERROR__IMMUTABLE_SUBACCORD
@@ -185,6 +190,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__INVALID_STATE
   | typeof ACCORD_ERROR__INVALID_THRESHOLD
   | typeof ACCORD_ERROR__INVALID_VOTE
+  | typeof ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS
   | typeof ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED
   | typeof ACCORD_ERROR__MAX_APPEALS_REACHED
   | typeof ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED
@@ -241,7 +247,8 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__DISPUTE_FAILED]: `Dispute is in terminal Failed state.`,
     [ACCORD_ERROR__DISPUTE_NOT_FINAL]: `Dispute is not in a finalizable state.`,
     [ACCORD_ERROR__DUPLICATE_JUROR]: `Draw selected a duplicate Juror.`,
-    [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).`,
+    [ACCORD_ERROR__EVEN_JURY_SIZE]: `Round-1 jury size (min_jury_size) must be odd (tie avoidance).`,
+    [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).`,
     [ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH]: `Provided freed-slot account does not match the free-list head.`,
     [ACCORD_ERROR__IMMUTABLE_SUBACCORD]: `Subaccord is immutable (authority == default).`,
     [ACCORD_ERROR__INFLATED_STAKE]: `Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012).`,
@@ -256,6 +263,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__INVALID_STATE]: `Dispute is not in the required state for this instruction.`,
     [ACCORD_ERROR__INVALID_THRESHOLD]: `Reveal threshold (bps) must be <= 10_000.`,
     [ACCORD_ERROR__INVALID_VOTE]: `Revealed vote index is out of range.`,
+    [ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS]: `The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.`,
     [ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED]: `Subaccord max_appeals exceeds the program ceiling.`,
     [ACCORD_ERROR__MAX_APPEALS_REACHED]: `Maximum appeals reached for this dispute.`,
     [ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED]: `Subaccord max_draw_attempts exceeds the program ceiling.`,

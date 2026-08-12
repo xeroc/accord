@@ -525,6 +525,7 @@ pub mod accord {
             reveal_window,
             appeal_window,
             max_appeals,
+            min_jury_size,
             aggregation,
             fee_per_juror,
             reveal_threshold_bps,
@@ -541,11 +542,27 @@ pub mod accord {
         require!(risk_type != [0u8; 32], AccordError::InvalidOptions);
         // Appeal-bond arrays on `Dispute` are sized to `MAX_APPEALS`; a
         // Subaccord may not promise more appeals than the program can custody.
-        // The round-1 panel is the fixed `INITIAL_NUM_JURORS` (=3), so the
-        // ladder 3 → 7 → 15 → 31 always fits `MAX_JURORS` at `max_appeals ≤ 3`.
+        // The appeal ladder `(min_jury_size+1)·2^k − 1` must fit `MAX_JURORS`
+        // (checked below for the chosen pair); `max_appeals` itself is capped at 3.
         require!(
             max_appeals as usize <= MAX_APPEALS,
             AccordError::MaxAppealsLimitExceeded
+        );
+        // accord-9q3e: per-Subaccord round-1 panel size. Must be odd (tie
+        // avoidance — the closed form keeps every round odd only for odd J) and
+        // the full appeal ladder must fit `MAX_JURORS` so the closed form never
+        // silently hits the `.min()` cap (which would truncate panel growth).
+        // For `min_jury_size = 1` + `max_appeals = 0` the ladder is a single
+        // round and never exercised.
+        require!(min_jury_size % 2 == 1, AccordError::EvenJurySize);
+        let ladder_top = (min_jury_size as u64)
+            .checked_add(1)
+            .and_then(|v| v.checked_shl(max_appeals as u32))
+            .and_then(|v| v.checked_sub(1))
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(
+            ladder_top <= MAX_JURORS as u64,
+            AccordError::LadderExceedsMaxJurors
         );
         // ADR-0021: validate the reveal-quorum config.
         require!(
@@ -585,6 +602,7 @@ pub mod accord {
         acc.reveal_window = reveal_window;
         acc.appeal_window = appeal_window;
         acc.max_appeals = max_appeals;
+        acc.min_jury_size = min_jury_size;
         acc.aggregation = aggregation;
         acc.fee_per_juror = fee_per_juror;
         acc.reveal_threshold_bps = reveal_threshold_bps;
@@ -1273,7 +1291,7 @@ pub mod accord {
     // --- Dispute intake & Snapshot trust (ADR-0003/0004; veridao-rrxs) ---
 
     /// The **Arbitrable CPI entry**: any program files a Dispute. The filer pays
-    /// the full round-1 fee (`INITIAL_NUM_JURORS · fee_per_juror`) into the
+    /// the full round-1 fee (`min_jury_size · fee_per_juror`) into the
     /// Subaccord vault, so the on-chain fee is authoritative — the caller's
     /// `fee` must match exactly (defense-in-depth: the filer signs the exact
     /// charge). Reverts while paused (ADR-0007) and if the Subaccord has fewer
@@ -1292,13 +1310,13 @@ pub mod accord {
         require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
 
         let sub = &mut ctx.accounts.subaccord;
-        let required_fee = (INITIAL_NUM_JURORS as u64)
+        let required_fee = (sub.min_jury_size as u64)
             .checked_mul(sub.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         require!(fee == required_fee, AccordError::FeeMismatch);
 
         require!(
-            sub.staker_count >= INITIAL_NUM_JURORS,
+            sub.staker_count >= sub.min_jury_size,
             AccordError::InsufficientJurors
         );
 
@@ -1358,6 +1376,7 @@ pub mod accord {
             reveal_window: sub.reveal_window,
             appeal_window: sub.appeal_window,
             max_appeals: sub.max_appeals,
+            min_jury_size: sub.min_jury_size,
             aggregation: sub.aggregation,
             reveal_threshold_bps: sub.reveal_threshold_bps,
             shortfall_policy: sub.shortfall_policy,
@@ -1508,7 +1527,7 @@ pub mod accord {
         require!(dispute.frozen_total_stake > 0, AccordError::VrfNotCommitted);
 
         let round_idx = dispute.current_round;
-        let panel = panel_size_for_round(round_idx)?;
+        let panel = panel_size_for_round(round_idx, dispute.terms.min_jury_size)?;
         require!(seat < panel, AccordError::InvalidPanelSize);
 
         let leaf = &membership.leaf;
@@ -2060,7 +2079,7 @@ pub mod accord {
                         .try_into()
                         .unwrap(),
                 );
-                let fee = (panel_size_for_round(round_idx)? as u64)
+                let fee = (panel_size_for_round(round_idx, dispute.terms.min_jury_size)? as u64)
                     .checked_mul(fee_per_juror)
                     .ok_or(AccordError::ArithmeticOverflow)?;
                 (total_deposit.saturating_sub(fee), d[BOND_PRIOR_OFFSET])
@@ -2208,7 +2227,7 @@ pub mod accord {
             .current_round
             .checked_add(1)
             .ok_or(AccordError::ArithmeticOverflow)?;
-        let panel_new = panel_size_for_round(new_round)?;
+        let panel_new = panel_size_for_round(new_round, dispute.terms.min_jury_size)?;
         require!(
             sub.staker_count >= panel_new,
             AccordError::InsufficientJurors
@@ -2320,7 +2339,7 @@ pub mod accord {
         // appellant's to reclaim. On Final a no-flip bond was already zeroed
         // by finalize_dispute, so this yields 0 → InvalidAmount (idempotent
         // guard against claiming a forfeited bond).
-        let fee = (panel_size_for_round(bond_acc.round_idx)? as u64)
+        let fee = (panel_size_for_round(bond_acc.round_idx, dispute.terms.min_jury_size)? as u64)
             .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let refund = bond_acc.amount.saturating_sub(fee);
@@ -2931,7 +2950,7 @@ fn validate_update_payload(payload: &UpdatePayload) -> Result<()> {
         }
         UpdatePayload::MinStake(v) => require!(*v > 0, AccordError::InvalidAmount),
         UpdatePayload::FeePerJuror(v) => {
-            (INITIAL_NUM_JURORS as u64)
+            (MAX_JURORS as u64)
                 .checked_mul(*v)
                 .ok_or(AccordError::ArithmeticOverflow)?;
         }
@@ -3077,18 +3096,20 @@ fn verify_membership_and_prefix(
     Ok(prefix)
 }
 
-/// Required panel size for a given round index. The round-1 panel is the fixed
-/// `INITIAL_NUM_JURORS` (=3, ADR-0019); the appeal ladder grows it via
-/// `N_{k+1} = 2·N_k + 1` (closed form `(J+1)·2^k − 1`), so round 0 = 3,
-/// round 1 = 7, round 2 = 15, round 3 = 31 — capped at `MAX_JURORS` (31).
-fn panel_size_for_round(round_idx: u32) -> Result<u32> {
+/// Required panel size for a given round index, seeded by `base` (the
+/// per-Subaccord `min_jury_size`, accord-9q3e). The appeal ladder grows it via
+/// `N_{k+1} = 2·N_k + 1` (closed form `(base+1)·2^k − 1`); for the default
+/// `base = 3`: round 0 = 3, round 1 = 7, round 2 = 15, round 3 = 31 — capped at
+/// `MAX_JURORS` (31). `base` comes from the dispute's frozen `CaseTerms`, so a
+/// governance panel-size change never affects an in-flight dispute.
+fn panel_size_for_round(round_idx: u32, base: u32) -> Result<u32> {
     if round_idx >= 31 {
         return Err(AccordError::ArithmeticOverflow.into());
     }
     let factor = 1u32
         .checked_shl(round_idx)
         .ok_or(AccordError::ArithmeticOverflow)?;
-    let panel = INITIAL_NUM_JURORS
+    let panel = base
         .checked_add(1)
         .ok_or(AccordError::ArithmeticOverflow)?
         .checked_mul(factor)

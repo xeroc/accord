@@ -106,8 +106,14 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       required: true,
     }),
     "max-appeals": Flags.integer({
-      description: "Max appeals (0..3); the sole per-Subaccord panel-shape knob",
+      description: "Max appeals (0..3); bounds the appeal ladder depth",
       required: true,
+    }),
+    "min-jury-size": Flags.integer({
+      description:
+        "Round-1 juror panel size (accord-9q3e). Must be odd; the appeal ladder" +
+        " (J+1)·2^maxAppeals − 1 must fit 31. Default 3; set 1 for a single-juror pool.",
+      default: 3,
     }),
     aggregation: Flags.string({
       description: "Dispute-kit aggregation rule (ADR-0019)",
@@ -185,6 +191,7 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       revealWindow: BigInt(flags["reveal-window"]),
       appealWindow: BigInt(flags["appeal-window"]),
       maxAppeals: flags["max-appeals"],
+      minJurySize: flags["min-jury-size"],
       aggregation:
         flags.aggregation === "Plurality" ? Aggregation.Plurality : Aggregation.Plurality,
       feePerJuror: BigInt(flags["fee-per-juror"]),

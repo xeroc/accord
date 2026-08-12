@@ -38,19 +38,23 @@ Flags (mirror `CreateDisputeArgs`, dispute.ts:46):
   `fee_per_juror`. On-chain `fee == required_fee` is enforced exactly
   (`FeeMismatch`, lib.rs:784).
 
-**Reverts while paused** (ADR-0007) and if `staker_count < INITIAL_NUM_JURORS`
-(=3). SDK: `createDispute` (dispute.ts:203); validation:
+**Reverts while paused** (ADR-0007) and if `staker_count < min_jury_size`
+(default 3, accord-9q3e). SDK: `createDispute` (dispute.ts:203); validation:
 `assertValidOptions`, `assertValidEvidenceHash`, `assertValidNonce`.
 
 ### `dispute:required-fee` — pure pre-check
 
-Compute the round-1 filing fee with no chain access. The panel is the fixed
-`INITIAL_NUM_JURORS` (=3), so the fee is `3 · fee_per_juror`. Matches
+Compute the round-1 filing fee with no chain access. The panel is the
+Subaccord's `min_jury_size` (default 3, accord-9q3e), so the fee is
+`min_jury_size · fee_per_juror`. Matches
 `dispute:create --fee auto`; use it to budget before filing.
 
 ```bash
 useaccord dispute:required-fee --fee-per-juror 100_000
-# → { fee: 300000 }   # 3 × 100_000
+# → { fee: 300000 }   # 3 × 100_000 (default min-jury-size=3)
+
+useaccord dispute:required-fee --fee-per-juror 100_000 --min-jury-size 1
+# → { fee: 100000 }   # N=1 pool (Arena/Inveigo config)
 
 useaccord dispute:required-fee --fee-per-juror 0
 # → { fee: 0 }          # a Subaccord with no juror compensation

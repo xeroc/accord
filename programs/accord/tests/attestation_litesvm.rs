@@ -278,6 +278,7 @@ fn default_params() -> CreateSubaccordParams {
         reveal_window: 60,
         appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
         max_appeals: 3,
+        min_jury_size: 3,
         aggregation: Aggregation::Plurality,
         fee_per_juror: 1_000_000,
         reveal_threshold_bps: 6_666,
@@ -995,7 +996,10 @@ fn gated_stake_pops_recycled_slot_with_attestation_at_distinct_indices() {
     let caller = Keypair::new();
     do_reclaim_slot(&mut env, &caller, &juror_a.pubkey(), path_reclaim).assert_success();
     let sub = read_subaccord(&env);
-    assert_eq!(sub.free_head, 0, "recycled slot 0 is now the free-list head");
+    assert_eq!(
+        sub.free_head, 0,
+        "recycled slot 0 is now the free-list head"
+    );
     // tree: [(default, 0)] — empty again.
 
     // --- Juror B: stake into the recycled slot on the SAME gated pool. ---

@@ -85,6 +85,15 @@ export type Subaccord = {
    */
   appealWindow: bigint;
   maxAppeals: number;
+  /**
+   * Round-1 (round-0) juror panel size (accord-9q3e, supersedes ADR-0019's
+   * fixed constant). Immutable at creation — determines the appeal-ladder
+   * geometry `(J+1)·2^k − 1`. Must be odd (tie avoidance) and the ladder top
+   * `(J+1)·2^max_appeals − 1` must fit `MAX_JURORS`. Default 3. Frozen onto
+   * `CaseTerms` at filing so governance cannot shift panel size mid-dispute.
+   * A pool wanting a single juror sets `min_jury_size = 1` + `max_appeals = 0`.
+   */
+  minJurySize: number;
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: Aggregation;
   feePerJuror: bigint;
@@ -199,6 +208,15 @@ export type SubaccordArgs = {
    */
   appealWindow: number | bigint;
   maxAppeals: number;
+  /**
+   * Round-1 (round-0) juror panel size (accord-9q3e, supersedes ADR-0019's
+   * fixed constant). Immutable at creation — determines the appeal-ladder
+   * geometry `(J+1)·2^k − 1`. Must be odd (tie avoidance) and the ladder top
+   * `(J+1)·2^max_appeals − 1` must fit `MAX_JURORS`. Default 3. Frozen onto
+   * `CaseTerms` at filing so governance cannot shift panel size mid-dispute.
+   * A pool wanting a single juror sets `min_jury_size = 1` + `max_appeals = 0`.
+   */
+  minJurySize: number;
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: AggregationArgs;
   feePerJuror: number | bigint;
@@ -305,6 +323,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["revealWindow", getU64Encoder()],
       ["appealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
+      ["minJurySize", getU32Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
       ["revealThresholdBps", getU16Encoder()],
@@ -346,6 +365,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["revealWindow", getU64Decoder()],
     ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["minJurySize", getU32Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
     ["revealThresholdBps", getU16Decoder()],
@@ -430,5 +450,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 438;
+  return 442;
 }

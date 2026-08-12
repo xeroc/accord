@@ -28,6 +28,7 @@ import type { Address, Instruction } from "@solana/kit";
 import {
   MAX_APPEALS,
   MAX_DRAW_ATTEMPTS,
+  MAX_JURORS,
   MIN_APPEAL_WINDOW_SECS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
@@ -37,6 +38,7 @@ import type { Aggregation, ShortfallPolicy, UpdatePayload } from "../types.js";
 export {
   MAX_APPEALS,
   MAX_DRAW_ATTEMPTS,
+  MAX_JURORS,
   MIN_APPEAL_WINDOW_SECS,
   UPDATE_TIMELOCK_SLOTS,
   UNPAUSE_TIMELOCK_SLOTS,
@@ -83,10 +85,15 @@ export interface CreateSubaccordArgs {
   /** Appeal window after a round resolves before finality (ADR-0022). Per-
    *  Subaccord, frozen onto `CaseTerms` at filing. ≥ {@link MIN_APPEAL_WINDOW_SECS}. */
   appealWindow: bigint; // seconds
-  /** ≤ {@link MAX_APPEALS}; the sole per-Subaccord panel-shape knob. The
-   *  round-1 size is the fixed {@link INITIAL_NUM_JURORS} (3); each appeal
-   *  doubles+1 (3 → 7 → 15 → 31 at max_appeals = 3). */
+  /** ≤ {@link MAX_APPEALS}; bounds the appeal ladder depth. The round-1 panel
+   *  size is per-Subaccord via {@link CreateSubaccordArgs.minJurySize}
+   *  (accord-9q3e); each appeal doubles+1. */
   maxAppeals: number; // u8
+  /** Round-1 juror panel size (accord-9q3e). Default 3 ({@link INITIAL_NUM_JURORS});
+   *  must be odd and the appeal ladder `(J+1)·2^maxAppeals − 1` must fit
+   *  {@link MAX_JURORS}. Set 1 + `maxAppeals = 0` for a single-juror pool.
+   *  Immutable on the Subaccord (not in {@link UpdatePayload}). */
+  minJurySize: number; // u32, odd ≥ 1
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: Aggregation;
   feePerJuror: bigint;
@@ -166,8 +173,9 @@ export function pauseSeeds(): Uint8Array[] {
   return [SEED_PAUSE];
 }
 
-/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs). The round-1 panel is the
- * fixed `INITIAL_NUM_JURORS` (=3), so this is the only panel-shape gate. */
+/** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs). With a configurable round-1
+ * panel size (accord-9q3e), `maxAppeals` bounds the appeal ladder depth; the
+ * ladder must also fit `MAX_JURORS` — see {@link assertValidMinJurySize}. */
 export function assertValidMaxAppeals(maxAppeals: number): void {
   if (
     !Number.isInteger(maxAppeals) ||
@@ -176,6 +184,33 @@ export function assertValidMaxAppeals(maxAppeals: number): void {
   ) {
     throw new Error(
       `MaxAppealsLimitExceeded: expected 0..${MAX_APPEALS}, got ${maxAppeals}`,
+    );
+  }
+}
+
+/** Validate `min_jury_size` is odd and the appeal ladder fits `MAX_JURORS`
+ * (lib.rs create_subaccord, accord-9q3e). The ladder top
+ * `(J+1)·2^maxAppeals − 1` must not exceed {@link MAX_JURORS} or panel growth
+ * would be silently truncated by the on-chain `.min()` cap. Throws on violation. */
+export function assertValidMinJurySize(
+  minJurySize: number,
+  maxAppeals: number,
+): void {
+  if (!Number.isInteger(minJurySize) || minJurySize < 1) {
+    throw new Error(
+      `InvalidMinJurySize: expected odd integer ≥ 1, got ${minJurySize}`,
+    );
+  }
+  if (minJurySize % 2 !== 1) {
+    throw new Error(
+      `InvalidMinJurySize: must be odd (tie avoidance under plurality), got ${minJurySize}`,
+    );
+  }
+  const ladderTop = (minJurySize + 1) * (1 << maxAppeals) - 1;
+  if (ladderTop > MAX_JURORS) {
+    throw new Error(
+      `InvalidMinJurySize: appeal ladder top (${ladderTop}) exceeds MAX_JURORS (${MAX_JURORS})` +
+        ` for min_jury_size=${minJurySize}, max_appeals=${maxAppeals}`,
     );
   }
 }
@@ -350,6 +385,7 @@ export async function createSubaccord(
   assertValidAppealWindow(args.appealWindow);
   assertValidRevealThreshold(args.revealThresholdBps);
   assertValidMaxDrawAttempts(args.maxDrawAttempts);
+  assertValidMinJurySize(args.minJurySize, args.maxAppeals);
   const { address, bump } = await findSubaccordPda(
     programId,
     creator,

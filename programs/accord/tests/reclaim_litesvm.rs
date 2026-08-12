@@ -265,6 +265,7 @@ fn setup_accumulator() -> AccEnv {
                 reveal_window: 60,
                 appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
                 max_appeals: 3,
+                min_jury_size: 3,
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 reveal_threshold_bps: 6_666,

@@ -56,7 +56,7 @@ pub enum AccordError {
     InvalidOptions,
     #[msg("Dispute is not in the required state for this instruction.")]
     InvalidState,
-    #[msg("Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).")]
+    #[msg("Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).")]
     FeeMismatch,
 
     // --- accumulator (ADR-0012) ---
@@ -177,4 +177,10 @@ pub enum AccordError {
     SlotAlreadyReclaimed,
     #[msg("Provided freed-slot account does not match the free-list head.")]
     FreeListHeadMismatch,
+
+    // --- per-Subaccord round-1 panel size (accord-9q3e) ---
+    #[msg("Round-1 jury size (min_jury_size) must be odd (tie avoidance).")]
+    EvenJurySize,
+    #[msg("The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.")]
+    LadderExceedsMaxJurors,
 }

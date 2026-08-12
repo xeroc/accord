@@ -92,3 +92,34 @@ constant, simplify `create_subaccord` to the `max_appeals`-only validation, make
 
 - SPEC + security-checklist, and LiteSVM tests (aggregation stored as `Plurality`;
   `max_appeals` ceiling rejection; each `max_appeals` 0..=3 accepted).
+
+---
+
+## Amendment — accord-9q3e: configurable round-1 panel size (2026-08-12)
+
+Decision #2 above ("Fix the round-1 panel size at the constant
+`INITIAL_NUM_JURORS` (=3)") is **superseded**. The round-1 panel is now a
+per-Subaccord field `min_jury_size: u32` (default 3 = `INITIAL_NUM_JURORS`),
+added to `Subaccord`, `CaseTerms` (frozen at filing), and
+`CreateSubaccordParams`. It is immutable at creation (joins `depth` and the
+identity triplet — not in `UpdatePayload`).
+
+**Why the reversal:** The original rejection argued that at `max_appeals = 3`
+the ladder constraint `(J+1)·2³ − 1 ≤ 31` pins `J ∈ {1, 3}`, so
+configurability was "illusory." That holds **only for `max_appeals = 3`**. A
+pool that sets `max_appeals = 0` (single round — the Arena/Inveigo config)
+gains `J ∈ {1, 3, 5, …, 31}`: real configurability. The motivation is the AI
+Bounty Court, which needs `N = 1` (single attestation-gated AI juror) and
+upgrades to `N = 3` later as a **pure staking change** (onboard 2 more
+attested operators) with zero Arbitrable refactor.
+
+**Validation at `create_subaccord`** (preserved, not collapsed):
+`min_jury_size` must be odd (tie avoidance — the closed form keeps every
+round odd only for odd `J`) and the ladder top `(J+1)·2^max_appeals − 1` must
+fit `MAX_JURORS` (else `LadderExceedsMaxJurors`). `panel_size_for_round`
+takes a `base` parameter; the `INITIAL_NUM_JURORS` constant remains as the
+SDK/CLI default.
+
+**What is NOT superseded:** the `aggregation` enum (decision #1), the
+commit-reveal structural decision, and the `max_appeals` ceiling of 3 all
+stand.

@@ -30,7 +30,8 @@ Flags mirror `CreateSubaccordArgs` (`methods/lifecycle.ts`):
 | `--commit-window <secs>` | u64 | Default `172_800` (2d) |
 | `--reveal-window <secs>` | u64 | Default `172_800` (2d) |
 | `--appeal-window <secs>` | u64 | `≥ 3_600` (1h floor); default `259_200` (3d) |
-| `--max-appeals <n>` | u8 | `≤ 3`; sole panel-shape knob. `0` ⇒ no appeals |
+| `--max-appeals <n>` | u8 | `≤ 3`; bounds the appeal ladder depth. `0` ⇒ no appeals |
+| `--min-jury-size <n>` | u32 | Round-1 panel size (accord-9q3e). Default `3`; must be odd; ladder `(J+1)·2^maxAppeals − 1 ≤ 31`. Set `1` for a single-juror pool (`--max-appeals 0`) |
 | `--aggregation <Plurality>` | enum | v1 = `Plurality` |
 | `--fee-per-juror <lamports>` | u64 | Default `0` |
 | `--reveal-threshold-bps <n>` | u16 | `≤ 10_000`; default `6_666` (2/3) |

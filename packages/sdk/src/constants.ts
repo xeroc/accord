@@ -71,24 +71,45 @@ export const DEFAULT_MAX_DRAW_ATTEMPTS = 3;
 export const DEFAULT_MIN_STAKE = 1_000n;
 export const DEFAULT_FEE_PER_JUROR = 0n; // set per-Subaccord
 
-// --- Panel ladder: round-1 = INITIAL_NUM_JURORS (fixed 3); N_{k+1} = 2·N_k + 1,
-//     closed form (J+1)·2^k − 1, capped at MAX_JURORS ---
+// --- Panel ladder: round-1 = min_jury_size (per-Subaccord, accord-9q3e; default
+//     INITIAL_NUM_JURORS); N_{k+1} = 2·N_k + 1, closed form (J+1)·2^k − 1,
+//     capped at MAX_JURORS ---
 
-/** Panel size for round `roundIdx` (round-1 seed is the fixed INITIAL_NUM_JURORS). */
-export function panelSizeForRound(roundIdx: number): number | null {
-  if (!Number.isInteger(roundIdx) || roundIdx < 0 || roundIdx >= 31) {
+/**
+ * Panel size for round `roundIdx`, seeded by `baseJurySize` (the Subaccord's
+ * `min_jury_size`). Defaults to {@link INITIAL_NUM_JURORS} (=3) for backward
+ * compatibility — pass the Subaccord's value explicitly for non-default pools.
+ */
+export function panelSizeForRound(
+  roundIdx: number,
+  baseJurySize: number = INITIAL_NUM_JURORS,
+): number | null {
+  if (
+    !Number.isInteger(roundIdx) ||
+    roundIdx < 0 ||
+    roundIdx >= 31 ||
+    !Number.isInteger(baseJurySize) ||
+    baseJurySize < 1
+  ) {
     return null;
   }
   const factor = 1 << roundIdx;
-  const panel = (INITIAL_NUM_JURORS + 1) * factor - 1;
+  const panel = (baseJurySize + 1) * factor - 1;
   if (!Number.isSafeInteger(panel) || panel < 0) return null;
   return Math.min(panel, MAX_JURORS);
 }
 
-/** Largest panel a Subaccord with `maxAppeals` configured appeals can reach. */
-export function maxAppealPanelSize(maxAppeals: number): number {
+/**
+ * Largest panel a Subaccord with `maxAppeals` appeals can reach, seeded by
+ * `baseJurySize` (the Subaccord's `min_jury_size`). Defaults to
+ * {@link INITIAL_NUM_JURORS} (=3).
+ */
+export function maxAppealPanelSize(
+  maxAppeals: number,
+  baseJurySize: number = INITIAL_NUM_JURORS,
+): number {
   const factor = 1 << maxAppeals;
-  return Math.min((INITIAL_NUM_JURORS + 1) * factor - 1, MAX_JURORS);
+  return Math.min((baseJurySize + 1) * factor - 1, MAX_JURORS);
 }
 
 // --- MagicBlock VRF oracle queues (ephemeral_rollups_sdk::vrf::consts) ---

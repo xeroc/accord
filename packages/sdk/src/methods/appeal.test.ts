@@ -12,8 +12,8 @@ import {
   panelSizeForRound,
 } from "../../dist/methods/appeal.js";
 
-test("panelSizeForRound: fixed round-1=3 ladder (J+1)·2^k − 1, capped at MAX_JURORS", () => {
-  // Round-1 seed is the fixed INITIAL_NUM_JURORS (=3): 0=3, 1=7, 2=15, 3=31.
+test("panelSizeForRound: (J+1)·2^k − 1 ladder, capped at MAX_JURORS; base configurable (accord-9q3e)", () => {
+  // Default base = 3 (INITIAL_NUM_JURORS): 0=3, 1=7, 2=15, 3=31.
   assert.equal(panelSizeForRound(0), 3);
   assert.equal(panelSizeForRound(1), 7);
   assert.equal(panelSizeForRound(2), 15);
@@ -22,6 +22,15 @@ test("panelSizeForRound: fixed round-1=3 ladder (J+1)·2^k − 1, capped at MAX_
   // round_idx >= 31 => null (overflow guard)
   assert.equal(panelSizeForRound(31), null);
   assert.equal(panelSizeForRound(-1), null);
+  // accord-9q3e: custom base. N=1 → round 0 = 1 (single juror).
+  assert.equal(panelSizeForRound(0, 1), 1);
+  assert.equal(panelSizeForRound(0, 5), 5);
+  assert.equal(panelSizeForRound(1, 5), 11);
+  assert.equal(panelSizeForRound(2, 5), 23);
+  assert.equal(panelSizeForRound(1, 1), 3);
+  // invalid base
+  assert.equal(panelSizeForRound(0, 0), null);
+  assert.equal(panelSizeForRound(0, -1), null);
 });
 
 test("appealCost: fee_new = panel · fee_per_juror, bond = fee_new, total = 2·fee_new", () => {

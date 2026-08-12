@@ -521,6 +521,7 @@ function mapCreateSubaccordArgs(
     revealWindow: args.revealWindow,
     appealWindow: args.appealWindow,
     maxAppeals: args.maxAppeals,
+    minJurySize: args.minJurySize,
     aggregation: args.aggregation,
     feePerJuror: args.feePerJuror,
     revealThresholdBps: args.revealThresholdBps,

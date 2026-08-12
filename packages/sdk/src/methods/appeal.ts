@@ -74,9 +74,10 @@ export interface AppealCost {
 export function appealCost(
   currentRound: number,
   feePerJuror: bigint,
+  minJurySize: number = 3,
 ): AppealCost | null {
   const newRound = currentRound + 1;
-  const panel = panelSizeForRound(newRound);
+  const panel = panelSizeForRound(newRound, minJurySize);
   if (panel === null) return null;
   const fee = BigInt(panel) * feePerJuror;
   const bond = fee;

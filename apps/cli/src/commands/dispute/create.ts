@@ -29,7 +29,7 @@ async function readSubaccordEcons(
   rpc: Rpc<SolanaRpcApi>,
   subaccord: Address,
   commitment: Commitment,
-): Promise<{ feeToken: Address; feeVault: Address; feePerJuror: bigint }> {
+): Promise<{ feeToken: Address; feeVault: Address; feePerJuror: bigint; minJurySize: number }> {
   const account = await fetchMaybeSubaccord(rpc, subaccord, { commitment });
   if (!account.exists) {
     throw new Error(
@@ -38,7 +38,12 @@ async function readSubaccordEcons(
   }
   const feeToken = account.data.feeToken;
   const feeVault = await findAssociatedTokenAddress(feeToken, subaccord);
-  return { feeToken, feeVault, feePerJuror: account.data.feePerJuror };
+  return {
+    feeToken,
+    feeVault,
+    feePerJuror: account.data.feePerJuror,
+    minJurySize: account.data.minJurySize,
+  };
 }
 
 export default class DisputeCreate extends ChainCommand {
@@ -118,10 +123,10 @@ export default class DisputeCreate extends ChainCommand {
         ctx.commitment,
       );
       feeToken = econs.feeToken;
-      const computed = requiredFee(econs.feePerJuror);
+      const computed = requiredFee(econs.feePerJuror, econs.minJurySize);
       if (computed === null) {
         throw new Error(
-          `FeeOverflow: 3 × ${econs.feePerJuror} exceeds u64 (Subaccord feePerJuror too large)`,
+          `FeeOverflow: ${econs.minJurySize} × ${econs.feePerJuror} exceeds u64 (Subaccord feePerJuror too large)`,
         );
       }
       fee = computed;

@@ -54,6 +54,13 @@ pub struct Subaccord {
     /// (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
     pub appeal_window: u64, // seconds
     pub max_appeals: u8,
+    /// Round-1 (round-0) juror panel size (accord-9q3e, supersedes ADR-0019's
+    /// fixed constant). Immutable at creation — determines the appeal-ladder
+    /// geometry `(J+1)·2^k − 1`. Must be odd (tie avoidance) and the ladder top
+    /// `(J+1)·2^max_appeals − 1` must fit `MAX_JURORS`. Default 3. Frozen onto
+    /// `CaseTerms` at filing so governance cannot shift panel size mid-dispute.
+    /// A pool wanting a single juror sets `min_jury_size = 1` + `max_appeals = 0`.
+    pub min_jury_size: u32,
     /// Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`.
     pub aggregation: Aggregation,
     pub fee_per_juror: u64, // in `fee_token` (ADR-0020)
@@ -196,6 +203,9 @@ pub struct CaseTerms {
     /// Appeal window (ADR-0022). Per-Subaccord, frozen at filing.
     pub appeal_window: u64,
     pub max_appeals: u8,
+    /// Frozen round-1 panel size (accord-9q3e). Mirrors `Subaccord.min_jury_size`
+    /// at filing time; drives `panel_size_for_round` for every round of this dispute.
+    pub min_jury_size: u32,
     pub aggregation: Aggregation,
     /// Frozen reveal-quorum fraction (ADR-0021). Mirrors
     /// `Subaccord.reveal_threshold_bps` at filing time.
@@ -432,6 +442,10 @@ pub struct CreateSubaccordParams {
     pub reveal_window: u64,
     pub appeal_window: u64,
     pub max_appeals: u8,
+    /// Round-1 juror panel size (accord-9q3e). Default 3; must be odd and the
+    /// appeal ladder must fit `MAX_JURORS`. Set 1 + `max_appeals = 0` for a
+    /// single-juror pool. Immutable on the Subaccord (not in `UpdatePayload`).
+    pub min_jury_size: u32,
     pub aggregation: Aggregation,
     pub fee_per_juror: u64,
     /// Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3).

@@ -12,6 +12,8 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU32Decoder,
+  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -51,6 +53,11 @@ export type CaseTerms = {
   /** Appeal window (ADR-0022). Per-Subaccord, frozen at filing. */
   appealWindow: bigint;
   maxAppeals: number;
+  /**
+   * Frozen round-1 panel size (accord-9q3e). Mirrors `Subaccord.min_jury_size`
+   * at filing time; drives `panel_size_for_round` for every round of this dispute.
+   */
+  minJurySize: number;
   aggregation: Aggregation;
   /**
    * Frozen reveal-quorum fraction (ADR-0021). Mirrors
@@ -73,6 +80,11 @@ export type CaseTermsArgs = {
   /** Appeal window (ADR-0022). Per-Subaccord, frozen at filing. */
   appealWindow: number | bigint;
   maxAppeals: number;
+  /**
+   * Frozen round-1 panel size (accord-9q3e). Mirrors `Subaccord.min_jury_size`
+   * at filing time; drives `panel_size_for_round` for every round of this dispute.
+   */
+  minJurySize: number;
   aggregation: AggregationArgs;
   /**
    * Frozen reveal-quorum fraction (ADR-0021). Mirrors
@@ -95,6 +107,7 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["revealWindow", getU64Encoder()],
     ["appealWindow", getU64Encoder()],
     ["maxAppeals", getU8Encoder()],
+    ["minJurySize", getU32Encoder()],
     ["aggregation", getAggregationEncoder()],
     ["revealThresholdBps", getU16Encoder()],
     ["shortfallPolicy", getShortfallPolicyEncoder()],
@@ -112,6 +125,7 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["revealWindow", getU64Decoder()],
     ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["minJurySize", getU32Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["revealThresholdBps", getU16Decoder()],
     ["shortfallPolicy", getShortfallPolicyDecoder()],

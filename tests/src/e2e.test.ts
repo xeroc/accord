@@ -408,6 +408,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
         commitWindow: 172_800n,
         revealWindow: 172_800n,
         maxAppeals: 3,
+        minJurySize: 3,
         aggregation: sdk.Aggregation.Plurality,
         feePerJuror: 0n,
         authority: address("11111111111111111111111111111111"), // Pubkey::default → immutable

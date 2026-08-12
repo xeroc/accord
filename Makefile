@@ -56,6 +56,7 @@ test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Sur
 
 test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .so first.
 	cargo build-sbf --tools-version v1.52 --manifest-path programs/accord/Cargo.toml
+	cp target/sbpf-solana-solana/release/accord.so target/deploy/accord.so
 	cargo test --manifest-path programs/accord/Cargo.toml --features no-entrypoint
 	# `--features no-entrypoint`: the program's `entrypoint!` symbol collides with
 	# a builtin when the program crate is linked into the test binary; the .so
