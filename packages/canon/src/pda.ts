@@ -27,6 +27,31 @@ export { findItemPda, type ItemSeeds } from "./generated/pdas/item.js";
 export const CANON_PROGRAM_ID =
   "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU" as Address<"GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU">;
 
+/** Accord Core program ID — the CPI target `create_list` / `challenge_item`
+ * call (`create_subaccord` / `create_dispute`). Single source for the canon
+ * SDK; matches `declare_id!` in programs/accord + the generated client default. */
+export const ACCORD_PROGRAM_ID =
+  "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed" as Address<"cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed">;
+
+/** The 1:1 backing Subaccord for a CanonList. Seeds `["subaccord", creator,
+ * rules_hash]` (risk_type := rules_hash), program = Accord. Canon's
+ * `create_list` CPIs `create_subaccord` for this PDA; the creator + rules_hash
+ * pair it with the CanonList naturally. */
+const SUBACCORD_SEED = new Uint8Array([115, 117, 98, 97, 99, 99, 111, 114, 100]); // b"subaccord"
+
+export async function findBackingSubaccordPda(
+  seeds: CanonListSeeds,
+): Promise<ProgramDerivedAddress> {
+  return await getProgramDerivedAddress({
+    programAddress: ACCORD_PROGRAM_ID,
+    seeds: [
+      getBytesEncoder().encode(SUBACCORD_SEED),
+      getAddressEncoder().encode(seeds.creator),
+      getBytesEncoder().encode(seeds.rulesHash),
+    ],
+  });
+}
+
 // --- Hand-written CanonList PDA --------------------------------------------
 // Seeds: ["canon", creator, rules_hash]. Codama omits this because the seeds
 // reference `CanonList.creator` + `CanonList.rules_hash` (account fields), not
