@@ -311,6 +311,9 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
         b.accounts,
         STAKE_AMT,
         path,
+        // 6th arg = attestation (none — stake-only pool);
+        // 7th arg = freed JurorStake PDA to pop from the free list.
+        undefined,
         a_jurorStake_addr,
       ),
     );
@@ -512,7 +515,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
 
       const path = await tree2.pathFor(freeIdx);
       await env.sendIx(
-        stake(facade.adapter, env.programId, accounts, STAKE_AMT, path, freedAttacker.jurorStake),
+        stake(facade.adapter, env.programId, accounts, STAKE_AMT, path, undefined, freedAttacker.jurorStake),
       );
       // Update tree: set leaf at the recycled index.
       tree2.tree.leaves[freeIdx] = { juror: addrBytes(j.address), stake: STAKE_AMT };
