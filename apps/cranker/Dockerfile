@@ -1,19 +1,15 @@
 # syntax=docker/dockerfile:1
 #
-# Evidence Operator daemon — container image (ADR-0011, bean accord-vx8c).
-#
-# Stateless: every replica is identical and derives all state from env
-# (EVIDENCE_KEYRING) and the shared S3/MinIO bucket. Run N replicas behind a
-# TLS-terminating load balancer; no session affinity required.
+# Accord Cranker — container image.
 #
 # This is a pnpm-workspace member that depends on @useaccord/sdk (workspace:*),
 # NOT a standalone bun project. The image is built in three phases:
 #   1. pnpm install the full workspace from the repo lockfile (cached layer)
-#   2. build the SDK (workspace:* resolves to packages/sdk/dist) + typecheck daemon
+#   2. build the SDK (workspace:* resolves to packages/sdk/dist) + typecheck cranker
 #   3. `pnpm deploy` prunes to a self-contained dir, copied into a bun runtime
 #
 # Build context = repo ROOT:
-#   docker build -f apps/evidence-daemon/Dockerfile .
+#   docker build -f apps/cranker/Dockerfile .
 
 ############################
 # 1. Workspace deps (cached)
@@ -41,17 +37,17 @@ FROM deps AS build
 # Shared TS base config (every workspace tsconfig extends ../../tsconfig.base.json).
 COPY tsconfig.base.json ./
 COPY packages/sdk packages/sdk
-COPY apps/evidence-daemon apps/evidence-daemon
+COPY apps/cranker apps/cranker
 # SDK compiles src/generated (committed) -> dist/. No anchor/IDL step needed.
 RUN pnpm --filter @useaccord/sdk build
-# daemon build is `tsc --noEmit` (typecheck only; bun runs .ts directly).
-RUN pnpm --filter @useaccord/evidence-daemon build
+# cranker build is `tsc --noEmit` (typecheck only; bun runs .ts directly).
+RUN pnpm --filter @useaccord/cranker build
 
 ############################
 # 3. Prune to one self-contained package
 ############################
 FROM build AS deploy
-RUN pnpm deploy --filter=@useaccord/evidence-daemon --prod /out
+RUN pnpm deploy --filter=@useaccord/cranker --prod /out
 
 ############################
 # 4. Runtime — bun only
@@ -59,14 +55,7 @@ RUN pnpm deploy --filter=@useaccord/evidence-daemon --prod /out
 FROM oven/bun:1-debian AS release
 WORKDIR /app
 ENV NODE_ENV=production
-# Default plain-HTTP on 8080; TLS is terminated at the load balancer for HA.
-# For end-to-end TLS, set EVIDENCE_TLS_CERT/EVIDENCE_TLS_KEY (mounted files)
-# and EVIDENCE_PORT=443.
-ENV EVIDENCE_PORT=8080
 COPY --from=deploy /out ./
 USER bun
-EXPOSE 8080
-# Liveness via the /healthz probe (bean accord-u1pu): Storage + RPC reachability.
-HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
-  CMD bun -e "fetch('http://127.0.0.1:'+(process.env.EVIDENCE_PORT||'8080')+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["bun", "run", "src/main.ts"]
+# No port: the cranker is a 60s reconciler poll loop + WS program-log listener.
+ENTRYPOINT ["bun", "run", "src/index.ts"]

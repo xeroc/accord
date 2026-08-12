@@ -1,0 +1,57 @@
+# Docker build context filter for the pnpm-workspace image builds.
+#
+# cranker/Dockerfile and evidence-daemon/Dockerfile build from the repo ROOT
+# (they need pnpm-lock.yaml, pnpm-workspace.yaml, and packages/sdk). This file
+# keeps that context small and stops stale artifacts from poisoning `pnpm install`.
+
+# Dependencies & build outputs (materialized inside the image)
+**/node_modules
+**/dist
+**/build
+**/.cache
+**/*.tsbuildinfo
+**/*.tgz
+
+# Rust / Anchor / Solana (programs are built out-of-band, never in these images)
+target
+programs
+.anchor
+test-ledger
+.surfpool
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+Anchor.toml
+Makefile
+
+# Unrelated workspace members: exclude their SOURCE to keep the context lean,
+# but KEEP their package.json — `pnpm install --frozen-lockfile` validates the
+# whole workspace graph, so a missing manifest fails it. (Note: we exclude
+# `dir/*` not `dir` — excluding the dir node itself makes re-inclusion impossible.)
+apps/app/*
+!apps/app/package.json
+apps/landing/*
+!apps/landing/package.json
+tests/*
+!tests/package.json
+# apps/docs is MkDocs (no package.json); pnpm skips it in the apps/* glob.
+apps/docs
+
+# VCS & editor
+.git
+.github
+.idea
+.vscode
+
+# Docs, secrets, local cruft
+*.md
+!packages/sdk/README.md
+.agents
+.claude
+.beans.yml
+.env
+.env.*
+!.env.example
+*.log
+context
+meta
