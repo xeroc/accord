@@ -15,7 +15,7 @@ const GROUPS = [
   {
     title: "Disputes",
     tagline: "Resolve conflicts on-chain.",
-    headerClass: "bg-amber/5 border-amber/20",
+    cardClass: "bg-amber/5 hover:bg-amber/10",
     titleClass: "text-amber",
     items: [
       {
@@ -33,7 +33,7 @@ const GROUPS = [
   {
     title: "Jurors",
     tagline: "Stake collateral. Get drawn. Earn fees.",
-    headerClass: "bg-confirm/5 border-confirm/20",
+    cardClass: "bg-confirm/5 hover:bg-confirm/10",
     titleClass: "text-confirm",
     items: [
       {
@@ -51,7 +51,7 @@ const GROUPS = [
   {
     title: "SubAccords",
     tagline: "Arbitration pools for one class of dispute.",
-    headerClass: "bg-sky-400/5 border-sky-400/20",
+    cardClass: "bg-sky-400/5 hover:bg-sky-400/10",
     titleClass: "text-sky-400",
     items: [
       {
@@ -83,7 +83,7 @@ export function HomePage() {
           key={group.title}
           className="overflow-hidden rounded-lg border border-border-subtle bg-raised"
         >
-          <div className={`border-b px-5 py-3 ${group.headerClass}`}>
+          <div className="border-b border-border-subtle px-5 py-3">
             <h2
               className={`font-mono text-sm font-semibold ${group.titleClass}`}
             >
@@ -93,12 +93,12 @@ export function HomePage() {
               {group.tagline}
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-px bg-border-subtle sm:grid-cols-2">
+          <div className="divide-y divide-border-subtle">
             {group.items.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
-                className="group bg-raised px-5 py-4 transition-colors hover:bg-border-subtle"
+                className={`group block px-5 py-4 transition-colors ${group.cardClass}`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">{item.label}</span>
@@ -106,7 +106,9 @@ export function HomePage() {
                     →
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-text-secondary">{item.desc}</p>
+                <p className="mt-1 text-xs text-text-secondary">
+                  {item.desc}
+                </p>
               </Link>
             ))}
           </div>
