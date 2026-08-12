@@ -1762,7 +1762,9 @@ pub mod accord {
     /// juror's pubkey is bound into the hash to prevent commit-copying (a juror
     /// who copies another's hash can never reveal it). One per drawn Juror;
     /// immutable after commit. Allowed during the commit window
-    /// (`review_end ≤ now < commit_end`).
+    /// (`review_end ≤ now < commit_end`). The **last** commit (panel full)
+    /// flips straight to `Reveal`, opening reveal early — all votes are then
+    /// bound, so the commit/reveal separation has nothing left to protect.
     pub fn commit(ctx: Context<Commit>, commitment: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
@@ -1794,6 +1796,12 @@ pub mod accord {
         if dispute.state == DisputeState::Drawn {
             dispute.state = DisputeState::Commit;
         }
+        // Once every drawn juror has committed, all votes are cryptographically
+        // bound and immutable — the hiding property has done its work, so flip
+        // to `Reveal` immediately rather than idling out the commit window.
+        if round.commit_count == round.juror_count {
+            dispute.state = DisputeState::Reveal;
+        }
 
         emit!(Committed {
             dispute: dispute.key(),
@@ -1807,8 +1815,9 @@ pub mod accord {
     /// matches the stored commit, records the vote. ADR-0020: vote-recording
     /// only — no fee credit, no SPL transfer. The participation fee is credited
     /// to `JurorStake.fees_earned` at `finalize_round` instead (aggregated, not
-    /// per-reveal ATA creation). Allowed during the reveal window
-    /// (`commit_end ≤ now < reveal_end`).
+    /// per-reveal ATA creation). Allowed once `now ≥ commit_end`, OR as soon as
+    /// every juror has committed (early reveal — the panel-full commit flips
+    /// state to `Reveal`), through `reveal_end`.
     pub fn reveal(ctx: Context<Reveal>, vote: u8, salt: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
@@ -1817,10 +1826,16 @@ pub mod accord {
         );
 
         require!(vote < dispute.num_options, AccordError::InvalidVote);
-
         let round = &mut ctx.accounts.round.load_mut()?;
         let now = Clock::get()?.unix_timestamp;
-        require!(now >= round.commit_end, AccordError::RevealWindowClosed);
+        // Reveal opens at `commit_end`, OR as soon as the panel is fully
+        // committed (early reveal — see `commit`). Only the lower bound is
+        // relaxed; the `reveal_end` upper bound is unchanged.
+        let all_committed = round.commit_count == round.juror_count;
+        require!(
+            now >= round.commit_end || all_committed,
+            AccordError::RevealWindowClosed
+        );
         require!(now < round.reveal_end, AccordError::RevealWindowClosed);
 
         let juror_key = ctx.accounts.juror.key();

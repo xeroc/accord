@@ -9,65 +9,8 @@
  */
 import { Copyable } from "../../../components/Copyable";
 import { useManifest } from "./useManifest";
+import { parseManifest, type ParsedManifest } from "./parse";
 
-interface ParsedManifest {
-  title: string;
-  filedAt: string;
-  filer: string;
-  subaccord: string;
-  dispute: string;
-  optionSalt: string;
-  options: { index: number; label: string }[];
-  entries: { path: string; sha256: string }[];
-}
-
-/** Parse the `accord-evidence/v1` YAML format (produced by `buildManifest`). */
-function parseManifest(text: string): ParsedManifest {
-  const lines = text.split("\n");
-  const getField = (key: string): string | undefined =>
-    lines
-      .find((l) => l.startsWith(`${key}: `))
-      ?.slice(`${key}: `.length)
-      .replace(/^"(.*)"$/, "$1");
-
-  const options: { index: number; label: string }[] = [];
-  const entries: { path: string; sha256: string }[] = [];
-  let section: "options" | "entries" | null = null;
-
-  for (const line of lines) {
-    if (line === "options:") {
-      section = "options";
-      continue;
-    }
-    if (line === "entries:") {
-      section = "entries";
-      continue;
-    }
-    if (!line.startsWith("  - {")) continue;
-
-    const item = line.slice("  - ".length);
-    if (section === "options") {
-      const index = Number(item.match(/index:\s*(\d+)/)?.[1] ?? -1);
-      const label = item.match(/label:\s*"([^"]*)"/)?.[1] ?? "";
-      options.push({ index, label });
-    } else if (section === "entries") {
-      const path = item.match(/path:\s*"([^"]*)"/)?.[1] ?? "";
-      const sha256 = item.match(/sha256:\s*"([^"]*)"/)?.[1] ?? "";
-      entries.push({ path, sha256 });
-    }
-  }
-
-  return {
-    title: getField("title") ?? "Untitled dispute",
-    filedAt: getField("filed_at") ?? "—",
-    filer: getField("filer") ?? "—",
-    subaccord: getField("subaccord") ?? "—",
-    dispute: getField("dispute") ?? "—",
-    optionSalt: getField("option_salt") ?? "—",
-    options,
-    entries,
-  };
-}
 
 export function EvidenceManifest({
   subaccord,

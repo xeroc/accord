@@ -8,7 +8,7 @@ The crank sequence from `Created` to `RoundResolved`. Every step after `commit_v
 | 2    | `commit_vrf_callback` | VRF oracle | identity-constrained; writes `committed_vrf` + `frozen_root` | (root frozen)                                           |
 | 3    | `draw_seat` × N       | crank      | MST proof + sortition vs `frozen_root` (one tx per seat)     | `Drawn` (on last seat)                                  |
 | 4    | `commit`              | Juror      | `review_end ≤ now < commit_end`                              | `Commit` (on first)                                     |
-| 5    | `reveal`              | Juror      | `commit_end ≤ now < reveal_end`                              | `Reveal` (on first)                                     |
+| 5    | `reveal`              | Juror      | `commit_end ≤ now < reveal_end` ∨ all committed              | `Reveal` (first / panel-full)                           |
 | 6    | `finalize_round`      | crank      | `now ≥ reveal_end`                                           | `RoundResolved` (quorum) / `RedrawEligible` (shortfall) |
 | 7    | `redraw`              | crank      | `state == RedrawEligible` (ADR-0021)                         | `Created` (re-draw) / `Failed` (exhausted)              |
 

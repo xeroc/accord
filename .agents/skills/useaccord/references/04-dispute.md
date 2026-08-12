@@ -147,7 +147,7 @@ Created ──panel fills──► Drawn ──first commit──► Commit ─�
 - `Drawn` — panel complete; round windows set. The **review** sub-window
   (`now < review_end`) precedes commit; commits are rejected until it elapses.
 - `Commit` — first commit lands (`now ≥ review_end`); `hash(vote, salt)`.
-- `Reveal` — first reveal lands (`now ≥ commit_end`); `{vote, salt}`.
+- `Reveal` — first reveal lands (`now ≥ commit_end` **or** all jurors committed — the panel-full `commit` flips here early); `{vote, salt}`.
 - `RoundResolved` — `finalize_round` tallied the round; awaiting the appeal
   window. (Shortfall instead lands `RedrawEligible`.)
 - `Final` — `finalize_dispute` wrote `final_ruling`; `getRuling` now returns it.

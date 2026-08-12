@@ -16,6 +16,12 @@ export {
   EVIDENCE_DAEMON_URL,
   type PublishParams,
 } from "./publish";
+export { useManifest } from "./useManifest";
+export {
+  parseManifest,
+  optionLabels,
+  type ParsedManifest,
+} from "./parse";
 export {
   EvidenceEditor,
   downloadManifest,

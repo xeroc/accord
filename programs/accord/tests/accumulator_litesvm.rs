@@ -3014,6 +3014,260 @@ fn commit_reveal_finalize_settle_single_round() {
     }
 }
 
+// --- Early reveal: commit_count == juror_count opens reveal early ----------
+
+/// Owned bundle from `setup_drawn_panel_3`: a 3-seat panel drawn and frozen,
+/// with the Clock left at draw time (`now < review_end`). Tests warp and drive
+/// commit/reveal themselves to exercise the early-reveal gate.
+struct DrawnPanel {
+    env: AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    jurors: Vec<Keypair>,
+    /// `(seat, leaf_idx)` per drawn seat (draw_attempt 0).
+    drawn: Vec<(u32, usize)>,
+    review_end: i64,
+    commit_end: i64,
+    reveal_end: i64,
+}
+
+/// Stake 3 jurors (default Subaccord), file a 2-option dispute, inject VRF,
+/// and draw the 3-seat panel. Stops at `Drawn` — no commit/reveal — and leaves
+/// the Clock before `review_end`. Mirrors `setup_and_finalize`'s setup but
+/// returns control before any vote is cast.
+fn setup_drawn_panel_3() -> DrawnPanel {
+    let mut env = setup_accumulator();
+
+    let stakes = [5_000u64, 3_000, 2_000];
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    let sub = read_subaccord(&env);
+
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            subaccord: env.subaccord,
+            pause_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee: 3 * 1_000_000,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    let round_idx = 0u32;
+    let vrf = {
+        let mut c = [0u8; 32];
+        c.copy_from_slice(&dispute.to_bytes());
+        c
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    let rnd = round_pda(&dispute, round_idx);
+    let panel = submit_draw_panel(&mut env, dispute, rnd, &vrf, round_idx, 0, 3, &leaves);
+    let drawn: Vec<(u32, usize)> = panel.iter().map(|&(s, l, _)| (s, l)).collect();
+
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let (review_end, commit_end, reveal_end) =
+        (round.review_end, round.commit_end, round.reveal_end);
+    drop(round_acc);
+
+    DrawnPanel {
+        env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        review_end,
+        commit_end,
+        reveal_end,
+    }
+}
+
+#[test]
+fn commit_all_jurors_flips_to_reveal_before_commit_end() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        review_end,
+        commit_end,
+        reveal_end: _,
+    } = setup_drawn_panel_3();
+
+    // Warp into the commit window (review_end ≤ now < commit_end).
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    assert!(now < commit_end, "test starts inside the commit window");
+
+    // Commit all 3 jurors. The last commit must flip state → Reveal even
+    // though the commit window has NOT elapsed.
+    let vote: u8 = 0;
+    for &(_, leaf_idx) in &drawn {
+        let salt = [leaf_idx as u8 + 1; 32];
+        let comm = hashv(&[&[vote], &salt, jurors[leaf_idx].pubkey().as_ref()]).to_bytes();
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Commit {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Commit { commitment: comm })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    // State must now be Reveal — with NO warp to commit_end.
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(
+        d.state,
+        DisputeState::Reveal,
+        "panel-full commit must flip to Reveal early"
+    );
+
+    // Reveal succeeds for every juror while now < commit_end (relaxed gate).
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    assert!(now < commit_end, "reveal happening before commit_end");
+    for &(_, leaf_idx) in &drawn {
+        let salt = [leaf_idx as u8 + 1; 32];
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Reveal {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Reveal { vote, salt })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+}
+
+#[test]
+fn reveal_blocked_until_all_committed_inside_commit_window() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        review_end,
+        commit_end,
+        reveal_end: _,
+    } = setup_drawn_panel_3();
+
+    // Into the commit window.
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+
+    // Commit only the first 2 of 3 jurors.
+    let vote: u8 = 0;
+    for &(_, leaf_idx) in &drawn[..2] {
+        let salt = [leaf_idx as u8 + 1; 32];
+        let comm = hashv(&[&[vote], &salt, jurors[leaf_idx].pubkey().as_ref()]).to_bytes();
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Commit {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Commit { commitment: comm })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    // State is still Commit (not all committed → no early flip).
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.state, DisputeState::Commit);
+
+    // Reveal attempt by a committed juror must fail: commit window not elapsed
+    // AND not all committed → RevealWindowClosed.
+    let leaf_idx = drawn[0].1;
+    let salt = [leaf_idx as u8 + 1; 32];
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Reveal {
+            juror: jurors[leaf_idx].pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Reveal { vote, salt })
+        .instruction()
+        .unwrap();
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    assert!(now < commit_end, "still inside commit window");
+    let r = env
+        .ctx
+        .execute_instruction(ix, &[&jurors[leaf_idx]])
+        .unwrap();
+    assert!(
+        !r.is_success(),
+        "reveal must be blocked before commit_end unless all committed; logs={:?}",
+        r.logs()
+    );
+}
+
 // ─── pause circuit breaker (REVIEW #11) ──────────────────────────────────────
 
 #[test]
