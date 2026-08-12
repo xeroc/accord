@@ -99,7 +99,14 @@ export function resolveNextAction(
     if (now > round.revealEnd + dispute.terms.appealWindow + POST_DRAW_CANCEL_GRACE_SECS) {
       return { kind: "cancel_dispute" };
     }
-    if (now >= round.revealEnd) {
+    // Finalize at `revealEnd`, OR once the panel has fully revealed (early
+    // resolve — mirrors the on-chain finalize_round gate). The `jurorCount > 0`
+    // guard avoids the degenerate 0==0 empty-panel match; the last reveal
+    // writes only the Round, so the poll catches it within one cycle.
+    if (
+      now >= round.revealEnd ||
+      (round.jurorCount > 0 && round.revealCount === round.jurorCount)
+    ) {
       return { kind: "finalize_round" };
     }
     return null; // review/commit/reveal windows still open

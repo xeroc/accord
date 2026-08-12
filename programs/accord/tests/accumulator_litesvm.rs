@@ -3268,6 +3268,116 @@ fn reveal_blocked_until_all_committed_inside_commit_window() {
     );
 }
 
+#[test]
+fn finalize_round_resolves_early_once_all_jurors_reveal() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        review_end,
+        commit_end: _,
+        reveal_end,
+    } = setup_drawn_panel_3();
+
+    // Into the commit window (review_end ≤ now < commit_end).
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+
+    // Commit all 3 (flips state → Reveal via the panel-full early flip), then
+    // reveal all 3 (early reveal — still before commit_end). vote = 1.
+    let vote: u8 = 1;
+    for &(_, leaf_idx) in &drawn {
+        let salt = [leaf_idx as u8 + 1; 32];
+        let comm = hashv(&[&[vote], &salt, jurors[leaf_idx].pubkey().as_ref()]).to_bytes();
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Commit {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Commit { commitment: comm })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+    for &(_, leaf_idx) in &drawn {
+        let salt = [leaf_idx as u8 + 1; 32];
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Reveal {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Reveal { vote, salt })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    // Still before reveal_end — the time gate alone would NOT allow finalize.
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    assert!(
+        now < reveal_end,
+        "finalizing before reveal_end (early resolve)"
+    );
+
+    // finalize_round succeeds anyway: reveal_count == juror_count (all revealed).
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeRound {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeRound {})
+        .instruction()
+        .unwrap();
+    let ix = {
+        let mut accts = ix.accounts.clone();
+        for &(_, leaf_idx) in &drawn {
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey()),
+                is_signer: false,
+                is_writable: true,
+            });
+        }
+        solana_program::instruction::Instruction {
+            program_id: ix.program_id,
+            accounts: accts,
+            data: ix.data.clone(),
+        }
+    };
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    // Round tallied + resolved, with the plurality winner written — all before
+    // reveal_end elapsed.
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    assert_eq!(d.state, DisputeState::RoundResolved);
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    assert_eq!(round.result, vote);
+}
+
 // ─── pause circuit breaker (REVIEW #11) ──────────────────────────────────────
 
 #[test]

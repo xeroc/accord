@@ -22,7 +22,7 @@ File → resolve. Steps 1 and 9 are the Arbitrable's; steps 2–8 are permission
 | 4   | [`draw_seat`](draw-voting.md)        | crank      | MST proof + sortition vs `frozen_root` (one tx per seat)     |
 | 5a  | [`commit`](draw-voting.md)           | Juror      | commit window                                                |
 | 5b  | [`reveal`](draw-voting.md)           | Juror      | reveal window                                                |
-| 6a  | [`finalize_round`](draw-voting.md)   | crank      | `reveal_end` passed                                          |
+| 6a  | [`finalize_round`](draw-voting.md)   | crank      | `reveal_end` passed ∨ all revealed                           |
 | 6b  | [`finalize_dispute`](draw-voting.md) | crank      | appeal window passed                                         |
 | 9   | [`get_ruling`](get-ruling.md)        | Arbitrable | read-only, anytime                                           |
 

@@ -17,7 +17,7 @@ draw_time ──review_window──► review_end ──commit_window──► c
 | ------------------ | --------------------------------------------- | ------------------- |
 | `commit`           | `review_end ≤ now < commit_end`               | `CommitWindowClosed`|
 | `reveal`           | `commit_end ≤ now < reveal_end` ∨ all committed | `RevealWindowClosed`|
-| `finalize_round`   | `now ≥ reveal_end`                            | `RoundNotFinalizable`|
+| `finalize_round`   | `now ≥ reveal_end` ∨ all revealed            | `RoundNotFinalizable`|
 | `finalize_dispute` | `now ≥ reveal_end + terms.appeal_window`      | `AppealWindowOpen`  |
 
 > **Early reveal.** `reveal` also opens the instant every drawn juror has
@@ -99,7 +99,7 @@ useaccord vote:commit-hash --vote 1 --salt 0xa1b2…fe --juror 4zNd…9q
 
 ## `vote:finalize-round` — tally + reveal-quorum check (cranker)
 
-After `reveal_end`, anyone tallies the round (ADR-0019 aggregation). **ADR-0021**
+After `reveal_end` **or once every juror has revealed**, anyone tallies the round (ADR-0019 aggregation). **ADR-0021**
 gates the tally on a reveal quorum
 `reveal_count >= ceil(panel × reveal_threshold_bps / 10_000)`:
 
@@ -109,7 +109,7 @@ gates the tally on a reveal quorum
   `vote:redraw`). This kills zero-mandate tie-break rulings (CONCEPT-REVIEW §4.9).
 
 `--remaining-accounts <auto|list>`: the panel's `JurorStake` PDAs (needed only
-when `fee_per_juror > 0`). **The cranker automates this** when `now ≥ reveal_end`.
+when `fee_per_juror > 0`). **The cranker automates this** when `now ≥ reveal_end` or all revealed.
 
 ```bash
 useaccord vote:finalize-round \

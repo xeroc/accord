@@ -146,6 +146,30 @@ test("Voting phase at/after reveal_end → finalize_round", () => {
   }
 });
 
+test("Voting phase, all revealed before reveal_end → finalize_round (early resolve)", () => {
+  for (const s of [DisputeState.Drawn, DisputeState.Commit, DisputeState.Reveal]) {
+    expect(
+      resolveNextAction(
+        dispute({ state: s }),
+        round({ jurorCount: 3, revealCount: 3 }),
+        REVEAL_END - 1n,
+      ),
+    ).toEqual({ kind: "finalize_round" });
+  }
+  // Not all revealed yet, still before reveal_end → windows open.
+  expect(
+    resolveNextAction(
+      dispute({ state: DisputeState.Reveal }),
+      round({ jurorCount: 3, revealCount: 2 }),
+      REVEAL_END - 1n,
+    ),
+  ).toBeNull();
+  // Degenerate empty panel (0==0) must NOT early-finalize.
+  expect(
+    resolveNextAction(dispute({ state: DisputeState.Reveal }), round(), REVEAL_END - 1n),
+  ).toBeNull();
+});
+
 test("Voting phase past the post-draw grace → cancel_dispute", () => {
   const d = dispute({ state: DisputeState.Drawn });
   const deadline = REVEAL_END + APPEAL_WINDOW + THREE_DAYS;
