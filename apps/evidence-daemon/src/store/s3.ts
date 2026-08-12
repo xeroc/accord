@@ -44,11 +44,13 @@ export interface S3StoreConfig {
   /** Bucket name. The daemon does not create it; ops provisions the bucket. */
   readonly bucket: string;
   /**
-   * Server-side encryption algorithm. `"AES256"` = SSE-S3 (default),
-   * `"aws:kms"` = SSE-KMS (requires {@link S3StoreConfig.kmsKeyId}).
+   * Server-side encryption. Omit (default) to send NO SSE header — required for
+   * S3-compatible stores that don't implement SSE (R2, MinIO, custom gateways).
+   * `"AES256"` = SSE-S3, `"aws:kms"` = SSE-KMS (requires kmsKeyId).
+   * Belt-and-suspenders only — the body is already application ciphertext.
    */
   readonly serverSideEncryption?: "AES256" | "aws:kms";
-  /** KMS key id when {@link S3StoreConfig.serverSideEncryption} is `aws:kms`. */
+  /** KMS key id when serverSideEncryption is `"aws:kms"`. */
   readonly kmsKeyId?: string;
 }
 
@@ -58,14 +60,14 @@ function objectKey(subaccord: Address, dispute: Address, round: number): string 
 
 export class S3Store implements EvidenceStore {
   private readonly client: S3Client;
+  private readonly sse?: "AES256" | "aws:kms";
   private readonly bucket: string;
-  private readonly sse: "AES256" | "aws:kms";
   private readonly kmsKeyId?: string;
 
   constructor(cfg: S3StoreConfig) {
     this.client = cfg.client;
     this.bucket = cfg.bucket;
-    this.sse = cfg.serverSideEncryption ?? "AES256";
+    this.sse = cfg.serverSideEncryption;
     this.kmsKeyId = cfg.kmsKeyId;
     if (this.sse === "aws:kms" && !this.kmsKeyId) {
       throw new Error("S3Store: kmsKeyId is required when SSE is aws:kms");
@@ -124,7 +126,7 @@ export class S3Store implements EvidenceStore {
           [META_SUBACCORD]: b.subaccord,
           [META_INGESTED_AT]: String(b.ingestedAt),
         },
-        ServerSideEncryption: this.sse,
+        ...(this.sse ? { ServerSideEncryption: this.sse } : {}),
         ...(this.kmsKeyId ? { SSEKMSKeyId: this.kmsKeyId } : {}),
       }),
     );

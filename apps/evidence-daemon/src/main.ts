@@ -87,7 +87,14 @@ function main(): void {
       ...(cfg.storage.s3.forcePathStyle ? { forcePathStyle: true } : {}),
     });
     const bucket = cfg.storage.s3.bucket;
-    store = new S3Store({ client: s3Client, bucket });
+    store = new S3Store({
+      client: s3Client,
+      bucket,
+      ...(cfg.storage.s3.serverSideEncryption
+        ? { serverSideEncryption: cfg.storage.s3.serverSideEncryption }
+        : {}),
+      ...(cfg.storage.s3.kmsKeyId ? { kmsKeyId: cfg.storage.s3.kmsKeyId } : {}),
+    });
     storagePing = async () => {
       try {
         await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));

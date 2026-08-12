@@ -5,6 +5,10 @@ export interface S3Config {
   accessKeyId?: string;
   secretAccessKey?: string;
   forcePathStyle: boolean;
+  /** Server-side encryption: unset (no SSE header), "AES256" (SSE-S3), "aws:kms". */
+  readonly serverSideEncryption?: "AES256" | "aws:kms";
+  /** KMS key id when serverSideEncryption is "aws:kms". */
+  readonly kmsKeyId?: string;
 }
 
 export interface FsConfig {
@@ -95,6 +99,15 @@ function parseStorage(env: Record<string, string | undefined>): StorageConfig {
     );
   }
 
+  const sse = env.EVIDENCE_S3_SSE?.trim() || undefined;
+  if (sse !== undefined && sse !== "AES256" && sse !== "aws:kms") {
+    throw new Error(`EVIDENCE_S3_SSE must be "AES256" or "aws:kms", got: ${JSON.stringify(sse)}`);
+  }
+  const kmsKeyId = env.EVIDENCE_S3_KMS_KEY_ID; // gitleaks:allow — env var read, not a hardcoded secret
+  if (sse === "aws:kms" && !kmsKeyId) {
+    throw new Error("EVIDENCE_S3_KMS_KEY_ID is required when EVIDENCE_S3_SSE=aws:kms");
+  }
+
   return {
     kind: "s3",
     s3: {
@@ -104,6 +117,8 @@ function parseStorage(env: Record<string, string | undefined>): StorageConfig {
       accessKeyId,
       secretAccessKey,
       forcePathStyle: boolFlag(env.EVIDENCE_S3_FORCE_PATH_STYLE),
+      serverSideEncryption: sse,
+      kmsKeyId,
     },
   };
 }
