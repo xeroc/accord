@@ -16,6 +16,7 @@ import { useAppealBond, useDispute, useRound } from "./useDispute";
 import { useSubaccord } from "./useSubaccord";
 import { PublishEvidence } from "./evidence/PublishEvidence";
 import { EvidenceManifest } from "./evidence/EvidenceManifest";
+import { useManifest } from "./evidence/useManifest";
 
 const FINAL_SENTINEL = 255;
 
@@ -42,6 +43,11 @@ export function DisputeDetail() {
   const { data: round } = useRound(dispute ?? undefined);
   const { data: appealBond } = useAppealBond(dispute ?? undefined);
   const { data: subaccord } = useSubaccord(dispute?.data.subaccord);
+  const { data: manifest } = useManifest(
+    dispute?.data.subaccord,
+    dispute?.address,
+    0,
+  );
   const [appealSending, setAppealSending] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
 
@@ -262,10 +268,13 @@ export function DisputeDetail() {
         round={0}
       />
 
-      {/* Publish evidence (recovery) — upload manifest.yaml, hash-gate, POST.
-          Additive (accord-9df9): only renders when a round-0 evidence hash
-          exists and the subaccord is loaded. See features/dispute/evidence/. */}
-      {subaccord && <PublishEvidence dispute={dispute} subaccord={subaccord} />}
+      {/* Publish evidence (recovery) — only shown while no manifest has been
+          published to the daemon for round 0 yet. useManifest shares the query
+          cache with EvidenceManifest above (same queryKey), so this adds no
+          extra fetch. PublishEvidence still hash-gates on evidenceHashes[0]. */}
+      {subaccord && manifest === null && (
+        <PublishEvidence dispute={dispute} subaccord={subaccord} />
+      )}
 
       {/* Final ruling */}
       {isFinal && d.finalRuling !== FINAL_SENTINEL && (
