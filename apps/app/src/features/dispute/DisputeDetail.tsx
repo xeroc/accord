@@ -84,10 +84,13 @@ export function DisputeDetail() {
     setAppealError(null);
     setAppealSending(true);
     try {
-      const newRound = dispute.data.currentRound + 1;
+      // AppealBond PDA is keyed by the round BEING appealed (current_round,
+      // before the increment) — must match the on-chain seeds in the Appeal
+      // account struct: seeds = [SEED_APPEAL_BOND, dispute, current_round].
+      // Passing current_round+1 here caused ConstraintSeeds (2006).
       const [appealBondPda] = await findAppealBondPda({
         dispute: dispute.address,
-        roundIdx: newRound,
+        roundIdx: dispute.data.currentRound,
       });
       const [pauseState] = await findPauseStatePda();
       const feeToken = subaccord.data.feeToken;
