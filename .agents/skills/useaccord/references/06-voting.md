@@ -16,9 +16,15 @@ draw_time ──review_window──► review_end ──commit_window──► c
 | Instruction        | Allowed when                                  | Rejects with        |
 | ------------------ | --------------------------------------------- | ------------------- |
 | `commit`           | `review_end ≤ now < commit_end`               | `CommitWindowClosed`|
-| `reveal`           | `commit_end ≤ now < reveal_end`               | `RevealWindowClosed`|
+| `reveal`           | `commit_end ≤ now < reveal_end` ∨ all committed | `RevealWindowClosed`|
 | `finalize_round`   | `now ≥ reveal_end`                            | `RoundNotFinalizable`|
 | `finalize_dispute` | `now ≥ reveal_end + terms.appeal_window`      | `AppealWindowOpen`  |
+
+> **Early reveal.** `reveal` also opens the instant every drawn juror has
+> committed (`commit_count == juror_count`): the panel-full `commit` flips
+> state straight to `Reveal`, so a fully-committed panel needn't idle out the
+> rest of the commit window. Only the lower bound is relaxed — `reveal_end`
+> and the appeal/finalize windows are unchanged.
 
 Windows are set at Subaccord creation (`lifecycle:create-subaccord
 --review-window/--commit-window/--reveal-window/--appeal-window`) and frozen per

@@ -76,9 +76,14 @@ Created →(VRF committed, root frozen)→ Drawn → Review
 the sortition for fresh seats at the **same** panel size without consuming an
 appeal. `(round_idx, draw_attempt)` salts the seed
 `hash(committed_vrf ‖ dispute ‖ round_idx ‖ draw_attempt ‖ seat ‖ retry)`. A
-permissionless crank advances states when their windows elapse (e.g. commit→reveal
-after the commit window even if not all committed; reveal→resolved after the reveal
-window). Odd `min_jury_size` (default 3) keeps every appeal round odd (3 / 7 / 15 / 31 at default; accord-9q3e generalizes the base), making ties impossible.
+permissionless crank advances states when their windows elapse. Commit→reveal
+opens as soon as `now ≥ commit_end` **OR** every drawn juror has committed
+(`commit_count == juror_count` — the panel-full commit flips state straight to
+`Reveal`, so a fully-committed panel needn't idle out the commit window); the
+reveal window's `reveal_end` upper bound and the reveal→resolved transition are
+unchanged. Odd `min_jury_size` (default 3) keeps every appeal round odd
+(3 / 7 / 15 / 31 at default; accord-9q3e generalizes the base), making ties
+impossible.
 
 ## Economics (Kleros-inherited; ADR-0020 two-mint split)
 

@@ -16,6 +16,7 @@ import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { timeRemaining } from "../../shared/format";
+import { useManifest, optionLabels } from "./evidence";
 
 // --- localStorage salt persistence (commit → reveal bridge) ---
 
@@ -99,6 +100,10 @@ export function Voting({
   const r = round.data;
   const state = d.state as DisputeState;
   const numOptions = d.numOptions;
+  // Option labels from the evidence manifest (round 0 — options are fixed at
+  // dispute creation). Absent label → fall back to the on-chain option hash.
+  const { data: manifest } = useManifest(d.subaccord, dispute.address, 0);
+  const manifestLabels = optionLabels(manifest);
   const wallet = env?.signer.address ?? "";
 
   // Check if connected wallet is a drawn juror
@@ -119,9 +124,31 @@ export function Voting({
     ? loadStoredVote(voteKey(dispute.address, r.roundIdx, wallet))
     : null;
 
-  const inCommit = state === DisputeState.Commit;
-  const inReveal = state === DisputeState.Reveal;
-  const now = useNow(inCommit || inReveal);
+  // Voting phases mirror the on-chain gates (lib.rs) — NOT the `state` field
+  // alone. `state` lags: it only flips `Commit → Reveal` on the first reveal
+  // or on the panel-full commit, so during the time-based reveal window (now
+  // past commit_end, no reveals yet) `state` is still `Commit`. Drive the UI
+  // off Clock time + commit_count so each form appears exactly when the chain
+  // would accept the transaction.
+  const commitPhase = state === DisputeState.Drawn || state === DisputeState.Commit;
+  const revealPhase = state === DisputeState.Commit || state === DisputeState.Reveal;
+  const allCommitted = r.commitCount === r.jurorCount;
+
+  const reviewEnd = Number(r.reviewEnd);
+  const commitEnd = Number(r.commitEnd);
+  const revealEnd = Number(r.revealEnd);
+
+  // Tick while any rendered window is live.
+  const now = useNow(commitPhase || revealPhase);
+
+  // Commit gate: review_end ≤ now < commit_end.
+  const commitOpen = commitPhase && now >= reviewEnd && now < commitEnd;
+  // Reveal gate (mirrors on-chain): state ∈ {Commit, Reveal}, now < reveal_end,
+  // AND (now ≥ commit_end OR every juror committed — the early-reveal path).
+  const revealOpen =
+    revealPhase && now < revealEnd && (now >= commitEnd || allCommitted);
+  // Panel drawn, but voting not yet open (review sub-window before reviewEnd).
+  const reviewPending = commitPhase && now < reviewEnd;
 
   async function handleCommit() {
     if (!env || !isJuror) return;
@@ -204,15 +231,26 @@ export function Voting({
         <Copyable value={wallet} />
       </div>
 
-      {(inCommit || inReveal) && (
-        <div className="flex items-center gap-2 rounded-md border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs">
-          <span className="font-medium text-amber">
-            {inCommit ? "Commit" : "Reveal"} phase open
+      {(reviewPending || commitOpen || revealOpen) && (
+        <div
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 font-mono text-xs ${
+            reviewPending ? "border-border-subtle" : "border-amber/40 bg-amber/10"
+          }`}
+        >
+          <span
+            className={`font-medium ${reviewPending ? "text-text-secondary" : "text-amber"}`}
+          >
+            {reviewPending
+              ? "Review phase"
+              : commitOpen
+                ? "Commit phase open"
+                : "Reveal phase open"}
           </span>
           <span className="text-text-secondary">
-            · closes in{" "}
-            {timeRemaining(Number(inCommit ? r.commitEnd : r.revealEnd), now) ||
-              "—"}
+            ·{" "}
+            {reviewPending
+              ? `voting opens in ${timeRemaining(reviewEnd, now) || "—"}`
+              : `closes in ${timeRemaining(commitOpen ? commitEnd : revealEnd, now) || "—"}`}
           </span>
         </div>
       )}
@@ -233,9 +271,19 @@ export function Voting({
               {hasRevealed ? "✓ Revealed" : "○ Not revealed"}
             </span>
           </div>
+          {/* Review sub-window: voting not yet open */}
+          {reviewPending && (
+            <p className="text-sm text-text-secondary">
+              Voting opens in{" "}
+              <span className="font-mono text-text-primary">
+                {timeRemaining(reviewEnd, now) || "—"}
+              </span>{" "}
+              once the review window closes.
+            </p>
+          )}
 
           {/* Commit phase */}
-          {inCommit && !hasCommitted && (
+          {commitOpen && !hasCommitted && (
             <div className="space-y-3">
               <label className="block font-mono text-sm text-text-secondary">
                 Select option
@@ -245,14 +293,28 @@ export function Voting({
                 onChange={(e) => setVote(Number(e.target.value))}
                 className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
               >
-                {Array.from({ length: numOptions }, (_, i) => (
-                  <option key={i} value={i}>
-                    Option {i}
-                  </option>
-                ))}
+                {Array.from({ length: numOptions }, (_, i) => {
+                  const label = manifestLabels[i]?.trim();
+                  if (label) {
+                    return (
+                      <option key={i} value={i}>
+                        {label}
+                      </option>
+                    );
+                  }
+                  const hash = d.options[i] ? hexBytes(d.options[i]) : "";
+                  return (
+                    <option key={i} value={i}>
+                      {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
+                    </option>
+                  );
+                })}
               </select>
               <div className="break-all font-mono text-xs text-text-secondary">
-                Option hash: {d.options[vote] ? hexBytes(d.options[vote]) : "—"}
+                {manifestLabels[vote]?.trim()
+                  ? `${manifestLabels[vote]} · `
+                  : "option hash: "}
+                {d.options[vote] ? hexBytes(d.options[vote]) : "—"}
               </div>
               <button
                 onClick={handleCommit}
@@ -263,15 +325,14 @@ export function Voting({
               </button>
             </div>
           )}
-
-          {inCommit && hasCommitted && (
+          {commitOpen && hasCommitted && (
             <p className="text-sm text-confirm">
-              Vote committed. Reveal opens when the commit window closes.
+              Vote committed. Reveal opens once all jurors commit (or the commit window closes).
             </p>
           )}
 
           {/* Reveal phase */}
-          {inReveal && !hasRevealed && (
+          {revealOpen && !hasRevealed && (
             <div className="space-y-3">
               {stored ? (
                 <>
@@ -299,14 +360,15 @@ export function Voting({
             </div>
           )}
 
-          {inReveal && hasRevealed && (
+          {hasRevealed && (
             <p className="text-sm text-confirm">Vote revealed.</p>
           )}
-
-          {/* Neither commit nor reveal phase */}
-          {!inCommit && !inReveal && (
+          {/* Inactive: pending draw, post-reveal, or commit window missed */}
+          {!commitOpen && !revealOpen && !reviewPending && !hasRevealed && (
             <p className="text-sm text-text-secondary">
-              Voting is not open for this round.
+              {(commitPhase || revealPhase) && now >= revealEnd
+                ? "The voting window has closed for this round."
+                : "Voting is not open for this round."}
             </p>
           )}
 
