@@ -40,11 +40,21 @@ export class EnvKeyring implements Keyring {
   // Subaccords is public (on-chain), so the timing leak is acceptable for v1.
   // Swap to a constant-time compare if operator membership becomes secret.
   private readonly byPubkey: ReadonlyMap<string, Uint8Array>;
+  /** Ed25519 public keys (== on-chain evidence_operator set), in insertion order. */
+  private readonly pubs: readonly Uint8Array[];
 
   private constructor(pairs: Iterable<[Uint8Array, Uint8Array]>) {
     const map = new Map<string, Uint8Array>();
-    for (const [pub, seed] of pairs) map.set(toHex(pub), seed);
+    const pubs: Uint8Array[] = [];
+    for (const [pub, seed] of pairs) {
+      const hex = toHex(pub);
+      // Keep pubs in lockstep with the map's distinct keyset (last seed wins in
+      // the map; pubs keeps the first occurrence of each distinct pubkey).
+      if (!map.has(hex)) pubs.push(pub);
+      map.set(hex, seed);
+    }
     this.byPubkey = map;
+    this.pubs = pubs;
   }
 
   /**
@@ -71,6 +81,15 @@ export class EnvKeyring implements Keyring {
   /** Number of operators this daemon can serve. */
   get size(): number {
     return this.byPubkey.size;
+  }
+
+  /**
+   * The Ed25519 public keys this daemon can serve — i.e. the on-chain
+   * `evidence_operator` set. Pubkeys are public (they equal the on-chain field);
+   * the seeds never leave this class. Used by GET /config (ADR-0011).
+   */
+  get publicKeys(): readonly Uint8Array[] {
+    return this.pubs;
   }
 
   async forOperator(operatorPubkey: Uint8Array): Promise<Ed25519Keypair | null> {

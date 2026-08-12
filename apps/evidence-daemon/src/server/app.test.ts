@@ -16,10 +16,16 @@
 import { describe, expect, it } from "bun:test";
 import { createApp } from "./app.js";
 import type { ServerDeps } from "./handlers.js";
+import type { KeyringPublicKeys } from "./public-keys.js";
 import { loadServerConfig } from "../config.js";
 
 // 32x '1' — valid base58 charset + length, opaque to the server.
 const ADDR = "11111111111111111111111111111111";
+
+// Minimal public-keys snapshot — the /config route serves this verbatim.
+const STUB_PUBLIC_KEYS: KeyringPublicKeys = {
+  operators: [{ base58: ADDR, hex: "ff".repeat(32) }],
+};
 
 function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
@@ -31,6 +37,7 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
     }),
     manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
     health: async () => ({ ok: true }),
+    publicKeys: STUB_PUBLIC_KEYS,
     ...overrides,
   };
 }
@@ -163,6 +170,36 @@ describe("GET /healthz", () => {
     expect(res.status).toBe(503);
     const body = (await res.json()) as { detail: string };
     expect(body.detail).toBe("s3 down");
+  });
+});
+
+/* ----------------------------------------------------------------- /config -- */
+
+describe("GET /config", () => {
+  it("serves the operator public keys (200)", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request("/config");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as KeyringPublicKeys;
+    expect(body.operators[0]?.base58).toBe(ADDR);
+    // Only keys are disclosed — no config/secret surface exists on the body.
+    expect(body).not.toHaveProperty("server");
+    expect(body).not.toHaveProperty("storage");
+    expect(body).not.toHaveProperty("rpcHost");
+  });
+
+  it("reflects an overridden key set verbatim", async () => {
+    const custom: KeyringPublicKeys = {
+      operators: [
+        { base58: "a".repeat(32), hex: "11" },
+        { base58: "b".repeat(32), hex: "22" },
+      ],
+    };
+    const app = createApp(makeDeps({ publicKeys: custom }));
+    const res = await app.request("/config");
+    const body = (await res.json()) as KeyringPublicKeys;
+    expect(body.operators).toHaveLength(2);
+    expect(body.operators[1]?.base58).toBe("b".repeat(32));
   });
 });
 

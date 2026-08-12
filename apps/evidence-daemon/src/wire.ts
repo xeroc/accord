@@ -36,6 +36,7 @@ import {
   type EvidenceBundle as StoreBundle,
 } from "./store/store";
 import type { DeliverHandler, IngestHandler, ManifestHandler, ServerDeps } from "./server/handlers";
+import type { KeyringPublicKeys } from "./server/public-keys";
 
 // ---------------------------------------------------------------------------
 // base58 / Address codec. Path params arrive as base58 strings; the pipeline
@@ -97,6 +98,9 @@ export interface WireDeps {
   readonly keyring: EnvKeyring;
   /** Liveness probe wired by main.ts (S3 + RPC reachability). */
   readonly health: ServerDeps["health"];
+
+  /** Operator public keys served at GET /config (built by main.ts). */
+  readonly publicKeys: KeyringPublicKeys;
 }
 
 export function createServerDeps(deps: WireDeps): ServerDeps {
@@ -334,6 +338,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     ingest: ingestHandler,
     deliver: deliverHandler,
     manifest: manifestHandler,
+    publicKeys: deps.publicKeys,
     health: deps.health,
   };
 }

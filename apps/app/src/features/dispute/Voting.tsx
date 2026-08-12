@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type Account,
   type Address,
@@ -15,6 +15,7 @@ import { Copyable } from "../../components/Copyable";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
+import { timeRemaining } from "../../shared/format";
 
 // --- localStorage salt persistence (commit → reveal bridge) ---
 
@@ -63,6 +64,22 @@ function hexBytes(bytes: ReadonlyUint8Array): string {
     .join("");
 }
 
+// --- live "now" (seconds) for countdowns; only ticks while enabled ---
+
+function useNow(enabled: boolean, intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!enabled) return;
+    setNow(Math.floor(Date.now() / 1000));
+    const id = setInterval(
+      () => setNow(Math.floor(Date.now() / 1000)),
+      intervalMs,
+    );
+    return () => clearInterval(id);
+  }, [enabled, intervalMs]);
+  return now;
+}
+
 // --- Component ---
 
 export function Voting({
@@ -104,6 +121,7 @@ export function Voting({
 
   const inCommit = state === DisputeState.Commit;
   const inReveal = state === DisputeState.Reveal;
+  const now = useNow(inCommit || inReveal);
 
   async function handleCommit() {
     if (!env || !isJuror) return;
@@ -185,6 +203,19 @@ export function Voting({
         <h2 className="font-mono text-sm text-text-secondary">Voting</h2>
         <Copyable value={wallet} />
       </div>
+
+      {(inCommit || inReveal) && (
+        <div className="flex items-center gap-2 rounded-md border border-amber/40 bg-amber/10 px-3 py-2 font-mono text-xs">
+          <span className="font-medium text-amber">
+            {inCommit ? "Commit" : "Reveal"} phase open
+          </span>
+          <span className="text-text-secondary">
+            · closes in{" "}
+            {timeRemaining(Number(inCommit ? r.commitEnd : r.revealEnd), now) ||
+              "—"}
+          </span>
+        </div>
+      )}
 
       {!isJuror ? (
         <p className="text-sm text-text-secondary">

@@ -11,6 +11,8 @@
  * (codec, integrity gate, store, chain reads, re-encryption).
  */
 
+import type { KeyringPublicKeys } from "./public-keys.js";
+
 /** 32-byte SHA-256 digest, hex- or base58-style opaque to the server. */
 export type Hash = string;
 
@@ -112,9 +114,17 @@ export type HealthProbe = () => Promise<
 >;
 
 /** The full handler set the server needs to serve traffic. */
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly deliver: DeliverHandler;
   readonly manifest: ManifestHandler;
   readonly health: HealthProbe;
+
+  /**
+   * The operator Ed25519 public keys served at GET /config (ADR-0011). Pubkeys
+   * are public (== on-chain `evidence_operator`); seeds never cross this seam.
+   * Built once at boot by `buildKeyringPublicKeys`.
+   */
+  readonly publicKeys: KeyringPublicKeys;
 }
