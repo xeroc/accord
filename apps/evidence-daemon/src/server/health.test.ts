@@ -7,7 +7,10 @@ import { describe, expect, it } from "bun:test";
 import { createApp } from "./app.js";
 import { createHealthProbe } from "./health.js";
 import type { ServerDeps } from "./handlers.js";
+import type { KeyringPublicKeys } from "./public-keys.js";
 import { loadServerConfig } from "../config.js";
+
+const STUB_PUBLIC_KEYS: KeyringPublicKeys = { operators: [] };
 
 function okDeps(health: ServerDeps["health"]): ServerDeps {
   return {
@@ -19,6 +22,7 @@ function okDeps(health: ServerDeps["health"]): ServerDeps {
     }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
     health,
+    publicKeys: STUB_PUBLIC_KEYS,
   };
 }
 

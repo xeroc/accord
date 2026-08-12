@@ -27,6 +27,7 @@ import { S3Store } from "./store/s3.js";
 import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
+import { buildKeyringPublicKeys } from "./server/public-keys.js";
 
 /**
  * Read-only RPC needs an `Accord` (which takes a signer for its write path),
@@ -53,6 +54,10 @@ function main(): void {
 
   // qycb: zero-key keyring throws here, before the server accepts traffic.
   const keyring = EnvKeyring.fromEnv(cfg.keyring);
+
+  // Operator Ed25519 public keys served at GET /config (ADR-0011). The pubkeys
+  // are public (== on-chain evidence_operator); the seeds stay in the keyring.
+  const publicKeys = buildKeyringPublicKeys(keyring);
 
   // Storage backend — local filesystem (EVIDENCE_STORAGE=fs) or S3 (default).
   // Only the selected backend is constructed; the other's env vars are never
@@ -122,7 +127,7 @@ function main(): void {
     timeoutMs: srv.healthTimeoutMs,
   });
 
-  const deps = createServerDeps({ store, accord, keyring, health });
+  const deps = createServerDeps({ store, accord, keyring, health, publicKeys });
 
   const app = createApp(deps, {
     rateLimitPerMin: srv.rateLimitPerMin,

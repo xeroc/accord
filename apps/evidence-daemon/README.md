@@ -214,10 +214,11 @@ apps/evidence-daemon/
 │   │   ├── deliver.ts       # GET handler: store.get + chain read + decrypt + gate + re-encrypt
 │   │   └── watermark.ts     # Watermark trait (no-op in v1)
 │   └── server/
-│       ├── app.ts           # Hono app: rate limit, X-Account-Key, body cap, /healthz
+│       ├── app.ts           # Hono app: rate limit, X-Account-Key, body cap, /healthz, /config
 │       ├── routes.ts        # /evidence routes
 │       ├── handlers.ts      # ServerDeps contract
-│       └── health.ts        # /healthz probe (S3 + RPC reachability)
+│       ├── health.ts        # /healthz probe (S3 + RPC reachability)
+│       └── public-keys.ts   # /config — operator public keys (GET /config)
 ├── tests/                   # Bun tests (see Testing below)
 ├── deploy/                  # k8s.yaml + deploy/README.md
 ├── Dockerfile
@@ -294,6 +295,10 @@ Decrypts the stored evidence bundle in memory and returns the **plaintext manife
 ### `GET /healthz`
 
 Probes the storage backend (S3 HEAD bucket, or `stat` on the FS root) and RPC reachability. Returns `200 {"status":"ok"}` or `503 {"status":"degraded","detail":...}`. The load balancer should drain on `503`.
+
+### `GET /config`
+
+Discloses **only** the operator Ed25519 public keys loaded into the keyring — the same pubkeys any reader can fetch on-chain as each Subaccord's `evidence_operator`. Returns `200 { operators: [{ base58, hex }] }`. Nothing else is exposed: no seeds, no RPC/storage/server configuration. The pubkeys are public by construction, so this endpoint leaks no secrets.
 
 ---
 
@@ -372,8 +377,9 @@ bun test --filter "ingest"          # by name pattern
 | `tests/watermark.test.ts`   | No-op watermark trait.                                                            |
 | `tests/reader.test.ts`      | Chain reader over RPC.                                                            |
 | `tests/events.test.ts`      | Log subscriber.                                                                   |
-| `src/server/app.test.ts`    | HTTP layer: rate limit, body cap, X-Account-Key, /healthz.                        |
+| `src/server/app.test.ts`    | HTTP layer: rate limit, body cap, X-Account-Key, /healthz, /config.               |
 | `src/server/health.test.ts` | Liveness probe logic.                                                             |
+| `src/server/public-keys.test.ts` | `buildKeyringPublicKeys` — public-key disclosure + seed-redaction (GET /config). |
 | `src/store/s3.test.ts`      | S3 store put/get/exists/conflict.                                                 |
 | `src/store/fs.test.ts`      | Filesystem store put/get/exists/conflict (mirrors s3.test.ts).                    |
 

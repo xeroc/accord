@@ -125,5 +125,10 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
       : Response.json({ status: "degraded", detail: res.detail }, { status: 503 });
   });
 
+  // GET /config — the operator Ed25519 public keys loaded into the keyring
+  // (ADR-0011). Pubkeys are public (== on-chain `evidence_operator`); the only
+  // thing this endpoint discloses. No seeds, no other config.
+  app.get("/config", () => Response.json(deps.publicKeys));
+
   return app;
 }

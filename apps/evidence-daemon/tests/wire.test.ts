@@ -28,6 +28,7 @@ import {
 } from "../src/store/store";
 import { createServerDeps } from "../src/wire";
 import { stubAccord } from "./helpers/accordStub.ts";
+import type { KeyringPublicKeys } from "../src/server/public-keys";
 
 // --- key fixtures: real Ed25519 keys (crypto needs genuine material) -------
 const operatorSeed = crypto.getRandomValues(new Uint8Array(32));
@@ -40,6 +41,12 @@ const SUB: Address = address("11111111111111111111111111111111");
 const DISPUTE: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
 const PLAINTEXT = new TextEncoder().encode("top-secret evidence payload");
+
+// Minimal public-keys snapshot — wire tests don't assert its values; it only
+// satisfies the required ServerDeps.publicKeys field threaded through createServerDeps.
+const publicKeys: KeyringPublicKeys = {
+  operators: [{ base58: bs58.encode(operatorPub), hex: Buffer.from(operatorPub).toString("hex") }],
+};
 
 /** In-memory EvidenceStore stand-in (exercises the bundle-shape adapter). */
 function memoryStore(): EvidenceStore & { size: () => number } {
@@ -94,6 +101,7 @@ async function rig() {
     accord,
     keyring,
     health: async () => ({ ok: true }),
+    publicKeys,
   });
   return { deps, store, evidenceHash, accord };
 }
@@ -169,7 +177,13 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
   const store = memoryStore();
   const keyring = EnvKeyring.fromEnv(bs58.encode(operatorSeed));
   const accord = await stubAccord({});
-  const deps = createServerDeps({ store, accord, keyring, health: async () => ({ ok: true }) });
+  const deps = createServerDeps({
+    store,
+    accord,
+    keyring,
+    health: async () => ({ ok: true }),
+    publicKeys,
+  });
   const res = await deps.ingest(SUB, DISPUTE, 0, await postBody());
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
