@@ -1871,8 +1871,10 @@ pub mod accord {
         Ok(())
     }
 
-    /// Permissionless crank: after the reveal window elapses, tallies the
-    /// round. ADR-0021 gates the tally on a reveal quorum:
+    /// Permissionless crank: once the reveal window elapses **or every juror
+    /// has revealed** (early resolve — all votes are bound, nothing left to
+    /// wait for), tallies the round. ADR-0021 gates the tally on a reveal
+    /// quorum:
     ///
     /// - **Quorum met** (`reveal_count >= ceil(panel × threshold_bps / 10_000)`):
     ///   credits each revealer's `fees_earned` (ADR-0020), sets the plurality
@@ -1895,7 +1897,14 @@ pub mod accord {
 
         let round = &mut ctx.accounts.round.load_mut()?;
         let now = Clock::get()?.unix_timestamp;
-        require!(now >= round.reveal_end, AccordError::RoundNotFinalizable);
+        // Finalize at `reveal_end`, OR once the panel has fully revealed (early
+        // resolve). The `juror_count > 0` guard avoids the degenerate 0==0
+        // empty-panel match; a voting-state round always has a full panel.
+        let all_revealed = round.juror_count > 0 && round.reveal_count == round.juror_count;
+        require!(
+            now >= round.reveal_end || all_revealed,
+            AccordError::RoundNotFinalizable
+        );
 
         let panel = round.juror_count as u32;
 

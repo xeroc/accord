@@ -80,8 +80,10 @@ permissionless crank advances states when their windows elapse. Commit→reveal
 opens as soon as `now ≥ commit_end` **OR** every drawn juror has committed
 (`commit_count == juror_count` — the panel-full commit flips state straight to
 `Reveal`, so a fully-committed panel needn't idle out the commit window); the
-reveal window's `reveal_end` upper bound and the reveal→resolved transition are
-unchanged. Odd `min_jury_size` (default 3) keeps every appeal round odd
+reveal window's `reveal_end` upper bound is unchanged. `finalize_round`
+(reveal→resolved) likewise resolves early once every juror has revealed
+(`reveal_count == juror_count`) — no need to wait out the reveal window. Odd
+`min_jury_size` (default 3) keeps every appeal round odd
 (3 / 7 / 15 / 31 at default; accord-9q3e generalizes the base), making ties
 impossible.
 

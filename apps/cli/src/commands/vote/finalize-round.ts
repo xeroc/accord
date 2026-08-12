@@ -2,7 +2,7 @@
  * `useaccord vote:finalize-round` — permissionless crank: plurality tally →
  * RoundResolved. SDK: `finalizeRound` (voting.ts:254).
  *
- * After the reveal window elapses, anyone advances the round to resolved. Pass
+ * After the reveal window elapses (or once every juror has revealed), anyone advances the round to resolved. Pass
  * the panel's JurorStake PDAs via `--remaining-accounts` so per-juror
  * `fees_earned` can be credited (ADR-0020). `--remaining-accounts auto` fetches
  * the round, reads the drawn panel, and derives each JurorStake PDA; a
