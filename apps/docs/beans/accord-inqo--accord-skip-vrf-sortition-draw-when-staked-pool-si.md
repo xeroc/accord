@@ -1,11 +1,11 @@
 ---
 # accord-inqo
 title: Accord — skip VRF sortition draw when staked pool size == panel size
-status: in-progress
+status: draft
 type: task
 priority: normal
 created_at: 2026-08-11T21:08:02Z
-updated_at: 2026-08-11T22:35:45Z
+updated_at: 2026-08-12T01:10:15Z
 ---
 
 Why: optimization. When staker_count == panel_size, EVERY staked juror is seated — there is no selection to make, so the full VRF path (seed derivation hashv, per-seat collision re-roll verification, seat-stake range checks in draw_seat lib.rs ~1103-1163) is pure overhead. Lets the Arena MVP (pool=1, N=1) ship without exercising the full draw ceremony, and speeds up any small-pool Subaccord. Pairs with accord-9q3e (the panel size must be known to compare against the pool).
