@@ -3,13 +3,10 @@
 //! After the Accord dispute finalises, reads `final_ruling` and redistributes.
 
 use crate::{constants::*, errors::CanonError, events::*, state::*};
+use accord::state::{Dispute, DisputeState};
 use anchor_lang::prelude::*;
+use anchor_lang::AccountDeserialize;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-
-const ACCORD_ID: Pubkey = pubkey!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
-const DISPUTE_STATE_OFFSET: usize = 1233;
-const DISPUTE_RULING_OFFSET: usize = 1294;
-const DISPUTE_STATE_FINAL: u8 = 6;
 
 #[derive(Accounts)]
 pub struct SettleItem<'info> {
@@ -57,16 +54,20 @@ pub fn handler(ctx: Context<SettleItem>) -> Result<()> {
         CanonError::DisputePdaMismatch
     );
     require!(
-        ctx.accounts.dispute.owner == &ACCORD_ID,
+        ctx.accounts.dispute.owner == &accord::ID,
         CanonError::WrongAccordProgram
     );
 
+    // Deserialize the Accord Dispute via the crate — no hand-maintained byte
+    // offsets. `state == Final` gates settlement; `final_ruling` is the
+    // winning option index (Canon: 0 = keep, 1 = remove).
     let dispute_data = ctx.accounts.dispute.try_borrow_data()?;
+    let dispute = Dispute::try_deserialize(&mut &dispute_data[..])?;
     require!(
-        dispute_data[DISPUTE_STATE_OFFSET] == DISPUTE_STATE_FINAL,
+        dispute.state == DisputeState::Final,
         CanonError::DisputeNotFinal
     );
-    let ruling = dispute_data[DISPUTE_RULING_OFFSET];
+    let ruling = dispute.final_ruling;
     require!(ruling < 2, CanonError::InvalidRuling);
 
     let is_withdrawal = item.withdrawal_requested_at.is_some();
