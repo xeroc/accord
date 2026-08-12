@@ -28,7 +28,7 @@ import {
 } from "@useaccord/sdk";
 
 import { createCrankDispatch } from "./dispatch.js";
-import { ProgramLogListener } from "./listener.js";
+import { ProgramAccountListener } from "./listener.js";
 import { reconcileOnce, startReconciler, type ReconcilerConfig } from "./reconciler.js";
 import { register as registerCancelDispute } from "./cranks/cancel-dispute.js";
 import { register as registerClaimRefund } from "./cranks/claim-refund.js";
@@ -123,8 +123,8 @@ async function main(): Promise<void> {
   });
 
   // 8. Start the WS listener (latency optimisation — triggers immediate
-  //    reconcile on program log events; 60s poll is authoritative regardless).
-  const listener = new ProgramLogListener({
+  //    reconcile on Dispute account changes; 60s poll is authoritative regardless).
+  const listener = new ProgramAccountListener({
     rpcSubscriptions,
     programId: Accord.PROGRAM_ID,
     reconciler: {

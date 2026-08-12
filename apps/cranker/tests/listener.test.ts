@@ -1,92 +1,73 @@
 /**
- * listener.test.ts — self-checks for the WS listener (bean accord-gbxm).
+ * listener.test.ts — self-checks for the WS account listener (bean accord-gbxm).
  *
- * Covers the non-trivial pure logic: the best-effort dispute-address parser.
- * The live WS reconnect loop is exercised end-to-end by the reconciler e2e
- * suite (Surfpool); here we pin the parser contract that the loop depends on.
+ * Pins the two things the live loop depends on:
+ *   - the discriminator filter is built from the generated Dispute
+ *     discriminator (so the subscription only delivers Dispute accounts);
+ *   - the listener fires one `reconcileDispute` per account notification and is
+ *     start/stop-safe.
+ * The real reconnect loop is exercised end-to-end by the reconciler e2e suite
+ * (Surfpool); here we drive it with a fake subscription stream and await the
+ * reconciler calls directly (no wall-clock timers).
  */
 import { test, expect } from "bun:test";
-import { extractDisputeCandidates, ProgramLogListener } from "../src/listener";
-import type { Address } from "@solana/kit";
+import { getBase64Encoder, type Address } from "@solana/kit";
+import type { RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
+import { DISPUTE_DISCRIMINATOR } from "@useaccord/sdk";
+import { DISPUTE_FILTER_BYTES, ProgramAccountListener } from "../src/listener";
 
-const DISPUTE = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed" as Address;
-// A realistic dispute PDA — distinct from the program id so it isn't dropped
-// by IGNORE_DISPUTE_ADDRESSES (which filters the program's own address).
-const DISPUTE_PDA = "Dispute111111111111111111111111111111111111" as Address;
+const PROGRAM_ID = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed" as Address;
+const DISPUTE_A = "DisputeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" as Address;
+const DISPUTE_B = "DisputeBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" as Address;
 
-test("extractDisputeCandidates pulls base58 address tokens out of program log lines", () => {
-  const logs = [
-    `Program log: Instruction: CreateDispute`,
-    `Program data: ${DISPUTE} Qmaa…`,
-    `Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed consumed 4321 of 200000 compute units`,
-  ];
-  const out = extractDisputeCandidates(logs);
-  expect(out).toContain(DISPUTE);
+test("DISPUTE_FILTER_BYTES is the base64 of the generated Dispute discriminator", () => {
+  // Round-trip: the filter bytes decode back to exactly DISPUTE_DISCRIMINATOR.
+  expect(Array.from(getBase64Encoder().encode(DISPUTE_FILTER_BYTES))).toEqual(
+    Array.from(DISPUTE_DISCRIMINATOR),
+  );
 });
 
-test("extractDisputeCandidates de-duplicates within one notification", () => {
-  const logs = [`Program data: ${DISPUTE}`, `Program log: ${DISPUTE} accepted`];
-  const out = extractDisputeCandidates(logs);
-  expect(out.filter((a) => a === DISPUTE)).toHaveLength(1);
-});
-
-test("extractDisputeCandidates ignores 88-char signatures and short noise", () => {
-  const sig = "5".repeat(88); // a 64-byte sig base58 ≈ 88 chars — not an address
-  const logs = [`Program log: noise ${sig} ok`];
-  expect(extractDisputeCandidates(logs)).toHaveLength(0);
-});
-
-test("ProgramLogListener fires reconcileDispute per candidate and is start/stop-safe", async () => {
-  const reconciled: string[] = [];
+test("ProgramAccountListener fires reconcileDispute per account notification and is start/stop-safe", async () => {
+  const reconciled: Address[] = [];
+  // Await the real signal — resolves once the second reconcile lands. No polling.
+  const { promise: bothDone, resolve: signalBoth } = Promise.withResolvers<void>();
   const reconciler = {
     reconcileDispute: async (a: Address) => {
       reconciled.push(a);
+      if (reconciled.length >= 2) signalBoth();
     },
     reconcileAll: async () => {},
   };
 
-  // A fake subscriptions client: yields one notification, then stays open
-  // until aborted (like a real logsNotifications stream does).
-  let subscribed = false;
+  // A fake subscriptions client: yields two account notifications, then stays
+  // open until aborted (like a real programNotifications stream does).
   const fakeSubs = {
-    logsNotifications: () => ({
+    programNotifications: () => ({
       subscribe: async ({ abortSignal }: { abortSignal: AbortSignal }) => {
-        subscribed = true;
         return (async function* () {
-          yield { value: { logs: [`Program data: ${DISPUTE} ${DISPUTE_PDA}`] } };
-          await new Promise<void>((resolve) => {
-            if (abortSignal.aborted) return resolve();
-            abortSignal.addEventListener("abort", () => resolve(), { once: true });
-          });
+          yield { value: { pubkey: DISPUTE_A, account: { data: ["", "base64"] } } };
+          yield { value: { pubkey: DISPUTE_B, account: { data: ["", "base64"] } } };
+          await waitForAbort(abortSignal);
         })();
       },
     }),
-  } as unknown as import("@solana/kit").RpcSubscriptions<
-    import("@solana/kit").SolanaRpcSubscriptionsApi
-  >;
+  } as unknown as RpcSubscriptions<SolanaRpcSubscriptionsApi>;
 
-  const listener = new ProgramLogListener({
+  const listener = new ProgramAccountListener({
     rpcSubscriptions: fakeSubs,
-    programId: DISPUTE,
+    programId: PROGRAM_ID,
     reconciler,
   });
   listener.start();
-  // Wait for the fake stream to be consumed.
-  await waitFor(() => subscribed && reconciled.length > 0);
+  await bothDone;
   listener.stop();
-  expect(reconciled).toContain(DISPUTE_PDA);
-  // The program id is in IGNORE_DISPUTE_ADDRESSES — it must NOT be reconciled.
-  expect(reconciled).not.toContain(DISPUTE);
+  expect(reconciled).toEqual([DISPUTE_A, DISPUTE_B]);
 });
 
-function waitFor(cond: () => boolean, timeoutMs = 1000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const tick = () => {
-      if (cond()) return resolve();
-      if (Date.now() - start > timeoutMs) return reject(new Error("waitFor timed out"));
-      setTimeout(tick, 10);
-    };
-    tick();
-  });
+/** Resolve when the abort signal fires (keeps the fake stream open like a real one). */
+function waitForAbort(abortSignal: AbortSignal): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  if (abortSignal.aborted) resolve();
+  else abortSignal.addEventListener("abort", () => resolve(), { once: true });
+  return promise;
 }

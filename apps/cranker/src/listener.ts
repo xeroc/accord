@@ -1,29 +1,30 @@
 /**
  * listener.ts — WebSocket latency optimization for the cranker reconciler
- * (bean accord-gbxm, epic accord-z9nc).
+ * (milestone accord-27r5 §2).
  *
- * Subscribes to Accord program logs via `logsNotifications({ mentions: [programId] })`.
- * On every program event, best-effort extracts dispute addresses from the log
- * lines and reconciles them immediately. The reconciler's own 60s poll is
- * authoritative — this is a pure latency optimization that runs alongside it.
+ * Subscribes to **Dispute accounts owned by the Accord program** via
+ * `programSubscribe`, filtered server-side by the Dispute discriminator, and
+ * reconciles the referenced dispute the instant it changes. The reconciler
+ * poll loop (60s) stays authoritative; this only closes the latency gap.
  *
- * On WS error/disconnect: logs a warning and reconnects with capped exponential
- * backoff. The reconciler's poll keeps advancing disputes regardless (it is the
- * fallback). On every reconnect a full reconcile is triggered to close the gap.
- *
- * Per-dispute reconcile calls are fire-and-forget: one slow or failed reconcile
- * must never block the log stream. The reconciler is idempotent (re-reads state,
- * only acts when an action is due), so a few extra no-op calls — including for
- * addresses that aren't disputes — are harmless and expected, because the log
- * parse is intentionally best-effort and not authoritative.
+ * Why a discriminator-filtered account subscription (replacing the old
+ * program-logs scraper): only Dispute accounts arrive, so the log regex +
+ * address blacklist are gone — no ComputeBudget / VRF / system-program noise.
+ * Every crank-actionable transition (create, VRF freeze, draw-complete, commit,
+ * reveal-flip, finalize, appeal, redraw, cancel) writes the Dispute account, so
+ * the subscription fires for each. The last-per-round reveal writes only the
+ * Round; that one is picked up by the 60s poll — including the early finalize
+ * once every juror has revealed (ADR-0021 + the finalize-on-full-reveal gate).
  */
 import {
-  createSolanaRpcSubscriptions,
   type Address,
+  type Base64EncodedBytes,
   type Commitment,
+  getBase64Decoder,
   type RpcSubscriptions,
   type SolanaRpcSubscriptionsApi,
 } from "@solana/kit";
+import { DISPUTE_DISCRIMINATOR } from "@useaccord/sdk";
 
 /**
  * The surface the listener needs from the reconciler (bean accord-rev4).
@@ -37,14 +38,14 @@ export interface ReconcilerTarget {
   reconcileAll(): Promise<void>;
 }
 
-export interface ProgramLogListenerOptions {
+export interface ProgramAccountListenerOptions {
   /** A subscriptions client built from `ACCORD_WS_URL` (see `.env.example`). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   /** The Accord program id to watch (`ACCORD_PROGRAM_ID` from the SDK). */
   programId: Address;
   /** The reconciler the listener drives. */
   reconciler: ReconcilerTarget;
-  /** Commitment level for the log subscription. Default `"confirmed"`. */
+  /** Commitment level for the account subscription. Default `"confirmed"`. */
   commitment?: Commitment;
   /** Structured logger sink. Defaults to `console.log`. */
   log?: (msg: string) => void;
@@ -56,31 +57,16 @@ export interface ProgramLogListenerOptions {
 
 const BASE_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
-const ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
-const IGNORE_DISPUTE_ADDRESSES = [
-  "ComputeBudget111111111111111111111111111111",
-  "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz",
-  "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed",
-  "11111111111111111111111111111111",
-];
 
 /**
- * Best-effort: pull Solana base58 address candidates out of raw log lines.
- * A real dispute PDA appears here when the program logs/mentions it; other
- * matches (program ids, system programs) are passed to the reconciler as
- * no-ops. Duplicates within one notification are de-duplicated.
+ * base64 of the Dispute discriminator — the `memcmp` bytes (compared at byte
+ * offset 0) that restrict the subscription to Dispute accounts only. Built from
+ * the generated `DISPUTE_DISCRIMINATOR` so it tracks the program's account
+ * layout automatically (no hand-rolled bytes).
  */
-export function extractDisputeCandidates(logs: readonly string[]): Address[] {
-  const seen = new Set<string>();
-  for (const line of logs) {
-    const matches = line.match(ADDRESS_RE);
-    if (!matches) continue;
-    for (const m of matches) {
-      if (!seen.has(m)) seen.add(m);
-    }
-  }
-  return [...seen].map((a) => a as Address);
-}
+export const DISPUTE_FILTER_BYTES: Base64EncodedBytes = getBase64Decoder().decode(
+  DISPUTE_DISCRIMINATOR,
+) as Base64EncodedBytes;
 
 /** Default capped-exponential backoff: 1s, 2s, 4s, … capped at 30s. */
 function defaultBackoff(attempt: number): number {
@@ -88,17 +74,19 @@ function defaultBackoff(attempt: number): number {
 }
 
 function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
 }
 
 /**
- * Subscribes to Accord program logs and drives immediate reconciliation.
+ * Subscribes to Accord Dispute accounts and drives immediate reconciliation.
  *
  * Construct with explicit options (the service entry wires `ACCORD_WS_URL` →
- * `rpcSubscriptions`); call {@link ProgramLogListener.start} to begin, and
- * {@link ProgramLogListener.stop} for a clean shutdown.
+ * `rpcSubscriptions`); call {@link ProgramAccountListener.start} to begin, and
+ * {@link ProgramAccountListener.stop} for a clean shutdown.
  */
-export class ProgramLogListener {
+export class ProgramAccountListener {
   private readonly opts: {
     rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
     programId: Address;
@@ -111,7 +99,7 @@ export class ProgramLogListener {
   private readonly abort = new AbortController();
   private running = false;
 
-  constructor(options: ProgramLogListenerOptions) {
+  constructor(options: ProgramAccountListenerOptions) {
     this.opts = {
       rpcSubscriptions: options.rpcSubscriptions,
       programId: options.programId,
@@ -163,10 +151,15 @@ export class ProgramLogListener {
    */
   private async subscribeOnce(reconcileAllFirst: boolean): Promise<void> {
     const stream = await this.opts.rpcSubscriptions
-      .logsNotifications({ mentions: [this.opts.programId] }, { commitment: this.opts.commitment })
+      .programNotifications(this.opts.programId, {
+        commitment: this.opts.commitment,
+        // Discriminator filter: the RPC only delivers Dispute accounts, so we
+        // never handle (or even receive) Round / JurorStake / Subaccord noise.
+        filters: [{ memcmp: { offset: 0n, bytes: DISPUTE_FILTER_BYTES, encoding: "base64" } }],
+      })
       .subscribe({ abortSignal: this.abort.signal });
 
-    this.opts.log(`[listener] subscribed to ${this.opts.programId} logs`);
+    this.opts.log(`[listener] subscribed to ${this.opts.programId} dispute accounts`);
 
     if (reconcileAllFirst) {
       this.opts.log("[listener] reconnect: triggering full reconcile");
@@ -176,18 +169,10 @@ export class ProgramLogListener {
     }
 
     for await (const notification of stream) {
-      this.dispatch(notification.value.logs);
-    }
-  }
-
-  /** Parse the log lines and fire one reconcile per candidate dispute address. */
-  private dispatch(logs: readonly string[]): void {
-    for (const address of extractDisputeCandidates(logs)) {
-      if (IGNORE_DISPUTE_ADDRESSES.includes(address)) continue;
-
-      this.opts.log(`[listener] event -> reconcile ${address}`);
-      // ponytail: fire-and-forget; reconciler is idempotent. Never block/await
-      // here — a slow or failed reconcile must not stall the log stream.
+      // fire-and-forget; the reconciler is idempotent. Never block/await here
+      // — a slow or failed reconcile must not stall the account stream.
+      const address = notification.value.pubkey;
+      this.opts.log(`[listener] account -> reconcile ${address}`);
       void this.opts.reconciler
         .reconcileDispute(address)
         .catch((e) =>
@@ -195,13 +180,6 @@ export class ProgramLogListener {
         );
     }
   }
-}
-
-/** Build a `rpcSubscriptions` client from a `ws://` / `wss://` URL. */
-export function createListenerSubscriptions(
-  wsUrl: string,
-): RpcSubscriptions<SolanaRpcSubscriptionsApi> {
-  return createSolanaRpcSubscriptions(wsUrl);
 }
 
 function stringifyErr(err: unknown): string {
