@@ -50,7 +50,7 @@ export interface CreateDisputeArgs {
   evidenceHash: Uint8Array;
   /** Filer-chosen nonce → private dispute namespace. Dispute PDA = `["dispute", filer, nonce]`. */
   nonce: bigint;
-  /** Total fee = `INITIAL_NUM_JURORS * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
+  /** Total fee = `min_jury_size * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
   fee: bigint;
 }
 
@@ -105,18 +105,23 @@ export interface AccordDisputeClient {
 }
 
 /**
- * Compute the required `create_dispute` round-1 fee. The panel is the fixed
- * `INITIAL_NUM_JURORS` (=3), so the fee is `3 · fee_per_juror`. Mirrors lib.rs
- * (`INITIAL_NUM_JURORS as u64).checked_mul(fee_per_juror)`). Returns `null`
+ * Compute the required `create_dispute` round-1 fee. The panel is the
+ * Subaccord's `min_jury_size` (accord-9q3e; default 3), so the fee is
+ * `min_jury_size · fee_per_juror`. Mirrors lib.rs
+ * (`(sub.min_jury_size as u64).checked_mul(sub.fee_per_juror)`). Returns `null`
  * on u64 overflow rather than throwing — callers surface a typed error.
  */
-export function requiredFee(feePerJuror: bigint): bigint | null {
-  if (feePerJuror < 0n) return null;
-  const product = BigInt(3) * feePerJuror;
+export function requiredFee(
+  feePerJuror: bigint,
+  minJurySize: number = 3,
+): bigint | null {
+  if (feePerJuror < 0n || !Number.isInteger(minJurySize) || minJurySize < 1) {
+    return null;
+  }
+  const product = BigInt(minJurySize) * feePerJuror;
   if (product < 0n || product > U64_MAX) return null;
   return product;
 }
-
 /**
  * Validate `create_dispute` options (lib.rs:418: `2..=MAX_OPTIONS`, each `[u8; 32]`).
  * Throws a typed `Error` on violation. Pure — no chain access.

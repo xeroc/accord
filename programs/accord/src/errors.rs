@@ -56,7 +56,7 @@ pub enum AccordError {
     InvalidOptions,
     #[msg("Dispute is not in the required state for this instruction.")]
     InvalidState,
-    #[msg("Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).")]
+    #[msg("Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).")]
     FeeMismatch,
 
     // --- accumulator (ADR-0012) ---
@@ -152,4 +152,35 @@ pub enum AccordError {
     MaxDrawAttemptsLimitExceeded,
     #[msg("Reveal threshold (bps) must be <= 10_000.")]
     InvalidThreshold,
+    // --- attestation-gated Subaccords (PROG-ATTESTTION) ---
+    #[msg("Subaccord is credential-gated but no attestation account was provided.")]
+    AttestationMissing,
+    #[msg("Credential and schema must be set together (both-or-neither).")]
+    AttestationBindingPartial,
+    #[msg("Attestation account is malformed (wrong owner, discriminator, or too short).")]
+    AttestationMalformed,
+    #[msg("Attestation credential or schema does not match the Subaccord binding.")]
+    AttestationMismatch,
+    #[msg("Attestation subject wallet does not match the juror.")]
+    AttestationSubjectMismatch,
+    #[msg("Attestation has expired or will expire before the dispute lifecycle completes.")]
+    AttestationExpired,
+    #[msg("Attestation has not expired; prune_juror requires an actually-expired credential.")]
+    AttestationNotExpired,
+
+    // --- slot reclamation (RECLAIM-LEAF) ---
+    #[msg(
+        "JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0)."
+    )]
+    SlotNotDrained,
+    #[msg("JurorStake slot is already on the free list (next_free != MAX).")]
+    SlotAlreadyReclaimed,
+    #[msg("Provided freed-slot account does not match the free-list head.")]
+    FreeListHeadMismatch,
+
+    // --- per-Subaccord round-1 panel size (accord-9q3e) ---
+    #[msg("Round-1 jury size (min_jury_size) must be odd (tie avoidance).")]
+    EvenJurySize,
+    #[msg("The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.")]
+    LadderExceedsMaxJurors,
 }

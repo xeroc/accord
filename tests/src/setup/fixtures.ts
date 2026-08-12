@@ -43,6 +43,7 @@ export function defaultSubaccordArgs(
     revealWindow: 172_800n, // 2 days
     appealWindow: DEFAULT_APPEAL_WINDOW_SECS, // 3 days (ADR-0022)
     maxAppeals: 3,
+    minJurySize: 3,
     aggregation: Aggregation.Plurality,
     feePerJuror: 0n,
     revealThresholdBps: 6_666, // 2/3 (ADR-0021)

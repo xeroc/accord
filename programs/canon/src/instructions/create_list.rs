@@ -58,6 +58,7 @@ pub fn create_list_handler(
             reveal_window: DEFAULT_REVEAL_WINDOW_SECS,
             appeal_window: DEFAULT_APPEAL_WINDOW_SECS,
             max_appeals: DEFAULT_MAX_APPEALS,
+            min_jury_size: accord::constants::INITIAL_NUM_JURORS,
             aggregation: Aggregation::Plurality,
             fee_per_juror: DEFAULT_FEE_PER_JUROR,
             reveal_threshold_bps: DEFAULT_REVEAL_THRESHOLD_BPS,
@@ -70,6 +71,10 @@ pub fn create_list_handler(
             authority: Pubkey::default(),
             evidence_operator: Pubkey::default(),
             depth: DEFAULT_TREE_DEPTH,
+            // PROG-ATTESTTION: stake-only backing court (no credential gate).
+            // Canon lists do not gate jurors by attestation in v1.
+            juror_credential: Pubkey::default(),
+            juror_schema: Pubkey::default(),
         },
     )?;
 

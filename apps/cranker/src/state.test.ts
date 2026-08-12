@@ -44,6 +44,7 @@ function dispute(over: Partial<Dispute> & Pick<Dispute, "state"> = {} as never):
       revealWindow: 0n,
       appealWindow: APPEAL_WINDOW,
       maxAppeals: 3,
+      minJurySize: 3,
       aggregation: Aggregation.Plurality,
       revealThresholdBps: 6_666,
       shortfallPolicy: ShortfallPolicy.Redraw,

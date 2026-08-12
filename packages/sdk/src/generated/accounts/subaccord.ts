@@ -85,6 +85,15 @@ export type Subaccord = {
    */
   appealWindow: bigint;
   maxAppeals: number;
+  /**
+   * Round-1 (round-0) juror panel size (accord-9q3e, supersedes ADR-0019's
+   * fixed constant). Immutable at creation — determines the appeal-ladder
+   * geometry `(J+1)·2^k − 1`. Must be odd (tie avoidance) and the ladder top
+   * `(J+1)·2^max_appeals − 1` must fit `MAX_JURORS`. Default 3. Frozen onto
+   * `CaseTerms` at filing so governance cannot shift panel size mid-dispute.
+   * A pool wanting a single juror sets `min_jury_size = 1` + `max_appeals = 0`.
+   */
+  minJurySize: number;
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: Aggregation;
   feePerJuror: bigint;
@@ -110,6 +119,17 @@ export type Subaccord = {
   riskType: ReadonlyUint8Array;
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
+  /**
+   * Attestation-gated juror pool (PROG-ATTESTTION). When both are
+   * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
+   * unchanged). When set, jurors must hold a valid SAS attestation from
+   * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
+   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
+   * at `create_subaccord` (`AttestationBindingPartial`).
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
   /**
    * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
@@ -155,6 +175,13 @@ export type Subaccord = {
    */
   stakeVaultDeposited: bigint;
   stakeVaultWithdrawn: bigint;
+  /**
+   * Head of the free-slot linked list (RECLAIM-LEAF). `u32::MAX` = list empty.
+   * When non-MAX, points to a JurorStake whose slot has been reclaimed and is
+   * available for reuse by a new staker. Maintained by `reclaim_slot` (push)
+   * and `stake` (pop).
+   */
+  freeHead: number;
   bump: number;
 };
 
@@ -181,6 +208,15 @@ export type SubaccordArgs = {
    */
   appealWindow: number | bigint;
   maxAppeals: number;
+  /**
+   * Round-1 (round-0) juror panel size (accord-9q3e, supersedes ADR-0019's
+   * fixed constant). Immutable at creation — determines the appeal-ladder
+   * geometry `(J+1)·2^k − 1`. Must be odd (tie avoidance) and the ladder top
+   * `(J+1)·2^max_appeals − 1` must fit `MAX_JURORS`. Default 3. Frozen onto
+   * `CaseTerms` at filing so governance cannot shift panel size mid-dispute.
+   * A pool wanting a single juror sets `min_jury_size = 1` + `max_appeals = 0`.
+   */
+  minJurySize: number;
   /** Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`. */
   aggregation: AggregationArgs;
   feePerJuror: number | bigint;
@@ -206,6 +242,17 @@ export type SubaccordArgs = {
   riskType: ReadonlyUint8Array;
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
+  /**
+   * Attestation-gated juror pool (PROG-ATTESTTION). When both are
+   * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
+   * unchanged). When set, jurors must hold a valid SAS attestation from
+   * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
+   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
+   * at `create_subaccord` (`AttestationBindingPartial`).
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
   /**
    * Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
    * Maintained O(1) by `stake`/`unstake` (0→positive increments,
@@ -251,6 +298,13 @@ export type SubaccordArgs = {
    */
   stakeVaultDeposited: number | bigint;
   stakeVaultWithdrawn: number | bigint;
+  /**
+   * Head of the free-slot linked list (RECLAIM-LEAF). `u32::MAX` = list empty.
+   * When non-MAX, points to a JurorStake whose slot has been reclaimed and is
+   * available for reuse by a new staker. Maintained by `reclaim_slot` (push)
+   * and `stake` (pop).
+   */
+  freeHead: number;
   bump: number;
 };
 
@@ -269,6 +323,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["revealWindow", getU64Encoder()],
       ["appealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
+      ["minJurySize", getU32Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
       ["revealThresholdBps", getU16Encoder()],
@@ -278,6 +333,8 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["evidenceOperator", getAddressEncoder()],
       ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
+      ["jurorCredential", getAddressEncoder()],
+      ["jurorSchema", getAddressEncoder()],
       ["stakerCount", getU32Encoder()],
       ["rootHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["totalStake", getU64Encoder()],
@@ -287,6 +344,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["feeVaultWithdrawn", getU64Encoder()],
       ["stakeVaultDeposited", getU64Encoder()],
       ["stakeVaultWithdrawn", getU64Encoder()],
+      ["freeHead", getU32Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBACCORD_DISCRIMINATOR }),
@@ -307,6 +365,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["revealWindow", getU64Decoder()],
     ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["minJurySize", getU32Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
     ["revealThresholdBps", getU16Decoder()],
@@ -316,6 +375,8 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["evidenceOperator", getAddressDecoder()],
     ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
+    ["jurorCredential", getAddressDecoder()],
+    ["jurorSchema", getAddressDecoder()],
     ["stakerCount", getU32Decoder()],
     ["rootHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["totalStake", getU64Decoder()],
@@ -325,6 +386,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["feeVaultWithdrawn", getU64Decoder()],
     ["stakeVaultDeposited", getU64Decoder()],
     ["stakeVaultWithdrawn", getU64Decoder()],
+    ["freeHead", getU32Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -388,5 +450,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 370;
+  return 442;
 }

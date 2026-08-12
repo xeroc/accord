@@ -43,7 +43,8 @@ export type CrankKind =
   | "redraw"
   | "execute_update"
   | "execute_unpause"
-  | "claim_refund";
+  | "claim_refund"
+  | "reclaim_slot";
 
 /**
  * Discriminated action payload. `draw_seat.seat`, `settle_round.roundIdx`, and
@@ -67,7 +68,8 @@ export type CrankAction =
   | { kind: "redraw"; dispute: Address }
   | { kind: "execute_update"; subaccord: Address }
   | { kind: "execute_unpause" }
-  | { kind: "claim_refund"; dispute: Address; roundIdx: number };
+  | { kind: "claim_refund"; dispute: Address; roundIdx: number }
+  | { kind: "reclaim_slot"; subaccord: Address; jurorStake: Address };
 
 /** Extract a single crank action variant by kind (for executor signatures). */
 export type ActionOf<K extends CrankKind> = Extract<CrankAction, { kind: K }>;

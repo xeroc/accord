@@ -18,6 +18,8 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU32Decoder,
+  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -112,6 +114,12 @@ export type CreateSubaccordInstructionData = {
   revealWindow: bigint;
   appealWindow: bigint;
   maxAppeals: number;
+  /**
+   * Round-1 juror panel size (accord-9q3e). Default 3; must be odd and the
+   * appeal ladder must fit `MAX_JURORS`. Set 1 + `max_appeals = 0` for a
+   * single-juror pool. Immutable on the Subaccord (not in `UpdatePayload`).
+   */
+  minJurySize: number;
   aggregation: Aggregation;
   feePerJuror: bigint;
   /** Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3). */
@@ -123,6 +131,13 @@ export type CreateSubaccordInstructionData = {
   authority: Address;
   evidenceOperator: Address;
   depth: number;
+  /**
+   * Attestation credential binding (PROG-ATTESTTION). `Pubkey::default()`
+   * ⇒ stake-only (today's behavior). Both-or-neither with `juror_schema`.
+   * Immutable once set on the Subaccord; absent from `UpdatePayload`.
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
 };
 
 export type CreateSubaccordInstructionDataArgs = {
@@ -135,6 +150,12 @@ export type CreateSubaccordInstructionDataArgs = {
   revealWindow: number | bigint;
   appealWindow: number | bigint;
   maxAppeals: number;
+  /**
+   * Round-1 juror panel size (accord-9q3e). Default 3; must be odd and the
+   * appeal ladder must fit `MAX_JURORS`. Set 1 + `max_appeals = 0` for a
+   * single-juror pool. Immutable on the Subaccord (not in `UpdatePayload`).
+   */
+  minJurySize: number;
   aggregation: AggregationArgs;
   feePerJuror: number | bigint;
   /** Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3). */
@@ -146,6 +167,13 @@ export type CreateSubaccordInstructionDataArgs = {
   authority: Address;
   evidenceOperator: Address;
   depth: number;
+  /**
+   * Attestation credential binding (PROG-ATTESTTION). `Pubkey::default()`
+   * ⇒ stake-only (today's behavior). Both-or-neither with `juror_schema`.
+   * Immutable once set on the Subaccord; absent from `UpdatePayload`.
+   */
+  jurorCredential: Address;
+  jurorSchema: Address;
 };
 
 export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<CreateSubaccordInstructionDataArgs> {
@@ -161,6 +189,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["revealWindow", getU64Encoder()],
       ["appealWindow", getU64Encoder()],
       ["maxAppeals", getU8Encoder()],
+      ["minJurySize", getU32Encoder()],
       ["aggregation", getAggregationEncoder()],
       ["feePerJuror", getU64Encoder()],
       ["revealThresholdBps", getU16Encoder()],
@@ -169,6 +198,8 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["depth", getU8Encoder()],
+      ["jurorCredential", getAddressEncoder()],
+      ["jurorSchema", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: CREATE_SUBACCORD_DISCRIMINATOR }),
   );
@@ -186,6 +217,7 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["revealWindow", getU64Decoder()],
     ["appealWindow", getU64Decoder()],
     ["maxAppeals", getU8Decoder()],
+    ["minJurySize", getU32Decoder()],
     ["aggregation", getAggregationDecoder()],
     ["feePerJuror", getU64Decoder()],
     ["revealThresholdBps", getU16Decoder()],
@@ -194,6 +226,8 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["depth", getU8Decoder()],
+    ["jurorCredential", getAddressDecoder()],
+    ["jurorSchema", getAddressDecoder()],
   ]);
 }
 
@@ -233,6 +267,7 @@ export type CreateSubaccordAsyncInput<
   revealWindow: CreateSubaccordInstructionDataArgs["revealWindow"];
   appealWindow: CreateSubaccordInstructionDataArgs["appealWindow"];
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
+  minJurySize: CreateSubaccordInstructionDataArgs["minJurySize"];
   aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
   revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
@@ -241,6 +276,8 @@ export type CreateSubaccordAsyncInput<
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
+  jurorCredential: CreateSubaccordInstructionDataArgs["jurorCredential"];
+  jurorSchema: CreateSubaccordInstructionDataArgs["jurorSchema"];
 };
 
 export async function getCreateSubaccordInstructionAsync<
@@ -352,6 +389,7 @@ export type CreateSubaccordInput<
   revealWindow: CreateSubaccordInstructionDataArgs["revealWindow"];
   appealWindow: CreateSubaccordInstructionDataArgs["appealWindow"];
   maxAppeals: CreateSubaccordInstructionDataArgs["maxAppeals"];
+  minJurySize: CreateSubaccordInstructionDataArgs["minJurySize"];
   aggregation: CreateSubaccordInstructionDataArgs["aggregation"];
   feePerJuror: CreateSubaccordInstructionDataArgs["feePerJuror"];
   revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
@@ -360,6 +398,8 @@ export type CreateSubaccordInput<
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
+  jurorCredential: CreateSubaccordInstructionDataArgs["jurorCredential"];
+  jurorSchema: CreateSubaccordInstructionDataArgs["jurorSchema"];
 };
 
 export function getCreateSubaccordInstruction<

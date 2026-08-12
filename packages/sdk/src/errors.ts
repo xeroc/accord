@@ -108,7 +108,7 @@ export const AccordErrors = {
   FeeMismatch: err(
     BASE + 17,
     "FeeMismatch",
-    "Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).",
+    "Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).",
   ),
 
   // --- accumulator (ADR-0012) ---

@@ -54,6 +54,13 @@ pub struct Subaccord {
     /// (ADR-0022). Per-Subaccord; frozen onto `CaseTerms` at filing.
     pub appeal_window: u64, // seconds
     pub max_appeals: u8,
+    /// Round-1 (round-0) juror panel size (accord-9q3e, supersedes ADR-0019's
+    /// fixed constant). Immutable at creation — determines the appeal-ladder
+    /// geometry `(J+1)·2^k − 1`. Must be odd (tie avoidance) and the ladder top
+    /// `(J+1)·2^max_appeals − 1` must fit `MAX_JURORS`. Default 3. Frozen onto
+    /// `CaseTerms` at filing so governance cannot shift panel size mid-dispute.
+    /// A pool wanting a single juror sets `min_jury_size = 1` + `max_appeals = 0`.
+    pub min_jury_size: u32,
     /// Per-Subaccord aggregation rule (ADR-0019). v1 = `Plurality`.
     pub aggregation: Aggregation,
     pub fee_per_juror: u64, // in `fee_token` (ADR-0020)
@@ -75,6 +82,15 @@ pub struct Subaccord {
     pub risk_type: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
+    /// Attestation-gated juror pool (PROG-ATTESTTION). When both are
+    /// `Pubkey::default()` the Subaccord is stake-only (today's behavior,
+    /// unchanged). When set, jurors must hold a valid SAS attestation from
+    /// `juror_credential` under `juror_schema` to stake and be drawn. Immutable
+    /// at creation — joins `risk_type` + `evidence_spec` as the identity
+    /// triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
+    /// at `create_subaccord` (`AttestationBindingPartial`).
+    pub juror_credential: Pubkey,
+    pub juror_schema: Pubkey,
     /// Count of **distinct Jurors with any stake** (`JurorStake.staked > 0`).
     /// Maintained O(1) by `stake`/`unstake` (0→positive increments,
     /// positive→0 decrements). This is a *coarse* intake gate for
@@ -110,6 +126,11 @@ pub struct Subaccord {
     /// ledger-only and never touch these.
     pub stake_vault_deposited: u64,
     pub stake_vault_withdrawn: u64,
+    /// Head of the free-slot linked list (RECLAIM-LEAF). `u32::MAX` = list empty.
+    /// When non-MAX, points to a JurorStake whose slot has been reclaimed and is
+    /// available for reuse by a new staker. Maintained by `reclaim_slot` (push)
+    /// and `stake` (pop).
+    pub free_head: u32,
     pub bump: u8,
 }
 
@@ -155,6 +176,12 @@ pub struct JurorStake {
     /// `withdraw_fees` instruction. No `active_draws` gate (fees are earned,
     /// not at-risk capital).
     pub fees_earned: u64,
+    /// Next free index in the free-slot linked list (RECLAIM-LEAF).
+    /// `u32::MAX` = this account is NOT a free-list node (active juror, or never
+    /// reclaimed). Any other value = this slot is reclaimed and `next_free` is
+    /// the next free index after this one. Set by `reclaim_slot`, consumed by
+    /// `stake`.
+    pub next_free: u32,
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -176,6 +203,9 @@ pub struct CaseTerms {
     /// Appeal window (ADR-0022). Per-Subaccord, frozen at filing.
     pub appeal_window: u64,
     pub max_appeals: u8,
+    /// Frozen round-1 panel size (accord-9q3e). Mirrors `Subaccord.min_jury_size`
+    /// at filing time; drives `panel_size_for_round` for every round of this dispute.
+    pub min_jury_size: u32,
     pub aggregation: Aggregation,
     /// Frozen reveal-quorum fraction (ADR-0021). Mirrors
     /// `Subaccord.reveal_threshold_bps` at filing time.
@@ -412,6 +442,10 @@ pub struct CreateSubaccordParams {
     pub reveal_window: u64,
     pub appeal_window: u64,
     pub max_appeals: u8,
+    /// Round-1 juror panel size (accord-9q3e). Default 3; must be odd and the
+    /// appeal ladder must fit `MAX_JURORS`. Set 1 + `max_appeals = 0` for a
+    /// single-juror pool. Immutable on the Subaccord (not in `UpdatePayload`).
+    pub min_jury_size: u32,
     pub aggregation: Aggregation,
     pub fee_per_juror: u64,
     /// Reveal-quorum fraction in bps (ADR-0021). Default 6666 (2/3).
@@ -423,6 +457,11 @@ pub struct CreateSubaccordParams {
     pub authority: Pubkey,
     pub evidence_operator: Pubkey,
     pub depth: u8,
+    /// Attestation credential binding (PROG-ATTESTTION). `Pubkey::default()`
+    /// ⇒ stake-only (today's behavior). Both-or-neither with `juror_schema`.
+    /// Immutable once set on the Subaccord; absent from `UpdatePayload`.
+    pub juror_credential: Pubkey,
+    pub juror_schema: Pubkey,
 }
 
 /// Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are

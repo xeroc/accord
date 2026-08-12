@@ -348,6 +348,7 @@ function buildArgs(
     revealWindow: parseBigint(form.revealWindow, "Reveal window"),
     appealWindow: parseBigint(form.appealWindow, "Appeal window"),
     maxAppeals: parseBoundedInt(form.maxAppeals, "Max appeals", 0, MAX_APPEALS),
+    minJurySize: 3, // accord-9q3e: default round-1 panel (form field TODO)
     aggregation: Aggregation.Plurality, // v1 sole variant (ADR-0019)
     feePerJuror: parseBigint(form.feePerJuror, "Fee per juror"),
     revealThresholdBps: parseBoundedInt(

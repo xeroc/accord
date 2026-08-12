@@ -58,7 +58,7 @@ export const ACCORD_ERROR__INSUFFICIENT_JURORS = 0x1783; // 6019
 export const ACCORD_ERROR__INVALID_OPTIONS = 0x1784; // 6020
 /** InvalidState: Dispute is not in the required state for this instruction. */
 export const ACCORD_ERROR__INVALID_STATE = 0x1785; // 6021
-/** FeeMismatch: Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror). */
+/** FeeMismatch: Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror). */
 export const ACCORD_ERROR__FEE_MISMATCH = 0x1786; // 6022
 /** InvalidMerklePath: Accumulator Merkle path does not authenticate against the stored root. */
 export const ACCORD_ERROR__INVALID_MERKLE_PATH = 0x1787; // 6023
@@ -128,6 +128,30 @@ export const ACCORD_ERROR__NOT_REDRAW_ELIGIBLE = 0x17a6; // 6054
 export const ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED = 0x17a7; // 6055
 /** InvalidThreshold: Reveal threshold (bps) must be <= 10_000. */
 export const ACCORD_ERROR__INVALID_THRESHOLD = 0x17a8; // 6056
+/** AttestationMissing: Subaccord is credential-gated but no attestation account was provided. */
+export const ACCORD_ERROR__ATTESTATION_MISSING = 0x17a9; // 6057
+/** AttestationBindingPartial: Credential and schema must be set together (both-or-neither). */
+export const ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL = 0x17aa; // 6058
+/** AttestationMalformed: Attestation account is malformed (wrong owner, discriminator, or too short). */
+export const ACCORD_ERROR__ATTESTATION_MALFORMED = 0x17ab; // 6059
+/** AttestationMismatch: Attestation credential or schema does not match the Subaccord binding. */
+export const ACCORD_ERROR__ATTESTATION_MISMATCH = 0x17ac; // 6060
+/** AttestationSubjectMismatch: Attestation subject wallet does not match the juror. */
+export const ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH = 0x17ad; // 6061
+/** AttestationExpired: Attestation has expired or will expire before the dispute lifecycle completes. */
+export const ACCORD_ERROR__ATTESTATION_EXPIRED = 0x17ae; // 6062
+/** AttestationNotExpired: Attestation has not expired; prune_juror requires an actually-expired credential. */
+export const ACCORD_ERROR__ATTESTATION_NOT_EXPIRED = 0x17af; // 6063
+/** SlotNotDrained: JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0). */
+export const ACCORD_ERROR__SLOT_NOT_DRAINED = 0x17b0; // 6064
+/** SlotAlreadyReclaimed: JurorStake slot is already on the free list (next_free != MAX). */
+export const ACCORD_ERROR__SLOT_ALREADY_RECLAIMED = 0x17b1; // 6065
+/** FreeListHeadMismatch: Provided freed-slot account does not match the free-list head. */
+export const ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH = 0x17b2; // 6066
+/** EvenJurySize: Round-1 jury size (min_jury_size) must be odd (tie avoidance). */
+export const ACCORD_ERROR__EVEN_JURY_SIZE = 0x17b3; // 6067
+/** LadderExceedsMaxJurors: The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round. */
+export const ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS = 0x17b4; // 6068
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -136,6 +160,13 @@ export type AccordError =
   | typeof ACCORD_ERROR__APPEAL_WINDOW_OPEN
   | typeof ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT
   | typeof ACCORD_ERROR__ARITHMETIC_OVERFLOW
+  | typeof ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL
+  | typeof ACCORD_ERROR__ATTESTATION_EXPIRED
+  | typeof ACCORD_ERROR__ATTESTATION_MALFORMED
+  | typeof ACCORD_ERROR__ATTESTATION_MISMATCH
+  | typeof ACCORD_ERROR__ATTESTATION_MISSING
+  | typeof ACCORD_ERROR__ATTESTATION_NOT_EXPIRED
+  | typeof ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH
   | typeof ACCORD_ERROR__CANCEL_TOO_EARLY
   | typeof ACCORD_ERROR__COMMIT_ALREADY_EXISTS
   | typeof ACCORD_ERROR__COMMIT_MISSING
@@ -143,7 +174,9 @@ export type AccordError =
   | typeof ACCORD_ERROR__DISPUTE_FAILED
   | typeof ACCORD_ERROR__DISPUTE_NOT_FINAL
   | typeof ACCORD_ERROR__DUPLICATE_JUROR
+  | typeof ACCORD_ERROR__EVEN_JURY_SIZE
   | typeof ACCORD_ERROR__FEE_MISMATCH
+  | typeof ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH
   | typeof ACCORD_ERROR__IMMUTABLE_SUBACCORD
   | typeof ACCORD_ERROR__INFLATED_STAKE
   | typeof ACCORD_ERROR__INSUFFICIENT_BALANCE
@@ -157,6 +190,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__INVALID_STATE
   | typeof ACCORD_ERROR__INVALID_THRESHOLD
   | typeof ACCORD_ERROR__INVALID_VOTE
+  | typeof ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS
   | typeof ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED
   | typeof ACCORD_ERROR__MAX_APPEALS_REACHED
   | typeof ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED
@@ -176,6 +210,8 @@ export type AccordError =
   | typeof ACCORD_ERROR__ROUND_ALREADY_SETTLED
   | typeof ACCORD_ERROR__ROUND_NOT_FINALIZABLE
   | typeof ACCORD_ERROR__ROUND_NOT_SETTLABLE
+  | typeof ACCORD_ERROR__SLOT_ALREADY_RECLAIMED
+  | typeof ACCORD_ERROR__SLOT_NOT_DRAINED
   | typeof ACCORD_ERROR__SORTITION_MISMATCH
   | typeof ACCORD_ERROR__STAKE_LOCKED
   | typeof ACCORD_ERROR__SUBACCORD_MISMATCH
@@ -197,6 +233,13 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__APPEAL_WINDOW_OPEN]: `Appeal window has not elapsed yet.`,
     [ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT]: `Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS).`,
     [ACCORD_ERROR__ARITHMETIC_OVERFLOW]: `Arithmetic overflow.`,
+    [ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL]: `Credential and schema must be set together (both-or-neither).`,
+    [ACCORD_ERROR__ATTESTATION_EXPIRED]: `Attestation has expired or will expire before the dispute lifecycle completes.`,
+    [ACCORD_ERROR__ATTESTATION_MALFORMED]: `Attestation account is malformed (wrong owner, discriminator, or too short).`,
+    [ACCORD_ERROR__ATTESTATION_MISMATCH]: `Attestation credential or schema does not match the Subaccord binding.`,
+    [ACCORD_ERROR__ATTESTATION_MISSING]: `Subaccord is credential-gated but no attestation account was provided.`,
+    [ACCORD_ERROR__ATTESTATION_NOT_EXPIRED]: `Attestation has not expired; prune_juror requires an actually-expired credential.`,
+    [ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH]: `Attestation subject wallet does not match the juror.`,
     [ACCORD_ERROR__CANCEL_TOO_EARLY]: `Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.`,
     [ACCORD_ERROR__COMMIT_ALREADY_EXISTS]: `Juror has already committed.`,
     [ACCORD_ERROR__COMMIT_MISSING]: `No commit to reveal for this Juror.`,
@@ -204,7 +247,9 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__DISPUTE_FAILED]: `Dispute is in terminal Failed state.`,
     [ACCORD_ERROR__DISPUTE_NOT_FINAL]: `Dispute is not in a finalizable state.`,
     [ACCORD_ERROR__DUPLICATE_JUROR]: `Draw selected a duplicate Juror.`,
-    [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (INITIAL_NUM_JURORS * fee_per_juror).`,
+    [ACCORD_ERROR__EVEN_JURY_SIZE]: `Round-1 jury size (min_jury_size) must be odd (tie avoidance).`,
+    [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).`,
+    [ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH]: `Provided freed-slot account does not match the free-list head.`,
     [ACCORD_ERROR__IMMUTABLE_SUBACCORD]: `Subaccord is immutable (authority == default).`,
     [ACCORD_ERROR__INFLATED_STAKE]: `Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012).`,
     [ACCORD_ERROR__INSUFFICIENT_BALANCE]: `Withdrawal exceeds the Juror's free stake (amount - slash_reserve).`,
@@ -218,6 +263,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__INVALID_STATE]: `Dispute is not in the required state for this instruction.`,
     [ACCORD_ERROR__INVALID_THRESHOLD]: `Reveal threshold (bps) must be <= 10_000.`,
     [ACCORD_ERROR__INVALID_VOTE]: `Revealed vote index is out of range.`,
+    [ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS]: `The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.`,
     [ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED]: `Subaccord max_appeals exceeds the program ceiling.`,
     [ACCORD_ERROR__MAX_APPEALS_REACHED]: `Maximum appeals reached for this dispute.`,
     [ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED]: `Subaccord max_draw_attempts exceeds the program ceiling.`,
@@ -237,6 +283,8 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__ROUND_ALREADY_SETTLED]: `Round has already been settled.`,
     [ACCORD_ERROR__ROUND_NOT_FINALIZABLE]: `Round cannot be finalized yet (window not elapsed).`,
     [ACCORD_ERROR__ROUND_NOT_SETTLABLE]: `Round index out of range for settlement (must be < current_round).`,
+    [ACCORD_ERROR__SLOT_ALREADY_RECLAIMED]: `JurorStake slot is already on the free list (next_free != MAX).`,
+    [ACCORD_ERROR__SLOT_NOT_DRAINED]: `JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0).`,
     [ACCORD_ERROR__SORTITION_MISMATCH]: `Submitted membership does not match the VRF-derived sortition selection (ADR-0009).`,
     [ACCORD_ERROR__STAKE_LOCKED]: `Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle).`,
     [ACCORD_ERROR__SUBACCORD_MISMATCH]: `Dispute does not belong to this Subaccord (cross-pool substitution rejected).`,

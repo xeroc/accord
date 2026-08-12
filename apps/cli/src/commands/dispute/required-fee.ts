@@ -32,6 +32,11 @@ export default class DisputeRequiredFee extends BaseCommand {
       description: "Per-juror fee in lamports (the Subaccord's feePerJuror)",
       required: true,
     }),
+    "min-jury-size": Flags.integer({
+      description:
+        "Round-1 juror panel size (accord-9q3e). Default 3; must match the Subaccord's min_jury_size.",
+      default: 3,
+    }),
   };
 
   async run(): Promise<void> {
@@ -39,9 +44,11 @@ export default class DisputeRequiredFee extends BaseCommand {
     this.applyOutput(flags);
 
     const feePerJuror = parseLamports(flags["fee-per-juror"], "fee-per-juror");
-    const fee = requiredFee(feePerJuror);
+    const fee = requiredFee(feePerJuror, flags["min-jury-size"]);
     if (fee === null) {
-      throw new Error(`FeeOverflow: 3 × ${feePerJuror} exceeds u64; lower the per-juror fee`);
+      throw new Error(
+        `${flags["min-jury-size"]} × ${feePerJuror} exceeds u64; lower the per-juror fee`,
+      );
     }
 
     this.emitRead(

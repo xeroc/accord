@@ -45,6 +45,7 @@ import { getStakeInstruction } from "./generated/instructions/stake.js";
 import { getRequestWithdrawInstruction } from "./generated/instructions/requestWithdraw.js";
 import { getWithdrawInstruction } from "./generated/instructions/withdraw.js";
 import { getReconcileStakeInstruction } from "./generated/instructions/reconcileStake.js";
+import { getReclaimSlotInstruction } from "./generated/instructions/reclaimSlot.js";
 import { getWithdrawFeesInstruction } from "./generated/instructions/withdrawFees.js";
 import { getSettleRoundInstruction } from "./generated/instructions/settleRound.js";
 import { getCancelDisputeInstruction } from "./generated/instructions/cancelDispute.js";
@@ -57,6 +58,7 @@ import { getFinalizeDisputeInstruction } from "./generated/instructions/finalize
 import { getRedrawInstruction } from "./generated/instructions/redraw.js";
 import { getAppealInstruction } from "./generated/instructions/appeal.js";
 import { getClaimAppealRefundInstruction } from "./generated/instructions/claimAppealRefund.js";
+import { getPruneJurorInstruction } from "./generated/instructions/pruneJuror.js";
 
 import type {
   AccordAppealClient,
@@ -217,7 +219,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           "StakePausedStateMissing: stake requires the pauseState PDA",
         );
       }
-      return getStakeInstruction(
+      const ix = getStakeInstruction(
         {
           juror: accord.signer,
           subaccord: input.accounts.subaccord,
@@ -231,6 +233,12 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         },
         { programAddress: input.programId },
       );
+      // PROG-ATTESTATION: credential-gated Subaccords require the juror's SAS
+      // attestation as remaining_accounts[0] (read-only). Omitted on stake-only
+      // Subaccords — the on-chain gate no-ops.
+      return input.attestation
+        ? appendRemaining(ix, [{ address: input.attestation, isWritable: false }])
+        : ix;
     },
     buildRequestWithdraw(input) {
       return getRequestWithdrawInstruction(
@@ -274,6 +282,17 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         { programAddress: input.programId },
       );
     },
+    buildReclaimSlot(input) {
+      return getReclaimSlotInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          jurorStake: input.accounts.jurorStake,
+          path: mapPath(input.path),
+        },
+        { programAddress: input.programId },
+      );
+    },
     async fetchJurorStake(jurorStake): Promise<JurorStakeView | null> {
       const m =
         await accord.client.accord.accounts.jurorStake.fetchMaybe(jurorStake);
@@ -297,6 +316,22 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         },
         { programAddress: input.programId },
       );
+    },
+    buildPruneJuror(input) {
+      const ix = getPruneJurorInstruction(
+        {
+          caller: accord.signer,
+          juror: input.accounts.juror,
+          subaccord: input.accounts.subaccord,
+          jurorStake: input.accounts.jurorStake,
+          path: mapPath(input.path),
+        },
+        { programAddress: input.programId },
+      );
+      // remaining_accounts[0] = the expired juror's SAS attestation (read-only).
+      return appendRemaining(ix, [
+        { address: input.attestation, isWritable: false },
+      ]);
     },
 
     // ── settlement (per-round crank + dispute cancellation) ───────────────
@@ -346,6 +381,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         {
           caller: accord.signer,
           dispute: input.accounts.dispute,
+          subaccord: input.accounts.subaccord,
           round: input.roundPda,
           seat: input.seat,
           retries: input.retries,
@@ -471,7 +507,10 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
  * `buildCreateSubaccord`. */
 function mapCreateSubaccordArgs(
   args: CreateSubaccordArgs,
-): Omit<CreateSubaccordArgs, "stakingToken" | "feeToken"> {
+): Omit<CreateSubaccordArgs, "stakingToken" | "feeToken" | "jurorCredential" | "jurorSchema"> & {
+  jurorCredential: Address;
+  jurorSchema: Address;
+} {
   return {
     riskType: args.riskType,
     evidenceSpec: args.evidenceSpec,
@@ -482,6 +521,7 @@ function mapCreateSubaccordArgs(
     revealWindow: args.revealWindow,
     appealWindow: args.appealWindow,
     maxAppeals: args.maxAppeals,
+    minJurySize: args.minJurySize,
     aggregation: args.aggregation,
     feePerJuror: args.feePerJuror,
     revealThresholdBps: args.revealThresholdBps,
@@ -490,6 +530,13 @@ function mapCreateSubaccordArgs(
     authority: args.authority,
     evidenceOperator: args.evidenceOperator,
     depth: args.depth,
+    // PROG-ATTESTTION: optional credential gate — default to the zero pubkey
+    // (stake-only) when the caller omits them.
+    jurorCredential:
+      args.jurorCredential ??
+      ("11111111111111111111111111111111" as Address),
+    jurorSchema:
+      args.jurorSchema ?? ("11111111111111111111111111111111" as Address),
   };
 }
 
@@ -533,19 +580,28 @@ function mapLeaf(leaf: { juror: Uint8Array; stake: bigint }): {
 }
 
 /**
- * Append `remaining_accounts` (JurorStake / AppealBond PDAs) as writable
- * non-signer metas. The on-chain handlers mutate these (slashes, refunds,
- * `active_draws` bumps), so they must be `WRITABLE`.
+ * Append `remaining_accounts` as non-signer metas. A bare {@link Address} is
+ * WRITABLE (historical behavior — JurorStake/AppealBond PDAs the chain mutates:
+ * slashes, refunds, `active_draws` bumps). Pass `{ address, isWritable: false }`
+ * for read-only remaining accounts (PROG-ATTESTATION: the juror's SAS
+ * attestation, which the handler only verifies, never mutates).
  */
+type RemainingAccount = Address | { address: Address; isWritable?: boolean };
+
 function appendRemaining(
   ix: Instruction,
-  extra: readonly Address[],
+  extra: readonly RemainingAccount[],
 ): Instruction {
   if (extra.length === 0) return ix;
-  const metas: AccountMeta[] = extra.map((address) => ({
-    address,
-    role: AccountRole.WRITABLE,
-  }));
+  const metas: AccountMeta[] = extra.map((e) => {
+    if (typeof e === "string") {
+      return { address: e, role: AccountRole.WRITABLE };
+    }
+    return {
+      address: e.address,
+      role: e.isWritable === false ? AccountRole.READONLY : AccountRole.WRITABLE,
+    };
+  });
   return Object.freeze({
     ...ix,
     accounts: Object.freeze([...(ix.accounts ?? []), ...metas]),

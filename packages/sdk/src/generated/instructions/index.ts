@@ -24,6 +24,8 @@ export * from "./initializePause";
 export * from "./pause";
 export * from "./proposeSubaccordUpdate";
 export * from "./proposeUnpause";
+export * from "./pruneJuror";
+export * from "./reclaimSlot";
 export * from "./reconcileStake";
 export * from "./redraw";
 export * from "./requestVrf";

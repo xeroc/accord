@@ -93,6 +93,14 @@ export type JurorStake = {
    * not at-risk capital).
    */
   feesEarned: bigint;
+  /**
+   * Next free index in the free-slot linked list (RECLAIM-LEAF).
+   * `u32::MAX` = this account is NOT a free-list node (active juror, or never
+   * reclaimed). Any other value = this slot is reclaimed and `next_free` is
+   * the next free index after this one. Set by `reclaim_slot`, consumed by
+   * `stake`.
+   */
+  nextFree: number;
 };
 
 export type JurorStakeArgs = {
@@ -136,6 +144,14 @@ export type JurorStakeArgs = {
    * not at-risk capital).
    */
   feesEarned: number | bigint;
+  /**
+   * Next free index in the free-slot linked list (RECLAIM-LEAF).
+   * `u32::MAX` = this account is NOT a free-list node (active juror, or never
+   * reclaimed). Any other value = this slot is reclaimed and `next_free` is
+   * the next free index after this one. Set by `reclaim_slot`, consumed by
+   * `stake`.
+   */
+  nextFree: number;
 };
 
 /** Gets the encoder for {@link JurorStakeArgs} account data. */
@@ -154,6 +170,7 @@ export function getJurorStakeEncoder(): FixedSizeEncoder<JurorStakeArgs> {
       ["withdrawRequestedAt", getI64Encoder()],
       ["pendingWithdrawal", getU64Encoder()],
       ["feesEarned", getU64Encoder()],
+      ["nextFree", getU32Encoder()],
     ]),
     (value) => ({ ...value, discriminator: JUROR_STAKE_DISCRIMINATOR }),
   );
@@ -174,6 +191,7 @@ export function getJurorStakeDecoder(): FixedSizeDecoder<JurorStake> {
     ["withdrawRequestedAt", getI64Decoder()],
     ["pendingWithdrawal", getU64Decoder()],
     ["feesEarned", getU64Decoder()],
+    ["nextFree", getU32Decoder()],
   ]);
 }
 
@@ -239,5 +257,5 @@ export async function fetchAllMaybeJurorStake(
 }
 
 export function getJurorStakeSize(): number {
-  return 129;
+  return 133;
 }

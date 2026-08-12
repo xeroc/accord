@@ -195,3 +195,22 @@ pub struct DisputeFailedShortfall {
     pub draw_attempt: u32,
     pub refund: u64,
 }
+
+/// Emitted when a drained JurorStake's tree slot is pushed onto the free list
+/// (RECLAIM-LEAF). The slot's leaf identity is blanked to `(default, 0)` and
+/// `tree_index` is linked onto the `Subaccord.free_head` free list.
+#[event]
+pub struct SlotReclaimed {
+    pub subaccord: Pubkey,
+    pub juror: Pubkey,
+    pub index: u32,
+}
+
+/// Emitted when a new staker claims a recycled tree slot from the free list
+/// (RECLAIM-LEAF). The freed `JurorStake` is closed (rent → caller).
+#[event]
+pub struct SlotAllocated {
+    pub subaccord: Pubkey,
+    pub juror: Pubkey,
+    pub index: u32,
+}

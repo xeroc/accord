@@ -53,6 +53,10 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       "  --reveal-window 172800 --appeal-window 259200 --max-appeals 3 \\\n" +
       "  --fee-per-juror 0 --reveal-threshold-bps 6666 --max-draw-attempts 3 \\\n" +
       "  --evidence-operator <addr>",
+    "<%= config.bin %> lifecycle:create-subaccord --random-risk-type \\\n" +
+      "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
+      "  --min-stake 1000 --juror-credential <issuer> --juror-schema <schema> \\\n" +
+      "  --evidence-operator <addr>  # credential-gated (attestation required to stake)",
   ];
 
   static flags = {
@@ -102,8 +106,14 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       required: true,
     }),
     "max-appeals": Flags.integer({
-      description: "Max appeals (0..3); the sole per-Subaccord panel-shape knob",
+      description: "Max appeals (0..3); bounds the appeal ladder depth",
       required: true,
+    }),
+    "min-jury-size": Flags.integer({
+      description:
+        "Round-1 juror panel size (accord-9q3e). Must be odd; the appeal ladder" +
+        " (J+1)·2^maxAppeals − 1 must fit 31. Default 3; set 1 for a single-juror pool.",
+      default: 3,
     }),
     aggregation: Flags.string({
       description: "Dispute-kit aggregation rule (ADR-0019)",
@@ -131,6 +141,16 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       description: "ADR-0006 trusted re-encryption service address",
       required: true,
     }),
+    "juror-credential": Flags.string({
+      description:
+        "PROG-ATTESTTION: attestation issuer (SAS credential) gating the juror pool. " +
+        "Both-or-neither with --juror-schema; omit for a stake-only Subaccord (default).",
+    }),
+    "juror-schema": Flags.string({
+      description:
+        "PROG-ATTESTTION: schema the juror's SAS attestation must match. " +
+        "Both-or-neither with --juror-credential; omit for stake-only (default).",
+    }),
     depth: Flags.integer({
       description: "Fixed accumulator tree depth (bounds the juror pool at 2^depth)",
       default: DEFAULT_TREE_DEPTH,
@@ -140,6 +160,16 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(LifecycleCreateSubaccord);
     this.applyOutput(flags);
+    // PROG-ATTESTTION: the credential gate is both-or-neither. Omit both ⇒ stake-only.
+    const jurorCredential = flags["juror-credential"] as Address | undefined;
+    const jurorSchema = flags["juror-schema"] as Address | undefined;
+    if ((jurorCredential !== undefined) !== (jurorSchema !== undefined)) {
+      this.error(
+        "--juror-credential and --juror-schema are both-or-neither: pass both to gate the " +
+          "juror pool on a SAS attestation, or omit both for a stake-only Subaccord (default).",
+        { exit: 1 },
+      );
+    }
 
     const riskType = flags["random-risk-type"]
       ? randomBytes(32)
@@ -161,6 +191,7 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       revealWindow: BigInt(flags["reveal-window"]),
       appealWindow: BigInt(flags["appeal-window"]),
       maxAppeals: flags["max-appeals"],
+      minJurySize: flags["min-jury-size"],
       aggregation:
         flags.aggregation === "Plurality" ? Aggregation.Plurality : Aggregation.Plurality,
       feePerJuror: BigInt(flags["fee-per-juror"]),
@@ -172,6 +203,10 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       authority: ctx.signer.address,
       evidenceOperator: flags["evidence-operator"] as Address,
       depth: flags.depth,
+      // PROG-ATTESTTION: optional credential gate (both-or-neither; omit ⇒ stake-only).
+      ...(jurorCredential !== undefined && jurorSchema !== undefined
+        ? { jurorCredential, jurorSchema }
+        : {}),
     };
 
     const { instruction, subaccord, bump } = await ctx.accord.methods.createSubaccord(

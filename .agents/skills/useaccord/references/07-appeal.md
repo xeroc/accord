@@ -105,8 +105,9 @@ SDK: `methods.claimAppealRefund(accounts, roundIdx)` (appeal.ts:215).
 
 ## Appeal ladder
 
-`panel_size_for_round(k) = (INITIAL_NUM_JURORS + 1) · 2^k − 1`, capped at
-`MAX_JURORS`. With the default `INITIAL_NUM_JURORS = 3` and `max_appeals = 3`:
+`panel_size_for_round(k, J) = (J + 1) · 2^k − 1`, capped at `MAX_JURORS`,
+where `J` = the Subaccord's `min_jury_size` (default 3, accord-9q3e). With the
+default `J = 3` and `max_appeals = 3`:
 
 ```
 round 0    round 1     round 2      round 3

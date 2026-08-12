@@ -88,7 +88,7 @@ pub(crate) mod layout {
     const PUBKEY: usize = 32;
 
     // --- JurorStake (state.rs) ---
-    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned
+    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned | next_free
     const JS_STAKED_W: usize = 8;
     const JS_ACTIVE_DRAWS_W: usize = 4;
     const JS_BUMP_W: usize = 1;
@@ -126,6 +126,200 @@ pub(crate) mod layout {
     const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
     const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
 }
+// ===========================================================================
+// SAS (Solana Attestation Service) attestation parsing (PROG-ATTESTTION)
+// ===========================================================================
+//
+// The SAS program is a Pinocchio program deployed at
+// `22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG`. Its `Attestation` account
+// has a variable-length layout — `expiry` follows the variable `data` blob, so
+// (unlike the fixed-offset `layout` reads above) `expiry` needs a dynamic
+// parser. The fixed-offset fields (`credential`, `schema`, `data[0..32]`
+// wallet) reuse the same named-offset idiom.
+
+/// Dynamic-offset parser for SAS Attestation accounts. `expiry` sits *after*
+/// the variable `data` blob + signer, so its byte offset depends on `data_len`
+/// — it is NOT a compile-time constant and cannot be modelled by the fixed-
+/// offset `layout` mod. The credential/schema/wallet reads ARE fixed-offset.
+pub(crate) mod sas_layout {
+    use crate::AccordError;
+    use anchor_lang::prelude::*;
+
+    /// SAS program ID (solana-attestation-service).
+    pub(crate) const SAS_PROGRAM_ID: Pubkey =
+        pubkey!("22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG");
+    /// `AttestationDiscriminator` (program/src/state/attestation.rs in SAS).
+    pub(crate) const SAS_ATTESTATION_DISCRIMINATOR: u8 = 2;
+
+    // Fixed byte offsets within a SAS Attestation account body.
+    const DISC_OFF: usize = 0; // u8
+    const CREDENTIAL_OFF: usize = 33; // 32
+    const SCHEMA_OFF: usize = 65; // 32
+    const DATA_LEN_OFF: usize = 97; // u32 LE
+    const DATA_OFF: usize = 101; // variable-length `data` starts here
+    const WALLET_W: usize = 32; // subject binding = data[0..32]
+    const SIGNER_W: usize = 32;
+    const EXPIRY_W: usize = 8; // i64 LE; 0 ⇒ never expires
+
+    /// Minimum account length carrying a 32-byte wallet subject + expiry.
+    const MIN_LEN: usize = DATA_OFF + WALLET_W + SIGNER_W + EXPIRY_W; // 173
+
+    /// Parsed view of a SAS Attestation — the four fields the gate checks.
+    #[derive(Clone, Copy)]
+    pub(crate) struct SasAttestationView {
+        pub credential: Pubkey,
+        pub schema: Pubkey,
+        /// Subject wallet — `data[0..32]` (schema convention: first field).
+        pub wallet: Pubkey,
+        /// i64 expiry; `0` ⇒ never expires.
+        pub expiry: i64,
+    }
+
+    impl SasAttestationView {
+        /// Parse a raw SAS Attestation account body. Validates the
+        /// discriminator and that the account carries a 32-byte wallet + the
+        /// expiry tail. Does NOT check credential/schema/wallet equality — the
+        /// caller knows the expected values and applies those checks.
+        pub(crate) fn parse(data: &[u8]) -> Result<Self> {
+            require!(data.len() >= MIN_LEN, AccordError::AttestationMalformed);
+            require!(
+                data[DISC_OFF] == SAS_ATTESTATION_DISCRIMINATOR,
+                AccordError::AttestationMalformed
+            );
+            let data_len = u32::from_le_bytes(
+                data[DATA_LEN_OFF..DATA_LEN_OFF + 4]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            // Subject binding requires a 32-byte wallet field at data[0..32].
+            require!(
+                data_len >= WALLET_W as u32,
+                AccordError::AttestationMalformed
+            );
+            // `expiry` follows the variable data blob + signer.
+            let expiry_off = DATA_OFF + data_len as usize + SIGNER_W;
+            require!(
+                data.len() >= expiry_off + EXPIRY_W,
+                AccordError::AttestationMalformed
+            );
+            let credential = Pubkey::new_from_array(
+                data[CREDENTIAL_OFF..CREDENTIAL_OFF + 32]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            let schema = Pubkey::new_from_array(
+                data[SCHEMA_OFF..SCHEMA_OFF + 32]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            let wallet = Pubkey::new_from_array(
+                data[DATA_OFF..DATA_OFF + WALLET_W]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            let expiry = i64::from_le_bytes(
+                data[expiry_off..expiry_off + EXPIRY_W]
+                    .try_into()
+                    .map_err(|_| AccordError::AttestationMalformed)?,
+            );
+            Ok(Self {
+                credential,
+                schema,
+                wallet,
+                expiry,
+            })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// `expiry` lives at a dynamic offset (after variable `data`); the
+        /// parse must locate it correctly across `data_len` values. Mirrors
+        /// `layout_tests::offsets_match_borsh` — this is the SAS analog.
+        #[test]
+        fn sas_expiry_offset_is_dynamic() {
+            for &data_len in &[32u32, 48, 100, 256] {
+                let mut buf = vec![0u8; DATA_OFF + data_len as usize + SIGNER_W + EXPIRY_W];
+                buf[DISC_OFF] = SAS_ATTESTATION_DISCRIMINATOR;
+                buf[DATA_LEN_OFF..DATA_LEN_OFF + 4].copy_from_slice(&data_len.to_le_bytes());
+                let expiry_off = DATA_OFF + data_len as usize + SIGNER_W;
+                let expiry = 1_700_000_000i64 + data_len as i64;
+                buf[expiry_off..expiry_off + EXPIRY_W].copy_from_slice(&expiry.to_le_bytes());
+                let view = SasAttestationView::parse(&buf).expect("parse");
+                assert_eq!(view.expiry, expiry, "data_len={data_len}");
+            }
+        }
+
+        #[test]
+        fn sas_never_expires_is_zero() {
+            let mut buf = vec![0u8; MIN_LEN];
+            buf[DISC_OFF] = SAS_ATTESTATION_DISCRIMINATOR;
+            buf[DATA_LEN_OFF..DATA_LEN_OFF + 4].copy_from_slice(&32u32.to_le_bytes());
+            let view = SasAttestationView::parse(&buf).expect("parse");
+            assert_eq!(view.expiry, 0);
+        }
+
+        #[test]
+        fn sas_bad_discriminator_rejected() {
+            let mut buf = vec![0u8; MIN_LEN];
+            buf[DISC_OFF] = 9; // wrong discriminator
+            buf[DATA_LEN_OFF..DATA_LEN_OFF + 4].copy_from_slice(&32u32.to_le_bytes());
+            assert!(SasAttestationView::parse(&buf).is_err());
+        }
+    }
+}
+
+/// Validate a SAS attestation `AccountInfo` against the Subaccord's credential
+/// binding and the juror's wallet. Returns the parsed `expiry` (i64; `0` ⇒
+/// never expires) on success. Shared by `stake`, `draw_seat`, and `prune_juror`
+/// so the offset math is unit-tested once (via `sas_layout::tests`).
+fn validate_sas_attestation(
+    info: &AccountInfo,
+    expected_credential: &Pubkey,
+    expected_schema: &Pubkey,
+    juror: &Pubkey,
+) -> Result<i64> {
+    require!(
+        info.owner == &sas_layout::SAS_PROGRAM_ID,
+        AccordError::AttestationMalformed
+    );
+    let data = info.try_borrow_data()?;
+    let view = sas_layout::SasAttestationView::parse(&data)?;
+    require!(
+        view.credential == *expected_credential,
+        AccordError::AttestationMismatch
+    );
+    require!(
+        view.schema == *expected_schema,
+        AccordError::AttestationMismatch
+    );
+    require!(
+        view.wallet == *juror,
+        AccordError::AttestationSubjectMismatch
+    );
+    Ok(view.expiry)
+}
+
+/// Maximum dispute lifecycle `(review + commit + reveal + appeal) ×
+/// (max_appeals + 1)`, in seconds. The stake-time gate requires the juror's
+/// attestation to outlive this horizon so it cannot lapse mid-dispute.
+fn attestation_horizon(sub: &Subaccord) -> Result<i64> {
+    let cycle = sub
+        .review_window
+        .checked_add(sub.commit_window)
+        .and_then(|v| v.checked_add(sub.reveal_window))
+        .and_then(|v| v.checked_add(sub.appeal_window))
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let rounds = (sub.max_appeals as u64)
+        .checked_add(1)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let h = cycle
+        .checked_mul(rounds)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    Ok(h as i64)
+}
 
 #[cfg(test)]
 mod layout_tests {
@@ -151,6 +345,7 @@ mod layout_tests {
             withdraw_requested_at: 0x2223_2425_2627_2829,
             pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
             fees_earned: 0x3233_3435_3637_3839,
+            next_free: 0x3A3B_3C3D,
         };
         let mut buf = Vec::new();
         js.try_serialize(&mut buf).unwrap();
@@ -330,6 +525,7 @@ pub mod accord {
             reveal_window,
             appeal_window,
             max_appeals,
+            min_jury_size,
             aggregation,
             fee_per_juror,
             reveal_threshold_bps,
@@ -338,17 +534,35 @@ pub mod accord {
             authority,
             evidence_operator,
             depth,
+            juror_credential,
+            juror_schema,
         } = params;
         // Namespace guard: reject the degenerate zero-hash risk_type so the
         // default identity can't be silently squatting a namespace.
         require!(risk_type != [0u8; 32], AccordError::InvalidOptions);
         // Appeal-bond arrays on `Dispute` are sized to `MAX_APPEALS`; a
         // Subaccord may not promise more appeals than the program can custody.
-        // The round-1 panel is the fixed `INITIAL_NUM_JURORS` (=3), so the
-        // ladder 3 → 7 → 15 → 31 always fits `MAX_JURORS` at `max_appeals ≤ 3`.
+        // The appeal ladder `(min_jury_size+1)·2^k − 1` must fit `MAX_JURORS`
+        // (checked below for the chosen pair); `max_appeals` itself is capped at 3.
         require!(
             max_appeals as usize <= MAX_APPEALS,
             AccordError::MaxAppealsLimitExceeded
+        );
+        // accord-9q3e: per-Subaccord round-1 panel size. Must be odd (tie
+        // avoidance — the closed form keeps every round odd only for odd J) and
+        // the full appeal ladder must fit `MAX_JURORS` so the closed form never
+        // silently hits the `.min()` cap (which would truncate panel growth).
+        // For `min_jury_size = 1` + `max_appeals = 0` the ladder is a single
+        // round and never exercised.
+        require!(min_jury_size % 2 == 1, AccordError::EvenJurySize);
+        let ladder_top = (min_jury_size as u64)
+            .checked_add(1)
+            .and_then(|v| v.checked_shl(max_appeals as u32))
+            .and_then(|v| v.checked_sub(1))
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(
+            ladder_top <= MAX_JURORS as u64,
+            AccordError::LadderExceedsMaxJurors
         );
         // ADR-0021: validate the reveal-quorum config.
         require!(
@@ -369,6 +583,13 @@ pub mod accord {
             appeal_window >= MIN_APPEAL_WINDOW_SECS,
             AccordError::AppealWindowTooShort
         );
+        // PROG-ATTESTTION: credential binding is both-or-neither. A half-bound
+        // Subaccord (credential set, schema unset — or vice versa) is rejected;
+        // both `Pubkey::default()` ⇒ stake-only (today's behavior, unchanged).
+        require!(
+            (juror_credential == Pubkey::default()) == (juror_schema == Pubkey::default()),
+            AccordError::AttestationBindingPartial
+        );
 
         let acc = &mut ctx.accounts.subaccord;
         acc.creator = ctx.accounts.creator.key();
@@ -381,6 +602,7 @@ pub mod accord {
         acc.reveal_window = reveal_window;
         acc.appeal_window = appeal_window;
         acc.max_appeals = max_appeals;
+        acc.min_jury_size = min_jury_size;
         acc.aggregation = aggregation;
         acc.fee_per_juror = fee_per_juror;
         acc.reveal_threshold_bps = reveal_threshold_bps;
@@ -390,12 +612,17 @@ pub mod accord {
         acc.evidence_operator = evidence_operator;
         acc.risk_type = risk_type;
         acc.evidence_spec = evidence_spec;
+        // Immutable identity-triplet extension (PROG-ATTESTTION).
+        acc.juror_credential = juror_credential;
+        acc.juror_schema = juror_schema;
         acc.bump = ctx.bumps.subaccord;
         // ADR-0012 accumulator: start as an all-zero tree at the fixed depth.
         acc.depth = depth;
         acc.next_index = 0;
         acc.total_stake = 0;
         acc.root_hash = empty_tree_root(depth);
+        // RECLAIM-LEAF: free list starts empty (no reclaimed slots).
+        acc.free_head = u32::MAX;
 
         emit!(SubaccordCreated {
             creator: ctx.accounts.creator.key(),
@@ -420,6 +647,38 @@ pub mod accord {
     pub fn stake(ctx: Context<Stake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
         require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
         require!(amount > 0, AccordError::InvalidAmount);
+        // PROG-ATTESTTION: optional credential gate. On a credential-gated
+        // Subaccord (`juror_credential != default`), the juror must supply a
+        // valid SAS attestation in `remaining_accounts[0]`. On a stake-only
+        // Subaccord (both fields `default()`) this block is skipped entirely —
+        // today's behavior is unchanged. Scoped so the immutable borrow ends
+        // before the mutable `sub` borrow below.
+        {
+            let sub_acc = &ctx.accounts.subaccord;
+            if sub_acc.juror_credential != Pubkey::default() {
+                require!(
+                    !ctx.remaining_accounts.is_empty(),
+                    AccordError::AttestationMissing
+                );
+                let att = &ctx.remaining_accounts[0];
+                let now = Clock::get()?.unix_timestamp;
+                let cutoff = now
+                    .checked_add(attestation_horizon(sub_acc)?)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                let expiry = validate_sas_attestation(
+                    att,
+                    &sub_acc.juror_credential,
+                    &sub_acc.juror_schema,
+                    &ctx.accounts.juror.key(),
+                )?;
+                // `expiry == 0` ⇒ never expires; otherwise it must outlive the
+                // max dispute lifecycle so the credential can't lapse mid-dispute.
+                require!(
+                    expiry == 0 || expiry > cutoff,
+                    AccordError::AttestationExpired
+                );
+            }
+        }
 
         let before = ctx.accounts.stake_vault.amount;
 
@@ -456,15 +715,73 @@ pub mod accord {
         // unstake) already has its `tree_index`.
         let is_new_leaf = js.subaccord == Pubkey::default();
         let old_stake = js.staked;
-        let index = if is_new_leaf {
-            require!(
-                (sub.next_index as u64) < (1u64 << sub.depth.min(31)),
-                AccordError::TreeFull
-            );
-            sub.next_index
+        let (index, popped_from_free_list) = if is_new_leaf {
+            if sub.free_head != u32::MAX {
+                // --- RECLAIM-LEAF: pop from free list ---
+                // The freed JurorStake at free_head is a remaining account. Its
+                // index is gated-aware: on a credential-gated pool the juror's
+                // SAS attestation occupies remaining_accounts[0] (validated
+                // above), so the freed slot follows at [1]; on a stake-only pool
+                // it sits at [0]. The caller discovers the freed account
+                // off-chain (read sub.free_head → find the JurorStake with
+                // tree_index == free_head). The program verifies ownership, PDA
+                // derivation, and head identity.
+                let freed_idx = if sub.juror_credential != Pubkey::default() {
+                    1
+                } else {
+                    0
+                };
+                require!(
+                    ctx.remaining_accounts.len() > freed_idx,
+                    AccordError::FreeListHeadMismatch
+                );
+                let freed_info = &ctx.remaining_accounts[freed_idx];
+                require!(
+                    freed_info.owner == &crate::ID,
+                    AccordError::FreeListHeadMismatch
+                );
+                let (freed_tree_index, freed_next_free, freed_juror) = {
+                    let data = freed_info.try_borrow_data()?;
+                    let freed_js = JurorStake::try_deserialize(&mut &data[..])?;
+                    require!(
+                        freed_js.tree_index == sub.free_head,
+                        AccordError::FreeListHeadMismatch
+                    );
+                    require!(freed_js.staked == 0, AccordError::SlotNotDrained);
+                    (freed_js.tree_index, freed_js.next_free, freed_js.juror)
+                };
+                let expected_pda = Pubkey::find_program_address(
+                    &[SEED_JUROR_STAKE, sub.key().as_ref(), freed_juror.as_ref()],
+                    &crate::ID,
+                )
+                .0;
+                require!(
+                    freed_info.key == &expected_pda,
+                    AccordError::FreeListHeadMismatch
+                );
+                // Advance head + close the freed account (rent bounty → caller).
+                sub.free_head = freed_next_free;
+                {
+                    let src_lamports = **freed_info.lamports.borrow();
+                    **freed_info.lamports.borrow_mut() = 0;
+                    **ctx.accounts.juror.lamports.borrow_mut() += src_lamports;
+                    let mut data = freed_info.try_borrow_mut_data()?;
+                    for b in data.iter_mut() {
+                        *b = 0;
+                    }
+                }
+                (freed_tree_index, true)
+            } else {
+                // --- Bump allocate (unchanged) ---
+                require!(
+                    (sub.next_index as u64) < (1u64 << sub.depth.min(31)),
+                    AccordError::TreeFull
+                );
+                (sub.next_index, false)
+            }
         } else {
             require!(js.juror == juror_key, AccordError::InvalidMembershipProof);
-            js.tree_index
+            (js.tree_index, false)
         };
 
         // The accumulator leaf currently at `index`: a fresh slot is the
@@ -517,10 +834,22 @@ pub mod accord {
             js.juror = juror_key;
             js.bump = ctx.bumps.juror_stake;
             js.tree_index = index;
-            sub.next_index = sub
-                .next_index
-                .checked_add(1)
-                .ok_or(AccordError::ArithmeticOverflow)?;
+            js.next_free = u32::MAX; // active juror, not on the free list
+                                     // Only bump next_index on a fresh bump-allocate — a free-list pop
+                                     // recycles an existing index.
+            if !popped_from_free_list {
+                sub.next_index = sub
+                    .next_index
+                    .checked_add(1)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
+            if popped_from_free_list {
+                emit!(SlotAllocated {
+                    subaccord: sub.key(),
+                    juror: juror_key,
+                    index,
+                });
+            }
         }
         // active_draws intentionally untouched: 0 on fresh init, preserved on top-up.
 
@@ -728,6 +1057,155 @@ pub mod accord {
         Ok(())
     }
 
+    /// Permissionless crank (PROG-ATTESTTION): evicts an **expired-credential**
+    /// juror from a gated Subaccord's accumulator. Without it, an expired juror
+    /// still in the tree is a dead zone — if the VRF lands on them, `draw_seat`
+    /// reverts at the freshness check and the cranker cannot advance. Anyone
+    /// may call; the caller supplies the juror's Merkle `path` + the expired
+    /// SAS attestation in `remaining_accounts[0]`.
+    ///
+    /// The body mirrors `request_withdraw` for the **full** `staked` amount:
+    /// zeros the leaf's selection weight, recomputes the root, banks the tokens
+    /// into `pending_withdrawal`, and decrements `staker_count`. The juror then
+    /// completes the normal two-phase `withdraw` (or re-stakes with a renewed
+    /// attestation). Only the trigger + signer differ from `request_withdraw`:
+    /// the caller signs (permissionless), the juror does not — so `PruneJuror`
+    /// is its own account struct, not `RequestWithdraw`.
+    ///
+    /// Gates: gated Subaccords only; the attestation must have a real expiry
+    /// (`!= 0`) that has passed (`<= now`) — a never-expiring credential can
+    /// never be pruned. Banking the full stake requires no outstanding slash
+    /// reserve (⇔ no in-flight draws), so a drawn juror settles those first.
+    pub fn prune_juror(ctx: Context<PruneJuror>, path: Vec<MSTNode>) -> Result<()> {
+        let sub = &mut ctx.accounts.subaccord;
+        // Only meaningful for gated pools (stake-only Subaccords have nothing
+        // to expire).
+        require!(
+            sub.juror_credential != Pubkey::default(),
+            AccordError::AttestationMissing
+        );
+
+        // Expiry proof: the juror's attestation must be actually expired.
+        require!(
+            !ctx.remaining_accounts.is_empty(),
+            AccordError::AttestationMissing
+        );
+        let att = &ctx.remaining_accounts[0];
+        let expiry = validate_sas_attestation(
+            att,
+            &sub.juror_credential,
+            &sub.juror_schema,
+            &ctx.accounts.juror.key(),
+        )?;
+        let now = Clock::get()?.unix_timestamp;
+        require!(
+            expiry != 0 && expiry <= now,
+            AccordError::AttestationNotExpired
+        );
+
+        let juror_key = ctx.accounts.juror.key();
+        let js = &mut ctx.accounts.juror_stake;
+        // DRY with request_withdraw: the ledger must be canonical first.
+        require!(js.stake_delta == 0, AccordError::PendingSettlement);
+        // No double-exit while a withdrawal is already pending.
+        require!(js.pending_withdrawal == 0, AccordError::WithdrawalPending);
+        let amount = js.staked;
+        require!(amount > 0, AccordError::InvalidAmount);
+
+        // Free-stake discipline (mirrors request_withdraw): banking the full
+        // stake requires no slash reserve outstanding (⇔ no in-flight draws).
+        let free_stake = js.staked.saturating_sub(js.slash_reserve);
+        require!(amount <= free_stake, AccordError::InsufficientBalance);
+
+        let old_stake = js.staked;
+        let index = js.tree_index;
+        let (new_root, new_total) = verify_and_recompute(
+            &juror_key,
+            old_stake,
+            &juror_key,
+            0,
+            index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        js.staked = 0;
+        js.pending_withdrawal = js
+            .pending_withdrawal
+            .checked_add(amount)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        js.withdraw_requested_at = now;
+        sub.staker_count = sub.staker_count.saturating_sub(1);
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
+        emit!(Unstaked {
+            subaccord: sub.key(),
+            juror: juror_key,
+            amount,
+        });
+        Ok(())
+    }
+
+    /// **Permissionless crank** (RECLAIM-LEAF): pushes a fully-drained
+    /// JurorStake's `tree_index` onto the free list, blanking the leaf identity
+    /// to `(Pubkey::default(), 0)`. This recycles the tree slot for reuse by a
+    /// new staker — closing the permanent-DoS hole where `next_index` only ever
+    /// grows and can be exhausted by a griefing attacker.
+    ///
+    /// Preconditions: the juror must be fully drained (`staked == 0`,
+    /// `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`). A double
+    /// reclaim is prevented by root verification (see handler comment).
+    ///
+    /// Any caller may trigger this — no tokens move, it's pure ledger + root
+    /// accounting. The cranker supplies the juror's Merkle path.
+    pub fn reclaim_slot(ctx: Context<ReclaimSlot>, path: Vec<MSTNode>) -> Result<()> {
+        let js = &mut ctx.accounts.juror_stake;
+        let sub = &mut ctx.accounts.subaccord;
+
+        // Preconditions: fully drained. Double-reclaim is prevented by root
+        // verification: after reclaim the leaf is (default, 0), but we hash
+        // (js.juror, 0) as old_juror — a second reclaim fails InvalidMerklePath
+        // because the root no longer contains (juror, 0) at this index.
+        require!(js.staked == 0, AccordError::SlotNotDrained);
+        require!(js.active_draws == 0, AccordError::SlotNotDrained);
+        require!(js.stake_delta == 0, AccordError::SlotNotDrained);
+        require!(js.fees_earned == 0, AccordError::SlotNotDrained);
+
+        let juror = js.juror;
+        let index = js.tree_index;
+
+        // Root update: blank the leaf identity from (juror, 0) to (default, 0).
+        // total_stake does not change (0 → 0). Only the root hash changes
+        // (leaf hash input: H(juror ‖ 0) → H(default ‖ 0)).
+        let (new_root, new_total) = verify_and_recompute(
+            &juror,
+            0,
+            &Pubkey::default(),
+            0,
+            index,
+            &path,
+            &sub.root_hash,
+            sub.total_stake,
+        )?;
+
+        // Linked-list push: this JurorStake becomes the new head.
+        js.next_free = sub.free_head;
+        sub.free_head = index;
+
+        sub.root_hash = new_root;
+        sub.total_stake = new_total;
+
+        emit!(SlotReclaimed {
+            subaccord: sub.key(),
+            juror,
+            index,
+        });
+
+        Ok(())
+    }
+
     // --- Subaccord authority / timelock (ADR-0005; veridao-y63e) ---
 
     /// Authority-gated proposal of a Subaccord parameter update. The update is
@@ -813,7 +1291,7 @@ pub mod accord {
     // --- Dispute intake & Snapshot trust (ADR-0003/0004; veridao-rrxs) ---
 
     /// The **Arbitrable CPI entry**: any program files a Dispute. The filer pays
-    /// the full round-1 fee (`INITIAL_NUM_JURORS · fee_per_juror`) into the
+    /// the full round-1 fee (`min_jury_size · fee_per_juror`) into the
     /// Subaccord vault, so the on-chain fee is authoritative — the caller's
     /// `fee` must match exactly (defense-in-depth: the filer signs the exact
     /// charge). Reverts while paused (ADR-0007) and if the Subaccord has fewer
@@ -832,13 +1310,13 @@ pub mod accord {
         require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
 
         let sub = &mut ctx.accounts.subaccord;
-        let required_fee = (INITIAL_NUM_JURORS as u64)
+        let required_fee = (sub.min_jury_size as u64)
             .checked_mul(sub.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         require!(fee == required_fee, AccordError::FeeMismatch);
 
         require!(
-            sub.staker_count >= INITIAL_NUM_JURORS,
+            sub.staker_count >= sub.min_jury_size,
             AccordError::InsufficientJurors
         );
 
@@ -898,6 +1376,7 @@ pub mod accord {
             reveal_window: sub.reveal_window,
             appeal_window: sub.appeal_window,
             max_appeals: sub.max_appeals,
+            min_jury_size: sub.min_jury_size,
             aggregation: sub.aggregation,
             reveal_threshold_bps: sub.reveal_threshold_bps,
             shortfall_policy: sub.shortfall_policy,
@@ -1048,7 +1527,7 @@ pub mod accord {
         require!(dispute.frozen_total_stake > 0, AccordError::VrfNotCommitted);
 
         let round_idx = dispute.current_round;
-        let panel = panel_size_for_round(round_idx)?;
+        let panel = panel_size_for_round(round_idx, dispute.terms.min_jury_size)?;
         require!(seat < panel, AccordError::InvalidPanelSize);
 
         let leaf = &membership.leaf;
@@ -1162,8 +1641,11 @@ pub mod accord {
         round.seat_stake[seat as usize] = leaf.stake;
 
         // Inflation guard + slash reserve check via remaining_accounts[0].
+        // PROG-ATTESTTION: gated pools also carry the juror's SAS attestation
+        // as remaining_accounts[1] (defense-in-depth draw-time re-check below).
+        let gated = ctx.accounts.subaccord.juror_credential != Pubkey::default();
         require!(
-            ctx.remaining_accounts.len() == 1,
+            ctx.remaining_accounts.len() == if gated { 2 } else { 1 },
             AccordError::InvalidPanelSize
         );
         let js_info = &ctx.remaining_accounts[0];
@@ -1221,6 +1703,23 @@ pub mod accord {
                 .copy_from_slice(&new_draws.to_le_bytes());
             data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
                 .copy_from_slice(&new_slash_reserve.to_le_bytes());
+        }
+        // PROG-ATTESTTION: defense-in-depth credential re-check. With the prune
+        // crank an expired juror should already be evicted from the accumulator;
+        // this catches the race (credential expired between prune-eligible and
+        // prune-called). One attestation read + one timestamp compare, only on
+        // gated pools. At draw time only `expiry > now` is required (the
+        // stake-time horizon gate already bounded the entry).
+        if gated {
+            let att = &ctx.remaining_accounts[1];
+            let now = Clock::get()?.unix_timestamp;
+            let expiry = validate_sas_attestation(
+                att,
+                &ctx.accounts.subaccord.juror_credential,
+                &ctx.accounts.subaccord.juror_schema,
+                &leaf.juror,
+            )?;
+            require!(expiry == 0 || expiry > now, AccordError::AttestationExpired);
         }
 
         round.jurors[seat as usize] = leaf.juror;
@@ -1580,7 +2079,7 @@ pub mod accord {
                         .try_into()
                         .unwrap(),
                 );
-                let fee = (panel_size_for_round(round_idx)? as u64)
+                let fee = (panel_size_for_round(round_idx, dispute.terms.min_jury_size)? as u64)
                     .checked_mul(fee_per_juror)
                     .ok_or(AccordError::ArithmeticOverflow)?;
                 (total_deposit.saturating_sub(fee), d[BOND_PRIOR_OFFSET])
@@ -1728,7 +2227,7 @@ pub mod accord {
             .current_round
             .checked_add(1)
             .ok_or(AccordError::ArithmeticOverflow)?;
-        let panel_new = panel_size_for_round(new_round)?;
+        let panel_new = panel_size_for_round(new_round, dispute.terms.min_jury_size)?;
         require!(
             sub.staker_count >= panel_new,
             AccordError::InsufficientJurors
@@ -1840,7 +2339,7 @@ pub mod accord {
         // appellant's to reclaim. On Final a no-flip bond was already zeroed
         // by finalize_dispute, so this yields 0 → InvalidAmount (idempotent
         // guard against claiming a forfeited bond).
-        let fee = (panel_size_for_round(bond_acc.round_idx)? as u64)
+        let fee = (panel_size_for_round(bond_acc.round_idx, dispute.terms.min_jury_size)? as u64)
             .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let refund = bond_acc.amount.saturating_sub(fee);
@@ -2451,7 +2950,7 @@ fn validate_update_payload(payload: &UpdatePayload) -> Result<()> {
         }
         UpdatePayload::MinStake(v) => require!(*v > 0, AccordError::InvalidAmount),
         UpdatePayload::FeePerJuror(v) => {
-            (INITIAL_NUM_JURORS as u64)
+            (MAX_JURORS as u64)
                 .checked_mul(*v)
                 .ok_or(AccordError::ArithmeticOverflow)?;
         }
@@ -2597,18 +3096,20 @@ fn verify_membership_and_prefix(
     Ok(prefix)
 }
 
-/// Required panel size for a given round index. The round-1 panel is the fixed
-/// `INITIAL_NUM_JURORS` (=3, ADR-0019); the appeal ladder grows it via
-/// `N_{k+1} = 2·N_k + 1` (closed form `(J+1)·2^k − 1`), so round 0 = 3,
-/// round 1 = 7, round 2 = 15, round 3 = 31 — capped at `MAX_JURORS` (31).
-fn panel_size_for_round(round_idx: u32) -> Result<u32> {
+/// Required panel size for a given round index, seeded by `base` (the
+/// per-Subaccord `min_jury_size`, accord-9q3e). The appeal ladder grows it via
+/// `N_{k+1} = 2·N_k + 1` (closed form `(base+1)·2^k − 1`); for the default
+/// `base = 3`: round 0 = 3, round 1 = 7, round 2 = 15, round 3 = 31 — capped at
+/// `MAX_JURORS` (31). `base` comes from the dispute's frozen `CaseTerms`, so a
+/// governance panel-size change never affects an in-flight dispute.
+fn panel_size_for_round(round_idx: u32, base: u32) -> Result<u32> {
     if round_idx >= 31 {
         return Err(AccordError::ArithmeticOverflow.into());
     }
     let factor = 1u32
         .checked_shl(round_idx)
         .ok_or(AccordError::ArithmeticOverflow)?;
-    let panel = INITIAL_NUM_JURORS
+    let panel = base
         .checked_add(1)
         .ok_or(AccordError::ArithmeticOverflow)?
         .checked_mul(factor)
@@ -3107,7 +3608,7 @@ pub struct Withdraw<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(
         mut,
         seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
@@ -3135,6 +3636,57 @@ pub struct Withdraw<'info> {
 /// caller may trigger. No token accounts needed (pure ledger + root update).
 #[derive(Accounts)]
 pub struct ReconcileStake<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror_stake.juror.as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+}
+
+/// Account context for `prune_juror` (PROG-ATTESTTION). Permissionless — the
+/// `caller` signs (any cranker); the expired `juror` does NOT sign. The
+/// `JurorStake` PDA is seeded off the passed `juror`, so derivation links the
+/// stake record to the juror identity used for the attestation subject check.
+/// `remaining_accounts[0]` carries the expired SAS attestation (read-only
+/// proof). No token accounts — prune is ledger-only (the SPL transfer happens
+/// at the two-phase `withdraw`).
+#[derive(Accounts)]
+pub struct PruneJuror<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    /// CHECK: the expired juror — NOT a signer (prune is permissionless). Its
+    /// address seeds the `JurorStake` PDA below, linking the two.
+    pub juror: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
+    #[account(
+        mut,
+        seeds = [SEED_JUROR_STAKE, subaccord.key().as_ref(), juror.key().as_ref()],
+        bump = juror_stake.bump,
+    )]
+    pub juror_stake: Account<'info, JurorStake>,
+    pub system_program: Program<'info, System>,
+    // remaining_accounts[0] = the expired SAS attestation (read-only proof).
+}
+
+/// Account context for `reclaim_slot` (RECLAIM-LEAF). Permissionless — any
+/// caller may trigger. No token accounts needed (pure ledger + root update).
+/// Same shape as `ReconcileStake`.
+#[derive(Accounts)]
+pub struct ReclaimSlot<'info> {
     #[account(mut)]
     pub caller: Signer<'info>,
     #[account(
@@ -3217,7 +3769,7 @@ pub struct CreateDispute<'info> {
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
         bump = subaccord.bump,
     )]
-    pub subaccord: Account<'info, Subaccord>,
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
     pub pause_state: Account<'info, PauseState>,
     #[account(
@@ -3313,6 +3865,14 @@ pub struct DrawSeat<'info> {
         bump = dispute.bump,
     )]
     pub dispute: Box<Account<'info, Dispute>>,
+    /// PROG-ATTESTTION: the backing Subaccord. Always passed; the credential
+    /// re-check activates only when `juror_credential != default`.
+    #[account(
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        bump = subaccord.bump,
+        constraint = dispute.subaccord == subaccord.key() @ AccordError::SubaccordMismatch,
+    )]
+    pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(
         init_if_needed,
         payer = caller,

@@ -30,7 +30,8 @@ Flags mirror `CreateSubaccordArgs` (`methods/lifecycle.ts`):
 | `--commit-window <secs>` | u64 | Default `172_800` (2d) |
 | `--reveal-window <secs>` | u64 | Default `172_800` (2d) |
 | `--appeal-window <secs>` | u64 | `≥ 3_600` (1h floor); default `259_200` (3d) |
-| `--max-appeals <n>` | u8 | `≤ 3`; sole panel-shape knob. `0` ⇒ no appeals |
+| `--max-appeals <n>` | u8 | `≤ 3`; bounds the appeal ladder depth. `0` ⇒ no appeals |
+| `--min-jury-size <n>` | u32 | Round-1 panel size (accord-9q3e). Default `3`; must be odd; ladder `(J+1)·2^maxAppeals − 1 ≤ 31`. Set `1` for a single-juror pool (`--max-appeals 0`) |
 | `--aggregation <Plurality>` | enum | v1 = `Plurality` |
 | `--fee-per-juror <lamports>` | u64 | Default `0` |
 | `--reveal-threshold-bps <n>` | u16 | `≤ 10_000`; default `6_666` (2/3) |
@@ -38,6 +39,8 @@ Flags mirror `CreateSubaccordArgs` (`methods/lifecycle.ts`):
 | `--max-draw-attempts <n>` | u8 | `1..=10`; default `3` |
 | `--authority <addr\|none>` | address | `none` ⇒ immutable Subaccord |
 | `--evidence-operator <addr>` | address | Trusted re-encryption service (ADR-0006) |
+| `--juror-credential <addr>` | address | PROG-ATTESTTION SAS attestation issuer; both-or-neither with `--juror-schema`. Omit ⇒ stake-only |
+| `--juror-schema <addr>` | address | PROG-ATTESTTION schema the juror's attestation must match; both-or-neither with `--juror-credential` |
 | `--depth <n>` | u8 | Accumulator tree depth; `≤ 31`; bounds pool at `2^depth`. Default `16` |
 
 ```bash
@@ -55,10 +58,22 @@ useaccord lifecycle:create-subaccord \
   --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
   --min-stake 5_000_000 --alpha-bps 1500 --fee-per-juror 100_000 \
   --authority 9a1K…mQp --depth 16
+# Credential-gated pool — jurors must hold a valid SAS attestation to stake/draw
+useaccord lifecycle:create-subaccord \
+  --random-risk-type \
+  --evidence-spec 0x0000…0001 \
+  --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
+  --juror-credential <issuer> --juror-schema <schema>   # both-or-neither
 ```
 
 SDK: `createSubaccord(client, programId, creator, args)` → `{ instruction, subaccord, bump }`
-
+> **PROG-ATTESTTION:** `--juror-credential` and `--juror-schema` are
+> both-or-neither. Omit both to mint a **stake-only** Subaccord (the default —
+> today's behaviour). Pass both to gate the juror pool on a SAS attestation;
+> jurors must then supply `--attestation` to `staking:stake`, and expired
+> attestations are evicted by the permissionless `staking:prune-juror` crank.
+> Both fields are frozen at creation (immutable, like `risk_type`).
+>
 > **L-4 fix:** `--staking-token` and `--fee-token` are passed as account
 > addresses (not instruction data). The SDK routes them to the `CreateSubaccord`
 > accounts context where they're validated as `Account<Mint>` from

@@ -17,6 +17,10 @@ useaccord read:appeal-bond --dispute <addr> --round-idx 0
 
 Each returns the decoded account (or `{ error: "not found" }`).
 
+> **PROG-ATTESTTION:** `read:subaccord` decodes `jurorCredential` /
+> `jurorSchema` and appends a `gate` line — `stake-only` when both are the
+> default pubkey, else `credential-gated (credential=…, schema=…)`.
+
 ## Collection queries
 
 ```bash
