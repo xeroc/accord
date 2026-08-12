@@ -38,7 +38,7 @@ import {
 } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { setAccountRaw, warpForwardSeconds } from "./setup/cheats.js";
+import { readClock, setAccountRaw, warpForwardSeconds } from "./setup/cheats.js";
 import {
   createMint,
   setTokenBalance,
@@ -319,18 +319,25 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
     if (!env.up) return;
     const { juror, jurorStake, accounts, facade } = await armJuror();
 
-    // Stake with a far-future expiry (passes the horizon gate).
+    // Stake with a clock-relative expiry that clears the attestation horizon
+    // ((review+commit+reveal+appeal)×(max_appeals+1) — 56 days by default).
+    // Derived from the LIVE clock, not a hardcoded absolute: the surfnet clock
+    // is global and a prior spec — or a prior run on a persistent surfnet — may
+    // have advanced it well past any fixed timestamp (cheats.ts discipline).
     const att = await deriveAddr("att-prune");
-    const farFuture = 2_000_000_000; // ~2033
-    await setSasAttestation(env, att, credential, schema, juror.address, farFuture);
+    const { unixTimestamp: now } = await readClock(env);
+    const lifetimeSecs = 365n * 24n * 60n * 60n; // 1 year >> 56-day horizon
+    const farFuture = now + lifetimeSecs;
+    await setSasAttestation(env, att, credential, schema, juror.address, Number(farFuture));
     const stakePath = await tree.pathForNext();
     await env.sendIx(
       stake(facade.adapter, programId, accounts, STAKE_AMT, stakePath, att),
     );
     const index = await tree.setLeaf(juror.address, STAKE_AMT);
 
-    // Warp well past the expiry, then rewrite the attestation to expired.
-    await warpForwardSeconds(env, farFuture + 1_000);
+    // Warp well past the expiry so the credential lapses, then rewrite it to a
+    // concrete expired timestamp (prune requires expiry != 0 && expiry <= now).
+    await warpForwardSeconds(env, lifetimeSecs + 1_000n);
     await setSasAttestation(env, att, credential, schema, juror.address, 1);
 
     // This suite shares the Subaccord (test 1's juror is still staked), so
