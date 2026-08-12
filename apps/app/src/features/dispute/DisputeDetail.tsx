@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { isSome, type ReadonlyUint8Array } from "@solana/kit";
 import { findAppealBondPda, findPauseStatePda } from "@useaccord/sdk";
 
-import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
+import {
+  DISPUTE_STATE_LABELS,
+  formatRuling,
+  timeRemaining,
+} from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
@@ -51,6 +55,13 @@ export function DisputeDetail() {
   const [appealSending, setAppealSending] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
 
+  // Re-render every minute so the appeal-window countdown stays fresh.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   if (isLoading) {
     return <p className="text-text-secondary">Loading dispute…</p>;
   }
@@ -78,6 +89,8 @@ export function DisputeDetail() {
   const d = dispute.data;
   const isFinal = d.state === 6; // DisputeState.Final
   const isRoundResolved = d.state === 5; // DisputeState.RoundResolved
+  const roundResult = round?.data.result ?? FINAL_SENTINEL;
+  const hasRoundResult = isRoundResolved && roundResult !== FINAL_SENTINEL;
 
   async function handleAppeal() {
     if (!env || !dispute || !round || !subaccord) return;
@@ -194,27 +207,76 @@ export function DisputeDetail() {
           Options ({d.numOptions})
         </h2>
         <div className="space-y-2">
-          {d.options.slice(0, d.numOptions).map((opt, idx) => {
-            const isWinner = isFinal && d.finalRuling === idx;
-            return (
-              <div
-                key={idx}
-                className={`flex items-center gap-3 rounded border px-3 py-2 ${
-                  isWinner ? "border-amber bg-amber/10" : "border-border-subtle"
-                }`}
-              >
-                <span className="font-mono text-sm text-text-secondary">
-                  {idx}
-                </span>
-                <Copyable value={hex(opt)} />
-                {isWinner && (
-                  <span className="font-mono text-sm text-amber">
-                    ← Verdict
+          {(() => {
+            // Tally revealed votes per option (round resolved or final).
+            const tally = new Map<number, number>();
+            if (round && (isRoundResolved || isFinal)) {
+              for (const v of round.data.reveals) {
+                if (v !== FINAL_SENTINEL && v < d.numOptions) {
+                  tally.set(v, (tally.get(v) ?? 0) + 1);
+                }
+              }
+            }
+            const showTally = tally.size > 0;
+            return d.options.slice(0, d.numOptions).map((opt, idx) => {
+              const isWinner = isFinal && d.finalRuling === idx;
+              const isRoundWinner = hasRoundResult && roundResult === idx;
+              const votes = tally.get(idx) ?? 0;
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-center gap-3 rounded border px-3 py-2 ${
+                    isWinner
+                      ? "border-amber bg-amber/10"
+                      : isRoundWinner
+                        ? "border-confirm bg-confirm/10"
+                        : "border-border-subtle"
+                  }`}
+                >
+                  <span className="font-mono text-sm text-text-secondary">
+                    {idx}
                   </span>
-                )}
-              </div>
-            );
-          })}
+                  <Copyable value={hex(opt)} />
+                  {isWinner && (
+                    <span className="font-mono text-sm text-amber">
+                      ← Verdict
+                    </span>
+                  )}
+                  {isRoundWinner && (
+                    <span className="font-mono text-sm text-confirm">
+                      ← Won round {d.currentRound}
+                    </span>
+                  )}
+                  {showTally && (
+                    <span
+                      className={`ml-auto font-mono text-xs ${
+                        isWinner
+                          ? "text-amber/70"
+                          : isRoundWinner
+                            ? "text-confirm/70"
+                            : "text-text-secondary"
+                      }`}
+                    >
+                      {votes} vote{votes === 1 ? "" : "s"}
+                    </span>
+                  )}
+                  {isRoundWinner && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        document
+                          .getElementById("appeal")
+                          ?.scrollIntoView({ behavior: "smooth" })
+                      }
+                      className="font-mono text-xs text-text-secondary hover:text-confirm"
+                    >
+                      appeal ↓
+                    </button>
+                  )}
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 
@@ -369,13 +431,37 @@ export function DisputeDetail() {
           const appealWindowEnd = round
             ? round.data.revealEnd + d.terms.appealWindow
             : undefined;
+          const remaining =
+            appealWindowEnd !== undefined
+              ? timeRemaining(Number(appealWindowEnd))
+              : "";
           const info = getAppealInfo(dispute, appealWindowEnd);
           if (!info) return null;
           return (
-            <div className="rounded-lg border border-border-subtle bg-raised p-4">
+            <div
+              id="appeal"
+              className="rounded-lg border border-border-subtle bg-raised p-4 scroll-mt-4"
+            >
               <h2 className="mb-2 font-mono text-sm text-text-secondary">
                 Appeal
               </h2>
+              {/* Round result + appeal-window countdown */}
+              {hasRoundResult && (
+                <div className="mb-4 rounded border border-confirm/30 bg-confirm/5 px-3 py-2">
+                  <p className="text-sm">
+                    Round {d.currentRound} resolved to{" "}
+                    <span className="font-mono text-confirm">
+                      Option {roundResult}
+                    </span>
+                    .
+                  </p>
+                  {remaining && remaining !== "expired" && (
+                    <p className="mt-1 font-mono text-xs text-text-secondary">
+                      {remaining} left to appeal
+                    </p>
+                  )}
+                </div>
+              )}
               {info.eligible ? (
                 <>
                   <p className="mb-3 text-sm text-text-secondary">
