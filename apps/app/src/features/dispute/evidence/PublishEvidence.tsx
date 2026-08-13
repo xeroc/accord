@@ -27,11 +27,11 @@ import {
 import { type Dispute, type Subaccord } from "@useaccord/sdk";
 
 import { describeError } from "../../../shared/errors";
-import { publishEvidence, verifyManifestHash } from "./publish";
-
-/** Centralized operator daemon (ADR-0011). Fixed app config, not per-dispute. */
-const EVIDENCE_DAEMON_URL =
-  import.meta.env.VITE_EVIDENCE_DAEMON_URL || "http://localhost:8080";
+import {
+  publishEvidence,
+  verifyManifestHash,
+} from "@useaccord/sdk/evidence";
+import { EVIDENCE_DAEMON_URL } from "./config";
 
 function isZeroHash(h: ReadonlyUint8Array): boolean {
   return h.every((b) => b === 0);

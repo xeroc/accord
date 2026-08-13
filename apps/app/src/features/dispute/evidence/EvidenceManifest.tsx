@@ -9,7 +9,8 @@
  */
 import { Copyable } from "../../../components/Copyable";
 import { useManifest } from "./useManifest";
-import { parseManifest, type ParsedManifest } from "./parse";
+import { parseManifest, type ParsedManifest } from "@useaccord/sdk/evidence";
+import { MarkdownDescription } from "./MarkdownDescription";
 
 
 export function EvidenceManifest({
@@ -71,6 +72,11 @@ export function EvidenceManifest({
         <h2 className="font-mono text-xs text-text-secondary">Evidence manifest</h2>
         <p className="mt-1 text-lg font-semibold">{manifest.title}</p>
       </div>
+
+      {/* Description (sanitized markdown — display-only, never alters committed bytes) */}
+      {manifest.description && (
+        <MarkdownDescription source={manifest.description} />
+      )}
 
       {/* Metadata grid */}
       <div className="grid grid-cols-2 gap-3 text-sm">

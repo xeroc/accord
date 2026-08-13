@@ -37,6 +37,13 @@ export {
   fetchCanonItem,
   fetchCanonItemMaybe,
 } from "./fetch.js";
+// Standalone generated fetchers — read accounts over a bare RPC, no signer.
+// Mirrors @useaccord/sdk's `fetchMaybeSubaccord`/`fetchSubaccord` exports so
+// read-only app hooks (Canon list/item views) never need a `Canon` client.
+export {
+  fetchMaybeCanonList,
+  fetchMaybeCanonItem,
+} from "./generated/accounts/index.js";
 export {
   createList,
   submitItem,

@@ -1,11 +1,11 @@
 ---
 # accord-4dqb
 title: Canon Registry dApp — web frontend (apps/canon)
-status: todo
+status: completed
 type: milestone
 priority: normal
 created_at: 2026-08-13T02:08:00Z
-updated_at: 2026-08-13T02:08:00Z
+updated_at: 2026-08-13T04:30:07Z
 ---
 
 ## Canon Registry dApp — React + Vite web frontend (apps/canon)
