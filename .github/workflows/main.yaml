@@ -23,12 +23,6 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/landing-page.yaml
 
-  canon-app:
-    name: Deploy Canon dApp
-    if: always()
-    secrets: inherit
-    uses: ./.github/workflows/canon-app.yaml
-
   program-tests:
     name: Program Tests
     secrets: inherit
