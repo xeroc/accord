@@ -42,3 +42,5 @@ jobs:
           publish_branch: gh-pages
           publish_dir: ./apps/landing/dist
           cname: useaccord.xyz
+          # Keep sibling apps (canon/) on the shared gh-pages branch.
+          keep_files: true
