@@ -4,8 +4,11 @@ export {
   shortAddress,
   formatTokenAmount,
   formatWindow,
+  formatTimestamp,
   timeRemaining,
   ITEM_STATE_LABELS,
+  DISPUTE_STATE_LABELS,
+  formatRuling,
 } from "./format";
 export { sendInstruction, TransactionSendError } from "./transaction";
 export {
