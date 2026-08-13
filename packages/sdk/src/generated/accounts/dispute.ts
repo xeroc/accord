@@ -225,7 +225,7 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
       ["numOptions", getU8Encoder()],
       [
         "options",
-        getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 32 }),
+        getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 8 }),
       ],
       [
         "evidenceHashes",
@@ -257,7 +257,7 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["numOptions", getU8Decoder()],
     [
       "options",
-      getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 32 }),
+      getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 8 }),
     ],
     [
       "evidenceHashes",

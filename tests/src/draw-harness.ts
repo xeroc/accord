@@ -278,6 +278,58 @@ export async function armSubaccordAndJurors(
   return { mint, vault, subaccord, pauseState, jurors, tree, jurorPdaByHex };
 }
 
+/**
+ * Canon variant of `armSubaccordAndJurors`: stake `N_JURORS` into an
+ * **already-existing** Subaccord (one created by Canon's `create_list` CPI, not
+ * a direct `create_subaccord`). Same accumulator/stake plumbing; the Subaccord
+ * PDA + mint come from the caller. `depth` MUST match the Subaccord's tree
+ * depth (Canon uses 20, not the harness's default 4) so the Merkle paths line
+ * up with the on-chain root.
+ */
+export async function armCanonJurors(
+  env: TestEnv,
+  pauseState: Address,
+  subaccord: Address,
+  mint: Address,
+  depth: number,
+): Promise<Omit<DrawFixture, "env" | "up">> {
+  const vault = await ataOf(mint, subaccord);
+  await setTokenBalance(env, env.payer.address, mint, 2_000_000_000n);
+  const tree = await new TreeTracker(depth).init();
+
+  const jurors: JurorCtx[] = [];
+  const jurorPdaByHex = new Map<string, Address>();
+  for (let i = 0; i < N_JURORS; i++) {
+    const signer = await fundSigner(env);
+    await setTokenBalance(env, signer.address, mint, STAKE_AMOUNT);
+    const jurorAccord = roleAccord(env, signer);
+    const jurorAta = await ataOf(mint, signer.address);
+    const [stakePda] = await findJurorStakePda({ subaccord, juror: signer.address });
+    const path = await tree.pathFor(i);
+    await env.sendIx(
+      stake(
+        jurorAccord.adapter,
+        env.programId,
+        {
+          juror: signer.address,
+          subaccord,
+          pauseState,
+          jurorStake: stakePda,
+          stakingToken: mint,
+          jurorTokenAccount: jurorAta,
+          stakeVault: vault,
+        },
+        STAKE_AMOUNT,
+        path,
+      ),
+    );
+    await tree.setLeaf(i, signer.address, STAKE_AMOUNT);
+    jurors.push({ signer, stakePda, jurorAta, accord: jurorAccord });
+    jurorPdaByHex.set(toHex(addressBytes(signer.address)), stakePda);
+  }
+  return { mint, vault, subaccord, pauseState, jurors, tree, jurorPdaByHex };
+}
+
 export async function setupDrawFixture(): Promise<DrawFixture> {
   const env = await createTestEnv();
   if (!env.up) return offlineFixture(env);

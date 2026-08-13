@@ -267,6 +267,9 @@ importers:
       '@solana/kit':
         specifier: ^7.0.0
         version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@useaccord/sdk':
+        specifier: workspace:*
+        version: link:../sdk
     devDependencies:
       '@codama/nodes-from-anchor':
         specifier: ^1.5.3
@@ -277,6 +280,9 @@ importers:
       codama:
         specifier: ^1.10.0
         version: 1.10.0
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.11)(typescript@5.9.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
@@ -314,6 +320,9 @@ importers:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.11)(typescript@5.9.3)(yaml@2.9.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.11
       typescript:
         specifier: ^5.5.0
         version: 5.9.3

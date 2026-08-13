@@ -45,21 +45,25 @@ import {
   getAdvancePendingInstruction,
   getAdvanceWithdrawalInstructionAsync,
   getChallengeItemInstructionAsync,
+  getCreateListInstructionAsync,
   getRequestWithdrawalInstruction,
   getSettleItemInstructionAsync,
   getSubmitItemInstructionAsync,
   parseAdvancePendingInstruction,
   parseAdvanceWithdrawalInstruction,
   parseChallengeItemInstruction,
+  parseCreateListInstruction,
   parseRequestWithdrawalInstruction,
   parseSettleItemInstruction,
   parseSubmitItemInstruction,
   type AdvancePendingInput,
   type AdvanceWithdrawalAsyncInput,
   type ChallengeItemAsyncInput,
+  type CreateListAsyncInput,
   type ParsedAdvancePendingInstruction,
   type ParsedAdvanceWithdrawalInstruction,
   type ParsedChallengeItemInstruction,
+  type ParsedCreateListInstruction,
   type ParsedRequestWithdrawalInstruction,
   type ParsedSettleItemInstruction,
   type ParsedSubmitItemInstruction,
@@ -67,7 +71,7 @@ import {
   type SettleItemAsyncInput,
   type SubmitItemAsyncInput,
 } from "../instructions";
-import { findItemPda } from "../pdas";
+import { findItemPda, findListPda } from "../pdas";
 
 export const CANON_PROGRAM_ADDRESS =
   "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU" as Address<"GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU">;
@@ -113,6 +117,7 @@ export enum CanonInstruction {
   AdvancePending,
   AdvanceWithdrawal,
   ChallengeItem,
+  CreateList,
   RequestWithdrawal,
   SettleItem,
   SubmitItem,
@@ -154,6 +159,17 @@ export function identifyCanonInstruction(
     )
   ) {
     return CanonInstruction.ChallengeItem;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([146, 145, 77, 186, 66, 169, 62, 231]),
+      ),
+      0,
+    )
+  ) {
+    return CanonInstruction.CreateList;
   }
   if (
     containsBytes(
@@ -207,6 +223,9 @@ export type ParsedCanonInstruction<
       instructionType: CanonInstruction.ChallengeItem;
     } & ParsedChallengeItemInstruction<TProgram>)
   | ({
+      instructionType: CanonInstruction.CreateList;
+    } & ParsedCreateListInstruction<TProgram>)
+  | ({
       instructionType: CanonInstruction.RequestWithdrawal;
     } & ParsedRequestWithdrawalInstruction<TProgram>)
   | ({
@@ -240,6 +259,13 @@ export function parseCanonInstruction<TProgram extends string>(
       return {
         instructionType: CanonInstruction.ChallengeItem,
         ...parseChallengeItemInstruction(instruction),
+      };
+    }
+    case CanonInstruction.CreateList: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: CanonInstruction.CreateList,
+        ...parseCreateListInstruction(instruction),
       };
     }
     case CanonInstruction.RequestWithdrawal: {
@@ -300,6 +326,10 @@ export type CanonPluginInstructions = {
     input: ChallengeItemAsyncInput,
   ) => ReturnType<typeof getChallengeItemInstructionAsync> &
     SelfPlanAndSendFunctions;
+  createList: (
+    input: CreateListAsyncInput,
+  ) => ReturnType<typeof getCreateListInstructionAsync> &
+    SelfPlanAndSendFunctions;
   requestWithdrawal: (
     input: RequestWithdrawalInput,
   ) => ReturnType<typeof getRequestWithdrawalInstruction> &
@@ -314,7 +344,10 @@ export type CanonPluginInstructions = {
     SelfPlanAndSendFunctions;
 };
 
-export type CanonPluginPdas = { item: typeof findItemPda };
+export type CanonPluginPdas = {
+  list: typeof findListPda;
+  item: typeof findItemPda;
+};
 
 export type CanonPluginRequirements = ClientWithRpc<
   GetAccountInfoApi & GetMultipleAccountsApi
@@ -348,6 +381,11 @@ export function canonProgram() {
               client,
               getChallengeItemInstructionAsync(input),
             ),
+          createList: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCreateListInstructionAsync(input),
+            ),
           requestWithdrawal: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -364,7 +402,7 @@ export function canonProgram() {
               getSubmitItemInstructionAsync(input),
             ),
         },
-        pdas: { item: findItemPda },
+        pdas: { list: findListPda, item: findItemPda },
         identifyAccount: identifyCanonAccount,
         identifyInstruction: identifyCanonInstruction,
         parseInstruction: parseCanonInstruction,

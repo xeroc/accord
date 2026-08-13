@@ -12,7 +12,7 @@ import type { Address } from "@solana/kit";
 
 export const MAX_JURORS = 31;
 export const MAX_APPEALS = 3;
-export const MAX_OPTIONS = 32;
+export const MAX_OPTIONS = 8;
 
 // --- Timelocks (constants.rs, in slots @ ~400ms mainnet) ---
 

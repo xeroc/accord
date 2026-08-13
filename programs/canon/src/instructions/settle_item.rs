@@ -3,13 +3,9 @@
 //! After the Accord dispute finalises, reads `final_ruling` and redistributes.
 
 use crate::{constants::*, errors::CanonError, events::*, state::*};
+use accord::state::{Dispute, DisputeState};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-
-const ACCORD_ID: Pubkey = pubkey!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
-const DISPUTE_STATE_OFFSET: usize = 1233;
-const DISPUTE_RULING_OFFSET: usize = 1294;
-const DISPUTE_STATE_FINAL: u8 = 6;
 
 #[derive(Accounts)]
 pub struct SettleItem<'info> {
@@ -27,9 +23,11 @@ pub struct SettleItem<'info> {
         constraint = item.list == list.key(),
     )]
     pub item: Account<'info, CanonItem>,
-    /// Accord Dispute PDA — read for `final_ruling`.
-    /// CHECK: address + owner verified in handler.
-    pub dispute: UncheckedAccount<'info>,
+    /// Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
+    /// `state` + `final_ruling` are read directly. Boxed to keep the struct
+    /// off the stack during the token-transfer CPI call chain.
+    #[account(constraint = item.active_dispute == dispute.key() @ CanonError::DisputePdaMismatch)]
+    pub dispute: Box<Account<'info, Dispute>>,
     #[account(address = list.fee_mint)]
     pub fee_mint: Account<'info, Mint>,
     #[account(
@@ -52,21 +50,14 @@ pub struct SettleItem<'info> {
 pub fn handler(ctx: Context<SettleItem>) -> Result<()> {
     let item = &mut ctx.accounts.item;
     require!(item.state == ItemState::Disputed, CanonError::NotDisputed);
+    // `state == Final` gates settlement; `final_ruling` is the winning option
+    // index (Canon: 0 = keep, 1 = remove). Ownership + address are validated
+    // by `Account<Dispute>` + the struct constraint.
     require!(
-        ctx.accounts.dispute.key() == item.active_dispute,
-        CanonError::DisputePdaMismatch
-    );
-    require!(
-        ctx.accounts.dispute.owner == &ACCORD_ID,
-        CanonError::WrongAccordProgram
-    );
-
-    let dispute_data = ctx.accounts.dispute.try_borrow_data()?;
-    require!(
-        dispute_data[DISPUTE_STATE_OFFSET] == DISPUTE_STATE_FINAL,
+        ctx.accounts.dispute.state == DisputeState::Final,
         CanonError::DisputeNotFinal
     );
-    let ruling = dispute_data[DISPUTE_RULING_OFFSET];
+    let ruling = ctx.accounts.dispute.final_ruling;
     require!(ruling < 2, CanonError::InvalidRuling);
 
     let is_withdrawal = item.withdrawal_requested_at.is_some();

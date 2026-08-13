@@ -29,7 +29,7 @@ import {
   sha256,
   verifyIntegrity,
   x25519SharedSecret,
-} from "../../dist/evidence/index.js";
+} from "./index.ts";
 
 const enc = new TextEncoder();
 const rnd32 = () => {

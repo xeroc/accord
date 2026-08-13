@@ -18,7 +18,7 @@ import {
   type AccordStakingClient,
   type PruneJurorAccounts,
   type StakingAccounts,
-} from "../../dist/methods/staking.js";
+} from "./staking.ts";
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
 
 const PROGRAM = "P".repeat(44) as Address;

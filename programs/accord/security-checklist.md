@@ -153,7 +153,7 @@ fix). A future migration to `Interface<TokenInterface>` +
 
 ## 8. Transaction model safety — ✅
 
-`MAX_JURORS = 31` and `MAX_OPTIONS = 32` bound all loops.
+`MAX_JURORS = 31` and `MAX_OPTIONS = 8` bound all loops.
 `create_dispute` validates `2..=MAX_OPTIONS`.
 
 ---

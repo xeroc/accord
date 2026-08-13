@@ -18,7 +18,7 @@ import {
   proofFor,
   recomputeRoot,
   verifyMembership,
-} from "../../dist/methods/mst.js";
+} from "./mst.ts";
 
 const pk = (first: number) => {
   const b = new Uint8Array(32);

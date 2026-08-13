@@ -7,14 +7,14 @@
 //   pnpm --filter @useaccord/sdk test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildAccumulator, proofFor } from "../../dist/methods/mst.js";
+import { buildAccumulator, proofFor } from "./mst.ts";
 import {
   findLeafForSlot,
   resolveSeat,
   seatSlot,
   vrfSeed,
   verifySeat,
-} from "../../dist/methods/vrf.js";
+} from "./vrf.ts";
 
 const VRF = new Uint8Array(32).fill(0xa5);
 const DISPUTE = new Uint8Array(32).fill(0x3c);

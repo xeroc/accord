@@ -1,24 +1,14 @@
 #![cfg(feature = "no-entrypoint")]
 //! LiteSVM tests for `challenge_item` (bean accord-04m9).
 //!
-//! **SBPF v0 limitation:** The installed Solana CLI (2.x) compiles for SBPF
-//! v0, which uses fixed 4096-byte stack frames with guard gaps. Anchor's
-//! generated `try_accounts` for ChallengeItem (10 typed accounts + 4
-//! remaining_accounts for the Accord CPI) exceeds this frame size, causing
-//! "Access violation in stack frame 5" during account deserialization — the
-//! handler is never reached. The real Solana runtime uses SBPF v3 (dynamic
-//! stack frames, no per-frame limit) and does NOT have this issue.
-//!
-//! **Test coverage strategy:**
-//! - Unit-level validation logic (state gates, arithmetic, insufficient funds)
-//!   is verified via the assertions in the handler code itself (overflow checks,
-//!   `require!` gates).
-//! - Full integration (multi-program CPI to Accord, dispute creation, vault
-//!   balances) is verified in the **e2e (Surfpool) suite** (`tests/src/`),
-//!   which runs against a real validator with SBPF v3.
-//! - The tests below are `#[ignore]`'d until `make prep` installs Solana 3.1.10
-//!   (which enables SBPF v3 compilation). Run with:
-//!   `cargo test --features no-entrypoint --test challenge_item_litesvm -- --ignored`
+//! The SBPF v0 stack-frame limit is resolved (Solana 3.1.10 / SBPF v3). Two
+//! happy-path tests remain `#[ignore]`'d for a DIFFERENT, real reason: Accord's
+//! `create_dispute` inits the dispute PDA with the filer (the CanonList PDA,
+//! which carries data) as rent-payer. LiteSVM surfaces writable accounts
+//! rent-exempt, forcing Anchor's `init` into the allocate+assign+transfer path,
+//! and `system::transfer` rejects a data-carrying `from`. On real Solana the
+//! fresh PDA is 0-lamport ⇒ `create_account` (which permits a data-carrying
+//! payer), so the path is sound — validate via the Surfpool e2e suite.
 //!
 //! Coverage (TDD acceptance matrix from the bean):
 //!   - happy path (Pending item): locks stake+fee, item → Disputed,
@@ -191,6 +181,7 @@ fn setup() -> TestEnv {
         reveal_window: DEFAULT_REVEAL_WINDOW_SECS,
         appeal_window: DEFAULT_APPEAL_WINDOW_SECS,
         max_appeals: DEFAULT_MAX_APPEALS,
+        min_jury_size: 3,
         aggregation: accord::state::Aggregation::Plurality,
         fee_per_juror,
         reveal_threshold_bps: 6_666,
@@ -200,11 +191,18 @@ fn setup() -> TestEnv {
         evidence_operator: Pubkey::default(),
         risk_type,
         evidence_spec: [0u8; 32],
+        juror_credential: Pubkey::default(),
+        juror_schema: Pubkey::default(),
         staker_count: 3,
         root_hash: [0u8; 32],
         total_stake: 0,
         next_index: 0,
         depth: 4,
+        fee_vault_deposited: 0,
+        fee_vault_withdrawn: 0,
+        stake_vault_deposited: 0,
+        stake_vault_withdrawn: 0,
+        free_head: u32::MAX,
         bump: sub_bump,
     };
     let mut buf = Vec::new();
@@ -383,12 +381,12 @@ fn read_item(env: &TestEnv, account: &Pubkey) -> CanonItem {
     CanonItem::try_deserialize(&mut &acc.data[..]).unwrap()
 }
 
-// ─── Tests (#[ignore]'d — SBPF v0 stack limitation, see module docs) ────────
+// ─── Tests ─────────────────────────────────────────────────────────────────
 
 /// Happy path: challenge a Pending item. Locks stake + fee, item → Disputed,
 /// dispute created on Accord.
 #[test]
-#[ignore = "SBPF v0: stack frame overflow during account deserialization. Needs Solana 3.x (SBPF v3) or e2e (Surfpool)."]
+#[ignore = "LiteSVM: Accord inits the dispute PDA from the data-carrying filer (CanonList PDA); LiteSVM rent-exempts writable accounts → Anchor init takes system::transfer, which rejects a data-carrying `from`. Validate via Surfpool e2e."]
 fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -425,7 +423,7 @@ fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
 
 /// Revert: item already Disputed.
 #[test]
-#[ignore = "SBPF v0: stack frame overflow during account deserialization. Needs Solana 3.x (SBPF v3) or e2e (Surfpool)."]
+#[ignore = "LiteSVM: same data-carrying filer rent-payer limitation as the happy path; first challenge must succeed to test the revert."]
 fn challenge_item_reverts_if_already_disputed() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -442,7 +440,6 @@ fn challenge_item_reverts_if_already_disputed() {
 
 /// Revert: insufficient challenger funds.
 #[test]
-#[ignore = "SBPF v0: stack frame overflow during account deserialization. Needs Solana 3.x (SBPF v3) or e2e (Surfpool)."]
 fn challenge_item_reverts_on_insufficient_funds() {
     let mut env = setup();
     let submitter = Keypair::new();

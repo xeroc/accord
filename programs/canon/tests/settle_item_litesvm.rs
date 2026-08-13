@@ -1,11 +1,8 @@
 #![cfg(feature = "no-entrypoint")]
 //! LiteSVM tests for `settle_item` (bean accord-r90a).
 //!
-//! **SBPF v0 limitation:** Same as challenge_item — the installed Solana CLI
-//! (2.x) compiles for SBPF v0 (fixed 4096-byte stack frames). With 6
-//! instructions in the canon binary, settle_item's 9-account deserialization
-//! overflows the frame. Tests are `#[ignore]`'d; run via e2e (Surfpool) or
-//! after `make prep` (Solana 3.1.10 / SBPF v3).
+//! Runs under `make test_unit` (Solana 3.1.10 / SBPF v3 — the prior SBPF v0
+//! stack-frame limit that forced `#[ignore]` is resolved; the ignores are gone).
 //!
 //! Coverage (TDD acceptance matrix):
 //!   - regular keep: challenge_stake → accumulated_stake, item → Listed
@@ -18,7 +15,6 @@ use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::AnchorLiteSVM;
 use canon::state::{CanonItem, CanonList, ItemState};
 use canon::{accounts, constants::*, instruction, ID as CANON_ID};
-use solana_program::instruction::AccountMeta;
 use solana_program::pubkey::Pubkey;
 use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
@@ -38,10 +34,7 @@ const RULES_HASH: [u8; 32] = {
     h[0] = 0xAB;
     h
 };
-const ACCORD_ID: Pubkey = Pubkey::new_from_array([
-    0x42, 0x6c, 0x53, 0x68, 0x33, 0x71, 0x4e, 0x43, 0x41, 0x4b, 0x73, 0x52, 0x7a, 0x6e, 0x59, 0x33,
-    0x61, 0x67, 0x66, 0x55, 0x4b, 0x45, 0x35, 0x43, 0x4b, 0x57, 0x6f, 0x69, 0x61, 0x59, 0x74, 0x6e,
-]);
+use accord::ID as ACCORD_ID;
 
 fn load_program() -> Vec<u8> {
     let so = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/deploy/canon.so");
@@ -126,8 +119,6 @@ struct TestEnv {
     list: Pubkey,
     mint: Pubkey,
     deposit: u64,
-    list_bump: u8,
-    creator: Pubkey,
 }
 
 fn setup() -> TestEnv {
@@ -181,8 +172,6 @@ fn setup() -> TestEnv {
         list: list_addr,
         mint,
         deposit,
-        list_bump,
-        creator: creator.pubkey(),
     }
 }
 
@@ -312,19 +301,60 @@ fn set_disputed(
         .unwrap();
 }
 
-/// Fabricate a minimal Accord Dispute account at the given PDA.
-/// Sets `state` and `final_ruling` at the correct Borsh offsets.
+/// Fabricate an Accord Dispute account at the given PDA by serialising a real
+/// `accord::state::Dispute` (correct discriminator + layout), so `settle_item`'s
+/// `Dispute::try_deserialize` succeeds. `state`/`final_ruling` are the only
+/// fields `settle_item` reads; the rest are plausible defaults.
 fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling: u8) {
-    let mut data = vec![0u8; 1300]; // large enough
-    data[1233] = if is_final { 6 } else { 0 }; // DisputeState::Final = 6, Created = 0
-    data[1294] = ruling;
+    let mut options = [[0u8; 32]; accord::constants::MAX_OPTIONS];
+    options[0][0] = b'k';
+    options[1][0] = b'r';
+    let d = accord::state::Dispute {
+        subaccord: Pubkey::default(),
+        filer: Pubkey::default(),
+        nonce: 0,
+        num_options: 2,
+        options,
+        evidence_hashes: [[0u8; 32]; accord::constants::MAX_APPEALS as usize + 1],
+        state: if is_final {
+            accord::state::DisputeState::Final
+        } else {
+            accord::state::DisputeState::Created
+        },
+        current_round: 0,
+        terms: accord::state::CaseTerms {
+            alpha_bps: 1000,
+            min_stake: 1_000,
+            fee_per_juror: 3,
+            review_window: 604_800,
+            commit_window: 172_800,
+            reveal_window: 172_800,
+            appeal_window: 259_200,
+            max_appeals: 3,
+            min_jury_size: 3,
+            aggregation: accord::state::Aggregation::Plurality,
+            reveal_threshold_bps: 6_666,
+            shortfall_policy: accord::state::ShortfallPolicy::Redraw,
+            max_draw_attempts: 3,
+        },
+        final_ruling: ruling,
+        finalized_at: if is_final { 99 } else { 0 },
+        fee_paid: 30,
+        committed_vrf: None,
+        frozen_root: [0u8; 32],
+        frozen_total_stake: 0,
+        filed_at: 0,
+        bump: 254,
+    };
+    let mut buf = Vec::new();
+    d.try_serialize(&mut buf).unwrap();
     env.ctx
         .svm
         .set_account(
             *dispute,
             SvmAccount {
                 lamports: LAMPORTS_PER_SOL.max(SPL_RENT),
-                data,
+                data: buf,
                 owner: ACCORD_ID,
                 executable: false,
                 rent_epoch: 0,
@@ -373,7 +403,7 @@ fn do_settle(
     let vata = vault_ata(&env.list, &env.mint);
     let cata = user_ata(&challenger.pubkey(), &env.mint);
     let sata = user_ata(&submitter.pubkey(), &env.mint);
-    let mut ix = env
+    let ix = env
         .ctx
         .program()
         .accounts(accounts::SettleItem {
@@ -396,7 +426,6 @@ fn do_settle(
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "SBPF v0: stack frame overflow. Needs Solana 3.x or e2e (Surfpool)."]
 fn settle_keep_progressive_protection() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -435,7 +464,6 @@ fn settle_keep_progressive_protection() {
 }
 
 #[test]
-#[ignore = "SBPF v0: stack frame overflow. Needs Solana 3.x or e2e (Surfpool)."]
 fn settle_remove_bounty_to_challenger() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -475,7 +503,6 @@ fn settle_remove_bounty_to_challenger() {
 }
 
 #[test]
-#[ignore = "SBPF v0: stack frame overflow. Needs Solana 3.x or e2e (Surfpool)."]
 fn settle_withdrawal_keep_submitter_gets_stake() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -568,55 +595,4 @@ fn settle_reverts_if_not_disputed() {
         "settle on non-Disputed must revert; logs={:?}",
         r.logs()
     );
-}
-
-/// Verify the Borsh offset constants in settle_item.rs match the actual
-/// Dispute struct layout (not an SVM test — pure layout verification).
-#[test]
-fn dispute_borsh_offsets_are_correct() {
-    use anchor_lang::AccountSerialize;
-    let d = accord::state::Dispute {
-        subaccord: Pubkey::default(),
-        filer: Pubkey::default(),
-        nonce: 42,
-        num_options: 2,
-        options: {
-            let mut o = [[0u8; 32]; 32];
-            o[0][0] = 0xAA;
-            o
-        },
-        evidence_hashes: {
-            let mut e = [[0u8; 32]; accord::constants::MAX_APPEALS + 1];
-            e[0] = [0xFF; 32];
-            e
-        },
-        state: accord::state::DisputeState::Final,
-        current_round: 7,
-        terms: accord::state::CaseTerms {
-            alpha_bps: 1,
-            min_stake: 2,
-            fee_per_juror: 3,
-            review_window: 4,
-            commit_window: 5,
-            reveal_window: 6,
-            appeal_window: 7,
-            max_appeals: 8,
-            aggregation: accord::state::Aggregation::Plurality,
-            reveal_threshold_bps: 9,
-            shortfall_policy: accord::state::ShortfallPolicy::Redraw,
-            max_draw_attempts: 10,
-        },
-        final_ruling: 1,
-        finalized_at: 99,
-        fee_paid: 77,
-        committed_vrf: None,
-        frozen_root: [0; 32],
-        frozen_total_stake: 0,
-        filed_at: 55,
-        bump: 1,
-    };
-    let mut buf = Vec::new();
-    d.try_serialize(&mut buf).unwrap();
-    assert_eq!(buf[1233], 6, "DisputeState::Final = 6 at offset 1233");
-    assert_eq!(buf[1294], 1, "final_ruling = 1 at offset 1294");
 }
