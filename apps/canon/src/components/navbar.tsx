@@ -1,12 +1,12 @@
 /**
- * Navbar — top status bar for the Canon Registry dApp.
+ * Navbar — top status bar.
  *
- * Left: CANON wordmark + registry-rows glyph (☰).
+ * Left: CANON wordmark + registry-rows glyph (CanonLogo).
  * Right: cluster selector (shadcn Select bound to useCluster) +
  *        wallet connect/disconnect button.
  *
- * IBM Plex Mono, ink/raised surfaces, hairline border — per BRAND.md / DESIGN.md.
- * Mirrors apps/app's navbar structure (decision #2).
+ * IBM Plex Mono, ink/raised surfaces, hairline border — per BRAND.md.
+ * Mirrors apps/app/src/components/navbar.tsx — logo + wordmark changed.
  */
 
 import { useState } from "react";
@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { shortenAddress } from "@/shared/format";
+import { CanonLogo } from "@/components/canon-logo";
 
 export function Navbar() {
   const { cluster, clusters, setCluster } = useCluster();
@@ -52,34 +53,7 @@ export function Navbar() {
   return (
     <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3 font-mono">
       <Link to="/" className="flex items-center gap-2 text-foreground">
-        {/* Registry-rows glyph: three stacked lines (a curated list) */}
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 32 32"
-          aria-hidden="true"
-          className="text-amber"
-        >
-          <g
-            stroke="currentColor"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            fill="none"
-          >
-            <line x1="6" y1="9" x2="26" y2="9" />
-            <line x1="6" y1="16" x2="22" y2="16" />
-            <line x1="6" y1="23" x2="18" y2="23" />
-          </g>
-          {/* Amber check — the verdict Canon delivers */}
-          <path
-            d="M21 20 L24 23 L29 17"
-            stroke="currentColor"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        </svg>
+        <CanonLogo className="size-5" />
         <span className="text-lg font-bold tracking-tight">CANON</span>
       </Link>
 

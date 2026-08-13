@@ -122,6 +122,9 @@ importers:
       '@useaccord/canon':
         specifier: workspace:*
         version: link:../../packages/canon
+      '@useaccord/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -140,6 +143,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      react-icons:
+        specifier: ^5.7.0
+        version: 5.7.0(react@18.3.1)
       react-router-dom:
         specifier: ^6.28.0
         version: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
