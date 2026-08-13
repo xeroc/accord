@@ -17,19 +17,21 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup && tsc -p tsconfig.json --emitDeclarationOnly",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json && node --test src/**/*.test.ts",
+    "test": "tsup && tsc -p tsconfig.json --emitDeclarationOnly && node --test src/**/*.test.ts",
     "codegen": "codama run js",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@solana/kit": "^7.0.0"
+    "@solana/kit": "^7.0.0",
+    "@useaccord/sdk": "workspace:*"
   },
   "devDependencies": {
     "@codama/nodes-from-anchor": "^1.5.3",
     "@codama/renderers-js": "^2.3.1",
     "codama": "^1.10.0",
+    "tsup": "^8.3.0",
     "typescript": "^5.5.0"
   }
 }
