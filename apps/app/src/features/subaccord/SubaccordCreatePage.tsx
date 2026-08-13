@@ -43,6 +43,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { ZERO_ADDRESS, useSigner } from "../../shared/wallet";
+import { ErrorShake } from "../../components/motion";
 
 /** String-valued form state — every input is text; parsed on submit. */
 interface FormState {
@@ -148,7 +149,8 @@ export function SubaccordCreatePage() {
           </p>
         </div>
       ) : (
-        <form className="flex flex-col gap-7" onSubmit={onSubmit}>
+        <ErrorShake active={!!error}>
+          <form className="flex flex-col gap-7" onSubmit={onSubmit}>
           <fieldset className="gap-4 grid rounded-lg border border-border p-5">
             <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Identity.</legend>
             <Field
@@ -321,6 +323,7 @@ export function SubaccordCreatePage() {
             {sending ? "Signing…" : "Create subaccord."}
           </button>
         </form>
+        </ErrorShake>
       )}
     </main>
   );

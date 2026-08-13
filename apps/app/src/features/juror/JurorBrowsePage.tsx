@@ -24,7 +24,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
-import { StaggerGroup, StaggerItem } from "../../components/motion";
+import { StaggerGroup, StaggerItem, Reveal } from "../../components/motion";
 
 // --- aggregation types ---
 
@@ -160,36 +160,38 @@ export function JurorBrowsePage() {
         </p>
       </header>
 
-      {isLoading ? (
-        <JurorGridSkeleton />
-      ) : isError ? (
-        <ErrorState
-          message={
-            error instanceof Error ? error.message : "RPC error."
-          }
-          onRetry={() => {
-            void subaccordsQ.refetch();
-            void stakesQ.refetch();
-          }}
-        />
-      ) : jurors.length > 0 ? (
-        <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Jurors">
-          {jurors.map((juror) => (
-            <JurorCard key={juror.address} juror={juror} />
-          ))}
-        </StaggerGroup>
-      ) : (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">No active jurors.</p>
-          <p className="mb-5 text-muted-foreground">
-            No one is staked yet. Stake collateral in a subaccord to appear
-            here.
-          </p>
-        <Link to="/subaccords" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
-            Browse subaccords.
-          </Link>
-        </div>
-      )}
+      <Reveal state={isLoading ? "skeleton" : isError ? "error" : jurors.length > 0 ? "content" : "empty"}>
+        {isLoading ? (
+          <JurorGridSkeleton />
+        ) : isError ? (
+          <ErrorState
+            message={
+              error instanceof Error ? error.message : "RPC error."
+            }
+            onRetry={() => {
+              void subaccordsQ.refetch();
+              void stakesQ.refetch();
+            }}
+          />
+        ) : jurors.length > 0 ? (
+          <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Jurors">
+            {jurors.map((juror) => (
+              <JurorCard key={juror.address} juror={juror} />
+            ))}
+          </StaggerGroup>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border p-12 text-center">
+            <p className="mb-2 text-lg font-semibold">No active jurors.</p>
+            <p className="mb-5 text-muted-foreground">
+              No one is staked yet. Stake collateral in a subaccord to appear
+              here.
+            </p>
+          <Link to="/subaccords" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
+              Browse subaccords.
+            </Link>
+          </div>
+        )}
+      </Reveal>
     </main>
   );
 }

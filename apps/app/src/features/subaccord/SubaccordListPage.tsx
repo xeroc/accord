@@ -17,7 +17,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
-import { StaggerGroup, StaggerItem } from "../../components/motion";
+import { StaggerGroup, StaggerItem, Reveal } from "../../components/motion";
 
 /** `Account<Subaccord>` derived from the SDK query fn (Subaccord type isn't on
  * the SDK's public surface — derive rather than widen it). */
@@ -42,22 +42,24 @@ export function SubaccordListPage() {
         </Link>
       </header>
 
-      {isLoading ? (
-        <SubaccordGridSkeleton />
-      ) : isError ? (
-        <ErrorState
-          message={error instanceof Error ? error.message : "RPC error."}
-          onRetry={() => void refetch()}
-        />
-      ) : data && data.length > 0 ? (
-        <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Subaccords">
-          {data.map((s) => (
-            <SubaccordCard key={s.address} subaccord={s} />
-          ))}
-        </StaggerGroup>
-      ) : (
-        <EmptyState />
-      )}
+      <Reveal state={isLoading ? "skeleton" : isError ? "error" : data && data.length > 0 ? "content" : "empty"}>
+        {isLoading ? (
+          <SubaccordGridSkeleton />
+        ) : isError ? (
+          <ErrorState
+            message={error instanceof Error ? error.message : "RPC error."}
+            onRetry={() => void refetch()}
+          />
+        ) : data && data.length > 0 ? (
+          <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Subaccords">
+            {data.map((s) => (
+              <SubaccordCard key={s.address} subaccord={s} />
+            ))}
+          </StaggerGroup>
+        ) : (
+          <EmptyState />
+        )}
+      </Reveal>
     </main>
   );
 }

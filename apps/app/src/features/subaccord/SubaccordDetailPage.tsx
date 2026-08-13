@@ -20,6 +20,7 @@ import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
 import { formatTokenAmount, formatWindow } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
+import { Reveal } from "../../components/motion";
 
 export function SubaccordDetailPage() {
   const rpc = useClusterRpc()?.rpc ?? null;
@@ -42,31 +43,33 @@ export function SubaccordDetailPage() {
         </h1>
       </header>
 
-      {isLoading ? (
-        <DetailSkeleton />
-      ) : isError ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">Read failed.</p>
-          <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">
-            {error instanceof Error ? error.message : "RPC error."}
-          </p>
-          <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={() => void refetch()}>
-            Retry.
-          </button>
-        </div>
-      ) : !data ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">No subaccord at this address.</p>
-          <p className="mb-5 text-muted-foreground">
-            Check the address or create a new subaccord.
-          </p>
-          <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
-            Create a subaccord.
-          </Link>
-        </div>
-      ) : (
-        <SubaccordDetail address={address} subaccord={data} />
-      )}
+      <Reveal state={isLoading ? "skeleton" : isError ? "error" : !data ? "empty" : "content"}>
+        {isLoading ? (
+          <DetailSkeleton />
+        ) : isError ? (
+          <div className="rounded-lg border border-dashed border-border p-12 text-center">
+            <p className="mb-2 text-lg font-semibold">Read failed.</p>
+            <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">
+              {error instanceof Error ? error.message : "RPC error."}
+            </p>
+            <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={() => void refetch()}>
+              Retry.
+            </button>
+          </div>
+        ) : !data ? (
+          <div className="rounded-lg border border-dashed border-border p-12 text-center">
+            <p className="mb-2 text-lg font-semibold">No subaccord at this address.</p>
+            <p className="mb-5 text-muted-foreground">
+              Check the address or create a new subaccord.
+            </p>
+            <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
+              Create a subaccord.
+            </Link>
+          </div>
+        ) : (
+          <SubaccordDetail address={address} subaccord={data} />
+        )}
+      </Reveal>
     </main>
   );
 }
