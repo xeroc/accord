@@ -1,6 +1,10 @@
-// Pure functions + types now live in @useaccord/sdk/evidence (ADR-0015).
-// Re-export them so existing importers (`../CreateDispute`, `../Voting`, etc.)
-// don't need to change their import paths.
+/**
+ * evidence/index.ts — app-side seam over the shared evidence protocol.
+ *
+ * The manifest / option-hash / publish helpers live in @useaccord/sdk/evidence
+ * (ADR-0015); this barrel re-exports them alongside the app-only pieces (the
+ * daemon URL, the `useManifest` React hook, and the `EvidenceEditor`).
+ */
 export {
   buildManifest,
   SHA256_ZERO,
@@ -17,9 +21,7 @@ export {
   optionLabels,
   type ParsedManifest,
 } from "@useaccord/sdk/evidence";
-
-// App-specific (React/Vite-only — cannot live in the SDK).
-export { EVIDENCE_DAEMON_URL } from "./publish";
+export { EVIDENCE_DAEMON_URL } from "./config";
 export { useManifest } from "./useManifest";
 export {
   EvidenceEditor,

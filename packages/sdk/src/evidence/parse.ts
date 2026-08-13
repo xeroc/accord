@@ -1,7 +1,7 @@
 /**
- * evidence/parse.ts — parse the `accord-evidence/v1` manifest returned by the
- * evidence daemon. Shared by any feature that needs a slice of the manifest
- * (title, description, option labels, entries).
+ * parse.ts — parse the `accord-evidence/v1` manifest returned by the evidence
+ * daemon (`useManifest`). Shared by `EvidenceManifest` (full render) and any
+ * feature that needs a slice of the manifest (e.g. option labels for voting).
  *
  * The manifest is YAML (produced by `buildManifest`); the daemon may return it
  * as a raw UTF-8 string or as a parsed JSON object. This targeted parser needs
@@ -10,7 +10,7 @@
 
 export interface ParsedManifest {
   title: string;
-  /** Markdown claim body — empty string when absent (pre-description manifests). */
+  /** Markdown claim body; "" when absent (pre-`description` manifests). */
   description: string;
   filedAt: string;
   filer: string;
@@ -30,23 +30,6 @@ export function parseManifest(text: string): ParsedManifest {
       ?.slice(`${key}: `.length)
       .replace(/^"(.*)"$/, "$1");
 
-  // Description is a YAML literal block scalar (`description: |` followed by
-  // indented lines). Collect the indented body until a non-indented line.
-  let description = "";
-  const descIdx = lines.findIndex((l) => l.startsWith("description: |"));
-  if (descIdx !== -1) {
-    const body: string[] = [];
-    for (let i = descIdx + 1; i < lines.length; i++) {
-      const l = lines[i]!;
-      if (l.startsWith("  ")) {
-        body.push(l.slice(2));
-      } else {
-        break;
-      }
-    }
-    description = body.join("\n");
-  }
-
   const options: { index: number; label: string }[] = [];
   const entries: { path: string; sha256: string }[] = [];
   let section: "options" | "entries" | null = null;
@@ -62,29 +45,33 @@ export function parseManifest(text: string): ParsedManifest {
     }
     if (!line.startsWith("  - {")) continue;
 
+    const item = line.slice("  - ".length);
     if (section === "options") {
-      const idx = line.match(/index: (\d+)/);
-      const lbl = line.match(/label: "([^"]*)"/) ?? line.match(/label: (\S+?)\s*\}/);
-      if (idx && lbl) {
-        options.push({ index: parseInt(idx[1]!, 10), label: lbl[1]! });
-      }
+      const index = Number(item.match(/index:\s*(\d+)/)?.[1] ?? -1);
+      const label = item.match(/label:\s*"([^"]*)"/)?.[1] ?? "";
+      options.push({ index, label });
     } else if (section === "entries") {
-      const pth = line.match(/path: "([^"]*)"/) ?? line.match(/path: (\S+?)\s*,/);
-      const sha = line.match(/sha256: "?([0-9a-f]+)"?/);
-      if (pth && sha) {
-        entries.push({ path: pth[1]!, sha256: sha[1]! });
-      }
+      const path = item.match(/path:\s*"([^"]*)"/)?.[1] ?? "";
+      const sha256 = item.match(/sha256:\s*"([^"]*)"/)?.[1] ?? "";
+      entries.push({ path, sha256 });
     }
   }
 
+  // description is JSON-escaped on a single line (see buildManifest); getField
+  // strips the outer quotes, so re-quote + JSON.parse to unescape markdown.
+  const descriptionRaw = getField("description");
+  const description = descriptionRaw
+    ? (JSON.parse(`"${descriptionRaw}"`) as string)
+    : "";
+
   return {
-    title: getField("title") ?? "",
+    title: getField("title") ?? "Untitled dispute",
     description,
-    filedAt: getField("filed_at") ?? "",
-    filer: getField("filer") ?? "",
-    subaccord: getField("subaccord") ?? "",
-    dispute: getField("dispute") ?? "",
-    optionSalt: getField("option_salt") ?? "",
+    filedAt: getField("filed_at") ?? "—",
+    filer: getField("filer") ?? "—",
+    subaccord: getField("subaccord") ?? "—",
+    dispute: getField("dispute") ?? "—",
+    optionSalt: getField("option_salt") ?? "—",
     options,
     entries,
   };
@@ -99,20 +86,25 @@ export function parseManifest(text: string): ParsedManifest {
  * not covered. Returns `[]` when the manifest is absent (no bundle stored).
  */
 export function optionLabels(manifest: unknown): string[] {
-  if (!manifest) return [];
-  const parsed: ParsedManifest =
+  if (manifest == null) return [];
+  const parsed =
     typeof manifest === "string"
       ? parseManifest(manifest)
       : parseManifest(JSON.stringify(manifest));
 
   const byIndex = new Map<number, string>();
   for (const o of parsed.options) {
-    if (o.label.trim()) byIndex.set(o.index, o.label.trim());
+    if (o.index >= 0) byIndex.set(o.index, o.label);
   }
 
   const labels: string[] = [];
-  for (let i = 0; byIndex.has(i); i++) {
-    labels.push(byIndex.get(i)!);
+  for (let i = 0; i < parsed.options.length; i++) {
+    const label = byIndex.get(i);
+    if (typeof label === "string" && label.trim()) {
+      labels.push(label);
+    } else {
+      break;
+    }
   }
   return labels;
 }

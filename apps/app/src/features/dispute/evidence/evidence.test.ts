@@ -12,17 +12,17 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { ed25519PublicKeyFromSeed } from "@useaccord/sdk/evidence";
 import type { Address } from "@solana/kit";
-
 import {
   buildManifest,
+  parseManifest,
   SHA256_ZERO,
   deriveOptionHashes,
   generateSalt,
   verifyOptionHashes,
   publishEvidence,
   verifyManifestHash,
+  ed25519PublicKeyFromSeed,
   type ManifestCtx,
   type ManifestInput,
 } from "@useaccord/sdk/evidence";
@@ -96,26 +96,38 @@ test("buildManifest: entries default to SHA256_ZERO sentinel in YAML", () => {
 
 // --- description field (ADR-0017, Canon challenger claim body) --------------
 
-test("buildManifest: description emitted as YAML literal block when present", () => {
+test("buildManifest: description emitted as JSON-escaped line when present", () => {
   const salt = new Uint8Array(32).fill(7);
   const buf = buildManifest(
-    { ...makeInput(salt), description: "This item is fraudulent.\nSee evidence below." },
+    {
+      ...makeInput(salt),
+      description: "This item is fraudulent.\nSee evidence below.",
+    },
     CTX,
   );
   const yaml = new TextDecoder().decode(buf);
-  assert.ok(yaml.includes("description: |"), "should emit literal block scalar");
-  assert.ok(yaml.includes("  This item is fraudulent."), "should indent body");
+  assert.ok(
+    /^description: ".*"$/m.test(yaml),
+    "should emit JSON-escaped single-line description",
+  );
+  assert.ok(yaml.includes("This item is fraudulent."), "should contain body");
 });
 
 test("buildManifest: description omitted when absent (backward-compatible)", () => {
   const salt = new Uint8Array(32).fill(7);
   const yaml = new TextDecoder().decode(buildManifest(makeInput(salt), CTX));
-  assert.ok(!yaml.includes("description:"), "should not emit description field");
+  assert.ok(
+    !yaml.includes("description:"),
+    "should not emit description field",
+  );
 });
 
 test("buildManifest: description → byte-stability + sha256 stability", async () => {
   const salt = new Uint8Array(32).fill(9);
-  const input = { ...makeInput(salt), description: "# Claim\n\nMarkdown body." };
+  const input = {
+    ...makeInput(salt),
+    description: "# Claim\n\nMarkdown body.",
+  };
   const buf1 = buildManifest(input, CTX);
   const buf2 = buildManifest(input, CTX);
   assert.deepEqual(buf1, buf2);
@@ -273,4 +285,33 @@ test("publishEvidence: non-201 throws with daemon error", async () => {
   } finally {
     fetchMock.mock.restore();
   }
+});
+
+// --- description field (accord-jnka) ----------------------------------------
+
+test("description round-trip: buildManifest → parseManifest preserves markdown", () => {
+  const salt = new Uint8Array(32).fill(7);
+  const description =
+    "The auth module shipped on 2026-07-28.\n\nSee **timeline.md** for the commit log.";
+  const buf = buildManifest({ ...makeInput(salt), description }, CTX);
+  const parsed = parseManifest(new TextDecoder().decode(buf));
+  assert.equal(parsed.description, description);
+});
+
+test("description round-trip: preserves embedded quotes and backslashes", () => {
+  const salt = new Uint8Array(32).fill(8);
+  const description = 'She said "hi" and used a \\ backslash.';
+  const buf = buildManifest({ ...makeInput(salt), description }, CTX);
+  const parsed = parseManifest(new TextDecoder().decode(buf));
+  assert.equal(parsed.description, description);
+});
+
+test("description absent → omitted, backward-compatible (sha256 stable)", () => {
+  const salt = new Uint8Array(32).fill(9);
+  const buf = buildManifest(makeInput(salt), CTX);
+  const text = new TextDecoder().decode(buf);
+  // No description line emitted → bytes identical to a pre-description manifest.
+  assert.ok(!/^description:/m.test(text), "no description line when absent");
+  // Parser returns "" for an absent description.
+  assert.equal(parseManifest(text).description, "");
 });

@@ -1,26 +1,16 @@
 /**
- * evidence/publish.ts — claimant-side encrypt + POST to the evidence daemon,
- * and manifest-hash verification for the recovery upload path.
+ * publish.ts — claimant-side encrypt + POST to the evidence daemon, and
+ * manifest-hash verification for the recovery upload path.
  *
- * Authority: ADR-0011 (daemon transport), EVIDENCE-FORMAT.md §2 (root hash).
+ * The daemon base URL is deployment-specific (Vite env on the app side) and is
+ * NOT held here — `publishEvidence` takes `endpoint` as a parameter. App
+ * consumers keep their own `EVIDENCE_DAEMON_URL` config (ADR-0011).
  *
- * NOTE: `EVIDENCE_DAEMON_URL` is NOT defined here — it is deployment-specific
- * (Vite `import.meta.env` / Node env). Callers pass the endpoint explicitly
- * via {@link PublishParams.endpoint}.
+ * Authority: ADR-0011 (daemon transport), EVIDENCE-FORMAT.md §2 (root hash),
+ * milestone accord-ebel §1 (happy path step 7, recovery).
  */
 import { claimantEncrypt } from "./ecies.js";
 import { sha256 } from "./crypto.js";
-
-export interface PublishParams {
-  /** Daemon base URL. */
-  endpoint: string;
-  subaccord: string;
-  dispute: string;
-  /** The single manifest buffer (same bytes that produced `evidence_hash`). */
-  manifest: Uint8Array;
-  /** Evidence operator's raw Ed25519 public key (32 bytes, decoded from address). */
-  operatorPub: Uint8Array;
-}
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -33,6 +23,17 @@ function toBase64(bytes: Uint8Array): string {
 function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   return a.every((v, i) => v === b[i]);
+}
+
+export interface PublishParams {
+  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
+  endpoint: string;
+  subaccord: string;
+  dispute: string;
+  /** The single manifest buffer (same bytes that produced `evidence_hash`). */
+  manifest: Uint8Array;
+  /** Evidence operator's raw Ed25519 public key (32 bytes, decoded from address). */
+  operatorPub: Uint8Array;
 }
 
 /**
