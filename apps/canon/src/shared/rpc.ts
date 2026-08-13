@@ -45,6 +45,23 @@ import {
   type CanonItem,
 } from "@useaccord/canon";
 
+// --- Signer seam (ConnectorKit) --------------------------------------------
+
+export const ZERO_ADDRESS = "11111111111111111111111111111111" as Address;
+
+export interface SignerState {
+  signer: TransactionSigner | null;
+  ready: boolean;
+}
+
+/**
+ * Resolve the connected wallet's Kit TransactionSigner via ConnectorKit.
+ * Returns `{ signer: null, ready: false }` until a wallet is connected.
+ */
+export function useSigner(): SignerState {
+  return useKitTransactionSigner();
+}
+
 // --- Write-path facade (signer bound) ---------------------------------------
 
 export interface CanonEnv {

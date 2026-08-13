@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { ListBrowser } from "./features/list/ListBrowser";
 import { CreateListPage } from "./features/list/CreateListPage";
 import { ListDetailPage } from "./features/list/ListDetailPage";
+import { ItemDetailPage } from "./features/evidence/ItemDetailPage";
+import { ChallengePage } from "./features/challenge/ChallengePage";
 
 /**
  * App shell — routes + Navbar + Toaster.
@@ -13,8 +15,8 @@ import { ListDetailPage } from "./features/list/ListDetailPage";
  *   /                      → list browser (this task: accord-ajps)
  *   /lists/:address        → list detail (accord-hhyy)
  *   /lists/new             → create-list form (accord-fx93)
- *   /items/:address        → item detail (accord-gg8t)
- *   /lists/:list/items/new → submit-item form (accord-m2u2)
+ *   /items/:address        → item detail + evidence manifest (accord-t877)
+ *   /items/:address/challenge → challenge an item (accord-t877)
  */
 export function App() {
   return (
@@ -25,6 +27,8 @@ export function App() {
           <Route path="/" element={<ListBrowser />} />
           <Route path="/lists/new" element={<CreateListPage />} />
           <Route path="/lists/:address" element={<ListDetailPage />} />
+          <Route path="/items/:address" element={<ItemDetailPage />} />
+          <Route path="/items/:address/challenge" element={<ChallengePage />} />
         </Routes>
       </main>
       <Toaster />

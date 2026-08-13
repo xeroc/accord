@@ -1,12 +1,12 @@
 /**
- * options.ts — option-salt derivation + self-verify.
+ * evidence/options.ts — option-salt derivation + self-verify.
  *
  * `Dispute.options[i] = sha256(option_salt ‖ utf8(label_i))` (EVIDENCE-FORMAT.md §4).
  * The salt is app-generated, per-dispute, and lives only in the manifest.
  * `verifyOptionHashes` runs pre-submit — nothing on-chain enforces this today
  * (ADR-0017 open; D2 trustlessly closed when it lands).
  */
-import { sha256 } from "@useaccord/sdk/evidence";
+import { sha256 } from "./crypto.js";
 
 /** Generate a 32-byte random salt via the Web Crypto API. */
 export function generateSalt(): Uint8Array {

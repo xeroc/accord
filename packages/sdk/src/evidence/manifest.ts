@@ -1,10 +1,11 @@
 /**
- * manifest.ts — serialize the `accord-evidence/v1` manifest into a single
- * deterministic Uint8Array buffer. That one buffer feeds the YAML preview,
- * `sha256`→`evidence_hash`, and `claimantEncrypt`→POST. Never re-serialize.
+ * evidence/manifest.ts — serialize the `accord-evidence/v1` manifest into a
+ * single deterministic Uint8Array buffer. That one buffer feeds the YAML
+ * preview, `sha256`→`evidence_hash`, and `claimantEncrypt`→POST. Never
+ * re-serialize.
  *
  * Authority: EVIDENCE-FORMAT.md §2 (no canonicalization needed — manifest
- * delivered verbatim), milestone accord-ebel §3 (single-buffer invariant).
+ * delivered verbatim), §3 (schema — `description` field added per ADR-0017).
  */
 import type { Address } from "@solana/kit";
 
@@ -22,6 +23,12 @@ export interface ManifestInput {
   /** Per-dispute 32-byte random salt (app-generated). */
   salt: Uint8Array;
   title: string;
+  /**
+   * Optional markdown description — the claim body (Canon challenger's
+   * argument). Rendered sanitized; raw bytes are never altered.
+   * Omitted from YAML when empty/absent (backward-compatible).
+   */
+  description?: string;
   /** Ordered option labels; `Dispute.options[i] = sha256(salt ‖ utf8(label_i))`. */
   labels: string[];
   entries: ManifestEntryInput[];
@@ -50,6 +57,10 @@ function yamlQuote(s: string): string {
  * Serialize manifest input + ctx into a single `Uint8Array` (UTF-8 YAML).
  * Hand-serialized — the manifest is a flat object with two list fields; no YAML
  * library needed (EVIDENCE-FORMAT.md §2: no canonicalization, delivered verbatim).
+ *
+ * The optional `description` field is emitted as a YAML block scalar (`|`)
+ * after `title` when present and non-empty. This keeps it backward-compatible:
+ * a manifest without `description` is byte-identical to the pre-description format.
  */
 export function buildManifest(
   input: ManifestInput,
@@ -63,6 +74,18 @@ export function buildManifest(
     `filed_at: ${ctx.filedAt}`,
     "language: en",
     `title: ${yamlQuote(input.title)}`,
+  ];
+
+  // Description as a YAML literal block scalar (preserves newlines, no escaping needed).
+  const desc = input.description?.trim();
+  if (desc) {
+    lines.push(`description: |`);
+    for (const line of desc.split("\n")) {
+      lines.push(`  ${line}`);
+    }
+  }
+
+  lines.push(
     "",
     `option_salt: ${hex(input.salt)}`,
     "options:",
@@ -75,6 +98,6 @@ export function buildManifest(
       (e) =>
         `  - { path: ${yamlQuote(e.path)}, sha256: "${hex(e.sha256 ?? SHA256_ZERO)}" }`,
     ),
-  ];
+  );
   return new TextEncoder().encode(lines.join("\n") + "\n");
 }
