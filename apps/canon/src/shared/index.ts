@@ -4,6 +4,7 @@
  * Mirrors apps/app/src/shared/index.ts. Consumers import from `@/shared`.
  */
 
+export { CLUSTERS, DEFAULT_CLUSTER_ID, type ClusterConfig } from "./cluster";
 export { useCanon, type CanonEnv, useClusterRpc, type ClusterRpc } from "./rpc";
 export {
   fetchCanonList,
