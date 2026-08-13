@@ -1,10 +1,12 @@
 import { Routes, Route, Link } from "react-router-dom";
 import { ChallengePage } from "./features/challenge/ChallengePage";
+import { ItemDetailPage } from "./features/evidence/ItemDetailPage";
 
 export function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/items/:address" element={<ItemDetailPage />} />
       <Route path="/items/:address/challenge" element={<ChallengePage />} />
     </Routes>
   );

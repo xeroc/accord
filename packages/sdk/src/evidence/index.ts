@@ -20,3 +20,4 @@ export * from "./manifest.js";
 export * from "./options.js";
 export * from "./publish.js";
 export * from "./parse.js";
+export * from "./fetch.js";

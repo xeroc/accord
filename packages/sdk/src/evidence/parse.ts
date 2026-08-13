@@ -62,19 +62,15 @@ export function parseManifest(text: string): ParsedManifest {
     }
     if (!line.startsWith("  - {")) continue;
 
-    const m = line.match(/^\s+- \{ (.+) \ }$/);
-    if (!m) continue;
-    const fields = m[1]!;
-
     if (section === "options") {
-      const idx = fields.match(/index: (\d+)/);
-      const lbl = fields.match(/label: "?(.+?)"?\ }$/);
+      const idx = line.match(/index: (\d+)/);
+      const lbl = line.match(/label: "([^"]*)"/) ?? line.match(/label: (\S+?)\s*\}/);
       if (idx && lbl) {
         options.push({ index: parseInt(idx[1]!, 10), label: lbl[1]! });
       }
     } else if (section === "entries") {
-      const pth = fields.match(/path: "?(.+?)"?,/);
-      const sha = fields.match(/sha256: "?([0-9a-f]+)"?/);
+      const pth = line.match(/path: "([^"]*)"/) ?? line.match(/path: (\S+?)\s*,/);
+      const sha = line.match(/sha256: "?([0-9a-f]+)"?/);
       if (pth && sha) {
         entries.push({ path: pth[1]!, sha256: sha[1]! });
       }

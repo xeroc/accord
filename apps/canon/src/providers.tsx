@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   AppProvider,
   createSolanaDevnet,
@@ -22,8 +23,14 @@ const connectorConfig = getDefaultConfig({
   ],
 });
 
+const queryClient = new QueryClient();
+
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <AppProvider connectorConfig={connectorConfig}>{children}</AppProvider>
+    <QueryClientProvider client={queryClient}>
+      <AppProvider connectorConfig={connectorConfig}>
+        {children}
+      </AppProvider>
+    </QueryClientProvider>
   );
 }
