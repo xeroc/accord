@@ -1,13 +1,11 @@
 /**
- * useManifest — fetch the decrypted evidence manifest from the evidence daemon.
+ * useManifest — fetch the decrypted evidence manifest from the daemon.
+ * Wraps the SDK's framework-agnostic `fetchManifest` in a React Query hook.
  *
  * GET {EVIDENCE_DAEMON_URL}/evidence/{subaccord}/{dispute}/{round}
- *
- * Returns the decrypted manifest (a YAML string for the `accord-evidence/v1`
- * format, or a parsed JSON object if the plaintext was JSON). `null` when no
- * bundle is stored for the round (404).
  */
 import { useQuery } from "@tanstack/react-query";
+import { fetchManifest } from "@useaccord/sdk/evidence";
 import { EVIDENCE_DAEMON_URL } from "./config";
 
 export function useManifest(
@@ -17,14 +15,13 @@ export function useManifest(
 ) {
   return useQuery({
     queryKey: ["manifest", subaccord, dispute, round],
-    queryFn: async () => {
-      const res = await fetch(
-        `${EVIDENCE_DAEMON_URL}/evidence/${subaccord}/${dispute}/${round}`,
-      );
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`evidence daemon returned ${res.status}`);
-      return (await res.json()) as unknown;
-    },
+    queryFn: () =>
+      fetchManifest({
+        endpoint: EVIDENCE_DAEMON_URL,
+        subaccord: subaccord!,
+        dispute: dispute!,
+        round,
+      }),
     enabled: !!subaccord && !!dispute,
     retry: false,
     staleTime: 60_000,
