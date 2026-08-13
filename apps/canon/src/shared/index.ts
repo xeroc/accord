@@ -10,6 +10,7 @@ export {
 export {
   useClusterRpc,
   findAllCanonLists,
+  findAllCanonItemsByList,
   fetchCanonListRaw,
   type ClusterRpc,
 } from "./rpc";

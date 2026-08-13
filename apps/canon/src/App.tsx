@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 import { ListBrowser } from "./features/list/ListBrowser";
 import { CreateListPage } from "./features/list/CreateListPage";
+import { ListDetailPage } from "./features/list/ListDetailPage";
 
 /**
  * App shell — routes + Navbar + Toaster.
@@ -23,6 +24,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<ListBrowser />} />
           <Route path="/lists/new" element={<CreateListPage />} />
+          <Route path="/lists/:address" element={<ListDetailPage />} />
         </Routes>
       </main>
       <Toaster />

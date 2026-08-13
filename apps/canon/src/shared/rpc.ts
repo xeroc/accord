@@ -32,9 +32,12 @@ import {
 } from "@solana/kit";
 import {
   CANON_LIST_DISCRIMINATOR,
+  CANON_ITEM_DISCRIMINATOR,
   CANON_PROGRAM_ID,
   getCanonListDecoder,
+  getCanonItemDecoder,
   type CanonList,
+  type CanonItem,
 } from "@useaccord/canon";
 
 // --- Standalone read-only RPC -----------------------------------------------
@@ -109,6 +112,52 @@ export async function findAllCanonLists(
       programAddress: CANON_PROGRAM_ID,
       data: getCanonListDecoder().decode(base64.encode(data)),
     } as Account<CanonList>;
+  });
+}
+
+// --- Typed getProgramAccounts: CanonItems by list ---------------------------
+
+/** CanonItem `list` field offset: 8-byte disc + 32-byte `account` = byte 40. */
+const CANON_ITEM_LIST_OFFSET = 40n;
+
+/** A 32-byte `Address` field at a fixed byte offset (base58-encoded). */
+function addressFilter(
+  offset: bigint,
+  address: Address,
+): GetProgramAccountsMemcmpFilter {
+  return {
+    memcmp: {
+      offset,
+      bytes: address as Base58EncodedBytes,
+      encoding: "base58",
+    },
+  };
+}
+
+/** Fetch every `CanonItem` under a given `CanonList` (memcmp on `list` at
+ * byte 40). Returns fully decoded `Account<CanonItem>[]`. */
+export async function findAllCanonItemsByList(
+  rpc: Rpc<GetProgramAccountsApi>,
+  list: Address,
+): Promise<Account<CanonItem>[]> {
+  const results = await rpc
+    .getProgramAccounts(CANON_PROGRAM_ID, {
+      encoding: "base64",
+      filters: [
+        discriminatorFilter(CANON_ITEM_DISCRIMINATOR),
+        addressFilter(CANON_ITEM_LIST_OFFSET, list),
+      ],
+    })
+    .send();
+  const base64 = getBase64Encoder();
+  return results.map((info) => {
+    const [data] = info.account.data;
+    return {
+      ...info.account,
+      address: info.pubkey,
+      programAddress: CANON_PROGRAM_ID,
+      data: getCanonItemDecoder().decode(base64.encode(data)),
+    } as Account<CanonItem>;
   });
 }
 
