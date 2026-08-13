@@ -1,0 +1,280 @@
+/* @useaccord/canon-app — global styles
+ * Tailwind v4 CSS-first config with shadcn theme tokens.
+ *
+ * Dark-first brand palette (BRAND.md / DESIGN.md):
+ *   ink #0A0E14 · raised #11161D · border #1F2630
+ *   amber #F0A830 (primary) · green #3FB950 (confirm) · red #F85149 (slash)
+ * IBM Plex Sans (body) + IBM Plex Mono (code/labels/stats).
+ * The app is always dark — no light theme toggle. Mirrors apps/app. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Brand tokens used by the registry views.
+ * Coexist with the shadcn token system below.
+ */
+@theme {
+  --color-ink: #0a0e14;
+  --color-raised: #11161d;
+  --color-border-subtle: #1f2630;
+  --color-amber: #f0a830;
+  --color-confirm: #3fb950;
+  --color-slash: #f85149;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Dark-first: :root carries the ink palette directly. */
+:root {
+  --background: #0a0e14;
+  --foreground: #f0f6fc;
+  --card: #11161d;
+  --card-foreground: #f0f6fc;
+  --popover: #11161d;
+  --popover-foreground: #f0f6fc;
+  --primary: #f0a830;
+  --primary-foreground: #0a0e14;
+  --secondary: #1f2630;
+  --secondary-foreground: #f0f6fc;
+  --muted: #11161d;
+  --muted-foreground: #7d8590;
+  --accent: #1f2630;
+  --accent-foreground: #f0f6fc;
+  --destructive: #f85149;
+  --success: #3fb950;
+  --border: #1f2630;
+  --input: #1f2630;
+  --ring: #f0a830;
+  --radius: 0.5rem;
+}
+
+/* Brand aliases — registry view classes reference these original names. */
+:root {
+  --ink: var(--background);
+  --raised: var(--card);
+  --amber: var(--primary);
+  --green: var(--success);
+  --red: var(--destructive);
+  --text: var(--foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* =========================================================================
+ * Registry view styles — plain CSS classes consumed by the item detail /
+ * withdrawal views. Uses brand aliases (--ink/--raised/--amber/--green/--red)
+ * + --muted-foreground for muted text + --border.
+ * ========================================================================= */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+.mono {
+  font-family:
+    ui-monospace, "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+/* --- page / headings ----------------------------------------------------- */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+}
+
+.page-head {
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.35rem;
+}
+
+.lede {
+  color: var(--muted-foreground);
+  margin: 0 0 1rem;
+}
+
+.cta {
+  display: inline-block;
+  background: var(--amber);
+  color: var(--ink);
+  font-weight: 650;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.cta:hover {
+  filter: brightness(1.08);
+}
+.cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.cta-ghost {
+  background: transparent;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+}
+.cta-ghost:hover {
+  background: rgba(240, 168, 48, 0.08);
+}
+
+.back {
+  display: inline-block;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+.back:hover {
+  color: var(--text);
+}
+
+/* --- card / detail grid -------------------------------------------------- */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.detail-group {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.1rem 1.15rem;
+}
+
+.rows {
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+}
+.row dt {
+  color: var(--muted-foreground);
+  margin: 0;
+}
+.row dd {
+  margin: 0;
+  text-align: right;
+  word-break: break-all;
+}
+.muted {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+/* --- loading / empty ----------------------------------------------------- */
+
+.skeleton {
+  background: var(--border);
+  border-radius: 4px;
+  animation: canon-pulse 1.4s ease-in-out infinite;
+}
+@keyframes canon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.empty {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+.empty-head {
+  font-size: 1.15rem;
+  font-weight: 650;
+  margin: 0 0 0.5rem;
+}
+.empty-body {
+  color: var(--muted-foreground);
+  margin: 0;
+}
