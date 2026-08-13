@@ -12,14 +12,6 @@ DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
 SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
 SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
-# `--ignore-keys` is MANDATORY on every `anchor build` (all targets below pass it).
-# Anchor.toml has no config-level option for this — the flag is CLI-only.
-# The deploy keypair (`target/deploy/accord-keypair.json`) is gitignored, so each
-# worktree generates a random one; `--ignore-keys` prevents it from desyncing
-# `declare_id!`. NEVER run `anchor keys sync` without the canonical keypair —
-# it would rewrite `declare_id!` to adopt a random worktree key. See AGENTS.md
-# §Gotchas.
-
 .PHONY: prep build codegen sdk docs test test_unit test_surfpool run_surfpool run_validator lint clean help
 
 help: ## Show this help
@@ -54,25 +46,8 @@ test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Sur
 	anchor build --ignore-keys
 	anchor test --skip-build
 
-test_unit: ## Run LiteSVM Rust unit/TDD tests (fast, no validator). Needs the .so first.
-	cargo build-sbf --tools-version v1.52 --manifest-path programs/accord/Cargo.toml
-	cp target/sbpf-solana-solana/release/accord.so target/deploy/accord.so
-	cargo test --manifest-path programs/accord/Cargo.toml --features no-entrypoint
-	# `--features no-entrypoint`: the program's `entrypoint!` symbol collides with
-	# a builtin when the program crate is linked into the test binary; the .so
-	# (built above WITH the entrypoint) is what LiteSVM loads. See AGENTS.md.
-	# `--tools-version v1.52`: needed while Solana CLI < 3.x is installed (it
-	# bundles platform-tools v1.48 / cargo 1.84, which can't parse edition2024
-	# manifests). `make prep` installs Solana 3.1.10, which drops this flag.
-	# `anchor build` is unaffected — it manages its own toolchain.
-
-test_surfpool: ## Run jest e2e suite only (against an already-running Surfpool/validator)
-
-run_surfpool: ## Start a Surfpool Surfnet manually (for isolated e2e debugging; `anchor test` starts its own)
-
-run_validator: ## Start a local test-validator with the Accord .so at its declared address (no keypair needed)
-	solana-test-validator --reset \
-	  --bpf-program $(ACCORD_PROGRAM_ID) target/deploy/accord.so
+test_unit:
+	cargo test
 
 lint: ## Lint every workspace that declares a lint script
 	pnpm -r run lint
