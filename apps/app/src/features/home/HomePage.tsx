@@ -24,8 +24,6 @@ const GROUPS = [
   {
     title: "Disputes",
     tagline: "Resolve conflicts on-chain.",
-    cardClass: "bg-amber/5 hover:bg-amber/10",
-    titleClass: "text-amber",
     items: [
       {
         to: "/disputes",
@@ -44,8 +42,6 @@ const GROUPS = [
   {
     title: "Jurors",
     tagline: "Stake collateral. Get drawn. Earn fees.",
-    cardClass: "bg-confirm/5 hover:bg-confirm/10",
-    titleClass: "text-confirm",
     items: [
       {
         to: "/juror/browse",
@@ -64,8 +60,6 @@ const GROUPS = [
   {
     title: "SubAccords",
     tagline: "Arbitration pools for one class of dispute.",
-    cardClass: "bg-sky-400/5 hover:bg-sky-400/10",
-    titleClass: "text-sky-400",
     items: [
       {
         to: "/subaccords",
@@ -96,37 +90,33 @@ export function HomePage() {
       {GROUPS.map((group) => (
         <section
           key={group.title}
-          className="overflow-hidden rounded-lg border border-border-subtle bg-raised"
+          className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10"
         >
-          <div className="border-b border-border-subtle px-5 py-3">
-            <h2
-              className={`font-mono text-sm font-semibold ${group.titleClass}`}
-            >
+          <div className="border-b border-border px-5 py-3">
+            <h2 className="font-mono text-sm font-semibold text-foreground">
               {group.title}
             </h2>
-            <p className="mt-0.5 text-xs text-text-secondary">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {group.tagline}
             </p>
           </div>
-          <div className="divide-y divide-border-subtle">
+          <div className="divide-y divide-border">
             {group.items.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`group flex items-center gap-3 px-5 py-4 transition-colors ${group.cardClass}`}
+                className="group flex items-center gap-3 px-5 py-4 transition-[background-color] hover:bg-muted/50"
               >
-                <item.icon
-                  className={`h-4 w-4 shrink-0 ${group.titleClass}`}
-                />
+                <item.icon className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-amber" />
                 <div className="flex-1">
                   <span className="text-sm font-medium">
                     {item.label}
                   </span>
-                  <p className="mt-1 text-xs text-text-secondary">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {item.desc}
                   </p>
                 </div>
-                <LuArrowRight className="h-4 w-4 shrink-0 text-text-secondary transition-transform group-hover:translate-x-0.5" />
+                <LuArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </Link>
             ))}
           </div>

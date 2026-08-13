@@ -1,11 +1,14 @@
 ---
 const links = [
   { href: "https://docs.useaccord.xyz", label: "Docs" },
-  { href: "https://t.me/useaccord", label: "Telegram" },
   { href: "https://github.com/xeroc/accord", label: "GitHub" },
+  { href: "https://app.useaccord.xyz", label: "Open App" },
 ];
 ---
 
+<!-- DESIGN.md §08: N9 edge-aligned mono status bar.
+     Wordmark + convergence glyph + status chip left; links in Plex Mono right.
+     No CTA-right SaaS nav. -->
 <header class="border-b border-border/60">
   <div class="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
     <a href="/#hero" class="flex items-center gap-2.5" aria-label="Accord — home">
@@ -34,13 +37,6 @@ const links = [
           </a>
         ))
       }
-      <a
-        href="https://app.useaccord.xyz"
-        class="shrink-0 rounded-md bg-amber px-4 py-2 font-sans text-sm font-medium text-ink transition-opacity hover:opacity-90"
-        rel="noopener"
-      >
-        Open App
-      </a>
     </nav>
   </div>
 </header>

@@ -134,7 +134,7 @@ export function Navbar() {
                         }
                         className="flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent"
                       >
-                        <img src={c.icon} alt="" className="size-6" />
+                        <img src={c.icon} alt="" className="size-6 rounded-sm outline outline-1 -outline-offset-1 outline-white/10" />
                         <span className="text-sm">{c.name}</span>
                       </button>
                     </DialogClose>

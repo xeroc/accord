@@ -17,6 +17,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
+import { StaggerGroup, StaggerItem } from "../../components/motion";
 
 /** `Account<Subaccord>` derived from the SDK query fn (Subaccord type isn't on
  * the SDK's public surface — derive rather than widen it). */
@@ -32,11 +33,11 @@ export function SubaccordListPage() {
   });
 
   return (
-    <main className="page">
-      <header className="page-head">
-        <h1 className="title">Subaccords.</h1>
-        <p className="lede">Stake pools adjudicating one class of dispute.</p>
-        <Link to="/subaccords/new" className="cta">
+    <main className="mx-auto max-w-[1100px] px-6 py-10">
+      <header className="mb-8">
+        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Subaccords.</h1>
+        <p className="mb-4 text-muted-foreground">Stake pools adjudicating one class of dispute.</p>
+        <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
           Create a subaccord.
         </Link>
       </header>
@@ -49,11 +50,11 @@ export function SubaccordListPage() {
           onRetry={() => void refetch()}
         />
       ) : data && data.length > 0 ? (
-        <ul className="grid" aria-label="Subaccords">
+        <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Subaccords">
           {data.map((s) => (
             <SubaccordCard key={s.address} subaccord={s} />
           ))}
-        </ul>
+        </StaggerGroup>
       ) : (
         <EmptyState />
       )}
@@ -64,12 +65,12 @@ export function SubaccordListPage() {
 function SubaccordCard({ subaccord }: { subaccord: SubaccordAccount }) {
   const d = subaccord.data;
   return (
-    <li>
-      <Link to={`/subaccords/${subaccord.address}`} className="card">
-        <span className="card-address">
+    <StaggerItem>
+      <Link to={`/subaccords/${subaccord.address}`} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40">
+        <span className="mb-3.5 block">
           <Copyable value={subaccord.address} />
         </span>
-        <dl className="card-stats">
+        <dl className="gap-1.5 grid">
           <Stat label="Creator" value={<Copyable value={d.creator} />} />
           <Stat
             label="Staking token"
@@ -79,24 +80,24 @@ function SubaccordCard({ subaccord }: { subaccord: SubaccordAccount }) {
           <Stat label="Total stake" value={formatTokenAmount(d.totalStake)} />
         </dl>
       </Link>
-    </li>
+    </StaggerItem>
   );
 }
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="stat">
-      <dt>{label}.</dt>
-      <dd>{value}</dd>
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}.</dt>
+      <dd className="text-right">{value}</dd>
     </div>
   );
 }
 
 function SubaccordGridSkeleton() {
   return (
-    <ul className="grid" aria-busy aria-label="Loading subaccords">
+    <ul className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading subaccords">
       {Array.from({ length: 6 }).map((_, i) => (
-        <li key={i} className="card card-skeleton">
+        <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
           <Skeleton style={{ width: "60%", height: "1rem" }} />
           <Skeleton
             style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
@@ -113,12 +114,12 @@ function SubaccordGridSkeleton() {
 function EmptyState() {
   // BRAND.md voice — imperative, no hedging: "No subaccords yet." not "No results found."
   return (
-    <div className="empty">
-      <p className="empty-head">No subaccords yet.</p>
-      <p className="empty-body">
+    <div className="rounded-lg border border-dashed border-border p-12 text-center">
+      <p className="mb-2 text-lg font-semibold">No subaccords yet.</p>
+      <p className="mb-5 text-muted-foreground">
         Create the first pool. Stake jurors. File a dispute.
       </p>
-      <Link to="/subaccords/new" className="cta">
+      <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
         Create a subaccord.
       </Link>
     </div>
@@ -133,10 +134,10 @@ function ErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="empty">
-      <p className="empty-head">Read failed.</p>
-      <p className="empty-body mono">{message}</p>
-      <button type="button" className="cta" onClick={onRetry}>
+    <div className="rounded-lg border border-dashed border-border p-12 text-center">
+      <p className="mb-2 text-lg font-semibold">Read failed.</p>
+      <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">{message}</p>
+      <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={onRetry}>
         Retry.
       </button>
     </div>

@@ -129,28 +129,28 @@ export function SubaccordCreatePage() {
   }
 
   return (
-    <main className="page">
-      <header className="page-head">
-        <h1 className="title">Create a subaccord.</h1>
-        <p className="lede">
+    <main className="mx-auto max-w-[1100px] px-6 py-10">
+      <header className="mb-8">
+        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Create a subaccord.</h1>
+        <p className="mb-4 text-muted-foreground">
           Stake pool adjudicating one class of dispute. Immutable identity.
         </p>
-        <Link to="/subaccords" className="back">
+        <Link to="/subaccords" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Back to subaccords.
         </Link>
       </header>
 
       {!signer ? (
-        <div className="empty">
-          <p className="empty-head">Connect a wallet.</p>
-          <p className="empty-body">
+        <div className="rounded-lg border border-dashed border-border p-12 text-center">
+          <p className="mb-2 text-lg font-semibold">Connect a wallet.</p>
+          <p className="mb-5 text-muted-foreground">
             Creating a subaccord signs with your wallet as the creator.
           </p>
         </div>
       ) : (
-        <form className="form" onSubmit={onSubmit}>
-          <fieldset>
-            <legend className="section-head">Identity.</legend>
+        <form className="flex flex-col gap-7" onSubmit={onSubmit}>
+          <fieldset className="gap-4 grid rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Identity.</legend>
             <Field
               label="Risk type"
               help="32-byte hex (64 chars). The immutable dispute class. Cannot be zero."
@@ -170,8 +170,8 @@ export function SubaccordCreatePage() {
             />
           </fieldset>
 
-          <fieldset>
-            <legend className="section-head">Economics.</legend>
+          <fieldset className="gap-4 grid rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Economics.</legend>
             <Field
               label="Staking token"
               help="SPL mint — juror collateral (ADR-0020)."
@@ -216,8 +216,8 @@ export function SubaccordCreatePage() {
             />
           </fieldset>
 
-          <fieldset>
-            <legend className="section-head">Windows (seconds).</legend>
+          <fieldset className="gap-4 grid rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Windows (seconds).</legend>
             <Field
               label="Review"
               help="Jurors assess evidence. Default 7 days."
@@ -252,8 +252,8 @@ export function SubaccordCreatePage() {
             />
           </fieldset>
 
-          <fieldset>
-            <legend className="section-head">Panel.</legend>
+          <fieldset className="gap-4 grid rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Panel.</legend>
             <Field
               label="Max appeals"
               help={`0–${MAX_APPEALS}. Panel ladder 3→7→15→31. Default ${DEFAULT_MAX_APPEALS}.`}
@@ -281,9 +281,9 @@ export function SubaccordCreatePage() {
             <DepthPicker value={form.depth} onChange={(v) => set("depth", v)} />
           </fieldset>
 
-          <fieldset>
-            <legend className="section-head">Authority.</legend>
-            <label className="check">
+          <fieldset className="gap-4 grid rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Authority.</legend>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={form.immutable}
@@ -312,12 +312,12 @@ export function SubaccordCreatePage() {
           </fieldset>
 
           {error && (
-            <p className="form-error mono" role="alert">
+            <p className="text-sm text-destructive font-mono text-sm text-foreground" role="alert">
               {error}
             </p>
           )}
 
-          <button type="submit" className="cta" disabled={sending}>
+          <button type="submit" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" disabled={sending}>
             {sending ? "Signing…" : "Create subaccord."}
           </button>
         </form>
@@ -436,10 +436,10 @@ function DepthPicker({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="field">
-      <span className="label">Pool capacity.</span>
+    <label className="flex flex-col gap-1">
+      <span className="text-sm text-foreground">Pool capacity.</span>
       <select
-        className="input"
+        className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -449,7 +449,7 @@ function DepthPicker({
           </option>
         ))}
       </select>
-      <span className="help">
+      <span className="text-xs text-muted-foreground">
         Maximum juror seats. Each stake/unstake tx carries a Merkle proof
         proportional to depth — depths beyond {MAX_SAFE_TREE_DEPTH} exceed the
         1232-byte transaction limit in browser wallets.
@@ -478,19 +478,19 @@ function Field({
   mono?: boolean;
 }) {
   return (
-    <label className="field">
-      <span className="label">
+    <label className="flex flex-col gap-1">
+      <span className="text-sm text-foreground">
         {label}.{required ? " *" : ""}
       </span>
       <input
-        className={`input ${mono ? "mono" : ""}`}
+        className={`rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none ${mono ? "font-mono text-sm text-foreground" : ""}`}
         type="text"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         required={required}
       />
-      {help && <span className="help">{help}</span>}
+      {help && <span className="text-xs text-muted-foreground">{help}</span>}
     </label>
   );
 }

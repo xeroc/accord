@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from "react";
+import { MotionConfig } from "motion/react";
 import {
   AppProvider,
   createSolanaDevnet,
@@ -29,8 +30,13 @@ const connectorConfig = getDefaultConfig({
   ],
 });
 
+
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <AppProvider connectorConfig={connectorConfig}>{children}</AppProvider>
+    <MotionConfig reducedMotion="user">
+      <AppProvider connectorConfig={connectorConfig}>
+        {children}
+      </AppProvider>
+    </MotionConfig>
   );
 }
