@@ -58,6 +58,7 @@ export {
   fetchSubaccordMaybe,
 } from "./fetch";
 export {
+  findAllJurorStakes,
   findAllSubaccords,
   findDisputesByFiler,
   findDisputesBySubaccord,
