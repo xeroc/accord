@@ -21,7 +21,17 @@ import {
   type CreateDisputeArgs,
   type StakingAccounts,
 } from "@useaccord/sdk";
-import { sha256 } from "@useaccord/sdk/evidence";
+import {
+  sha256,
+  buildManifest,
+  SHA256_ZERO,
+  generateSalt,
+  deriveOptionHashes,
+  verifyOptionHashes,
+  verifyManifestHash,
+  type ManifestInput,
+  type ManifestCtx,
+} from "@useaccord/sdk/evidence";
 import {
   getAddressEncoder,
   getProgramDerivedAddress,
@@ -37,22 +47,6 @@ import {
 import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
 import { expectAccordAccount, fetchDecoded } from "./setup/assertions.js";
 
-// Import the evidence module's pure functions directly from the app source.
-// These files have no browser-only deps (sha256 comes from the SDK, which is
-// available in jest; crypto.getRandomValues is global in Node 18+).
-// verifyManifestHash is inlined below because publish.ts uses import.meta.env
-// (Vite-specific) which is unavailable in Node.
-import {
-  buildManifest,
-  SHA256_ZERO,
-  type ManifestInput,
-  type ManifestCtx,
-} from "../../apps/app/src/features/dispute/evidence/manifest.js";
-import {
-  generateSalt,
-  deriveOptionHashes,
-  verifyOptionHashes,
-} from "../../apps/app/src/features/dispute/evidence/options.js";
 
 const ATA_PROGRAM_ID =
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
@@ -84,17 +78,6 @@ async function ata(mint: Address, owner: Address): Promise<Address> {
 function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   return a.every((v, i) => v === b[i]);
-}
-
-/** Inlined verifyManifestHash — publish.ts uses import.meta.env (Vite-only). */
-async function verifyManifestHash(
-  manifest: Uint8Array,
-  evidenceHash: Uint8Array,
-): Promise<void> {
-  const hash = await sha256(manifest);
-  if (!equalBytes(hash, evidenceHash)) {
-    throw new Error("manifest hash mismatch");
-  }
 }
 
 // ─── Unit tests (no validator needed) ─────────────────────────────────────
