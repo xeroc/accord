@@ -196,6 +196,53 @@ body,
   font-size: 0.85rem;
   margin-bottom: 1rem;
 }
+
+/* --- form ----------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.label {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.help {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+.input {
+  background: var(--ink);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+.form-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  margin: 0;
+}
+.check-ok {
+  color: var(--green);
+  font-size: 0.8rem;
+}
+.check-bad {
+  color: var(--red);
+  font-size: 0.8rem;
+}
 .back:hover {
   color: var(--text);
 }
