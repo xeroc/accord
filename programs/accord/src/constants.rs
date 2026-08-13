@@ -20,8 +20,11 @@ pub const MAX_APPEALS: usize = 3;
 pub const NUM_EVIDENCE_SLOTS: usize = MAX_APPEALS + 1;
 
 /// Maximum vote options on a single Dispute. Bounds `Dispute.options` and the
-/// per-round tally. Disputes need at least 2; 32 covers realistic multiple-choice.
-pub const MAX_OPTIONS: usize = 32;
+/// per-round tally. Disputes need at least 2; 8 covers realistic
+/// multiple-choice (binary / ternary / small-panel) while keeping the
+/// `Dispute` account ~768 B smaller (8×32 vs 32×32) — enough that consumers
+/// can use `Account<Dispute>` without blowing the SBF stack-frame budget.
+pub const MAX_OPTIONS: usize = 8;
 
 /// On-chain timelock a Subaccord parameter update must wait before execution
 /// (ADR-0005). Expressed in slots (~400ms mainnet); 48h ~= 432_000 slots.

@@ -5,7 +5,6 @@
 use crate::{constants::*, errors::CanonError, events::*, state::*};
 use accord::state::{Dispute, DisputeState};
 use anchor_lang::prelude::*;
-use anchor_lang::AccountDeserialize;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 #[derive(Accounts)]
@@ -24,9 +23,11 @@ pub struct SettleItem<'info> {
         constraint = item.list == list.key(),
     )]
     pub item: Account<'info, CanonItem>,
-    /// Accord Dispute PDA — read for `final_ruling`.
-    /// CHECK: address + owner verified in handler.
-    pub dispute: UncheckedAccount<'info>,
+    /// Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
+    /// `state` + `final_ruling` are read directly. Boxed to keep the struct
+    /// off the stack during the token-transfer CPI call chain.
+    #[account(constraint = item.active_dispute == dispute.key() @ CanonError::DisputePdaMismatch)]
+    pub dispute: Box<Account<'info, Dispute>>,
     #[account(address = list.fee_mint)]
     pub fee_mint: Account<'info, Mint>,
     #[account(
@@ -49,25 +50,14 @@ pub struct SettleItem<'info> {
 pub fn handler(ctx: Context<SettleItem>) -> Result<()> {
     let item = &mut ctx.accounts.item;
     require!(item.state == ItemState::Disputed, CanonError::NotDisputed);
+    // `state == Final` gates settlement; `final_ruling` is the winning option
+    // index (Canon: 0 = keep, 1 = remove). Ownership + address are validated
+    // by `Account<Dispute>` + the struct constraint.
     require!(
-        ctx.accounts.dispute.key() == item.active_dispute,
-        CanonError::DisputePdaMismatch
-    );
-    require!(
-        ctx.accounts.dispute.owner == &accord::ID,
-        CanonError::WrongAccordProgram
-    );
-
-    // Deserialize the Accord Dispute via the crate — no hand-maintained byte
-    // offsets. `state == Final` gates settlement; `final_ruling` is the
-    // winning option index (Canon: 0 = keep, 1 = remove).
-    let dispute_data = ctx.accounts.dispute.try_borrow_data()?;
-    let dispute = Dispute::try_deserialize(&mut &dispute_data[..])?;
-    require!(
-        dispute.state == DisputeState::Final,
+        ctx.accounts.dispute.state == DisputeState::Final,
         CanonError::DisputeNotFinal
     );
-    let ruling = dispute.final_ruling;
+    let ruling = ctx.accounts.dispute.final_ruling;
     require!(ruling < 2, CanonError::InvalidRuling);
 
     let is_withdrawal = item.withdrawal_requested_at.is_some();

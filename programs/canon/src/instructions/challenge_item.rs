@@ -39,11 +39,17 @@ pub struct ChallengeItem<'info> {
         constraint = item.list == list.key(),
     )]
     pub item: Account<'info, CanonItem>,
-    /// Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
-    /// `fee_vault_deposited` on it during the CPI.
-    /// CHECK: address verified in handler; Accord re-validates (seeds + ownership).
-    #[account(mut)]
-    pub subaccord: UncheckedAccount<'info>,
+    /// Backing Accord Subaccord. Seeds link it to this list (`creator`,
+    /// `rules_hash`); `Account<Subaccord>` validates ownership + deserialises.
+    /// `mut`: Accord's `create_dispute` writes `fee_vault_deposited` during the
+    /// CPI — Anchor's `exit()` is a no-op (owner ≠ canon), so the write survives.
+    #[account(
+        mut,
+        seeds = [accord::SEED_SUBACCORD, list.creator.as_ref(), list.rules_hash.as_ref()],
+        seeds::program = accord::ID,
+        bump,
+    )]
+    pub subaccord: Box<Account<'info, accord::state::Subaccord>>,
     #[account(address = list.fee_mint)]
     pub fee_mint: Account<'info, Mint>,
     #[account(
@@ -106,19 +112,11 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         .ok_or(CanonError::ArithmeticOverflow)?
         / 10_000;
 
-    // Read the backing Subaccord via the `accord` crate — no hand-maintained
-    // byte offsets. `min_jury_size · fee_per_juror` is the fee Accord expects.
-    // Scoped: the data `Ref` MUST release before the Token transfer + Accord
-    // CPI, or the runtime rejects with `AccountBorrowFailed` — Accord writes
-    // `fee_vault_deposited` on this same Subaccord during the CPI, so the
-    // caller cannot still hold a borrow on its data.
-    let accord_fee = {
-        let sub_data = ctx.accounts.subaccord.try_borrow_data()?;
-        let sub = accord::state::Subaccord::try_deserialize(&mut &sub_data[..])?;
-        (sub.min_jury_size as u64)
-            .checked_mul(sub.fee_per_juror)
-            .ok_or(CanonError::ArithmeticOverflow)?
-    };
+    // `min_jury_size · fee_per_juror` is the fee Accord expects.
+    // `Account<Subaccord>` deserialises at entry — no manual borrow/parse.
+    let accord_fee = (ctx.accounts.subaccord.min_jury_size as u64)
+        .checked_mul(ctx.accounts.subaccord.fee_per_juror)
+        .ok_or(CanonError::ArithmeticOverflow)?;
 
     let total = challenge_stake
         .checked_add(accord_fee)

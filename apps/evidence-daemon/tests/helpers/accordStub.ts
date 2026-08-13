@@ -91,7 +91,7 @@ const DISPUTE_DEFAULT = {
   filer: ZERO,
   nonce: 0n,
   numOptions: 0,
-  options: Array.from({ length: 32 }, z32),
+  options: Array.from({ length: 8 }, z32),
   evidenceHashes: Array.from({ length: 4 }, z32),
   state: DisputeState.Created,
   currentRound: 0,
