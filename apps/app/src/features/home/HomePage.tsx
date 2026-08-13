@@ -11,6 +11,7 @@
  */
 import { Link } from "react-router-dom";
 import {
+  LuArrowRight,
   LuFilePlus,
   LuFolderPlus,
   LuLayers,
@@ -118,18 +119,14 @@ export function HomePage() {
                   className={`h-4 w-4 shrink-0 ${group.titleClass}`}
                 />
                 <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">
-                      {item.label}
-                    </span>
-                    <span className="font-mono text-xs text-text-secondary transition-transform group-hover:translate-x-0.5">
-                      →
-                    </span>
-                  </div>
+                  <span className="text-sm font-medium">
+                    {item.label}
+                  </span>
                   <p className="mt-1 text-xs text-text-secondary">
                     {item.desc}
                   </p>
                 </div>
+                <LuArrowRight className="h-4 w-4 shrink-0 text-text-secondary transition-transform group-hover:translate-x-0.5" />
               </Link>
             ))}
           </div>
