@@ -14,8 +14,8 @@ import {
   type AccordStakingClient,
   type JurorStakeView,
   type StakingAccounts,
-} from "../../dist/methods/staking.js";
-import { buildAccumulator, proofFor, type MSTNode } from "../../dist/methods/mst.js";
+} from "./staking.ts";
+import { buildAccumulator, proofFor, type MSTNode } from "./mst.ts";
 import type { Instruction } from "@solana/kit";
 
 const stake = (over: Partial<JurorStakeView>): JurorStakeView => ({

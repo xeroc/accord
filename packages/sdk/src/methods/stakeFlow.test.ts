@@ -6,13 +6,13 @@ import {
   prepareStakeProof,
   type JurorStakeLeaf,
   type SubaccordAccumulatorView,
-} from "../../dist/methods/stakeFlow.js";
+} from "./stakeFlow.ts";
 import {
   buildAccumulator,
   proofFor,
   emptyRoot,
   type LeafClaim,
-} from "../../dist/methods/mst.js";
+} from "./mst.ts";
 import {
   getAddressDecoder,
   getAddressEncoder,

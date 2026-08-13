@@ -10,7 +10,7 @@ import {
   appealCost,
   canAppeal,
   panelSizeForRound,
-} from "../../dist/methods/appeal.js";
+} from "./appeal.ts";
 
 test("panelSizeForRound: (J+1)·2^k − 1 ladder, capped at MAX_JURORS; base configurable (accord-9q3e)", () => {
   // Default base = 3 (INITIAL_NUM_JURORS): 0=3, 1=7, 2=15, 3=31.
