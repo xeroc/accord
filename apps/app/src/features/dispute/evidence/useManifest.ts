@@ -8,7 +8,7 @@
  * bundle is stored for the round (404).
  */
 import { useQuery } from "@tanstack/react-query";
-import { EVIDENCE_DAEMON_URL } from "./publish";
+import { EVIDENCE_DAEMON_URL } from "./config";
 
 export function useManifest(
   subaccord: string | undefined,

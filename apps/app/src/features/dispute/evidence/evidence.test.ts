@@ -12,21 +12,19 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { ed25519PublicKeyFromSeed } from "@useaccord/sdk/evidence";
 import type { Address } from "@solana/kit";
-
 import {
   buildManifest,
   SHA256_ZERO,
-  type ManifestCtx,
-  type ManifestInput,
-} from "./manifest.js";
-import {
   deriveOptionHashes,
   generateSalt,
   verifyOptionHashes,
-} from "./options.js";
-import { publishEvidence, verifyManifestHash } from "./publish.js";
+  publishEvidence,
+  verifyManifestHash,
+  ed25519PublicKeyFromSeed,
+  type ManifestCtx,
+  type ManifestInput,
+} from "@useaccord/sdk/evidence";
 
 // --- helpers -----------------------------------------------------------------
 

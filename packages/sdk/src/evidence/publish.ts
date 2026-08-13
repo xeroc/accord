@@ -2,17 +2,15 @@
  * publish.ts — claimant-side encrypt + POST to the evidence daemon, and
  * manifest-hash verification for the recovery upload path.
  *
+ * The daemon base URL is deployment-specific (Vite env on the app side) and is
+ * NOT held here — `publishEvidence` takes `endpoint` as a parameter. App
+ * consumers keep their own `EVIDENCE_DAEMON_URL` config (ADR-0011).
+ *
  * Authority: ADR-0011 (daemon transport), EVIDENCE-FORMAT.md §2 (root hash),
  * milestone accord-ebel §1 (happy path step 7, recovery).
  */
-import { claimantEncrypt, sha256 } from "@useaccord/sdk/evidence";
-
-/**
- * Evidence daemon base URL. Centralized operator — one endpoint per deployment.
- * Override via `VITE_EVIDENCE_DAEMON_URL` for non-local environments.
- */
-export const EVIDENCE_DAEMON_URL =
-  import.meta.env?.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
+import { claimantEncrypt } from "./ecies.js";
+import { sha256 } from "./crypto.js";
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -28,7 +26,7 @@ function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 export interface PublishParams {
-  /** Daemon base URL (usually {@link EVIDENCE_DAEMON_URL}). */
+  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
   endpoint: string;
   subaccord: string;
   dispute: string;

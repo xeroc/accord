@@ -6,7 +6,7 @@
  * `verifyOptionHashes` runs pre-submit — nothing on-chain enforces this today
  * (ADR-0017 open; D2 trustlessly closed when it lands).
  */
-import { sha256 } from "@useaccord/sdk/evidence";
+import { sha256 } from "./crypto.js";
 
 /** Generate a 32-byte random salt via the Web Crypto API. */
 export function generateSalt(): Uint8Array {
