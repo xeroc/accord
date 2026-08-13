@@ -1,17 +1,19 @@
 /**
- * format.ts — display helpers for addresses, token amounts, item states,
- * bps, windows, and time.
+ * format.ts — display helpers for addresses, token amounts, item/dispute
+ * states, bps, windows, and time.
  *
  * Mirrors apps/app/src/shared/format.ts. Canon-specific additions:
  * `ITEM_STATE_LABELS` (the Canon item lifecycle enum), `formatBps`, and
  * `formatTokenAmount` (raw-amount grouping for views where mint decimals
- * are unknown).
+ * are unknown). Dispute helpers (`DISPUTE_STATE_LABELS`, `formatRuling`,
+ * `formatTimestamp`) mirror apps/app and back the inline dispute card.
  */
 
 import type { Address, ReadonlyUint8Array } from "@solana/kit";
 import { ItemState } from "@useaccord/canon";
+import { DisputeState } from "@useaccord/sdk";
 
-// --- Item state labels ---
+// --- Item state labels (SPEC §Item state machine) ---
 
 export const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
@@ -20,6 +22,40 @@ export const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.WithdrawPending]: "Withdraw pending",
   [ItemState.Disputed]: "Disputed",
 };
+
+// --- Dispute state labels + ruling formatting (mirrors apps/app) ---
+
+export const DISPUTE_STATE_LABELS: Record<DisputeState, string> = {
+  [DisputeState.Created]: "Created",
+  [DisputeState.Drawn]: "Drawn",
+  [DisputeState.Review]: "Review",
+  [DisputeState.Commit]: "Commit",
+  [DisputeState.Reveal]: "Reveal",
+  [DisputeState.RoundResolved]: "Round resolved",
+  [DisputeState.Final]: "Final",
+  [DisputeState.Closed]: "Closed",
+  [DisputeState.Failed]: "Failed",
+  [DisputeState.RedrawEligible]: "Redraw eligible",
+};
+
+/** Ruling sentinel — `finalRuling` is 255 until the dispute is final. */
+const NO_RULING = 255;
+
+/** Render a Dispute `finalRuling` index, or "—" when not yet decided. */
+export function formatRuling(ruling: number, optionLabels?: string[]): string {
+  if (ruling === NO_RULING) return "—";
+  return optionLabels?.[ruling] ?? `Option ${ruling}`;
+}
+
+/** Unix-seconds (Clock unix_time, possibly bigint) → locale string. */
+export function formatTimestamp(
+  unixSec: bigint | number | null | undefined,
+): string {
+  if (unixSec === null || unixSec === undefined) return "—";
+  const n = Number(unixSec);
+  if (n === 0) return "—";
+  return new Date(n * 1000).toLocaleString();
+}
 
 // --- Address formatting ---
 

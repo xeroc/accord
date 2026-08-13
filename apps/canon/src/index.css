@@ -150,7 +150,8 @@
 
 /* =========================================================================
  * Subaccord view styles (accord-pjxh) — plain CSS classes consumed by
- * SubaccordListPage, SubaccordCreatePage, SubaccordDetailPage.
+ * SubaccordListPage, SubaccordCreatePage, SubaccordDetailPage, and the
+ * Canon item/withdrawal views.
  * Uses brand aliases (--ink/--raised/--amber/--green/--red/--text) +
  * --muted-foreground for muted text + --border (shared with shadcn).
  * ========================================================================= */
@@ -206,6 +207,11 @@ body,
 }
 .cta:hover {
   filter: brightness(1.08);
+}
+.cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
 }
 
 .grid {
@@ -302,6 +308,7 @@ body,
   color: var(--muted-foreground);
   text-decoration: none;
   font-size: 0.85rem;
+  margin-bottom: 1rem;
 }
 .back:hover {
   color: var(--text);
@@ -370,6 +377,15 @@ body,
 .check input {
   accent-color: var(--amber);
 }
+/* Inline validation hints (submit-item owner-match preview). */
+.check-ok {
+  color: var(--green);
+  font-size: 0.8rem;
+}
+.check-bad {
+  color: var(--red);
+  font-size: 0.8rem;
+}
 
 .form-error {
   color: var(--red);
@@ -431,7 +447,7 @@ body,
 }
 
 /* =========================================================================
- * Canon-specific view styles (accord-ajps) — featured slot + pagination.
+ * Canon-specific view styles (accord-ajjs) — featured slot + pagination.
  * ========================================================================= */
 
 .featured {
