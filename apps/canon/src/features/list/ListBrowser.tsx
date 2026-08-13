@@ -86,7 +86,7 @@ export function ListBrowser() {
         />
       ) : gridLists.length > 0 ? (
         <>
-          <ul className="grid" aria-label="Canon lists">
+          <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Canon lists">
             {visibleLists.map((l) => (
               <CanonListCard key={l.address} list={l} />
             ))}
@@ -116,9 +116,9 @@ function FeaturedSlot({
 }) {
   if (loading) {
     return (
-      <section className="featured">
-        <p className="featured-label">Featured.</p>
-        <div className="card card-skeleton" aria-busy>
+      <section className="mb-6">
+        <p className="mb-3 font-mono text-xs uppercase tracking-[0.06em] text-amber">Featured.</p>
+        <div className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col" aria-busy>
           <Skeleton style={{ width: "40%", height: "1rem" }} />
           <Skeleton
             style={{ width: "70%", height: "0.85rem", marginTop: "0.75rem" }}
@@ -132,13 +132,13 @@ function FeaturedSlot({
 
   const d = featured.data;
   return (
-    <section className="featured">
-      <p className="featured-label">Featured.</p>
-      <Link to={`/lists/${featured.address}`} className="card">
-        <span className="card-address">
+    <section className="mb-6">
+      <p className="mb-3 font-mono text-xs uppercase tracking-[0.06em] text-amber">Featured.</p>
+      <Link to={`/lists/${featured.address}`} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
+        <span className="mb-3.5 block">
           <Copyable value={featured.address} />
         </span>
-        <dl className="card-stats">
+        <dl className="grid gap-1.5">
           <Stat label="Stake mint" value={<Copyable value={d.stakeMint} />} />
           <Stat label="Fee mint" value={<Copyable value={d.feeMint} />} />
           <Stat label="Items" value={d.itemCount.toString()} />
@@ -146,7 +146,7 @@ function FeaturedSlot({
           <Stat
             label="Rules"
             value={
-              <span className="mono" title={formatHash(d.rulesHash, false)}>
+              <span className="font-mono text-sm text-foreground" title={formatHash(d.rulesHash, false)}>
                 {formatHash(d.rulesHash)}
               </span>
             }
@@ -163,11 +163,11 @@ function CanonListCard({ list }: { list: Account<CanonList> }) {
   const d = list.data;
   return (
     <li>
-      <Link to={`/lists/${list.address}`} className="card">
-        <span className="card-address">
+      <Link to={`/lists/${list.address}`} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
+        <span className="mb-3.5 block">
           <Copyable value={list.address} />
         </span>
-        <dl className="card-stats">
+        <dl className="grid gap-1.5">
           <Stat label="Stake mint" value={<Copyable value={d.stakeMint} />} />
           <Stat label="Fee mint" value={<Copyable value={d.feeMint} />} />
           <Stat label="Items" value={d.itemCount.toString()} />
@@ -176,7 +176,7 @@ function CanonListCard({ list }: { list: Account<CanonList> }) {
           <Stat
             label="Rules"
             value={
-              <span className="mono" title={formatHash(d.rulesHash, false)}>
+              <span className="font-mono text-sm text-foreground" title={formatHash(d.rulesHash, false)}>
                 {formatHash(d.rulesHash)}
               </span>
             }
@@ -189,9 +189,9 @@ function CanonListCard({ list }: { list: Account<CanonList> }) {
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="stat">
-      <dt>{label}.</dt>
-      <dd>{value}</dd>
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}.</dt>
+      <dd className="text-right">{value}</dd>
     </div>
   );
 }
@@ -211,12 +211,12 @@ function Pagination({
 }) {
   return (
     <>
-      <p className="count-note">
+      <p className="mt-4 text-center text-[0.82rem] text-muted-foreground">
         Showing {shown} of {total}.
       </p>
       {hasMore && (
-        <div className="load-more">
-          <button type="button" className="cta" onClick={onLoadMore}>
+        <div className="mt-6 text-center">
+          <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={onLoadMore}>
             Load more.
           </button>
         </div>
@@ -229,9 +229,9 @@ function Pagination({
 
 function ListGridSkeleton() {
   return (
-    <ul className="grid" aria-busy aria-label="Loading lists">
+    <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading lists">
       {Array.from({ length: 6 }).map((_, i) => (
-        <li key={i} className="card card-skeleton">
+        <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
           <Skeleton style={{ width: "60%", height: "1rem" }} />
           <Skeleton
             style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
@@ -247,12 +247,12 @@ function ListGridSkeleton() {
 
 function EmptyState() {
   return (
-    <div className="empty">
-      <p className="empty-head">No lists yet.</p>
-      <p className="empty-body">
+    <div className="rounded-lg border border-dashed border-border p-12 text-center">
+      <p className="mb-2 text-lg font-semibold">No lists yet.</p>
+      <p className="mb-5 text-muted-foreground">
         Create a curated registry. Submit items. Challenge fakes.
       </p>
-      <Link to="/lists/new" className="cta">
+      <Link to="/lists/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
         Create a list.
       </Link>
     </div>
@@ -267,10 +267,10 @@ function ErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="empty">
-      <p className="empty-head">Read failed.</p>
-      <p className="empty-body mono">{message}</p>
-      <button type="button" className="cta" onClick={onRetry}>
+    <div className="rounded-lg border border-dashed border-border p-12 text-center">
+      <p className="mb-2 text-lg font-semibold">Read failed.</p>
+      <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">{message}</p>
+      <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={onRetry}>
         Retry.
       </button>
     </div>

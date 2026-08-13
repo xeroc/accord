@@ -33,35 +33,35 @@ export function DisputeStatusCard({ dispute }: { dispute: Account<Dispute> }) {
     : "";
 
   return (
-    <section className="detail-group">
-      <h3 className="mono" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+    <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+      <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
         Backing dispute
       </h3>
-      <dl className="rows">
-        <div className="row">
-          <dt>Dispute</dt>
-          <dd>{shortAddress(dispute.address as Address)}</dd>
+      <dl className="grid gap-2">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <dt className="text-muted-foreground">Dispute</dt>
+          <dd className="text-right">{shortAddress(dispute.address as Address)}</dd>
         </div>
-        <div className="row">
-          <dt>State</dt>
-          <dd>{stateLabel}</dd>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <dt className="text-muted-foreground">State</dt>
+          <dd className="text-right">{stateLabel}</dd>
         </div>
-        <div className="row">
-          <dt>Round</dt>
-          <dd>{d.currentRound}</dd>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <dt className="text-muted-foreground">Round</dt>
+          <dd className="text-right">{d.currentRound}</dd>
         </div>
-        <div className="row">
-          <dt>Ruling</dt>
-          <dd>{isFinal ? formatRuling(d.finalRuling, [...CANON_OPTION_LABELS]) : "pending"}</dd>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <dt className="text-muted-foreground">Ruling</dt>
+          <dd className="text-right">{isFinal ? formatRuling(d.finalRuling, [...CANON_OPTION_LABELS]) : "pending"}</dd>
         </div>
-        <div className="row">
-          <dt>Filed</dt>
-          <dd>{formatTimestamp(d.filedAt)}</dd>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <dt className="text-muted-foreground">Filed</dt>
+          <dd className="text-right">{formatTimestamp(d.filedAt)}</dd>
         </div>
         {isFinal && (
-          <div className="row">
-            <dt>Finalized</dt>
-            <dd>{formatTimestamp(d.finalizedAt)}</dd>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <dt className="text-muted-foreground">Finalized</dt>
+            <dd className="text-right">{formatTimestamp(d.finalizedAt)}</dd>
           </div>
         )}
       </dl>
@@ -70,18 +70,18 @@ export function DisputeStatusCard({ dispute }: { dispute: Account<Dispute> }) {
           href={deepLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="back"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
           style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--amber)" }}
         >
           Open in Accord →
         </a>
       ) : (
-        <p className="muted" style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}>
+        <p className="italic text-muted-foreground" style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}>
           Set VITE_ACCORD_APP_URL to enable a deep link to the Accord dApp.
         </p>
       )}
       {!isFinal && (
-        <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.8rem" }}>
+        <p className="italic text-muted-foreground" style={{ margin: "0.5rem 0 0", fontSize: "0.8rem" }}>
           Once final, a cranker&rsquo;s settle_item applies the ruling here.
         </p>
       )}
