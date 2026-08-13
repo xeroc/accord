@@ -2,7 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 
-import { ListBrowser } from "./features/list/ListBrowser";
+import { HomePage } from "./features/home/HomePage";
 import { CreateListPage } from "./features/list/CreateListPage";
 import { ListDetailPage } from "./features/list/ListDetailPage";
 import { ItemDetailPage } from "./features/item/ItemDetailPage";
@@ -13,7 +13,7 @@ import { ChallengePage } from "./features/challenge/ChallengePage";
  * App shell — routes + Navbar + Toaster.
  *
  * Routes grow per feature task (milestone accord-4dqb):
- *   /                            → list browser (accord-ajjs)
+ *   /                            → home — left-biased hero + list browser + CTA (accord-5t0a)
  *   /lists/new                   → create-list form (accord-fx93)
  *   /lists/:address              → list detail (accord-hhyy)
  *   /lists/:address/submit       → submit-item form (accord-m2u2)
@@ -31,7 +31,7 @@ export function App() {
       <Navbar />
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
         <Routes>
-          <Route path="/" element={<ListBrowser />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/lists/new" element={<CreateListPage />} />
           <Route path="/lists/:address" element={<ListDetailPage />} />
           <Route path="/lists/:address/submit" element={<SubmitItemPage />} />

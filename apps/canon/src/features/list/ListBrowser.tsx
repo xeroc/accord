@@ -1,6 +1,10 @@
 /**
  * ListBrowser — browse every CanonList on chain (accord-ajps).
  *
+ * Reusable body: featured slot + grid + pagination + states. The page header
+ * (title / lede / Create-list CTA) lives in HomePage so the home route can
+ * present a left-biased hero and reuse this grid below it.
+ *
  * Scans the Canon program via `findAllCanonLists` (typed GPA, discriminator
  * filter). TanStack Query caches the read. Cards show mints, item_count,
  * authority, and rules_hash. Client-side pagination (cap + "Load more").
@@ -17,7 +21,11 @@ import { Link } from "react-router-dom";
 import type { Account } from "@solana/kit";
 import type { CanonList } from "@useaccord/canon";
 
-import { useClusterRpc, findAllCanonLists, fetchCanonListRaw } from "@/shared/rpc";
+import {
+  useClusterRpc,
+  findAllCanonLists,
+  fetchCanonListRaw,
+} from "@/shared/rpc";
 import { Copyable } from "@/components/Copyable";
 import { Skeleton } from "@/components/Skeleton";
 import { formatHash, formatTokenAmount } from "@/shared/format";
@@ -42,10 +50,7 @@ export function ListBrowser() {
     staleTime: 30_000,
   });
 
-  const {
-    data: featured,
-    isLoading: featuredLoading,
-  } = useQuery({
+  const { data: featured, isLoading: featuredLoading } = useQuery({
     queryKey: ["canon-list-featured", rpc, FEATURED_LIST],
     queryFn: () => fetchCanonListRaw(rpc!, FEATURED_LIST as never),
     enabled: Boolean(rpc) && FEATURED_LIST.length > 0,
@@ -61,24 +66,15 @@ export function ListBrowser() {
   const gridLists =
     lists && featured
       ? lists.filter((l) => l.address !== featured.address)
-      : lists ?? [];
+      : (lists ?? []);
 
   const visibleLists = gridLists.slice(0, visibleCount);
   const hasMore = gridLists.length > visibleCount;
 
   return (
-    <main className="page">
-      <header className="page-head">
-        <h1 className="title">Canon lists.</h1>
-        <p className="lede">Curated registries adjudicated by Accord courts.</p>
-        <Link to="/lists/new" className="cta">Create a list.</Link>
-      </header>
-
+    <section aria-label="Canon lists">
       {FEATURED_LIST && (
-        <FeaturedSlot
-          featured={featured ?? null}
-          loading={featuredLoading}
-        />
+        <FeaturedSlot featured={featured ?? null} loading={featuredLoading} />
       )}
 
       {isLoading ? (
@@ -105,7 +101,7 @@ export function ListBrowser() {
       ) : (
         <EmptyState />
       )}
-    </main>
+    </section>
   );
 }
 
@@ -256,7 +252,9 @@ function EmptyState() {
       <p className="empty-body">
         Create a curated registry. Submit items. Challenge fakes.
       </p>
-      <Link to="/lists/new" className="cta">Create a list.</Link>
+      <Link to="/lists/new" className="cta">
+        Create a list.
+      </Link>
     </div>
   );
 }
