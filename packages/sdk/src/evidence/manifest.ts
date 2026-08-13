@@ -22,6 +22,14 @@ export interface ManifestInput {
   /** Per-dispute 32-byte random salt (app-generated). */
   salt: Uint8Array;
   title: string;
+  /**
+   * Optional markdown claim body (the challenger's argument). Serialized as a
+   * single JSON-escaped line so the manifest stays single-line-per-field and
+   * the targeted parser needs no block-scalar handling. Omitted entirely when
+   * absent/empty → byte-identical to a pre-`description` manifest (sha256
+   * stable). Rendering is display-only; committed bytes are never altered.
+   */
+  description?: string;
   /** Ordered option labels; `Dispute.options[i] = sha256(salt ‖ utf8(label_i))`. */
   labels: string[];
   entries: ManifestEntryInput[];
@@ -63,6 +71,12 @@ export function buildManifest(
     `filed_at: ${ctx.filedAt}`,
     "language: en",
     `title: ${yamlQuote(input.title)}`,
+    // description is optional; omitted when absent/empty → backward-compatible
+    // bytes (sha256 stable). JSON-escaped so multi-line markdown stays on one
+    // logical line (no YAML block-scalar parsing needed).
+    ...(input.description
+      ? [`description: ${JSON.stringify(input.description)}`]
+      : []),
     "",
     `option_salt: ${hex(input.salt)}`,
     "options:",

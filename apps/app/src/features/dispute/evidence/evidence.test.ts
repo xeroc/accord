@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import type { Address } from "@solana/kit";
 import {
   buildManifest,
+  parseManifest,
   SHA256_ZERO,
   deriveOptionHashes,
   generateSalt,
@@ -230,4 +231,33 @@ test("publishEvidence: non-201 throws with daemon error", async () => {
   } finally {
     fetchMock.mock.restore();
   }
+});
+
+// --- description field (accord-jnka) ----------------------------------------
+
+test("description round-trip: buildManifest → parseManifest preserves markdown", () => {
+  const salt = new Uint8Array(32).fill(7);
+  const description =
+    "The auth module shipped on 2026-07-28.\n\nSee **timeline.md** for the commit log.";
+  const buf = buildManifest({ ...makeInput(salt), description }, CTX);
+  const parsed = parseManifest(new TextDecoder().decode(buf));
+  assert.equal(parsed.description, description);
+});
+
+test("description round-trip: preserves embedded quotes and backslashes", () => {
+  const salt = new Uint8Array(32).fill(8);
+  const description = 'She said "hi" and used a \\ backslash.';
+  const buf = buildManifest({ ...makeInput(salt), description }, CTX);
+  const parsed = parseManifest(new TextDecoder().decode(buf));
+  assert.equal(parsed.description, description);
+});
+
+test("description absent → omitted, backward-compatible (sha256 stable)", () => {
+  const salt = new Uint8Array(32).fill(9);
+  const buf = buildManifest(makeInput(salt), CTX);
+  const text = new TextDecoder().decode(buf);
+  // No description line emitted → bytes identical to a pre-description manifest.
+  assert.ok(!/^description:/m.test(text), "no description line when absent");
+  // Parser returns "" for an absent description.
+  assert.equal(parseManifest(text).description, "");
 });
