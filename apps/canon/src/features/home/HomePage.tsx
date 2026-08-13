@@ -20,7 +20,7 @@ export function HomePage() {
           Curated registries adjudicated by Accord courts. Submit items.
           Challenge fakes. Let an honest jury decide what stays.
         </p>
-        <Link to="/lists/new" className="cta">
+        <Link to="/lists/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
           Create a list.
         </Link>
       </header>

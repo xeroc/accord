@@ -1,4 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -19,18 +20,24 @@ import { ChallengePage } from "./features/challenge/ChallengePage";
  *   /lists/:address/submit       → submit-item form (accord-m2u2)
  *   /items/:address              → item detail — state machine + stakes + withdrawal (accord-gg8f)
  *   /items/:address/challenge    → challenge an item (accord-t877)
- *
- * The canonical item-detail view is `features/item/ItemDetailPage` (the full
- * five-state lifecycle). `features/evidence/ItemDetailPage` was an earlier
- * evidence-only stopgap (its own comment defers the lifecycle view to "E3");
- * it stays in-tree for the evidence-manifest work, unreferenced by the router.
  */
-export function App() {
+function AnimatedRoutes() {
+  const location = useLocation();
   return (
-    <>
-      <Navbar />
-      <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
-        <Routes>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
+        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+        exit={{
+          opacity: 0,
+          y: -12,
+          filter: "blur(4px)",
+          transition: { type: "spring", bounce: 0, duration: 0.3 },
+        }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+      >
+        <Routes location={location}>
           <Route path="/" element={<HomePage />} />
           <Route path="/lists/new" element={<CreateListPage />} />
           <Route path="/lists/:address" element={<ListDetailPage />} />
@@ -38,6 +45,17 @@ export function App() {
           <Route path="/items/:address" element={<ItemDetailPage />} />
           <Route path="/items/:address/challenge" element={<ChallengePage />} />
         </Routes>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+export function App() {
+  return (
+    <>
+      <Navbar />
+      <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
+        <AnimatedRoutes />
       </main>
       <Toaster />
     </>

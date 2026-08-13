@@ -1,4 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -28,12 +29,23 @@ import { JurorBrowsePage } from "./features/juror/JurorBrowsePage";
  *   /subaccords/new        → create subaccord form
  *   /subaccords/:address   → subaccord detail (on-chain params + actions)
  */
-export function App() {
+function AnimatedRoutes() {
+  const location = useLocation();
   return (
-    <>
-      <Navbar />
-      <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
-        <Routes>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={location.pathname}
+        initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
+        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+        exit={{
+          opacity: 0,
+          y: -12,
+          filter: "blur(4px)",
+          transition: { type: "spring", bounce: 0, duration: 0.3 },
+        }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+      >
+        <Routes location={location}>
           <Route path="/" element={<HomePage />} />
           <Route path="/juror" element={<JurorDashboardPage />} />
           <Route path="/juror/stake" element={<StakePage />} />
@@ -48,6 +60,17 @@ export function App() {
             element={<SubaccordDetailPage />}
           />
         </Routes>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+export function App() {
+  return (
+    <>
+      <Navbar />
+      <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
+        <AnimatedRoutes />
       </main>
       <Toaster />
     </>

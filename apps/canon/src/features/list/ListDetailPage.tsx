@@ -63,8 +63,8 @@ export function ListDetailPage() {
 
   if (!address) {
     return (
-      <main className="page">
-        <p className="empty-body">No list address provided.</p>
+      <main className="mx-auto max-w-[1100px] px-6 py-10">
+        <p className="mb-5 text-muted-foreground">No list address provided.</p>
       </main>
     );
   }
@@ -78,22 +78,22 @@ export function ListDetailPage() {
   const listMissing = !listQuery.isLoading && !list;
 
   return (
-    <main className="page">
-      <header className="page-head">
-        <Link to="/" className="back">
+    <main className="mx-auto max-w-[1100px] px-6 py-10">
+      <header className="mb-8">
+        <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Back to lists.
         </Link>
-        <h1 className="title">List.</h1>
+        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">List.</h1>
         {list && <Copyable value={list.address} />}
       </header>
 
       {listError && (
-        <div className="empty">
-          <p className="empty-head">Read failed.</p>
-          <p className="empty-body mono">{listError}</p>
+        <div className="rounded-lg border border-dashed border-border p-12 text-center">
+          <p className="mb-2 text-lg font-semibold">Read failed.</p>
+          <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">{listError}</p>
           <button
             type="button"
-            className="cta"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
             onClick={() => void listQuery.refetch()}
           >
             Retry.
@@ -102,9 +102,9 @@ export function ListDetailPage() {
       )}
 
       {listMissing && (
-        <div className="empty">
-          <p className="empty-head">List not found.</p>
-          <p className="empty-body">
+        <div className="rounded-lg border border-dashed border-border p-12 text-center">
+          <p className="mb-2 text-lg font-semibold">List not found.</p>
+          <p className="mb-5 text-muted-foreground">
             No CanonList at this address on the active cluster.
           </p>
         </div>
@@ -117,10 +117,10 @@ export function ListDetailPage() {
       {/* --- Items --- */}
       {list && (
         <section style={{ marginTop: "2.5rem" }}>
-          <div className="page-head" style={{ marginBottom: "1rem" }}>
-            <h2 className="title" style={{ fontSize: "1.2rem" }}>
+          <div className="mb-8" style={{ marginBottom: "1rem" }}>
+            <h2 className="text-[1.6rem] font-semibold tracking-[-0.01em]" style={{ fontSize: "1.2rem" }}>
               Items.{" "}
-              <span className="muted">
+              <span className="italic text-muted-foreground">
                 ({itemsQuery.data?.length ?? "…"})
               </span>
             </h2>
@@ -135,11 +135,11 @@ export function ListDetailPage() {
           {itemsQuery.isLoading ? (
             <ItemGridSkeleton />
           ) : itemsQuery.isError ? (
-            <div className="empty">
-              <p className="empty-head">Items read failed.</p>
+            <div className="rounded-lg border border-dashed border-border p-12 text-center">
+              <p className="mb-2 text-lg font-semibold">Items read failed.</p>
               <button
                 type="button"
-                className="cta"
+                className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
                 onClick={() => void itemsQuery.refetch()}
               >
                 Retry.
@@ -162,21 +162,21 @@ export function ListDetailPage() {
 function ListParams({ list }: { list: Account<CanonList> }) {
   const d = list.data;
   return (
-    <div className="detail-grid">
-      <div className="detail-group">
-        <dl className="rows">
+    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
+      <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+        <dl className="grid gap-2">
           <Row label="Creator" value={<Copyable value={d.creator} />} />
           <Row label="Stake mint" value={<Copyable value={d.stakeMint} />} />
           <Row label="Fee mint" value={<Copyable value={d.feeMint} />} />
           <Row label="List program" value={<Copyable value={d.listProgram} />} />
         </dl>
       </div>
-      <div className="detail-group">
-        <dl className="rows">
+      <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+        <dl className="grid gap-2">
           <Row
             label="Rules hash"
             value={
-              <span className="mono" title={formatHash(d.rulesHash, false)}>
+              <span className="font-mono text-sm text-foreground" title={formatHash(d.rulesHash, false)}>
                 {formatHash(d.rulesHash)}
               </span>
             }
@@ -186,8 +186,8 @@ function ListParams({ list }: { list: Account<CanonList> }) {
           <Row label="Item count" value={d.itemCount.toString()} />
         </dl>
       </div>
-      <div className="detail-group">
-        <dl className="rows">
+      <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+        <dl className="grid gap-2">
           <Row
             label="Submit deposit"
             value={formatTokenAmount(d.submitDeposit)}
@@ -212,9 +212,9 @@ function ListParams({ list }: { list: Account<CanonList> }) {
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="row">
-      <dt>{label}.</dt>
-      <dd>{value}</dd>
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}.</dt>
+      <dd className="text-right">{value}</dd>
     </div>
   );
 }
@@ -241,7 +241,11 @@ function FilterBar({
           <button
             key={f.key}
             type="button"
-            className={current === f.key ? "cta" : "cta cta-ghost"}
+            className={
+              current === f.key
+                ? "inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+                : "inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
+            }
             onClick={() => onSelect(f.key)}
             style={{ fontSize: "0.8rem", padding: "0.35rem 0.7rem" }}
           >
@@ -268,9 +272,9 @@ function ItemGrid({
 
   if (filtered.length === 0) {
     return (
-      <div className="empty">
-        <p className="empty-head">No items.</p>
-        <p className="empty-body">
+      <div className="rounded-lg border border-dashed border-border p-12 text-center">
+        <p className="mb-2 text-lg font-semibold">No items.</p>
+        <p className="mb-5 text-muted-foreground">
           {filter === "all"
             ? "Submit an item to this list."
             : `No ${ITEM_STATE_LABELS[filter as ItemState] ?? filter} items.`}
@@ -280,7 +284,7 @@ function ItemGrid({
   }
 
   return (
-    <ul className="grid" aria-label="Items">
+    <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Items">
       {filtered.map((item) => (
         <ItemCard key={item.address} item={item} />
       ))}
@@ -292,11 +296,11 @@ function ItemCard({ item }: { item: Account<CanonItem> }) {
   const d = item.data;
   return (
     <li>
-      <Link to={`/items/${item.address}`} className="card">
-        <span className="card-address">
+      <Link to={`/items/${item.address}`} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
+        <span className="mb-3.5 block">
           <Copyable value={d.account} />
         </span>
-        <dl className="card-stats">
+        <dl className="grid gap-1.5">
           <Stat label="State" value={ITEM_STATE_LABELS[d.state] ?? "Unknown"} />
           <Stat
             label="Stake"
@@ -312,9 +316,9 @@ function ItemCard({ item }: { item: Account<CanonItem> }) {
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="stat">
-      <dt>{label}.</dt>
-      <dd>{value}</dd>
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}.</dt>
+      <dd className="text-right">{value}</dd>
     </div>
   );
 }
@@ -323,9 +327,9 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 function ListParamsSkeleton() {
   return (
-    <div className="detail-grid">
+    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="detail-group">
+        <div key={i} className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
           <Skeleton style={{ width: "60%", height: "0.9rem" }} />
           <Skeleton
             style={{ width: "80%", height: "0.85rem", marginTop: "0.5rem" }}
@@ -341,9 +345,9 @@ function ListParamsSkeleton() {
 
 function ItemGridSkeleton() {
   return (
-    <ul className="grid" aria-busy aria-label="Loading items">
+    <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading items">
       {Array.from({ length: 4 }).map((_, i) => (
-        <li key={i} className="card card-skeleton">
+        <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
           <Skeleton style={{ width: "60%", height: "1rem" }} />
           <Skeleton
             style={{ width: "70%", height: "0.85rem", marginTop: "0.6rem" }}

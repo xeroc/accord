@@ -49,21 +49,21 @@ export function StakePage() {
   }
 
   return (
-    <main className="page">
-      <header className="page-head">
-        <Link to="/juror" className="back">
+    <main className="mx-auto max-w-[1100px] px-6 py-10">
+      <header className="mb-8">
+        <Link to="/juror" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Juror dashboard.
         </Link>
-        <h1 className="title">Stake & manage.</h1>
-        <p className="lede">
+        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Stake & manage.</h1>
+        <p className="mb-4 text-muted-foreground">
           Deposit collateral. Become eligible for the draw. Earn fees.
         </p>
       </header>
 
       {!signer ? (
-        <div className="empty">
-          <p className="empty-head">Connect a wallet.</p>
-          <p className="empty-body">
+        <div className="rounded-lg border border-dashed border-border p-12 text-center">
+          <p className="mb-2 text-lg font-semibold">Connect a wallet.</p>
+          <p className="mb-5 text-muted-foreground">
             Staking signs with your wallet as the juror.
           </p>
         </div>
@@ -80,12 +80,12 @@ export function StakePage() {
                 value={subaccordInput}
                 onChange={(e) => pickSubaccord(e.target.value.trim())}
                 placeholder="Subaccord address"
-                className="input mono flex-1"
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none font-mono text-sm text-foreground flex-1"
               />
               {subaccord && (
                 <Link
                   to={`/subaccords/${subaccord.address}`}
-                  className="cta cta-ghost"
+                  className="inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
                 >
                   View pool.
                 </Link>

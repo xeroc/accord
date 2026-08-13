@@ -24,6 +24,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
 import { Copyable } from "../../components/Copyable";
 import { Skeleton } from "../../components/Skeleton";
+import { StaggerGroup, StaggerItem, Reveal } from "../../components/motion";
 
 // --- aggregation types ---
 
@@ -147,59 +148,61 @@ export function JurorBrowsePage() {
       : [];
 
   return (
-    <main className="page">
-      <header className="page-head">
-        <Link to="/juror" className="back">
+    <main className="mx-auto max-w-[1100px] px-6 py-10">
+      <header className="mb-8">
+        <Link to="/juror" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Juror dashboard.
         </Link>
-        <h1 className="title">Jurors.</h1>
-        <p className="lede">
+        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Jurors.</h1>
+        <p className="mb-4 text-muted-foreground">
           Every active juror across all subaccords. Staked amounts are grouped
           by mint — different pools may use different collateral.
         </p>
       </header>
 
-      {isLoading ? (
-        <JurorGridSkeleton />
-      ) : isError ? (
-        <ErrorState
-          message={
-            error instanceof Error ? error.message : "RPC error."
-          }
-          onRetry={() => {
-            void subaccordsQ.refetch();
-            void stakesQ.refetch();
-          }}
-        />
-      ) : jurors.length > 0 ? (
-        <ul className="grid" aria-label="Jurors">
-          {jurors.map((juror) => (
-            <JurorCard key={juror.address} juror={juror} />
-          ))}
-        </ul>
-      ) : (
-        <div className="empty">
-          <p className="empty-head">No active jurors.</p>
-          <p className="empty-body">
-            No one is staked yet. Stake collateral in a subaccord to appear
-            here.
-          </p>
-          <Link to="/subaccords" className="cta">
-            Browse subaccords.
-          </Link>
-        </div>
-      )}
+      <Reveal state={isLoading ? "skeleton" : isError ? "error" : jurors.length > 0 ? "content" : "empty"}>
+        {isLoading ? (
+          <JurorGridSkeleton />
+        ) : isError ? (
+          <ErrorState
+            message={
+              error instanceof Error ? error.message : "RPC error."
+            }
+            onRetry={() => {
+              void subaccordsQ.refetch();
+              void stakesQ.refetch();
+            }}
+          />
+        ) : jurors.length > 0 ? (
+          <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Jurors">
+            {jurors.map((juror) => (
+              <JurorCard key={juror.address} juror={juror} />
+            ))}
+          </StaggerGroup>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border p-12 text-center">
+            <p className="mb-2 text-lg font-semibold">No active jurors.</p>
+            <p className="mb-5 text-muted-foreground">
+              No one is staked yet. Stake collateral in a subaccord to appear
+              here.
+            </p>
+          <Link to="/subaccords" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
+              Browse subaccords.
+            </Link>
+          </div>
+        )}
+      </Reveal>
     </main>
   );
 }
 
 function JurorCard({ juror }: { juror: JurorSummary }) {
   return (
-    <li className="card">
-      <span className="card-address">
+    <StaggerItem className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
+      <span className="mb-3.5 block">
         <Copyable value={juror.address} />
       </span>
-      <dl className="card-stats">
+      <dl className="gap-1.5 grid">
         <Stat
           label="Subaccords"
           value={juror.subaccords.length.toString()}
@@ -210,11 +213,11 @@ function JurorCard({ juror }: { juror: JurorSummary }) {
         <div style={{ marginTop: "0.75rem" }}>
           <p className="font-mono text-xs text-muted-foreground">Staked</p>
           {juror.stakedByMint.map((s) => (
-            <div key={s.mint} className="stat">
-              <dt>
+            <div key={s.mint} className="flex items-center justify-between gap-3 text-sm">
+              <dt className="text-muted-foreground">
                 <Copyable value={s.mint} />
               </dt>
-              <dd className="mono">{formatTokenAmount(s.amount)}</dd>
+              <dd className="text-right font-mono text-sm text-foreground">{formatTokenAmount(s.amount)}</dd>
             </div>
           ))}
         </div>
@@ -225,16 +228,16 @@ function JurorCard({ juror }: { juror: JurorSummary }) {
             Fees earned
           </p>
           {juror.feesByMint.map((f) => (
-            <div key={f.mint} className="stat">
-              <dt>
+            <div key={f.mint} className="flex items-center justify-between gap-3 text-sm">
+              <dt className="text-muted-foreground">
                 <Copyable value={f.mint} />
               </dt>
-              <dd className="mono">{formatTokenAmount(f.amount)}</dd>
+              <dd className="text-right font-mono text-sm text-foreground">{formatTokenAmount(f.amount)}</dd>
             </div>
           ))}
         </div>
       )}
-    </li>
+    </StaggerItem>
   );
 }
 
@@ -246,18 +249,18 @@ function Stat({
   value: React.ReactNode;
 }) {
   return (
-    <div className="stat">
-      <dt>{label}.</dt>
-      <dd>{value}</dd>
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <dt className="text-muted-foreground">{label}.</dt>
+      <dd className="text-right">{value}</dd>
     </div>
   );
 }
 
 function JurorGridSkeleton() {
   return (
-    <ul className="grid" aria-busy aria-label="Loading jurors">
+    <ul className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading jurors">
       {Array.from({ length: 6 }).map((_, i) => (
-        <li key={i} className="card card-skeleton">
+        <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
           <Skeleton style={{ width: "60%", height: "1rem" }} />
           <Skeleton
             style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
@@ -279,10 +282,10 @@ function ErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="empty">
-      <p className="empty-head">Read failed.</p>
-      <p className="empty-body mono">{message}</p>
-      <button type="button" className="cta" onClick={onRetry}>
+    <div className="rounded-lg border border-dashed border-border p-12 text-center">
+      <p className="mb-2 text-lg font-semibold">Read failed.</p>
+      <p className="mb-5 font-mono text-sm text-muted-foreground">{message}</p>
+      <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={onRetry}>
         Retry.
       </button>
     </div>

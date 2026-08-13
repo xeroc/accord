@@ -85,26 +85,26 @@ export function WithdrawalCard({
     const remaining = deadline !== null ? timeRemaining(deadline) : "";
     const elapsed = remaining === "expired";
     return (
-      <section className="detail-group">
-        <h3 className="mono" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+      <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+        <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
           Withdrawal pending
         </h3>
-        <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
+        <p className="italic text-muted-foreground" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
           Your stake is locked for the {windowLen} fraud-challenge window. It is
           returned once the timelock elapses — no further action from you.
         </p>
-        <dl className="rows">
-          <div className="row">
-            <dt>Timelock</dt>
-            <dd>{elapsed ? "elapsed — withdrawable" : remaining}</dd>
+        <dl className="grid gap-2">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <dt className="text-muted-foreground">Timelock</dt>
+            <dd className="text-right">{elapsed ? "elapsed — withdrawable" : remaining}</dd>
           </div>
-          <div className="row">
-            <dt>Settlement</dt>
-            <dd className="muted">cranker (advance_withdrawal)</dd>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <dt className="text-muted-foreground">Settlement</dt>
+            <dd className="italic text-muted-foreground text-right">cranker (advance_withdrawal)</dd>
           </div>
         </dl>
         {elapsed && (
-          <p className="muted" style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}>
+          <p className="italic text-muted-foreground" style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}>
             A cranker will return your stake shortly. Anyone may trigger it.
           </p>
         )}
@@ -115,11 +115,11 @@ export function WithdrawalCard({
   // --- Listed: the submitter may open the withdrawal window ---------------
   if (item.data.state !== undefined && canRequest) {
     return (
-      <section className="detail-group">
-        <h3 className="mono" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+      <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+        <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
           Withdraw stake
         </h3>
-        <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
+        <p className="italic text-muted-foreground" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
           Opens a {windowLen} challenge window. Your accumulated stake is returned
           at the end if the item is not challenged.
         </p>
@@ -133,11 +133,11 @@ export function WithdrawalCard({
   // --- Listed but not the submitter: muted note --------------------------
   if (item.data.state !== undefined) {
     return (
-      <section className="detail-group">
-        <h3 className="mono" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+      <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+        <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
           Withdraw stake
         </h3>
-        <p className="muted" style={{ margin: "0", fontSize: "0.85rem" }}>
+        <p className="italic text-muted-foreground" style={{ margin: "0", fontSize: "0.85rem" }}>
           Only the item submitter can request a withdrawal.
         </p>
       </section>

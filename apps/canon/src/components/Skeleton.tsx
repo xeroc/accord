@@ -16,6 +16,6 @@ export function Skeleton({
   style?: CSSProperties;
 }) {
   return (
-    <div className={`skeleton ${className ?? ""}`} style={style} aria-hidden />
+    <div className={`animate-pulse rounded-sm bg-border ${className ?? ""}`} style={style} aria-hidden />
   );
 }

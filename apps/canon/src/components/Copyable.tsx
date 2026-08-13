@@ -43,14 +43,26 @@ export function Copyable({
       <button
         type="button"
         onClick={copy}
-        className="text-text-secondary transition-colors hover:text-amber"
+        className="relative text-text-secondary transition-colors hover:text-amber after:absolute after:-inset-3.5 after:content-['']"
         aria-label="Copy to clipboard"
       >
-        {copied ? (
-          <Check className="size-3 text-confirm" />
-        ) : (
-          <Copy className="size-3" />
-        )}
+        {/* CSS cross-fade (no motion dep): both icons in DOM, one absolute overlay */}
+        <span className="relative block size-3">
+          <Copy
+            className={`absolute inset-0 size-3 transition-[opacity,filter,scale] duration-250 [transition-timing-function:cubic-bezier(0.2,0,0,1)] ${
+              copied
+                ? "scale-[0.25] opacity-0 blur-[4px]"
+                : "scale-100 opacity-100 blur-0"
+            }`}
+          />
+          <Check
+            className={`absolute inset-0 size-3 text-confirm transition-[opacity,filter,scale] duration-250 [transition-timing-function:cubic-bezier(0.2,0,0,1)] ${
+              copied
+                ? "scale-100 opacity-100 blur-0"
+                : "scale-[0.25] opacity-0 blur-[4px]"
+            }`}
+          />
+        </span>
       </button>
     </span>
   );
