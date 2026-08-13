@@ -10,6 +10,14 @@
  * Card class strings are full literals so Tailwind's scanner detects them.
  */
 import { Link } from "react-router-dom";
+import {
+  LuFilePlus,
+  LuFolderPlus,
+  LuLayers,
+  LuSearch,
+  LuUsers,
+  LuWallet,
+} from "react-icons/lu";
 
 const GROUPS = [
   {
@@ -22,11 +30,13 @@ const GROUPS = [
         to: "/disputes",
         label: "Browse",
         desc: "Every dispute filed on the Accord. Track state, votes, rulings.",
+        icon: LuSearch,
       },
       {
         to: "/disputes/new",
         label: "File",
         desc: "Open a new dispute. Pay the fee. Let the Accord draw jurors.",
+        icon: LuFilePlus,
       },
     ],
   },
@@ -40,11 +50,13 @@ const GROUPS = [
         to: "/juror/browse",
         label: "Browse",
         desc: "See who's staked where across every subaccord.",
+        icon: LuUsers,
       },
       {
         to: "/juror",
         label: "Manage",
         desc: "Your stakes, active draws, and earned fees.",
+        icon: LuWallet,
       },
     ],
   },
@@ -58,11 +70,13 @@ const GROUPS = [
         to: "/subaccords",
         label: "Browse",
         desc: "Stake pools adjudicating one class of dispute.",
+        icon: LuLayers,
       },
       {
         to: "/subaccords/new",
         label: "Create",
         desc: "Spin up a pool. Configure jurors, tokens, and windows.",
+        icon: LuFolderPlus,
       },
     ],
   },
@@ -98,17 +112,24 @@ export function HomePage() {
               <Link
                 key={item.to}
                 to={item.to}
-                className={`group block px-5 py-4 transition-colors ${group.cardClass}`}
+                className={`group flex items-center gap-3 px-5 py-4 transition-colors ${group.cardClass}`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{item.label}</span>
-                  <span className="font-mono text-xs text-text-secondary transition-transform group-hover:translate-x-0.5">
-                    →
-                  </span>
+                <item.icon
+                  className={`h-4 w-4 shrink-0 ${group.titleClass}`}
+                />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">
+                      {item.label}
+                    </span>
+                    <span className="font-mono text-xs text-text-secondary transition-transform group-hover:translate-x-0.5">
+                      →
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-text-secondary">
+                    {item.desc}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-text-secondary">
-                  {item.desc}
-                </p>
               </Link>
             ))}
           </div>
