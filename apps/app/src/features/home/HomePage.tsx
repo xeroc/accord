@@ -1,74 +1,137 @@
 /**
  * Home — landing route (`/`).
  *
- * Presents every dApp destination as a card (headline, description, goto
- * button) in the brand `.grid`/`.card`/`.cta` system. Each card is a full
- * Link; the `.cta` span is the visible goto affordance. Reuses existing
- * brand classes + Tailwind color tokens — no new CSS.
+ * Three category boxes, each with a colored header strip and its action
+ * cards. Distinct accent colours signal the three roles in the protocol:
+ *   Disputes   → amber   (the core primitive)
+ *   Jurors     → green   (staking / participation)
+ *   SubAccords → sky     (the pool layer)
+ *
+ * Card class strings are full literals so Tailwind's scanner detects them.
  */
 import { Link } from "react-router-dom";
+import {
+  LuArrowRight,
+  LuFilePlus,
+  LuFolderPlus,
+  LuLayers,
+  LuSearch,
+  LuUsers,
+  LuWallet,
+} from "react-icons/lu";
 
-const OPTIONS = [
+const GROUPS = [
   {
-    to: "/juror",
-    title: "Juror dashboard",
-    description:
-      "Your stakes, active draws, and earned fees across every subaccord.",
-    action: "Manage stakes",
-  },
-  {
-    to: "/disputes",
     title: "Disputes",
-    description:
-      "Every dispute filed on the Accord. Track state, votes, and rulings.",
-    action: "Browse disputes",
+    tagline: "Resolve conflicts on-chain.",
+    cardClass: "bg-amber/5 hover:bg-amber/10",
+    titleClass: "text-amber",
+    items: [
+      {
+        to: "/disputes",
+        label: "Browse",
+        desc: "Every dispute filed on the Accord. Track state, votes, rulings.",
+        icon: LuSearch,
+      },
+      {
+        to: "/disputes/new",
+        label: "File",
+        desc: "Open a new dispute. Pay the fee. Let the Accord draw jurors.",
+        icon: LuFilePlus,
+      },
+    ],
   },
   {
-    to: "/disputes/new",
-    title: "File a dispute",
-    description: "Open a new dispute. Pay the fee. Let the Accord draw jurors.",
-    action: "File a dispute",
+    title: "Jurors",
+    tagline: "Stake collateral. Get drawn. Earn fees.",
+    cardClass: "bg-confirm/5 hover:bg-confirm/10",
+    titleClass: "text-confirm",
+    items: [
+      {
+        to: "/juror/browse",
+        label: "Browse",
+        desc: "See who's staked where across every subaccord.",
+        icon: LuUsers,
+      },
+      {
+        to: "/juror",
+        label: "Manage",
+        desc: "Your stakes, active draws, and earned fees.",
+        icon: LuWallet,
+      },
+    ],
   },
   {
-    to: "/subaccords",
-    title: "Subaccords",
-    description: "Stake pools adjudicating one class of dispute.",
-    action: "Browse subaccords",
-  },
-  {
-    to: "/subaccords/new",
-    title: "Create a subaccord",
-    description:
-      "Spin up an arbitration pool. Configure jurors, tokens, and windows.",
-    action: "Create a subaccord",
+    title: "SubAccords",
+    tagline: "Arbitration pools for one class of dispute.",
+    cardClass: "bg-sky-400/5 hover:bg-sky-400/10",
+    titleClass: "text-sky-400",
+    items: [
+      {
+        to: "/subaccords",
+        label: "Browse",
+        desc: "Stake pools adjudicating one class of dispute.",
+        icon: LuLayers,
+      },
+      {
+        to: "/subaccords/new",
+        label: "Create",
+        desc: "Spin up a pool. Configure jurors, tokens, and windows.",
+        icon: LuFolderPlus,
+      },
+    ],
   },
 ] as const;
 
 export function HomePage() {
   return (
-    <div>
-      <header className="mb-8">
+    <div className="space-y-6">
+      <header>
         <h1 className="text-2xl font-semibold tracking-tight">Accord.</h1>
         <p className="mt-1 text-text-secondary">
           Schelling-point arbitration on Solana. Pick where to go.
         </p>
       </header>
 
-      <ul className="grid">
-        {OPTIONS.map((o) => (
-          <li key={o.to}>
-            <Link to={o.to} className="card">
-              <h2 className="text-base font-semibold tracking-tight">
-                {o.title}.
-              </h2>
-              <p className="mt-1 mb-4 text-sm text-text-secondary">
-                {o.description}
-              </p>
-              <span className="cta">{o.action} →</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {GROUPS.map((group) => (
+        <section
+          key={group.title}
+          className="overflow-hidden rounded-lg border border-border-subtle bg-raised"
+        >
+          <div className="border-b border-border-subtle px-5 py-3">
+            <h2
+              className={`font-mono text-sm font-semibold ${group.titleClass}`}
+            >
+              {group.title}
+            </h2>
+            <p className="mt-0.5 text-xs text-text-secondary">
+              {group.tagline}
+            </p>
+          </div>
+          <div className="divide-y divide-border-subtle">
+            {group.items.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`group flex items-center gap-3 px-5 py-4 transition-colors ${group.cardClass}`}
+              >
+                <item.icon
+                  className={`h-4 w-4 shrink-0 ${group.titleClass}`}
+                />
+                <div className="flex-1">
+                  <span className="text-sm font-medium">
+                    {item.label}
+                  </span>
+                  <p className="mt-1 text-xs text-text-secondary">
+                    {item.desc}
+                  </p>
+                </div>
+                <LuArrowRight className="h-4 w-4 shrink-0 text-text-secondary transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

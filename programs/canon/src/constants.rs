@@ -48,8 +48,14 @@ pub const DEFAULT_MIN_STAKE: u64 = 1_000;
 pub const DEFAULT_REVEAL_THRESHOLD_BPS: u16 = 6_666;
 /// Default max same-size redraws per round (ADR-0021).
 pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
-/// Default Merkle accumulator tree depth (ADR-0012). 2^20 ~= 1M seats.
-pub const DEFAULT_TREE_DEPTH: u8 = 20;
+/// Default Merkle accumulator tree depth (ADR-0012). 2^8 = 256 seats.
+/// Capped at 8 (not the SPEC's aspirational 20) because each `stake`/`draw`
+/// carries a depth-length `MSTNode` path (40 B/level) in the tx — depth 20
+/// alone is ~800 B of path data, blowing the 1232-byte tx limit, so a depth-20
+/// pool can never be staked against. Depth 8 keeps the stake tx ~900 B with
+/// comfortable margin. (Proper fix: expose `depth` as a `create_list` arg so the
+/// creator chooses — tracked as a follow-up.)
+pub const DEFAULT_TREE_DEPTH: u8 = 8;
 
 // --- v1 canonical-default list-level profile (stored on CanonList) ----------
 

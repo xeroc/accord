@@ -64,7 +64,7 @@ const { instruction, item } = await submitItem(
 ## Build
 
 ```sh
-pnpm --filter @useaccord/canon run build     # tsc
+pnpm --filter @useaccord/canon run build     # tsup (bundle) + tsc --emitDeclarationOnly
 pnpm --filter @useaccord/canon run codegen    # regenerate from IDL (after anchor build)
 pnpm --filter @useaccord/canon run test       # PDA smoke tests
 ```

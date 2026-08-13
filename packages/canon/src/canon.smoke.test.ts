@@ -15,7 +15,7 @@ import {
   findCanonListPda,
   findCanonItemPda,
   CANON_PROGRAM_ID,
-} from "../dist/pda.js";
+} from "../dist/index.js";
 
 const DUMMY = "11111111111111111111111111111111";
 

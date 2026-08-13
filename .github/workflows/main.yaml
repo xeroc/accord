@@ -45,6 +45,7 @@ jobs:
       registry: ghcr.io
       package: evidence-daemon
       version: "${{ github.ref_name }}.${{ github.run_number }}"
+      push: ${{ github.event_name != 'pull_request' }}
 
   build-cranker-docker:
     name: Build API Docker Image
@@ -57,3 +58,4 @@ jobs:
       registry: ghcr.io
       package: cranker
       version: "${{ github.ref_name }}.${{ github.run_number }}"
+      push: ${{ github.event_name != 'pull_request' }}

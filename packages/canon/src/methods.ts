@@ -3,10 +3,8 @@
  * Kit instruction builders. Each facade takes explicit accounts + args,
  * derives any needed PDAs, and returns an unsigned `Instruction` for the
  * caller to sign + send.
- *
- * The six v1 instructions (no `create_list` — that instruction is not yet
- * built; see bean accord-73yx):
- *   submitItem · advancePending · challengeItem · settleItem ·
+ * The seven v1 instructions:
+ *   createList · submitItem · advancePending · challengeItem · settleItem ·
  *   requestWithdrawal · advanceWithdrawal
  *
  * `challenge_item` takes four Accord CPI-only accounts via `remainingAccounts`
@@ -23,6 +21,7 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
+import { getCreateListInstruction } from "./generated/instructions/createList.js";
 import { getSubmitItemInstruction } from "./generated/instructions/submitItem.js";
 import { getAdvancePendingInstruction } from "./generated/instructions/advancePending.js";
 import { getChallengeItemInstruction } from "./generated/instructions/challengeItem.js";
@@ -30,7 +29,75 @@ import { getSettleItemInstruction } from "./generated/instructions/settleItem.js
 import { getRequestWithdrawalInstruction } from "./generated/instructions/requestWithdrawal.js";
 import { getAdvanceWithdrawalInstruction } from "./generated/instructions/advanceWithdrawal.js";
 
-import { CANON_PROGRAM_ID, findCanonItemPda, findCanonListPda } from "./pda.js";
+import {
+  CANON_PROGRAM_ID,
+  findCanonItemPda,
+  findCanonListPda,
+  findBackingSubaccordPda,
+  ACCORD_PROGRAM_ID,
+} from "./pda.js";
+
+// ─── create_list ────────────────────────────────────────────────────────────
+
+export interface CreateListAccounts {
+  /** Permissionless creator; becomes the Subaccord creator + CanonList.authority. */
+  creator: TransactionSigner;
+  /** SPL mint for juror collateral (staking_token of the backing Subaccord). */
+  stakeMint: Address;
+  /** SPL mint for Canon registry economics + Accord fee (fee_token). May equal stakeMint. */
+  feeMint: Address;
+}
+
+export interface CreateListArgs {
+  /** The program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check off. */
+  listProgram: Address;
+  /** Public listing criteria hash (immutable); becomes the Subaccord `risk_type`. */
+  rulesHash: Uint8Array;
+  /** Base skin-in-the-game locked at submit (fee_mint). */
+  submitDeposit: bigint;
+  /** Challenger stakes this fraction (bps) of accumulated_stake. */
+  challengePct: number;
+  listingWindow: bigint;
+  withdrawalTimelock: bigint;
+}
+
+/** Build `create_list`: derives the CanonList + backing Subaccord PDAs and CPIs
+ * Accord `create_subaccord` (1:1 backing court, canon canonical defaults). */
+export async function createList(
+  accounts: CreateListAccounts,
+  args: CreateListArgs,
+  programId: Address = CANON_PROGRAM_ID,
+): Promise<{ instruction: Instruction; list: Address; subaccord: Address }> {
+  const [list] = await findCanonListPda(
+    { creator: accounts.creator.address, rulesHash: args.rulesHash },
+    { programAddress: programId },
+  );
+  const [subaccord] = await findBackingSubaccordPda({
+    creator: accounts.creator.address,
+    rulesHash: args.rulesHash,
+  });
+  const instruction = getCreateListInstruction(
+    {
+      stakeMintAcc: accounts.stakeMint,
+      feeMintAcc: accounts.feeMint,
+      creator: accounts.creator,
+      list,
+      subaccord,
+      accordProgram: ACCORD_PROGRAM_ID,
+      systemProgram: "11111111111111111111111111111111" as Address,
+      stakeMint: accounts.stakeMint,
+      feeMint: accounts.feeMint,
+      listProgram: args.listProgram,
+      rulesHash: args.rulesHash,
+      submitDeposit: args.submitDeposit,
+      challengePct: args.challengePct,
+      listingWindow: args.listingWindow,
+      withdrawalTimelock: args.withdrawalTimelock,
+    },
+    { programAddress: programId },
+  );
+  return { instruction, list, subaccord };
+}
 
 // ─── submit_item ────────────────────────────────────────────────────────────
 
@@ -142,12 +209,20 @@ export function challengeItem(
     },
     { programAddress: programId },
   );
-  return appendRemaining(ix, [
-    extras.accordDispute,
-    extras.accordPauseState,
-    extras.accordFeeVault,
-    extras.accordProgram,
-  ]);
+  // The four Accord CPI-only accounts as remaining_accounts, with the roles
+  // Accord's create_dispute expects (the executable accord_program + the
+  // read-only pause_state MUST be readonly — marking an executable program
+  // writable is rejected as "Invalid program argument").
+  const extrasMetas: AccountMeta[] = [
+    { address: extras.accordDispute, role: AccountRole.WRITABLE },
+    { address: extras.accordPauseState, role: AccountRole.READONLY },
+    { address: extras.accordFeeVault, role: AccountRole.WRITABLE },
+    { address: extras.accordProgram, role: AccountRole.READONLY },
+  ];
+  return Object.freeze({
+    ...ix,
+    accounts: Object.freeze([...(ix.accounts ?? []), ...extrasMetas]),
+  }) as Instruction;
 }
 
 // ─── settle_item ────────────────────────────────────────────────────────────
@@ -239,26 +314,4 @@ export function advanceWithdrawal(
     },
     { programAddress: programId },
   );
-}
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Append CPI-only accounts (the four Accord accounts for `challenge_item`) as
- * the on-chain handler's `remaining_accounts`. The handler reads
- * `remaining_accounts[0..3]`; all are forwarded to the Accord CPI.
- */
-function appendRemaining(
-  ix: Instruction,
-  extra: readonly Address[],
-): Instruction {
-  if (extra.length === 0) return ix;
-  const metas: AccountMeta[] = extra.map((address) => ({
-    address,
-    role: AccountRole.WRITABLE,
-  }));
-  return Object.freeze({
-    ...ix,
-    accounts: Object.freeze([...(ix.accounts ?? []), ...metas]),
-  }) as Instruction;
 }

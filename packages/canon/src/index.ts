@@ -14,8 +14,7 @@
  *   - `fetch`            — typed account fetchers (CanonList, CanonItem)
  *   - `generated`        — raw Codama output (codecs, Ix builders, accounts)
  *
- * `create_list` is not yet shipped on-chain (bean accord-73yx); a `createList`
- * facade will land with it.
+ * `create_list` is now shipped on-chain + in the SDK (`createList` facade).
  *
  * @see ADR-0010
  */
@@ -23,9 +22,11 @@
 export { Canon, type CanonClient, type CanonConfig } from "./canon.js";
 export {
   CANON_PROGRAM_ID,
+  ACCORD_PROGRAM_ID,
   findCanonListPda,
   findCanonItemPda,
   findItemPda,
+  findBackingSubaccordPda,
   type CanonListSeeds,
   type ItemSeeds,
 } from "./pda.js";
@@ -36,13 +37,23 @@ export {
   fetchCanonItem,
   fetchCanonItemMaybe,
 } from "./fetch.js";
+// Standalone generated fetchers — read accounts over a bare RPC, no signer.
+// Mirrors @useaccord/sdk's `fetchMaybeSubaccord`/`fetchSubaccord` exports so
+// read-only app hooks (Canon list/item views) never need a `Canon` client.
 export {
+  fetchMaybeCanonList,
+  fetchMaybeCanonItem,
+} from "./generated/accounts/index.js";
+export {
+  createList,
   submitItem,
   advancePending,
   challengeItem,
   settleItem,
   requestWithdrawal,
   advanceWithdrawal,
+  type CreateListAccounts,
+  type CreateListArgs,
   type SubmitItemAccounts,
   type AdvancePendingAccounts,
   type ChallengeItemAccounts,

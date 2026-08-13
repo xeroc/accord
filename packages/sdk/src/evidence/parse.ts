@@ -10,6 +10,8 @@
 
 export interface ParsedManifest {
   title: string;
+  /** Markdown claim body; "" when absent (pre-`description` manifests). */
+  description: string;
   filedAt: string;
   filer: string;
   subaccord: string;
@@ -55,8 +57,16 @@ export function parseManifest(text: string): ParsedManifest {
     }
   }
 
+  // description is JSON-escaped on a single line (see buildManifest); getField
+  // strips the outer quotes, so re-quote + JSON.parse to unescape markdown.
+  const descriptionRaw = getField("description");
+  const description = descriptionRaw
+    ? (JSON.parse(`"${descriptionRaw}"`) as string)
+    : "";
+
   return {
     title: getField("title") ?? "Untitled dispute",
+    description,
     filedAt: getField("filed_at") ?? "—",
     filer: getField("filer") ?? "—",
     subaccord: getField("subaccord") ?? "—",

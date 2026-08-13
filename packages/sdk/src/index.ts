@@ -35,6 +35,10 @@ export {
   findRoundPda,
   findSubaccordPda,
 } from "./pda";
+// Generated program address — the single source the facade `ACCORD_PROGRAM_ID`
+// aliases. Exposed so Arbitrable SDKs (e.g. @useaccord/canon) can source the
+// Accord program identity from generated code instead of hard-coding it.
+export { ACCORD_PROGRAM_ADDRESS } from "./generated/programs/accord.js";
 export {
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
@@ -58,6 +62,7 @@ export {
   fetchSubaccordMaybe,
 } from "./fetch";
 export {
+  findAllJurorStakes,
   findAllSubaccords,
   findDisputesByFiler,
   findDisputesBySubaccord,

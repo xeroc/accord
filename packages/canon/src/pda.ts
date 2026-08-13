@@ -1,67 +1,71 @@
 /**
  * Canonical PDA derivations for every Canon account.
  *
- * Seeds sourced from `programs/canon/src/state.rs` + `constants.rs`:
- *   SEED_CANON_LIST = "canon"       SEED_CANON_ITEM = "canon-item"
+ * All program addresses + seeds are sourced from generated code — no
+ * hand-rolled byte constants:
+ *   - Canon program address, CanonList/CanonItem seeds → Codama output in
+ *     `./generated/` (`CANON_PROGRAM_ADDRESS`, `findListPda`, `findItemPda`).
+ *   - Accord program address, Subaccord seed → `@useaccord/sdk`, the single
+ *     source for Accord PDA derivation (ADR-0010).
  *
- * CanonList:  ["canon", creator, rules_hash]  — hand-written (Codama can't
- *   encode it statically: seeds reference account fields, not instruction args;
- *   same situation as the Accord SDK's hand-written `findRoundPda`).
- * CanonItem:  ["canon-item", list, account]   — re-exported from generated.
+ * CanonList: ["canon", creator, rules_hash] — re-exported from generated
+ *   (Codama encodes the seed statically).
+ * CanonItem: ["canon-item", list, account] — re-exported from generated.
+ *
+ * `findBackingSubaccordPda` is a thin domain adapter over the Accord SDK's
+ * `findSubaccordPda`: a CanonList's 1:1 backing court seeds
+ * `["subaccord", creator, rules_hash]` where risk_type := rules_hash.
  *
  * @see ADR-0010
  */
 
-import {
-  getAddressEncoder,
-  getBytesEncoder,
-  getProgramDerivedAddress,
-  type Address,
-  type ProgramDerivedAddress,
-} from "@solana/kit";
+import type { Address, ProgramDerivedAddress } from "@solana/kit";
+import { findSubaccordPda } from "@useaccord/sdk";
 
+import { findItemPda } from "./generated/pdas/item.js";
+import type { ListSeeds as CanonListSeeds } from "./generated/pdas/list.js";
+
+// --- Program identity (single source: generated) -----------------------------
+
+/** Canon program address — sourced from the generated Codama client. */
+export {
+  CANON_PROGRAM_ADDRESS as CANON_PROGRAM_ID,
+} from "./generated/programs/canon.js";
+
+/** Accord Core program address — the CPI target `create_list` calls
+ * (`create_subaccord`). Sourced from `@useaccord/sdk`'s generated client. */
+export { ACCORD_PROGRAM_ADDRESS as ACCORD_PROGRAM_ID } from "@useaccord/sdk";
+
+// --- Generated CanonList + CanonItem PDAs ------------------------------------
+// Codama emits both; re-exported unchanged under the canon domain names.
+
+/** CanonList PDA: seeds ["canon", creator, rules_hash]. */
+export { findListPda as findCanonListPda } from "./generated/pdas/list.js";
+export type { ListSeeds as CanonListSeeds } from "./generated/pdas/list.js";
 export { findItemPda, type ItemSeeds } from "./generated/pdas/item.js";
 
-// --- Program identity -------------------------------------------------------
+// --- Convenience alias matching the bean naming ------------------------------
 
-export const CANON_PROGRAM_ID =
-  "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU" as Address<"GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU">;
-
-// --- Hand-written CanonList PDA --------------------------------------------
-// Seeds: ["canon", creator, rules_hash]. Codama omits this because the seeds
-// reference `CanonList.creator` + `CanonList.rules_hash` (account fields), not
-// instruction arguments — it cannot encode them statically.
-
-const CANON_LIST_SEED = new Uint8Array([99, 97, 110, 111, 110]); // b"canon"
-
-export type CanonListSeeds = {
-  creator: Address;
-  rulesHash: Uint8Array; // [u8; 32]
-};
-
-export async function findCanonListPda(
-  seeds: CanonListSeeds,
-  config: { programAddress?: Address } = {},
-): Promise<ProgramDerivedAddress> {
-  const { programAddress = CANON_PROGRAM_ID } = config;
-  return await getProgramDerivedAddress({
-    programAddress,
-    seeds: [
-      getBytesEncoder().encode(CANON_LIST_SEED),
-      getAddressEncoder().encode(seeds.creator),
-      getBytesEncoder().encode(seeds.rulesHash),
-    ],
-  });
-}
-
-// --- Convenience alias matching the bean naming -----------------------------
-// `canonItemPda(list, account)` — delegates to the generated `findItemPda`.
-
+/** `findCanonItemPda(list, account)` — positional-arg alias for the generated
+ * `findItemPda({ list, account })`. */
 export async function findCanonItemPda(
   list: Address,
   account: Address,
   config: { programAddress?: Address } = {},
 ): Promise<ProgramDerivedAddress> {
-  const { findItemPda } = await import("./generated/pdas/item.js");
   return findItemPda({ list, account }, config);
+}
+
+// --- 1:1 backing Subaccord (Accord PDA via @useaccord/sdk) -------------------
+
+/** The 1:1 backing Subaccord for a CanonList. Canon's `rules_hash` IS the
+ * Subaccord's `risk_type`; delegating to `findSubaccordPda` keeps the Accord
+ * SDK the single source for that derivation (ADR-0010). */
+export async function findBackingSubaccordPda(
+  seeds: CanonListSeeds,
+): Promise<ProgramDerivedAddress> {
+  return findSubaccordPda({
+    creator: seeds.creator,
+    riskType: seeds.rulesHash,
+  });
 }

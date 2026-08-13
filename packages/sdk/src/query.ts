@@ -119,6 +119,17 @@ export function findAllSubaccords(
   );
 }
 
+/** Every JurorStake on the Accord program (global browse / aggregation). */
+export function findAllJurorStakes(
+  rpc: Rpc<GetProgramAccountsApi>,
+): Promise<Account<JurorStake>[]> {
+  return fetchDecodedAccounts(
+    rpc,
+    [discriminatorFilter(JUROR_STAKE_DISCRIMINATOR)],
+    (b) => getJurorStakeDecoder().decode(b),
+  );
+}
+
 /** Every JurorStake for a Subaccord (draw pool / accumulator rebuild). */
 export function findJurorStakesBySubaccord(
   rpc: Rpc<GetProgramAccountsApi>,

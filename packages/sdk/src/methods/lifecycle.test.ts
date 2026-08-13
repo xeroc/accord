@@ -15,10 +15,10 @@ import {
   pauseSeeds,
   pendingUpdateSeeds,
   subaccordSeeds,
-} from "../../dist/methods/lifecycle.js";
-// Imports through dist/types.js — the public re-export surface. Guards REVIEW #12
+} from "./lifecycle.ts";
+// Imports through ../types.ts — the public re-export surface. Guards REVIEW #12
 // (DisputeState must be a value export, not type-only) at the line that broke.
-import { DisputeState } from "../../dist/types.js";
+import { DisputeState } from "../types.ts";
 
 const ZERO32 = new Uint8Array(32);
 const RISK = new Uint8Array(32).fill(0xab);

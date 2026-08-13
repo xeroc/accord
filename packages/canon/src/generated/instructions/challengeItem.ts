@@ -82,7 +82,7 @@ export type ChallengeItemInstruction<
         ? WritableAccount<TAccountItem>
         : TAccountItem,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountFeeMint extends string
         ? ReadonlyAccount<TAccountFeeMint>
@@ -156,8 +156,8 @@ export type ChallengeItemAsyncInput<
   list: Address<TAccountList>;
   item: Address<TAccountItem>;
   /**
-   * Backing Accord Subaccord. `fee_per_juror` read from raw bytes (Borsh
-   * offset 148). Forwarded to Accord's `create_dispute` CPI.
+   * Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
+   * `fee_vault_deposited` on it during the CPI.
    */
   subaccord: Address<TAccountSubaccord>;
   feeMint: Address<TAccountFeeMint>;
@@ -222,7 +222,7 @@ export async function getChallengeItemInstructionAsync<
     challenger: { value: input.challenger ?? null, isWritable: true },
     list: { value: input.list ?? null, isWritable: true },
     item: { value: input.item ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     feeMint: { value: input.feeMint ?? null, isWritable: false },
     challengerTokenAccount: {
       value: input.challengerTokenAccount ?? null,
@@ -358,8 +358,8 @@ export type ChallengeItemInput<
   list: Address<TAccountList>;
   item: Address<TAccountItem>;
   /**
-   * Backing Accord Subaccord. `fee_per_juror` read from raw bytes (Borsh
-   * offset 148). Forwarded to Accord's `create_dispute` CPI.
+   * Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
+   * `fee_vault_deposited` on it during the CPI.
    */
   subaccord: Address<TAccountSubaccord>;
   feeMint: Address<TAccountFeeMint>;
@@ -422,7 +422,7 @@ export function getChallengeItemInstruction<
     challenger: { value: input.challenger ?? null, isWritable: true },
     list: { value: input.list ?? null, isWritable: true },
     item: { value: input.item ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     feeMint: { value: input.feeMint ?? null, isWritable: false },
     challengerTokenAccount: {
       value: input.challengerTokenAccount ?? null,
@@ -501,8 +501,8 @@ export type ParsedChallengeItemInstruction<
     list: TAccountMetas[1];
     item: TAccountMetas[2];
     /**
-     * Backing Accord Subaccord. `fee_per_juror` read from raw bytes (Borsh
-     * offset 148). Forwarded to Accord's `create_dispute` CPI.
+     * Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
+     * `fee_vault_deposited` on it during the CPI.
      */
     subaccord: TAccountMetas[3];
     feeMint: TAccountMetas[4];

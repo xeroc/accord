@@ -52,15 +52,21 @@ export const CANON_ERROR__NOT_DISPUTED = 0x1780; // 6016
 export const CANON_ERROR__DISPUTE_NOT_FINAL = 0x1781; // 6017
 /** InvalidRuling: Dispute final_ruling is not a valid Canon option. */
 export const CANON_ERROR__INVALID_RULING = 0x1782; // 6018
+/** InvalidRulesHash: rules_hash must not be the zero hash (would collide with absent criteria). */
+export const CANON_ERROR__INVALID_RULES_HASH = 0x1783; // 6019
+/** ChallengePctTooHigh: challenge_pct exceeds MAX_CHALLENGE_PCT_BPS. */
+export const CANON_ERROR__CHALLENGE_PCT_TOO_HIGH = 0x1784; // 6020
 
 export type CanonError =
   | typeof CANON_ERROR__ALREADY_DISPUTED
   | typeof CANON_ERROR__ARITHMETIC_OVERFLOW
+  | typeof CANON_ERROR__CHALLENGE_PCT_TOO_HIGH
   | typeof CANON_ERROR__DEPOSIT_MISMATCH
   | typeof CANON_ERROR__DISPUTE_NOT_FINAL
   | typeof CANON_ERROR__DISPUTE_PDA_MISMATCH
   | typeof CANON_ERROR__INSUFFICIENT_FUNDS
   | typeof CANON_ERROR__INVALID_ITEM_STATE
+  | typeof CANON_ERROR__INVALID_RULES_HASH
   | typeof CANON_ERROR__INVALID_RULING
   | typeof CANON_ERROR__LISTING_WINDOW_OPEN
   | typeof CANON_ERROR__MISSING_REMAINING_ACCOUNTS
@@ -79,11 +85,13 @@ if (process.env["NODE_ENV"] !== "production") {
   canonErrorMessages = {
     [CANON_ERROR__ALREADY_DISPUTED]: `Item is already Disputed.`,
     [CANON_ERROR__ARITHMETIC_OVERFLOW]: `Arithmetic overflow.`,
+    [CANON_ERROR__CHALLENGE_PCT_TOO_HIGH]: `challenge_pct exceeds MAX_CHALLENGE_PCT_BPS.`,
     [CANON_ERROR__DEPOSIT_MISMATCH]: `Tendered deposit does not match the list's submit_deposit.`,
     [CANON_ERROR__DISPUTE_NOT_FINAL]: `Accord dispute has not reached the Final state.`,
     [CANON_ERROR__DISPUTE_PDA_MISMATCH]: `Dispute PDA does not match the expected derivation.`,
     [CANON_ERROR__INSUFFICIENT_FUNDS]: `Challenger has insufficient funds for challenge_stake + accord_fee.`,
     [CANON_ERROR__INVALID_ITEM_STATE]: `Item is not challengeable (must be Pending, Listed, or WithdrawPending).`,
+    [CANON_ERROR__INVALID_RULES_HASH]: `rules_hash must not be the zero hash (would collide with absent criteria).`,
     [CANON_ERROR__INVALID_RULING]: `Dispute final_ruling is not a valid Canon option.`,
     [CANON_ERROR__LISTING_WINDOW_OPEN]: `Listing window has not elapsed yet.`,
     [CANON_ERROR__MISSING_REMAINING_ACCOUNTS]: `Missing remaining_accounts for the Accord CPI.`,

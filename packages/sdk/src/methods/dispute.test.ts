@@ -17,7 +17,7 @@ import {
   assertValidOptions,
   disputeSeeds,
   requiredFee,
-} from "../../dist/methods/dispute.js";
+} from "./dispute.ts";
 
 const U64_MAX = 0xffffffffffffffffn;
 

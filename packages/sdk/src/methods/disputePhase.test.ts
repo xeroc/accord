@@ -1,8 +1,8 @@
 // disputePhase.test.ts — unit tests for the juror dashboard phase/countdown.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { disputePhase, type RoundPhaseWindows } from "../../dist/methods/disputePhase.js";
-import { DisputeState } from "../../dist/types.js";
+import { disputePhase, type RoundPhaseWindows } from "./disputePhase.ts";
+import { DisputeState } from "../types.ts";
 
 const NOW = 1_700_000_000n;
 

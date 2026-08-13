@@ -10,26 +10,14 @@
 //! Usable from `Pending`, `Listed`, or `WithdrawPending`.
 //!
 //! The four Accord CPI-only accounts are passed via `remaining_accounts`.
-//! The Accord CPI uses raw `invoke_signed` (not the Anchor CPI client) to
-//! keep the canon BPF binary lean.
+//! The Accord CPI uses the generated `accord::cpi::create_dispute` client —
+//! program id + discriminator come from the `accord` crate, not hand-rolled
+//! base58/sha256 constants.
 
 use crate::{constants::*, errors::CanonError, events::*, state::*};
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{
-    instruction::{AccountMeta, Instruction},
-    program::invoke_signed,
-};
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
-
-/// Accord program ID (single source of truth: `declare_id!` in
-/// programs/accord/src/lib.rs).
-pub const ACCORD_ID: Pubkey = pubkey!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
-
-/// Anchor instruction discriminator for `global:create_dispute`
-/// (`sha256("global:create_dispute")[..8]`), precomputed to avoid pulling
-/// `solana-program` as a direct dependency.
-const CREATE_DISPUTE_DISC: [u8; 8] = [0xa1, 0x63, 0x35, 0x74, 0x3c, 0x4f, 0x95, 0x69];
 
 /// Account context for `challenge_item`. The four Accord CPI-only accounts
 /// (`accord_dispute`, `accord_pause_state`, `accord_fee_vault`,
@@ -43,26 +31,33 @@ pub struct ChallengeItem<'info> {
         seeds = [SEED_CANON_LIST, list.creator.as_ref(), list.rules_hash.as_ref()],
         bump = list.bump,
     )]
-    pub list: Account<'info, CanonList>,
+    pub list: Box<Account<'info, CanonList>>,
     #[account(
         mut,
         seeds = [SEED_CANON_ITEM, list.key().as_ref(), item.account.as_ref()],
         bump = item.bump,
         constraint = item.list == list.key(),
     )]
-    pub item: Account<'info, CanonItem>,
-    /// Backing Accord Subaccord. `fee_per_juror` read from raw bytes (Borsh
-    /// offset 148). Forwarded to Accord's `create_dispute` CPI.
-    /// CHECK: address verified in handler; Accord re-validates.
-    pub subaccord: UncheckedAccount<'info>,
+    pub item: Box<Account<'info, CanonItem>>,
+    /// Backing Accord Subaccord. Seeds link it to this list (`creator`,
+    /// `rules_hash`); `Account<Subaccord>` validates ownership + deserialises.
+    /// `mut`: Accord's `create_dispute` writes `fee_vault_deposited` during the
+    /// CPI — Anchor's `exit()` is a no-op (owner ≠ canon), so the write survives.
+    #[account(
+        mut,
+        seeds = [accord::SEED_SUBACCORD, list.creator.as_ref(), list.rules_hash.as_ref()],
+        seeds::program = accord::ID,
+        bump,
+    )]
+    pub subaccord: Box<Account<'info, accord::state::Subaccord>>,
     #[account(address = list.fee_mint)]
-    pub fee_mint: Account<'info, Mint>,
+    pub fee_mint: Box<Account<'info, Mint>>,
     #[account(
         mut,
         associated_token::mint = fee_mint,
         associated_token::authority = challenger,
     )]
-    pub challenger_token_account: Account<'info, TokenAccount>,
+    pub challenger_token_account: Box<Account<'info, TokenAccount>>,
     /// CanonList-PDA-owned vault. Also the `filer_token_account` in the Accord
     /// CPI (Accord moves `accord_fee` from here into its Subaccord fee_vault).
     #[account(
@@ -90,7 +85,7 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     let accord_fee_vault = &rem[2];
     let accord_program = &rem[3];
     require!(
-        accord_program.key() == ACCORD_ID,
+        accord_program.key() == accord::ID,
         CanonError::WrongAccordProgram
     );
 
@@ -117,12 +112,10 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         .ok_or(CanonError::ArithmeticOverflow)?
         / 10_000;
 
-    // Read fee_per_juror from the Subaccord's raw Borsh data (offset 148 =
-    // 8 disc + 32+32+32+8+2+8+8+8+8+1+1).
-    let sub_data = ctx.accounts.subaccord.try_borrow_data()?;
-    let fee_per_juror = u64::from_le_bytes(sub_data[148..156].try_into().unwrap_or([0u8; 8]));
-    let accord_fee = (INITIAL_NUM_JURORS as u64)
-        .checked_mul(fee_per_juror)
+    // `min_jury_size · fee_per_juror` is the fee Accord expects.
+    // `Account<Subaccord>` deserialises at entry — no manual borrow/parse.
+    let accord_fee = (ctx.accounts.subaccord.min_jury_size as u64)
+        .checked_mul(ctx.accounts.subaccord.fee_per_juror)
         .ok_or(CanonError::ArithmeticOverflow)?;
 
     let total = challenge_stake
@@ -150,8 +143,12 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     // Verify the dispute PDA derivation before the CPI.
     let nonce = item.challenge_count as u64;
     let (expected_dispute, _) = Pubkey::find_program_address(
-        &[b"dispute", list.key().as_ref(), &nonce.to_le_bytes()],
-        &ACCORD_ID,
+        &[
+            accord::SEED_DISPUTE,
+            list.key().as_ref(),
+            &nonce.to_le_bytes(),
+        ],
+        &accord::ID,
     );
     require!(
         accord_dispute.key() == expected_dispute,
@@ -169,18 +166,22 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         .checked_add(1)
         .ok_or(CanonError::ArithmeticOverflow)?;
 
-    // CPI Accord create_dispute via raw invoke_signed (Canon = single filer,
-    // ADR-0004). The CanonList PDA signs; Accord moves accord_fee from
-    // vault → fee_vault and inits the Dispute PDA.
-    let mut cpi_data = Vec::with_capacity(76);
-    cpi_data.extend_from_slice(&CREATE_DISPUTE_DISC);
-    cpi_data.extend_from_slice(&2u32.to_le_bytes()); // options.len()
-    cpi_data.extend_from_slice(&OPTION_KEEP);
-    cpi_data.extend_from_slice(&OPTION_REMOVE);
-    cpi_data.extend_from_slice(&evidence);
-    cpi_data.extend_from_slice(&nonce.to_le_bytes());
-    cpi_data.extend_from_slice(&accord_fee.to_le_bytes());
-
+    // CPI Accord `create_dispute` via the generated client (Canon = single
+    // filer, ADR-0004). The CanonList PDA signs; Accord moves `accord_fee`
+    // from the vault (the PDA's ATA) into the Subaccord fee_vault and inits
+    // the Dispute PDA. Program id + discriminator come from the `accord` crate.
+    let cpi_accounts = accord::cpi::accounts::CreateDispute {
+        filer: ctx.accounts.list.to_account_info(),
+        subaccord: ctx.accounts.subaccord.to_account_info(),
+        pause_state: accord_pause_state.to_account_info(),
+        dispute: accord_dispute.to_account_info(),
+        fee_token: ctx.accounts.fee_mint.to_account_info(),
+        filer_token_account: ctx.accounts.vault.to_account_info(),
+        fee_vault: accord_fee_vault.to_account_info(),
+        token_program: ctx.accounts.token_program.to_account_info(),
+        associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+        system_program: ctx.accounts.system_program.to_account_info(),
+    };
     let signer_bump = list.bump;
     let signer_seeds: &[&[&[u8]]] = &[&[
         SEED_CANON_LIST,
@@ -188,40 +189,13 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         list.rules_hash.as_ref(),
         &[signer_bump],
     ]];
-
-    let cpi_ix = Instruction {
-        program_id: ACCORD_ID,
-        data: cpi_data,
-        accounts: vec![
-            AccountMeta::new(ctx.accounts.list.key(), true),
-            AccountMeta::new_readonly(ctx.accounts.subaccord.key(), false),
-            AccountMeta::new_readonly(accord_pause_state.key(), false),
-            AccountMeta::new(accord_dispute.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.fee_mint.key(), false),
-            AccountMeta::new(ctx.accounts.vault.key(), false),
-            AccountMeta::new(accord_fee_vault.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.associated_token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
-        ],
-    };
-
-    invoke_signed(
-        &cpi_ix,
-        &[
-            ctx.accounts.list.to_account_info(),
-            ctx.accounts.subaccord.to_account_info(),
-            accord_pause_state.to_account_info(),
-            accord_dispute.to_account_info(),
-            ctx.accounts.fee_mint.to_account_info(),
-            ctx.accounts.vault.to_account_info(),
-            accord_fee_vault.to_account_info(),
-            ctx.accounts.token_program.to_account_info(),
-            ctx.accounts.associated_token_program.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-            accord_program.to_account_info(),
-        ],
-        signer_seeds,
+    let cpi_ctx = CpiContext::new_with_signer(accord_program.key(), cpi_accounts, signer_seeds);
+    accord::cpi::create_dispute(
+        cpi_ctx,
+        vec![OPTION_KEEP, OPTION_REMOVE],
+        evidence,
+        nonce,
+        accord_fee,
     )?;
 
     emit!(ItemChallenged {
