@@ -2,7 +2,6 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
-import { EASE_EXPO } from "@/components/motion";
 
 import { HomePage } from "./features/home/HomePage";
 import { DisputeDetail } from "./features/dispute/DisputeDetail";
@@ -42,9 +41,9 @@ function AnimatedRoutes() {
           opacity: 0,
           y: -12,
           filter: "blur(4px)",
-          transition: { duration: 0.15, ease: EASE_EXPO },
+          transition: { type: "spring", bounce: 0, duration: 0.3 },
         }}
-        transition={{ duration: 0.3, ease: EASE_EXPO }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
       >
         <Routes location={location}>
           <Route path="/" element={<HomePage />} />

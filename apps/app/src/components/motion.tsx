@@ -36,7 +36,7 @@ export function StaggerItem({ children, ...props }: HTMLMotionProps<"li">) {
           opacity: 1,
           y: 0,
           filter: "blur(0px)",
-          transition: { duration: 0.3, ease: EASE_EXPO },
+          transition: { type: "spring", bounce: 0, duration: 0.4 },
         },
       }}
       {...props}

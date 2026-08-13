@@ -196,7 +196,7 @@ export function JurorBrowsePage() {
 
 function JurorCard({ juror }: { juror: JurorSummary }) {
   return (
-    <StaggerItem className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40">
+    <StaggerItem className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
       <span className="mb-3.5 block">
         <Copyable value={juror.address} />
       </span>
