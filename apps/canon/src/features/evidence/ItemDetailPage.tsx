@@ -9,6 +9,7 @@ import type { Address } from "@solana/kit";
 import { getCanonItemDecoder, ItemState } from "@useaccord/canon";
 import { useClusterRpc } from "../../shared/rpc";
 import { EvidenceManifest } from "./EvidenceManifest";
+import { DisputeStatusCard } from "./DisputeStatusCard";
 
 function stateLabel(state: ItemState): string {
   switch (state) {
@@ -80,6 +81,10 @@ export function ItemDetailPage() {
           </dl>
         </div>
 
+        {/* Dispute status card + deep link (disputed items) */}
+        {isDisputed && item.activeDispute && (
+          <DisputeStatusCard disputeAddress={item.activeDispute} />
+        )}
         {/* Evidence manifest (disputed items) */}
         {isDisputed && item.activeDispute && (
           <EvidenceManifest
