@@ -3,6 +3,7 @@ import { Navbar } from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 
 import { ListBrowser } from "./features/list/ListBrowser";
+import { CreateListPage } from "./features/list/CreateListPage";
 
 /**
  * App shell — routes + Navbar + Toaster.
@@ -21,6 +22,7 @@ export function App() {
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
         <Routes>
           <Route path="/" element={<ListBrowser />} />
+          <Route path="/lists/new" element={<CreateListPage />} />
         </Routes>
       </main>
       <Toaster />

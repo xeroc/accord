@@ -71,6 +71,7 @@ export function ListBrowser() {
       <header className="page-head">
         <h1 className="title">Canon lists.</h1>
         <p className="lede">Curated registries adjudicated by Accord courts.</p>
+        <Link to="/lists/new" className="cta">Create a list.</Link>
       </header>
 
       {FEATURED_LIST && (
@@ -255,6 +256,7 @@ function EmptyState() {
       <p className="empty-body">
         Create a curated registry. Submit items. Challenge fakes.
       </p>
+      <Link to="/lists/new" className="cta">Create a list.</Link>
     </div>
   );
 }
