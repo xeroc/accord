@@ -9,7 +9,7 @@
  */
 import { Copyable } from "../../../components/Copyable";
 import { useManifest } from "./useManifest";
-import { parseManifest, type ParsedManifest } from "./parse";
+import { parseManifest, type ParsedManifest } from "@useaccord/sdk/evidence";
 
 
 export function EvidenceManifest({

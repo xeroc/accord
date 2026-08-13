@@ -18,15 +18,14 @@ import type { Address } from "@solana/kit";
 import {
   buildManifest,
   SHA256_ZERO,
-  type ManifestCtx,
-  type ManifestInput,
-} from "./manifest.js";
-import {
   deriveOptionHashes,
   generateSalt,
   verifyOptionHashes,
-} from "./options.js";
-import { publishEvidence, verifyManifestHash } from "./publish.js";
+  publishEvidence,
+  verifyManifestHash,
+  type ManifestCtx,
+  type ManifestInput,
+} from "@useaccord/sdk/evidence";
 
 // --- helpers -----------------------------------------------------------------
 
@@ -93,6 +92,48 @@ test("buildManifest: entries default to SHA256_ZERO sentinel in YAML", () => {
     yaml.includes(sentinel),
     "YAML should contain the all-zero sha256 sentinel",
   );
+});
+
+// --- description field (ADR-0017, Canon challenger claim body) --------------
+
+test("buildManifest: description emitted as YAML literal block when present", () => {
+  const salt = new Uint8Array(32).fill(7);
+  const buf = buildManifest(
+    { ...makeInput(salt), description: "This item is fraudulent.\nSee evidence below." },
+    CTX,
+  );
+  const yaml = new TextDecoder().decode(buf);
+  assert.ok(yaml.includes("description: |"), "should emit literal block scalar");
+  assert.ok(yaml.includes("  This item is fraudulent."), "should indent body");
+});
+
+test("buildManifest: description omitted when absent (backward-compatible)", () => {
+  const salt = new Uint8Array(32).fill(7);
+  const yaml = new TextDecoder().decode(buildManifest(makeInput(salt), CTX));
+  assert.ok(!yaml.includes("description:"), "should not emit description field");
+});
+
+test("buildManifest: description → byte-stability + sha256 stability", async () => {
+  const salt = new Uint8Array(32).fill(9);
+  const input = { ...makeInput(salt), description: "# Claim\n\nMarkdown body." };
+  const buf1 = buildManifest(input, CTX);
+  const buf2 = buildManifest(input, CTX);
+  assert.deepEqual(buf1, buf2);
+  const h1 = await sha256(buf1);
+  const h2 = await sha256(buf2);
+  assert.deepEqual(h1, h2);
+});
+
+test("buildManifest: description changes → different sha256", async () => {
+  const salt = new Uint8Array(32).fill(9);
+  const bufNoDesc = buildManifest(makeInput(salt), CTX);
+  const bufDesc = buildManifest(
+    { ...makeInput(salt), description: "A claim body" },
+    CTX,
+  );
+  const h1 = await sha256(bufNoDesc);
+  const h2 = await sha256(bufDesc);
+  assert.notDeepEqual(h1, h2);
 });
 
 // --- deriveOptionHashes + verifyOptionHashes --------------------------------
