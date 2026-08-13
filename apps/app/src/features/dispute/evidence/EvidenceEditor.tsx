@@ -12,10 +12,10 @@ import { useMemo, useEffect, useRef, useState } from "react";
 
 import {
   buildManifest,
+  generateSalt,
   type ManifestCtx,
   type ManifestInput,
-} from "./manifest";
-import { generateSalt } from "./options";
+} from "@useaccord/sdk/evidence";
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 5;
