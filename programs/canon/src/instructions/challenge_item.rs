@@ -31,14 +31,14 @@ pub struct ChallengeItem<'info> {
         seeds = [SEED_CANON_LIST, list.creator.as_ref(), list.rules_hash.as_ref()],
         bump = list.bump,
     )]
-    pub list: Account<'info, CanonList>,
+    pub list: Box<Account<'info, CanonList>>,
     #[account(
         mut,
         seeds = [SEED_CANON_ITEM, list.key().as_ref(), item.account.as_ref()],
         bump = item.bump,
         constraint = item.list == list.key(),
     )]
-    pub item: Account<'info, CanonItem>,
+    pub item: Box<Account<'info, CanonItem>>,
     /// Backing Accord Subaccord. Seeds link it to this list (`creator`,
     /// `rules_hash`); `Account<Subaccord>` validates ownership + deserialises.
     /// `mut`: Accord's `create_dispute` writes `fee_vault_deposited` during the
@@ -51,13 +51,13 @@ pub struct ChallengeItem<'info> {
     )]
     pub subaccord: Box<Account<'info, accord::state::Subaccord>>,
     #[account(address = list.fee_mint)]
-    pub fee_mint: Account<'info, Mint>,
+    pub fee_mint: Box<Account<'info, Mint>>,
     #[account(
         mut,
         associated_token::mint = fee_mint,
         associated_token::authority = challenger,
     )]
-    pub challenger_token_account: Account<'info, TokenAccount>,
+    pub challenger_token_account: Box<Account<'info, TokenAccount>>,
     /// CanonList-PDA-owned vault. Also the `filer_token_account` in the Accord
     /// CPI (Accord moves `accord_fee` from here into its Subaccord fee_vault).
     #[account(
