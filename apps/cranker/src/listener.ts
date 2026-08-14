@@ -26,6 +26,8 @@ import {
 } from "@solana/kit";
 import { DISPUTE_DISCRIMINATOR } from "@useaccord/sdk";
 
+import { log } from "./log.js";
+
 /**
  * The surface the listener needs from the reconciler (bean accord-rev4).
  * Declared here, not imported, so this module compiles standalone and stays
@@ -105,7 +107,7 @@ export class ProgramAccountListener {
       programId: options.programId,
       reconciler: options.reconciler,
       commitment: options.commitment ?? "confirmed",
-      log: options.log ?? ((m) => console.log(m)),
+      log: options.log ?? ((m) => log(m)),
       backoffMs: options.backoffMs ?? defaultBackoff,
       sleep: options.sleep ?? defaultSleep,
     };

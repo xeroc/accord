@@ -51,6 +51,7 @@ import {
 import { resolveCanonAction } from "./canon-state.js";
 import type { CrankAction, CrankContext, CrankDispatch, CrankKind } from "./dispatch.js";
 import type { CrankAction as ResolveAction } from "./state.js";
+import { log } from "./log.js";
 import { sendIx } from "./send.js";
 import { resolveNextAction } from "./state.js";
 import type { CrankerWallet } from "./wallet.js";
@@ -383,9 +384,8 @@ function defaultNow(): bigint {
   return BigInt(Math.floor(Date.now() / 1000));
 }
 
-function defaultLog(msg: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ msg, ...fields }));
-}
+// The shared stamped sink (src/log.ts) — same shape the old local copy had.
+const defaultLog = log;
 
 function errorDigest(e: unknown): string {
   if (e instanceof Error) return `${e.name}: ${e.message}`;

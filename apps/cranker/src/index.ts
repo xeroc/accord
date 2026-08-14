@@ -45,10 +45,7 @@ import { register as registerCanonAdvancePending } from "./cranks/canon/advance-
 import { register as registerCanonAdvanceWithdrawal } from "./cranks/canon/advance-withdrawal.js";
 import { register as registerCanonSettleItem } from "./cranks/canon/settle-item.js";
 import { loadCrankerWallet } from "./wallet.js";
-
-function log(msg: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ msg, ...fields }));
-}
+import { log } from "./log.js";
 
 /** Build a dispatch with every crank registered (11 Accord + 3 Canon). */
 function fullDispatch() {

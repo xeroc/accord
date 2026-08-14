@@ -31,6 +31,8 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
+import { log } from "./log.js";
+
 /** Non-retryable: the ix failed simulation or landed but errored on-chain. */
 export class SimulationError extends Error {
   readonly logs: readonly string[];
@@ -134,10 +136,8 @@ export async function sendIx(instruction: Instruction, config: SendConfig): Prom
   }
 }
 
-/** Structured JSON line on stdout — matches the daemon logging convention. */
-function defaultLog(msg: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ msg, ...fields }));
-}
+// The shared stamped sink (src/log.ts) — same shape the old local copy had.
+const defaultLog = log;
 
 /**
  * Walk a kit error graph for transaction simulation logs. `@solana/kit` nests
