@@ -61,6 +61,8 @@ const { instruction, item } = await submitItem(
 
 - `fetchCanonList(canon, address)` / `fetchCanonListMaybe(canon, address)`
 - `fetchCanonItem(canon, address)` / `fetchCanonItemMaybe(canon, address)`
+- `findAllCanonLists(rpc)` / `findAllCanonItems(rpc)` — decoded
+  `getProgramAccounts` scans (discriminator-filtered); bare RPC, no client
 
 ## Build
 

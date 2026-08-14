@@ -34,6 +34,12 @@ import {
   type Round,
   type Subaccord,
 } from "@useaccord/sdk";
+import {
+  fetchMaybeCanonItem as fetchMaybeCanonItemGenerated,
+  fetchMaybeCanonList as fetchMaybeCanonListGenerated,
+  type CanonItem,
+  type CanonList,
+} from "@useaccord/canon";
 
 /** SPL Token program. */
 export const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -173,4 +179,26 @@ export async function findPendingUpdateForSubaccord(
     }
   }
   return null;
+}
+
+// --- Canon (bare-RPC generated fetchers; the Canon client is not needed) ---
+
+/** Fetch + decode a CanonItem, throw if missing. */
+export async function fetchCanonItem(
+  rpc: Rpc<GetAccountInfoApi>,
+  item: Address,
+): Promise<Account<CanonItem>> {
+  const acc = await fetchMaybeCanonItemGenerated(rpc, item);
+  if (!acc.exists) throw new Error(`CanonItem not found: ${item}`);
+  return acc as Account<CanonItem>;
+}
+
+/** Fetch + decode a CanonList, throw if missing. */
+export async function fetchCanonList(
+  rpc: Rpc<GetAccountInfoApi>,
+  list: Address,
+): Promise<Account<CanonList>> {
+  const acc = await fetchMaybeCanonListGenerated(rpc, list);
+  if (!acc.exists) throw new Error(`CanonList not found: ${list}`);
+  return acc as Account<CanonList>;
 }

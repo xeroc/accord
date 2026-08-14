@@ -6,9 +6,9 @@
  * (lib.rs:1291, bean accord-r6ti, milestone accord-27r5.)
  */
 import { DisputeState, settleRound, type SettleRoundAccounts } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { fetchDispute, fetchRound, panelStakePdas, roundPda } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { fetchDispute, fetchRound, panelStakePdas, roundPda } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

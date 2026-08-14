@@ -6,9 +6,9 @@
  * milestone accord-27r5.)
  */
 import { canExecuteAt, executeSubaccordUpdate } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { findPendingUpdateForSubaccord } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { findPendingUpdateForSubaccord } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

@@ -2,25 +2,28 @@
  * Dispatch completeness self-check — every CrankKind must register a handler
  * on the factory map, and registration is idempotent-rejecting (duplicate
  * throws). Catches "wrote the crank, forgot to register it" at the same
- * granularity the beans deliver (9 non-draw cranks + draw_seat). Runnable via
- * `node --test` or `bun test`. (ponytail: one check for the one piece of real
- * logic here.)
+ * granularity the beans deliver (11 Accord cranks + 3 Canon cranks). Runnable
+ * via `node --test` or `bun test`. (ponytail: one check for the one piece of
+ * real logic here.)
  */
 import { test, expect } from "bun:test";
 
 import { createCrankDispatch } from "./dispatch.js";
 import type { CrankKind } from "./types.js";
-import { register as registerRequestVrf } from "./cranks/request-vrf.js";
-import { register as registerFinalizeRound } from "./cranks/finalize-round.js";
-import { register as registerFinalizeDispute } from "./cranks/finalize-dispute.js";
-import { register as registerSettleRound } from "./cranks/settle-round.js";
-import { register as registerCancelDispute } from "./cranks/cancel-dispute.js";
-import { register as registerRedraw } from "./cranks/redraw.js";
-import { register as registerExecuteUpdate } from "./cranks/execute-update.js";
-import { register as registerExecuteUnpause } from "./cranks/execute-unpause.js";
-import { register as registerClaimRefund } from "./cranks/claim-refund.js";
-import { register as registerReclaimSlot } from "./cranks/reclaim-slot.js";
-import { registerDrawSeatCrank } from "./cranks/draw-seat.js";
+import { register as registerAccordRequestVrf } from "./cranks/accord/request-vrf.js";
+import { registerDrawSeatCrank as registerAccordDrawSeat } from "./cranks/accord/draw-seat.js";
+import { register as registerAccordFinalizeRound } from "./cranks/accord/finalize-round.js";
+import { register as registerAccordFinalizeDispute } from "./cranks/accord/finalize-dispute.js";
+import { register as registerAccordSettleRound } from "./cranks/accord/settle-round.js";
+import { register as registerAccordCancelDispute } from "./cranks/accord/cancel-dispute.js";
+import { register as registerAccordRedraw } from "./cranks/accord/redraw.js";
+import { register as registerAccordExecuteUpdate } from "./cranks/accord/execute-update.js";
+import { register as registerAccordExecuteUnpause } from "./cranks/accord/execute-unpause.js";
+import { register as registerAccordClaimRefund } from "./cranks/accord/claim-refund.js";
+import { register as registerAccordReclaimSlot } from "./cranks/accord/reclaim-slot.js";
+import { register as registerCanonAdvancePending } from "./cranks/canon/advance-pending.js";
+import { register as registerCanonSettleItem } from "./cranks/canon/settle-item.js";
+import { register as registerCanonAdvanceWithdrawal } from "./cranks/canon/advance-withdrawal.js";
 
 const ALL_KINDS: CrankKind[] = [
   "request_vrf",
@@ -31,24 +34,31 @@ const ALL_KINDS: CrankKind[] = [
   "cancel_dispute",
   "redraw",
   "execute_update",
+  "execute_unpause",
   "claim_refund",
   "reclaim_slot",
+  "canon_advance_pending",
+  "canon_settle_item",
+  "canon_advance_withdrawal",
 ];
 
 /** Build a dispatch with every crank registered — the production wiring. */
 function fullDispatch() {
   const d = createCrankDispatch();
-  registerRequestVrf(d);
-  registerDrawSeatCrank(d);
-  registerFinalizeRound(d);
-  registerFinalizeDispute(d);
-  registerSettleRound(d);
-  registerCancelDispute(d);
-  registerRedraw(d);
-  registerExecuteUpdate(d);
-  registerExecuteUnpause(d);
-  registerClaimRefund(d);
-  registerReclaimSlot(d);
+  registerAccordRequestVrf(d);
+  registerAccordDrawSeat(d);
+  registerAccordFinalizeRound(d);
+  registerAccordFinalizeDispute(d);
+  registerAccordSettleRound(d);
+  registerAccordCancelDispute(d);
+  registerAccordRedraw(d);
+  registerAccordExecuteUpdate(d);
+  registerAccordExecuteUnpause(d);
+  registerAccordClaimRefund(d);
+  registerAccordReclaimSlot(d);
+  registerCanonAdvancePending(d);
+  registerCanonSettleItem(d);
+  registerCanonAdvanceWithdrawal(d);
   return d;
 }
 
@@ -61,8 +71,8 @@ test("dispatch: every CrankKind has a registered handler", () => {
 
 test("dispatch: no kind is registered twice (duplicate registration throws)", () => {
   const d = createCrankDispatch();
-  registerRequestVrf(d);
-  expect(() => registerRequestVrf(d)).toThrow(/already registered/);
+  registerAccordRequestVrf(d);
+  expect(() => registerAccordRequestVrf(d)).toThrow(/already registered/);
 });
 
 test("dispatch: execute returns false for an unregistered kind", async () => {
