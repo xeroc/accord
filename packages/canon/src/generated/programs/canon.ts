@@ -74,7 +74,7 @@ import {
 import { findItemPda, findListPda } from "../pdas";
 
 export const CANON_PROGRAM_ADDRESS =
-  "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU" as Address<"GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU">;
+  "can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs" as Address<"can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs">;
 
 export enum CanonAccount {
   CanonItem,
@@ -211,7 +211,7 @@ export function identifyCanonInstruction(
 }
 
 export type ParsedCanonInstruction<
-  TProgram extends string = "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU",
+  TProgram extends string = "can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs",
 > =
   | ({
       instructionType: CanonInstruction.AdvancePending;

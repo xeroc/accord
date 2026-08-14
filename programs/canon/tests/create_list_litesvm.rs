@@ -117,13 +117,15 @@ fn create_mint(svm: &mut anchor_litesvm::AnchorContext, mint: &Pubkey) {
         .unwrap();
 }
 
-/// Build + send a `create_list` instruction.
+/// Build + send a `create_list` instruction. Returns the transaction result
+/// plus the (stake, fee) mints it created, so callers can assert they land on
+/// `CanonList` — the mint is referenced once, as the validated Mint account.
 fn do_create_list(
     ctx: &mut anchor_litesvm::AnchorContext,
     creator: &Keypair,
     rules: [u8; 32],
     challenge_pct: u16,
-) -> TransactionResult {
+) -> (TransactionResult, Pubkey, Pubkey) {
     let stake_mint = Pubkey::new_unique();
     let fee_mint = Pubkey::new_unique();
     create_mint(ctx, &stake_mint);
@@ -132,16 +134,14 @@ fn do_create_list(
         .program()
         .accounts(accounts::CreateList {
             creator: creator.pubkey(),
-            stake_mint_acc: stake_mint,
-            fee_mint_acc: fee_mint,
+            stake_mint,
+            fee_mint,
             list: canon_list_pda(&creator.pubkey(), &rules),
             subaccord: subaccord_pda(&creator.pubkey(), &rules),
             accord_program: ACCORD_ID,
             system_program: anchor_lang::system_program::ID,
         })
         .args(instruction::CreateList {
-            stake_mint,
-            fee_mint,
             list_program: Pubkey::default(),
             rules_hash: rules,
             submit_deposit: DEFAULT_SUBMIT_DEPOSIT,
@@ -151,7 +151,8 @@ fn do_create_list(
         })
         .instruction()
         .expect("build create_list instruction");
-    ctx.execute_instruction(ix, &[creator]).unwrap()
+    let result = ctx.execute_instruction(ix, &[creator]).unwrap();
+    (result, stake_mint, fee_mint)
 }
 
 /// Happy path: CanonList inits all fields + backing Subaccord gets the
@@ -163,11 +164,15 @@ fn create_list_inits_canon_list_and_subaccord() {
     let list_pda = canon_list_pda(&creator.pubkey(), &rules);
     let sub_pda = subaccord_pda(&creator.pubkey(), &rules);
 
-    do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS).assert_success();
+    let (r, stake_mint, fee_mint) =
+        do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
+    r.assert_success();
 
     // --- Verify CanonList ---
     let list = read_canon_list(&ctx, &list_pda);
     assert_eq!(list.creator, creator.pubkey());
+    assert_eq!(list.stake_mint, stake_mint);
+    assert_eq!(list.fee_mint, fee_mint);
     assert_eq!(list.rules_hash, rules);
     assert_eq!(list.list_program, Pubkey::default());
     assert_eq!(list.subaccord, sub_pda);
@@ -183,6 +188,8 @@ fn create_list_inits_canon_list_and_subaccord() {
     assert_eq!(sub.creator, creator.pubkey());
     assert_eq!(sub.risk_type, rules);
     assert_eq!(sub.evidence_spec, [0u8; 32]);
+    assert_eq!(sub.staking_token, stake_mint);
+    assert_eq!(sub.fee_token, fee_mint);
     assert_eq!(sub.min_stake, DEFAULT_MIN_STAKE);
     assert_eq!(sub.alpha_bps, DEFAULT_ALPHA_BPS);
     assert_eq!(sub.review_window, DEFAULT_REVIEW_WINDOW_SECS);
@@ -206,10 +213,11 @@ fn create_list_double_init_fails() {
     let (mut ctx, creator) = setup();
     let rules = rules_hash();
 
-    do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS).assert_success();
+    let (r, ..) = do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
+    r.assert_success();
     ctx.svm.expire_blockhash();
 
-    let r = do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
+    let (r, ..) = do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
     assert!(
         !r.is_success(),
         "double create_list must fail; logs={:?}",
@@ -222,7 +230,7 @@ fn create_list_double_init_fails() {
 fn create_list_zero_rules_hash_fails() {
     let (mut ctx, creator) = setup();
 
-    let r = do_create_list(&mut ctx, &creator, [0u8; 32], DEFAULT_CHALLENGE_PCT_BPS);
+    let (r, ..) = do_create_list(&mut ctx, &creator, [0u8; 32], DEFAULT_CHALLENGE_PCT_BPS);
     assert!(
         !r.is_success(),
         "zero rules_hash must fail (InvalidRulesHash); logs={:?}",
@@ -236,7 +244,7 @@ fn create_list_challenge_pct_too_high_fails() {
     let (mut ctx, creator) = setup();
     let rules = rules_hash();
 
-    let r = do_create_list(&mut ctx, &creator, rules, MAX_CHALLENGE_PCT_BPS + 1);
+    let (r, ..) = do_create_list(&mut ctx, &creator, rules, MAX_CHALLENGE_PCT_BPS + 1);
     assert!(
         !r.is_success(),
         "challenge_pct > MAX must fail (ChallengePctTooHigh); logs={:?}",

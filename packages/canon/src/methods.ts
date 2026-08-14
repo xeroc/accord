@@ -78,15 +78,13 @@ export async function createList(
   });
   const instruction = getCreateListInstruction(
     {
-      stakeMintAcc: accounts.stakeMint,
-      feeMintAcc: accounts.feeMint,
+      stakeMint: accounts.stakeMint,
+      feeMint: accounts.feeMint,
       creator: accounts.creator,
       list,
       subaccord,
       accordProgram: ACCORD_PROGRAM_ID,
       systemProgram: "11111111111111111111111111111111" as Address,
-      stakeMint: accounts.stakeMint,
-      feeMint: accounts.feeMint,
       listProgram: args.listProgram,
       rulesHash: args.rulesHash,
       submitDeposit: args.submitDeposit,

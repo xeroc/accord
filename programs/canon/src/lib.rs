@@ -19,7 +19,7 @@ pub use events::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU");
+declare_id!("can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs");
 
 // ponytail: `#[derive(Accounts)]` structs MUST live at the crate root (not in
 // submodules like `instructions::`). Anchor's `#[program]` codegen emits
@@ -86,8 +86,6 @@ pub mod canon {
     #[allow(clippy::too_many_arguments)]
     pub fn create_list(
         ctx: Context<CreateList>,
-        stake_mint: Pubkey,
-        fee_mint: Pubkey,
         list_program: Pubkey,
         rules_hash: [u8; 32],
         submit_deposit: u64,
@@ -97,8 +95,6 @@ pub mod canon {
     ) -> Result<()> {
         instructions::create_list::create_list_handler(
             ctx,
-            stake_mint,
-            fee_mint,
             list_program,
             rules_hash,
             submit_deposit,

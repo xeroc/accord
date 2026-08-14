@@ -24,13 +24,16 @@ use crate::SEED_CANON_LIST;
 /// and no PDA signing is needed — the creator's signer privilege propagates
 /// through the CPI.
 #[derive(Accounts)]
-// `rules_hash` is the 4th handler arg; anchor requires listing all preceding
+// `rules_hash` is the 2nd handler arg; anchor requires listing all preceding
 // args positionally (no `_` skip in this anchor version).
-#[instruction(stake_mint: Pubkey, fee_mint: Pubkey, list_program: Pubkey, rules_hash: [u8; 32])]
+#[instruction(list_program: Pubkey, rules_hash: [u8; 32])]
 pub struct CreateList<'info> {
-    /// L-4: validated legacy SPL Mint forwarded to Accord create_subaccord CPI.
-    pub stake_mint_acc: Account<'info, Mint>,
-    pub fee_mint_acc: Account<'info, Mint>,
+    /// L-4: validated legacy SPL Mint — the single mint reference: forwarded
+    /// to the Accord `create_subaccord` CPI and stored on `CanonList.stake_mint`.
+    pub stake_mint: Account<'info, Mint>,
+    /// L-4: validated legacy SPL Mint — forwarded to the CPI and stored on
+    /// `CanonList.fee_mint`.
+    pub fee_mint: Account<'info, Mint>,
 
     #[account(mut)]
     pub creator: Signer<'info>,

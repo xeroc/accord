@@ -6,4 +6,10 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./aggregation";
+export * from "./caseTerms";
+export * from "./dispute";
+export * from "./disputeState";
 export * from "./itemState";
+export * from "./shortfallPolicy";
+export * from "./subaccord";
