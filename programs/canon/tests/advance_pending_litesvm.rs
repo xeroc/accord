@@ -155,6 +155,7 @@ fn setup(listing_window: u64) -> TestEnv {
         withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
         authority: list_addr,
         item_count: 0,
+        dispute_count: 0,
         bump: list_bump,
     };
     let mut buf = Vec::new();

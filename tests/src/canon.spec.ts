@@ -100,6 +100,7 @@ async function fabricateCanonList(
     withdrawalTimelock: WITHDRAWAL_TIMELOCK,
     authority: listAddr,
     itemCount: 0,
+    disputeCount: 0n,
     bump: listBump,
   };
 

@@ -57,7 +57,8 @@ export interface ChallengeConfig {
  * evidence_hash + manifest bytes.
  *
  * Step 1: derive the dispute PDA (`["dispute", list, nonce]` where
- *         `nonce = item.challenge_count`).
+ *         `nonce = list.dispute_count` — the filer-nonce, unique across all
+ *         disputes the list files; NOT the per-item challengeCount).
  * Step 2: build the manifest with Canon-fixed options [keep, remove].
  * Step 3: hash the manifest → evidence_hash (the on-chain commitment).
  * Step 4: publish the encrypted manifest to the evidence daemon.
@@ -70,7 +71,7 @@ export async function prepareChallengeEvidence(
   ctx: ChallengeOnChainContext,
   config: ChallengeConfig,
 ): Promise<{ evidenceHash: Uint8Array; manifest: Uint8Array }> {
-  const nonce = BigInt(ctx.itemData.challengeCount);
+  const nonce = ctx.listData.disputeCount;
 
   // Derive the dispute PDA before building the manifest (it's in the YAML ctx).
   const [disputeAddress] = await findDisputePda({
@@ -123,7 +124,7 @@ export async function buildChallengeInstruction(
   challenger: TransactionSigner,
   evidenceHash: Uint8Array,
 ): Promise<Instruction> {
-  const nonce = BigInt(ctx.itemData.challengeCount);
+  const nonce = ctx.listData.disputeCount;
   const feeMint = ctx.listData.feeMint;
   const subaccord = ctx.listData.subaccord;
 

@@ -144,6 +144,7 @@ fn setup(withdrawal_timelock: u64) -> TestEnv {
         withdrawal_timelock,
         authority: list_addr,
         item_count: 0,
+        dispute_count: 0,
         bump: list_bump,
     };
     let mut buf = Vec::new();

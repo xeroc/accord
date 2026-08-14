@@ -138,6 +138,13 @@ pub struct CanonList {
     /// Count of `CanonItem`s ever filed under this list (PDA-distinctness
     /// guarantee; monotonic, never decremented).
     pub item_count: u32,
+    /// Count of disputes ever filed by this list — the Accord filer-nonce for
+    /// the dispute PDA `["dispute", list, dispute_count]` (monotonic, never
+    /// decremented). Per-LIST, not per-item: the filer is the CanonList PDA,
+    /// so a per-item counter would collide (two items challenged for the
+    /// first time would derive the same PDA and the second `create_dispute`
+    /// would hit an already-initialized account).
+    pub dispute_count: u64,
     pub bump: u8,
 }
 

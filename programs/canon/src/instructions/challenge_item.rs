@@ -5,7 +5,8 @@
 //! vault, flips the item to `Disputed`, and CPIs Accord `create_dispute` as
 //! the single filer (ADR-0004). Canon is the filer — the CanonList PDA signs
 //! the CPI — and the dispute PDA is `["dispute", list, nonce]` where `nonce`
-//! is the item's `challenge_count` (unique per challenge).
+//! is the list's `dispute_count` (the filer-nonce — unique across every
+//! dispute the list files, NOT per item).
 //!
 //! Usable from `Pending`, `Listed`, or `WithdrawPending`.
 //!
@@ -104,7 +105,7 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         CanonError::InvalidItemState
     );
 
-    let list = &ctx.accounts.list;
+    let list = &mut ctx.accounts.list;
 
     // challenge_stake = challenge_pct * accumulated_stake / 10_000.
     let challenge_stake = (list.challenge_pct as u64)
@@ -138,22 +139,22 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         total,
     )?;
 
-    // Verify the dispute PDA derivation before the CPI.
-    let nonce = item.challenge_count as u64;
-    let (expected_dispute, _) = Pubkey::find_program_address(
-        &[
-            accord::SEED_DISPUTE,
-            list.key().as_ref(),
-            &nonce.to_le_bytes(),
-        ],
-        &accord::ID,
-    );
+    // Verify the dispute PDA derivation before the CPI — Accord's own helper,
+    // same source as its `seeds` constraint (`remaining_accounts` can't carry
+    // one, hence the manual check). The nonce is the LIST-level
+    // `dispute_count`: Accord scopes the PDA per filer (`["dispute", filer,
+    // nonce]`) and Canon's filer is the CanonList PDA shared by every item in
+    // the list, so a per-item counter would collide — two items challenged
+    // for the first time would derive the same PDA and the second
+    // `create_dispute` would hit an already-initialized account forever.
+    let nonce = list.dispute_count;
+    let (expected_dispute, _) = accord::dispute_pda(&list.key(), nonce);
     require!(
         accord_dispute.key() == expected_dispute,
         CanonError::DisputePdaMismatch
     );
 
-    // Record challenge bookkeeping on the item.
+    // Record challenge bookkeeping on the item + advance the filer-nonce.
     item.state = ItemState::Disputed;
     item.active_dispute = accord_dispute.key();
     item.challenger = ctx.accounts.challenger.key();
@@ -163,6 +164,16 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         .challenge_count
         .checked_add(1)
         .ok_or(CanonError::ArithmeticOverflow)?;
+    list.dispute_count = list
+        .dispute_count
+        .checked_add(1)
+        .ok_or(CanonError::ArithmeticOverflow)?;
+    // Snapshot the signer material — ends the `&mut` borrow before the CPI
+    // reborrows the account immutably.
+    let signer_bump = list.bump;
+    let creator = list.creator;
+    let rules_hash = list.rules_hash;
+    let list_key = list.key();
 
     // CPI Accord `create_dispute` via the generated client (Canon = single
     // filer, ADR-0004). The CanonList PDA signs; Accord moves `accord_fee`
@@ -180,11 +191,10 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
     };
-    let signer_bump = list.bump;
     let signer_seeds: &[&[&[u8]]] = &[&[
         SEED_CANON_LIST,
-        list.creator.as_ref(),
-        list.rules_hash.as_ref(),
+        creator.as_ref(),
+        rules_hash.as_ref(),
         &[signer_bump],
     ]];
     let cpi_ctx = CpiContext::new_with_signer(accord_program.key(), cpi_accounts, signer_seeds);
@@ -197,7 +207,7 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     )?;
 
     emit!(ItemChallenged {
-        list: list.key(),
+        list: list_key,
         item: item.key(),
         challenger: ctx.accounts.challenger.key(),
         dispute: accord_dispute.key(),

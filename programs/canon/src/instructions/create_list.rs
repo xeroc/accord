@@ -97,6 +97,7 @@ pub fn create_list_handler(
     // Mirrors the backing Subaccord's authority (the PDA itself).
     list.authority = list_pda;
     list.item_count = 0;
+    list.dispute_count = 0;
     list.bump = ctx.bumps.list;
 
     Ok(())

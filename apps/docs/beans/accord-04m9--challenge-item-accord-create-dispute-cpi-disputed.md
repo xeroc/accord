@@ -27,8 +27,8 @@ Dependencies: submit_item. Authority: programs/canon/SPEC.md §Instructions #4; 
   - Reads `fee_per_juror` from the Subaccord's raw Borsh data (offset 148 — avoids loading the full `Subaccord` on the BPF stack).
   - Computes `accord_fee = INITIAL_NUM_JURORS * fee_per_juror`.
   - Transfers `challenge_stake + accord_fee` from challenger → CanonList vault via `token::transfer`.
-  - Verifies the dispute PDA derivation (`["dispute", list, nonce]`, nonce = `challenge_count`).
-  - Flips item → `Disputed`, stores challenger + dispute pubkey + challenge_stake + challenged_at, increments `challenge_count`.
+  - Verifies the dispute PDA derivation (`["dispute", list, nonce]`, nonce = the LIST-level `dispute_count` filer-nonce — a per-item counter would collide across first-time challenges).
+  - Flips item → `Disputed`, stores challenger + dispute pubkey + challenge_stake + challenged_at, increments `challenge_count` and `dispute_count`.
   - CPIs Accord `create_dispute` via raw `invoke_signed` (CanonList PDA as filer/signer). Options `[OPTION_KEEP, OPTION_REMOVE]`.
   - Emits `ItemChallenged` event.
 
