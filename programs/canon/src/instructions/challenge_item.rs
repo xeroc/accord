@@ -20,7 +20,7 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 /// Account context for `challenge_item`. The four Accord CPI-only accounts
-/// (`accord_dispute`, `accord_pause_state`, `accord_fee_vault`,
+/// (`accord_dispute`, `accord_state`, `accord_fee_vault`,
 /// `accord_program`) are in `remaining_accounts`.
 #[derive(Accounts)]
 pub struct ChallengeItem<'info> {
@@ -71,7 +71,7 @@ pub struct ChallengeItem<'info> {
     pub system_program: Program<'info, System>,
     // remaining_accounts[0..3]:
     //   [0] accord_dispute     (mut — Accord inits)
-    //   [1] accord_pause_state (readonly — Accord validates)
+    //   [1] accord_state      (readonly — Accord validates)
     //   [2] accord_fee_vault   (mut — Accord init_if_needed + transfer)
     //   [3] accord_program     (readonly — address checked in handler)
 }
@@ -81,7 +81,7 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     let rem = &ctx.remaining_accounts;
     require!(rem.len() >= 4, CanonError::MissingRemainingAccounts);
     let accord_dispute = &rem[0];
-    let accord_pause_state = &rem[1];
+    let accord_state = &rem[1];
     let accord_fee_vault = &rem[2];
     let accord_program = &rem[3];
     require!(
@@ -173,7 +173,7 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     let cpi_accounts = accord::cpi::accounts::CreateDispute {
         filer: ctx.accounts.list.to_account_info(),
         subaccord: ctx.accounts.subaccord.to_account_info(),
-        pause_state: accord_pause_state.to_account_info(),
+        pause_state: accord_state.to_account_info(),
         dispute: accord_dispute.to_account_info(),
         fee_token: ctx.accounts.fee_mint.to_account_info(),
         filer_token_account: ctx.accounts.vault.to_account_info(),
