@@ -46,7 +46,7 @@
 
 ## High-Risk Decisions (admin keys, upgrade authority, irreversible transitions)
 
-### ⚠️ PauseState authority is immutable — no rotation path
+### ⚠️ AccordState authority is immutable — no rotation path
 
 `initialize_pause` sets the authority once; no instruction rotates it.
 Key loss = permanent inability to pause; key compromise = indefinite freeze

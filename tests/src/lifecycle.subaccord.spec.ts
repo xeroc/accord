@@ -3,7 +3,7 @@
 // Migrated from onchain-smoke.spec.ts. Proves a permissionless Subaccord inits
 // at the canonical PDA (`["subaccord", creator, risk_type]`): random risk_type
 // per run ⇒ a fresh PDA, so this spec is re-runnable within one Surfpool session
-// (unlike the singleton PauseState in lifecycle.pause).
+// (unlike the singleton AccordState in lifecycle.pause).
 //
 // Requires `make run_surfpool` (terminal 1). Skips cleanly on the offline CI
 // lane — see AGENTS.md "e2e suite — tests/src".

@@ -26,7 +26,7 @@ import {
   type MSTNode,
   type Subaccord,
   findJurorStakePda,
-  findPauseStatePda,
+  findAccordStatePda,
 } from "@useaccord/sdk";
 import { toast } from "sonner";
 
@@ -520,7 +520,7 @@ async function resolveAccounts(
     getAtaAddress(juror, stakingToken),
     getAtaAddress(subaccordAddr, stakingToken),
   ]);
-  const [pauseState] = await findPauseStatePda();
+  const [accordState] = await findAccordStatePda();
   return {
     juror,
     subaccord: subaccordAddr,
@@ -528,7 +528,7 @@ async function resolveAccounts(
     stakingToken,
     jurorTokenAccount,
     stakeVault,
-    pauseState,
+    accordState,
   };
 }
 

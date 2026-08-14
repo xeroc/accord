@@ -9,7 +9,7 @@
 //     root matches the live accumulator (merkle integrity after reclaim)
 //
 // Multi-signer: each juror gets its own Accord facade (adapter pins signer).
-// Singleton: PauseState is idempotent — coexists with sibling specs.
+// Singleton: AccordState is idempotent — coexists with sibling specs.
 import {
   Accord,
   stake,
@@ -141,7 +141,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
   let mint!: Address;
   let subaccord!: Address;
   let vault!: Address;
-  let pauseState!: Address;
+  let accordState!: Address;
   let tree!: TreeTracker;
 
   beforeAll(async () => {
@@ -154,9 +154,9 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       env.programId,
       env.payer.address,
     );
-    pauseState = pause.pauseState;
+    accordState = pause.accordState;
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) await env.sendIx(pause.instruction);
 
@@ -197,7 +197,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
     const accounts: StakingAccounts = {
       juror: juror.address,
       subaccord,
-      pauseState,
+      accordState,
       jurorStake: jurorStakePdaAddr,
       stakingToken: mint,
       jurorTokenAccount: jurorAta,
@@ -362,7 +362,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       {
         filer: env.payer.address,
         subaccord,
-        pauseState,
+        accordState,
         feeToken: mint,
         filerTokenAccount: filerAta,
         feeVault,
@@ -441,7 +441,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       const accounts: StakingAccounts = {
         juror: j.address,
         subaccord: sub2.subaccord,
-        pauseState,
+        accordState,
         jurorStake: jsPda,
         stakingToken: mint,
         jurorTokenAccount: jAta,
@@ -497,7 +497,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       const accounts: StakingAccounts = {
         juror: j.address,
         subaccord: sub2.subaccord,
-        pauseState,
+        accordState,
         jurorStake: jsPda,
         stakingToken: mint,
         jurorTokenAccount: jAta,

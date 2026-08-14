@@ -8,7 +8,7 @@ power and the residual assumptions.
   security-value ceiling, and the claim qualifications
 - [Stake Accumulator](fraud-proofs.md) — why the juror-set root is canonical by construction (no posted root, bond, or fraud window)
 - [Sortition & VRF](sortition-vrf.md) — committed VRF + Merkle-Sum accumulator + inflation guard
-- [Circuit Breaker](circuit-breaker.md) — `PauseState`, instant freeze, timelocked unpause
+- [Circuit Breaker](circuit-breaker.md) — `AccordState`, instant freeze, timelocked unpause
 
 Security-relevant ADRs:
 

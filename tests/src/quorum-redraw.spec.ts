@@ -114,8 +114,8 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
     if (!env.up) return; // offline CI lane
 
     // --- setup: pause + subaccord (threshold 6666 = 2/3) + 3 staked jurors ---
-    const pauseState = await ensurePause(env);
-    const core = await armSubaccordAndJurors(env, pauseState);
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
     const fx: DrawFixture = { env, up: true, ...core };
     const armed = await armDispute(fx, randomNonce());
 
@@ -293,8 +293,8 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
   it("Failed on draw_attempt exhaustion: filer fee_paid refunded, slashes retained", async () => {
     if (!env.up) return; // offline CI lane
 
-    const pauseState = await ensurePause(env);
-    const core = await armSubaccordAndJurors(env, pauseState, {
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState, {
       maxDrawAttempts: 1,
     });
     const fx: DrawFixture = { env, up: true, ...core };

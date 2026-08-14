@@ -24,7 +24,12 @@
  *   - constants:     programs/accord/src/constants.rs
  *   - UpdatePayload: programs/accord/src/state.rs (254-266)
  */
-import type { Address, Instruction } from "@solana/kit";
+import {
+  getAddressEncoder,
+  getProgramDerivedAddress,
+  type Address,
+  type Instruction,
+} from "@solana/kit";
 import {
   MAX_APPEALS,
   MAX_DRAW_ATTEMPTS,
@@ -57,8 +62,8 @@ const SEED_SUBACCORD = new Uint8Array([
 /** PendingUpdate PDA seed prefix (state.rs: SEED_PENDING_UPDATE = b"update"). */
 const SEED_PENDING_UPDATE = new Uint8Array([117, 112, 100, 97, 116, 101]); // "update"
 
-/** PauseState PDA seed prefix (state.rs: SEED_PAUSE = b"pause"). */
-const SEED_PAUSE = new Uint8Array([112, 97, 117, 115, 101]); // "pause"
+/** AccordState PDA seed prefix (state.rs: SEED_ACCORD_STATE = b"state"). */
+const SEED_ACCORD_STATE = new Uint8Array([115, 116, 97, 116, 101]); // "state"
 
 const U64_MAX = 0xffffffffffffffffn;
 
@@ -168,9 +173,9 @@ export function pendingUpdateSeeds(
   return [SEED_PENDING_UPDATE, subaccordBytes, le8(nonce)];
 }
 
-/** PauseState PDA seeds (state.rs: `["pause"]`). Singleton. */
-export function pauseSeeds(): Uint8Array[] {
-  return [SEED_PAUSE];
+/** AccordState PDA seeds (state.rs: `["state"]`). Singleton. */
+export function accordStateSeeds(): Uint8Array[] {
+  return [SEED_ACCORD_STATE];
 }
 
 /** Validate `max_appeals ≤ MAX_APPEALS` (lib.rs). With a configurable round-1
@@ -280,8 +285,6 @@ export async function findSubaccordPda(
   creator: Address,
   riskType: Uint8Array,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } =
-    await import("@solana/kit");
   const creatorBytes = new Uint8Array(getAddressEncoder().encode(creator));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -295,8 +298,6 @@ export async function findPendingUpdatePda(
   subaccord: Address,
   nonce: bigint,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } =
-    await import("@solana/kit");
   const subBytes = new Uint8Array(getAddressEncoder().encode(subaccord));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -305,13 +306,12 @@ export async function findPendingUpdatePda(
   return { address, bump };
 }
 
-export async function findPausePda(
+export async function findAccordStatePdaWithBump(
   programAddress: Address,
 ): Promise<{ address: Address; bump: number }> {
-  const { getProgramDerivedAddress } = await import("@solana/kit");
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
-    seeds: pauseSeeds(),
+    seeds: accordStateSeeds(),
   });
   return { address, bump };
 }
@@ -348,22 +348,22 @@ export interface AccordLifecycleClient {
   buildInitializePause(input: {
     programId: Address;
     authority: Address;
-    pauseStatePda: Address;
+    accordStatePda: Address;
   }): Instruction;
   buildPause(input: {
     programId: Address;
     authority: Address;
-    pauseState: Address;
+    accordState: Address;
   }): Instruction;
   buildProposeUnpause(input: {
     programId: Address;
     authority: Address;
-    pauseState: Address;
+    accordState: Address;
   }): Instruction;
   buildExecuteUnpause(input: {
     programId: Address;
     caller: Address;
-    pauseState: Address;
+    accordState: Address;
   }): Instruction;
   /** Read `execute_after_slot` back from a PendingUpdate account (timelock flow). */
   fetchPendingUpdateExecuteAfter(
@@ -460,14 +460,14 @@ export async function initializePause(
   client: AccordLifecycleClient,
   programId: Address,
   authority: Address,
-): Promise<{ instruction: Instruction; pauseState: Address }> {
-  const { address } = await findPausePda(programId);
+): Promise<{ instruction: Instruction; accordState: Address }> {
+  const { address } = await findAccordStatePdaWithBump(programId);
   const instruction = client.buildInitializePause({
     programId,
     authority,
-    pauseStatePda: address,
+    accordStatePda: address,
   });
-  return { instruction, pauseState: address };
+  return { instruction, accordState: address };
 }
 
 /** Build `pause` (lib.rs:86). Instant, authority-gated emergency freeze. */
@@ -475,9 +475,9 @@ export function pause(
   client: AccordLifecycleClient,
   programId: Address,
   authority: Address,
-  pauseState: Address,
+  accordState: Address,
 ): Instruction {
-  return client.buildPause({ programId, authority, pauseState });
+  return client.buildPause({ programId, authority, accordState });
 }
 
 /** Build `propose_unpause` (lib.rs:102). Arms `UNPAUSE_TIMELOCK_SLOTS` notice. */
@@ -485,9 +485,9 @@ export function proposeUnpause(
   client: AccordLifecycleClient,
   programId: Address,
   authority: Address,
-  pauseState: Address,
+  accordState: Address,
 ): Instruction {
-  return client.buildProposeUnpause({ programId, authority, pauseState });
+  return client.buildProposeUnpause({ programId, authority, accordState });
 }
 
 /** Build `execute_unpause` (lib.rs:120). Permissionless; lands post-timelock. */
@@ -495,7 +495,7 @@ export function executeUnpause(
   client: AccordLifecycleClient,
   programId: Address,
   caller: Address,
-  pauseState: Address,
+  accordState: Address,
 ): Instruction {
-  return client.buildExecuteUnpause({ programId, caller, pauseState });
+  return client.buildExecuteUnpause({ programId, caller, accordState });
 }

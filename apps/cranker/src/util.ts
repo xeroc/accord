@@ -18,18 +18,18 @@ import {
 import {
   fetchMaybeAppealBond,
   fetchMaybeDispute,
-  fetchMaybePauseState,
+  fetchMaybeAccordState,
   fetchMaybePendingUpdate,
   fetchMaybeRound,
   fetchMaybeSubaccord,
   findAppealBondPda,
   findJurorStakePda,
-  findPauseStatePda,
+  findAccordStatePda,
   findPendingUpdatePda,
   findRoundPda,
   type AppealBond,
   type Dispute,
-  type PauseState,
+  type AccordState,
   type PendingUpdate,
   type Round,
   type Subaccord,
@@ -93,14 +93,14 @@ export async function fetchAppealBond(
   return acc as Account<AppealBond>;
 }
 
-/** Fetch + decode the singleton PauseState, throw if missing. */
-export async function fetchPauseState(
+/** Fetch + decode the singleton AccordState, throw if missing. */
+export async function fetchAccordState(
   rpc: Rpc<GetAccountInfoApi>,
-  pauseState: Address,
-): Promise<Account<PauseState>> {
-  const acc = await fetchMaybePauseState(rpc, pauseState);
-  if (!acc.exists) throw new Error(`PauseState not found: ${pauseState}`);
-  return acc as Account<PauseState>;
+  accordState: Address,
+): Promise<Account<AccordState>> {
+  const acc = await fetchMaybeAccordState(rpc, accordState);
+  if (!acc.exists) throw new Error(`AccordState not found: ${accordState}`);
+  return acc as Account<AccordState>;
 }
 
 /** Resolve a Round PDA address by index. */
@@ -123,9 +123,9 @@ export async function appealBondPda(
   return address;
 }
 
-/** Resolve the singleton PauseState PDA address. */
-export async function pauseStatePda(programId: Address): Promise<Address> {
-  const [address] = await findPauseStatePda({ programAddress: programId });
+/** Resolve the singleton AccordState PDA address. */
+export async function accordStatePda(programId: Address): Promise<Address> {
+  const [address] = await findAccordStatePda({ programAddress: programId });
   return address;
 }
 

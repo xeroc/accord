@@ -15,7 +15,7 @@ import type { Address, Commitment, Rpc, SolanaRpcApi } from "@solana/kit";
 import {
   fetchMaybeSubaccord,
   findAssociatedTokenAddress,
-  findPauseStatePda,
+  findAccordStatePda,
   requiredFee,
 } from "@useaccord/sdk";
 
@@ -133,7 +133,7 @@ export default class DisputeCreate extends ChainCommand {
     }
 
     const filerTokenAccount = await findAssociatedTokenAddress(feeToken, filer);
-    const [pauseState] = await findPauseStatePda();
+    const [accordState] = await findAccordStatePda();
     const feeVault = await findAssociatedTokenAddress(feeToken, flags.subaccord as Address);
 
     const { instruction, dispute, bump } = await ctx.accord.methods.createDispute(
@@ -143,7 +143,7 @@ export default class DisputeCreate extends ChainCommand {
         feeToken,
         filerTokenAccount,
         feeVault,
-        pauseState,
+        accordState,
       },
       { options, evidenceHash: evidence, nonce, fee },
     );

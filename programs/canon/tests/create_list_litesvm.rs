@@ -69,15 +69,7 @@ fn canon_list_pda(creator: &Pubkey, rules: &[u8; 32]) -> Pubkey {
 }
 
 fn subaccord_pda(creator: &Pubkey, rules: &[u8; 32]) -> Pubkey {
-    Pubkey::find_program_address(
-        &[
-            accord::constants::SEED_SUBACCORD,
-            creator.as_ref(),
-            rules.as_ref(),
-        ],
-        &ACCORD_ID,
-    )
-    .0
+    accord::subaccord_pda(creator, rules).0
 }
 
 fn read_canon_list(ctx: &anchor_litesvm::AnchorContext, pda: &Pubkey) -> CanonList {

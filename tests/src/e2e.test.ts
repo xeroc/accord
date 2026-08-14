@@ -311,7 +311,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
       findJurorStakePda,
       findSnapshotPda,
       findRoundPda,
-      findPauseStatePda,
+      findAccordStatePda,
       buildMst,
       resolvePanel,
       fetchDispute,
@@ -417,7 +417,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
     await sendIx(createSubIx);
 
     const vault = await ataFor(subaccord);
-    const pauseState = (await findPauseStatePda(ACCORD_PROGRAM_ID)).address;
+    const accordState = (await findAccordStatePda(ACCORD_PROGRAM_ID)).address;
 
     // -- stake jurors --------------------------------------------------------
     for (const juror of jurors) {
@@ -442,7 +442,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
         {
           juror: signer,
           subaccord,
-          pauseState,
+          accordState,
           jurorStake,
           stakingToken,
           jurorTokenAccount: jurorAta,
@@ -479,7 +479,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
           stakingToken,
           filerTokenAccount: filerAta,
           vault,
-          pauseState,
+          accordState,
         },
         {
           options: [

@@ -139,7 +139,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
   let mint!: Address;
   let subaccord!: Address;
   let vault!: Address;
-  let pauseState!: Address;
+  let accordState!: Address;
   let tree!: TreeTracker;
 
   beforeAll(async () => {
@@ -151,9 +151,9 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
       env.programId,
       env.payer.address,
     );
-    pauseState = pause.pauseState;
+    accordState = pause.accordState;
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) await env.sendIx(pause.instruction);
 
@@ -197,7 +197,7 @@ describe("e2e: accumulator (ADR-0012) — requires Surfpool", () => {
     const accounts: StakingAccounts = {
       juror: juror.address,
       subaccord,
-      pauseState,
+      accordState,
       jurorStake: jsPda,
       stakingToken: mint,
       jurorTokenAccount: jurorAta,

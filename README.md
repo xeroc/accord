@@ -252,7 +252,7 @@ to fit BPF's stack.
 | `Round`         | `["round", dispute, round_idx]`     | Per-round jurors, commits, reveals, result (zero-copy)                                                                                                       |
 | `AppealBond`    | `["bond", dispute, round_idx]`      | Custody record for one appeal bond                                                                                                                           |
 | `PendingUpdate` | `["update", subaccord, nonce]`      | Timelocked Subaccord parameter update (48h)                                                                                                                  |
-| `PauseState`    | `["pause"]`                         | Singleton program-level circuit breaker                                                                                                                      |
+| `AccordState`   | `["state"]`                         | Singleton program-level circuit breaker                                                                                                                      |
 | token vaults    | Subaccord-PDA-owned SPL accounts    | Stake pool + fee pool                                                                                                                                        |
 
 ### Draw & Verifiable Sortition
@@ -477,8 +477,8 @@ solana program show <PROGRAM_ID>
 ### Upgrade authority (ADR-0007)
 
 The upgrade authority is a **Squads multisig** at launch; after a sufficient
-audit it is set to `None` (frozen, immutable). The on-chain `PauseState`
-singleton (seeds `["pause"]`) is a separate circuit breaker: `pause()` is
+audit it is set to `None` (frozen, immutable). The on-chain `AccordState`
+singleton (seeds `["state"]`) is a separate circuit breaker: `pause()` is
 instant and authority-gated; `unpause()` is timelocked
 (`propose_unpause` → `execute_unpause` after `UNPAUSE_TIMELOCK_SLOTS`) so a
 freeze is always recoverable on a known schedule. While paused, `create_dispute`
@@ -505,12 +505,13 @@ layout decisions are one-way doors; walk this list (and the open findings in
 
 - **PDA seeds.** Every `SEED_*` constant (`programs/accord/src/constants.rs`,
   `programs/canon/src/constants.rs`) becomes permanent once its accounts
-  exist. Known rename debt: code calls the pause singleton `accord_state`
-  (canon's `challenge_item` CPI wiring), but its seed is still `b"pause"`.
-  Renaming `SEED_PAUSE` to e.g. `b"accord_state"` changes the `PauseState`
-  PDA address — it must land **before** the first mainnet deploy or never
-  (afterwards it means a new singleton + state migration). Same logic for any
-  other seed whose name you want to settle.
+  exist. ✅ Done pre-mainnet (2026-08-14): the circuit-breaker singleton was
+  renamed end-to-end — type `PauseState` → `AccordState`, seed `b"pause"` →
+  `b"state"`, IDL/SDK surface `pauseState` → `accordState` — with a **fresh
+  discriminator (deliberately not pinned)** and the devnet reset accepted.
+  Preps consumed by that reset: redeploy accord, re-run `initialize_pause`,
+  re-stake. Any seed change after the first mainnet deploy means new PDAs +
+  state migration — treat seeds as frozen from that point on.
 - **Program IDs + deploy keypairs.** `declare_id!` (accord
   `cordhVosh…`, canon `can5Zhfg…`) is immutable once deployed. Generate the
   final keypairs under multisig control, provision them per AGENTS.md

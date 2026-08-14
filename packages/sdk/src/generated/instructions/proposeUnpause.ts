@@ -35,7 +35,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findPauseStatePda } from "../pdas";
+import { findAccordStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 export const PROPOSE_UNPAUSE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array(
@@ -51,7 +51,7 @@ export function getProposeUnpauseDiscriminatorBytes(): ReadonlyUint8Array {
 export type ProposeUnpauseInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -61,9 +61,9 @@ export type ProposeUnpauseInstruction<
         ? WritableSignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
-      TAccountPauseState extends string
-        ? WritableAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? WritableAccount<TAccountAccordState>
+        : TAccountAccordState,
       ...TRemainingAccounts,
     ]
   >;
@@ -99,24 +99,24 @@ export function getProposeUnpauseInstructionDataCodec(): FixedSizeCodec<
 
 export type ProposeUnpauseAsyncInput<
   TAccountAuthority extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
 };
 
 export async function getProposeUnpauseInstructionAsync<
   TAccountAuthority extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: ProposeUnpauseAsyncInput<TAccountAuthority, TAccountPauseState>,
+  input: ProposeUnpauseAsyncInput<TAccountAuthority, TAccountAccordState>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
   ProposeUnpauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState
+    TAccountAccordState
   >
 > {
   // Program address.
@@ -125,7 +125,7 @@ export async function getProposeUnpauseInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -133,44 +133,44 @@ export async function getProposeUnpauseInstructionAsync<
   >;
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
     ],
     data: getProposeUnpauseInstructionDataEncoder().encode({}),
     programAddress,
   } as ProposeUnpauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState
+    TAccountAccordState
   >);
 }
 
 export type ProposeUnpauseInput<
   TAccountAuthority extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
 };
 
 export function getProposeUnpauseInstruction<
   TAccountAuthority extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: ProposeUnpauseInput<TAccountAuthority, TAccountPauseState>,
+  input: ProposeUnpauseInput<TAccountAuthority, TAccountAccordState>,
   config?: { programAddress?: TProgramAddress },
 ): ProposeUnpauseInstruction<
   TProgramAddress,
   TAccountAuthority,
-  TAccountPauseState
+  TAccountAccordState
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -178,7 +178,7 @@ export function getProposeUnpauseInstruction<
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -189,14 +189,14 @@ export function getProposeUnpauseInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
     ],
     data: getProposeUnpauseInstructionDataEncoder().encode({}),
     programAddress,
   } as ProposeUnpauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState
+    TAccountAccordState
   >);
 }
 
@@ -207,7 +207,7 @@ export type ParsedProposeUnpauseInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
-    pauseState: TAccountMetas[1];
+    accordState: TAccountMetas[1];
   };
   data: ProposeUnpauseInstructionData;
 };
@@ -237,7 +237,7 @@ export function parseProposeUnpauseInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { authority: getNextAccount(), pauseState: getNextAccount() },
+    accounts: { authority: getNextAccount(), accordState: getNextAccount() },
     data: getProposeUnpauseInstructionDataDecoder().decode(instruction.data),
   };
 }

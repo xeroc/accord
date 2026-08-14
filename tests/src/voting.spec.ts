@@ -42,8 +42,8 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     if (!env.up) return; // offline CI lane
 
     // --- setup: pause + subaccord + 3 staked jurors + MST ---
-    const pauseState = await ensurePause(env);
-    const core = await armSubaccordAndJurors(env, pauseState);
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
     const fx: DrawFixture = { env, up: true, ...core };
 
     // --- create_dispute → injectCommittedVrf (freezes root) ---
@@ -152,8 +152,8 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
 
   it("commit before the review window opens reverts on-chain", async () => {
     if (!env.up) return;
-    const pauseState = await ensurePause(env);
-    const core = await armSubaccordAndJurors(env, pauseState);
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
     const fx: DrawFixture = { env, up: true, ...core };
     const nonce = crypto
       .getRandomValues(new Uint8Array(8))

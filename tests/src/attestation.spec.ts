@@ -207,7 +207,7 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
   let mint!: Address;
   let subaccord!: Address;
   let vault!: Address;
-  let pauseState!: Address;
+  let accordState!: Address;
   /** Fixed credential/schema the gated Subaccord binds to. */
   let credential!: Address;
   let schema!: Address;
@@ -228,7 +228,7 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
     const accounts: StakingAccounts = {
       juror: juror.address,
       subaccord,
-      pauseState,
+      accordState,
       jurorStake,
       stakingToken: mint,
       jurorTokenAccount: jurorAta,
@@ -248,9 +248,9 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
       programId,
       env.payer.address,
     );
-    pauseState = pause.pauseState;
+    accordState = pause.accordState;
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) await env.sendIx(pause.instruction);
 

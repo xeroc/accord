@@ -20,7 +20,13 @@
  *   - Stake / Unstake accounts: programs/accord/src/lib.rs (1716-1798)
  *   - JurorStake struct + seeds: programs/accord/src/state.rs (60-70)
  */
-import { AccountRole, type Address, type Instruction } from "@solana/kit";
+import {
+  AccountRole,
+  getAddressEncoder,
+  getProgramDerivedAddress,
+  type Address,
+  type Instruction,
+} from "@solana/kit";
 import type { MSTNode } from "./mst.js";
 
 /** JurorStake PDA seed prefix (state.rs: SEED_JUROR_STAKE = b"stake"). */
@@ -101,14 +107,12 @@ export function jurorStakeSeeds(
   return [SEED_JUROR_STAKE, subaccordBytes, jurorBytes];
 }
 
-/** Derive the canonical JurorStake PDA. Kit lazy-imported. */
+/** Derive the canonical JurorStake PDA. */
 export async function findJurorStakePda(
   programAddress: Address,
   subaccord: Address,
   juror: Address,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } =
-    await import("@solana/kit");
   const enc = getAddressEncoder();
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -125,7 +129,7 @@ export interface StakingAccounts {
   juror: Address;
   subaccord: Address;
   /** `stake` only — the ADR-0007 circuit breaker (unstake is never halted). */
-  pauseState?: Address;
+  accordState?: Address;
   jurorStake: Address;
   stakingToken: Address;
   /** Juror's ATA of the staking token (source on stake, dest on unstake). */

@@ -45,15 +45,17 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 
-export const PAUSE_STATE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
-  21, 123, 173, 77, 60, 203, 197, 145,
+export const ACCORD_STATE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  218, 6, 196, 225, 25, 89, 50, 183,
 ]);
 
-export function getPauseStateDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(PAUSE_STATE_DISCRIMINATOR);
+export function getAccordStateDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(
+    ACCORD_STATE_DISCRIMINATOR,
+  );
 }
 
-export type PauseState = {
+export type AccordState = {
   discriminator: ReadonlyUint8Array;
   /** The multisig/upgrade-authority permitted to pause and propose unpause. */
   authority: Address;
@@ -66,7 +68,7 @@ export type PauseState = {
   bump: number;
 };
 
-export type PauseStateArgs = {
+export type AccordStateArgs = {
   /** The multisig/upgrade-authority permitted to pause and propose unpause. */
   authority: Address;
   paused: boolean;
@@ -78,8 +80,8 @@ export type PauseStateArgs = {
   bump: number;
 };
 
-/** Gets the encoder for {@link PauseStateArgs} account data. */
-export function getPauseStateEncoder(): Encoder<PauseStateArgs> {
+/** Gets the encoder for {@link AccordStateArgs} account data. */
+export function getAccordStateEncoder(): Encoder<AccordStateArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
@@ -88,12 +90,12 @@ export function getPauseStateEncoder(): Encoder<PauseStateArgs> {
       ["pendingUnpauseAfter", getOptionEncoder(getU64Encoder())],
       ["bump", getU8Encoder()],
     ]),
-    (value) => ({ ...value, discriminator: PAUSE_STATE_DISCRIMINATOR }),
+    (value) => ({ ...value, discriminator: ACCORD_STATE_DISCRIMINATOR }),
   );
 }
 
-/** Gets the decoder for {@link PauseState} account data. */
-export function getPauseStateDecoder(): Decoder<PauseState> {
+/** Gets the decoder for {@link AccordState} account data. */
+export function getAccordStateDecoder(): Decoder<AccordState> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
     ["authority", getAddressDecoder()],
@@ -103,60 +105,60 @@ export function getPauseStateDecoder(): Decoder<PauseState> {
   ]);
 }
 
-/** Gets the codec for {@link PauseState} account data. */
-export function getPauseStateCodec(): Codec<PauseStateArgs, PauseState> {
-  return combineCodec(getPauseStateEncoder(), getPauseStateDecoder());
+/** Gets the codec for {@link AccordState} account data. */
+export function getAccordStateCodec(): Codec<AccordStateArgs, AccordState> {
+  return combineCodec(getAccordStateEncoder(), getAccordStateDecoder());
 }
 
-export function decodePauseState<TAddress extends string = string>(
+export function decodeAccordState<TAddress extends string = string>(
   encodedAccount: EncodedAccount<TAddress>,
-): Account<PauseState, TAddress>;
-export function decodePauseState<TAddress extends string = string>(
+): Account<AccordState, TAddress>;
+export function decodeAccordState<TAddress extends string = string>(
   encodedAccount: MaybeEncodedAccount<TAddress>,
-): MaybeAccount<PauseState, TAddress>;
-export function decodePauseState<TAddress extends string = string>(
+): MaybeAccount<AccordState, TAddress>;
+export function decodeAccordState<TAddress extends string = string>(
   encodedAccount: EncodedAccount<TAddress> | MaybeEncodedAccount<TAddress>,
-): Account<PauseState, TAddress> | MaybeAccount<PauseState, TAddress> {
+): Account<AccordState, TAddress> | MaybeAccount<AccordState, TAddress> {
   return decodeAccount(
     encodedAccount as MaybeEncodedAccount<TAddress>,
-    getPauseStateDecoder(),
+    getAccordStateDecoder(),
   );
 }
 
-export async function fetchPauseState<TAddress extends string = string>(
+export async function fetchAccordState<TAddress extends string = string>(
   rpc: Parameters<typeof fetchEncodedAccount>[0],
   address: Address<TAddress>,
   config?: FetchAccountConfig,
-): Promise<Account<PauseState, TAddress>> {
-  const maybeAccount = await fetchMaybePauseState(rpc, address, config);
+): Promise<Account<AccordState, TAddress>> {
+  const maybeAccount = await fetchMaybeAccordState(rpc, address, config);
   assertAccountExists(maybeAccount);
   return maybeAccount;
 }
 
-export async function fetchMaybePauseState<TAddress extends string = string>(
+export async function fetchMaybeAccordState<TAddress extends string = string>(
   rpc: Parameters<typeof fetchEncodedAccount>[0],
   address: Address<TAddress>,
   config?: FetchAccountConfig,
-): Promise<MaybeAccount<PauseState, TAddress>> {
+): Promise<MaybeAccount<AccordState, TAddress>> {
   const maybeAccount = await fetchEncodedAccount(rpc, address, config);
-  return decodePauseState(maybeAccount);
+  return decodeAccordState(maybeAccount);
 }
 
-export async function fetchAllPauseState(
+export async function fetchAllAccordState(
   rpc: Parameters<typeof fetchEncodedAccounts>[0],
   addresses: Array<Address>,
   config?: FetchAccountsConfig,
-): Promise<Account<PauseState>[]> {
-  const maybeAccounts = await fetchAllMaybePauseState(rpc, addresses, config);
+): Promise<Account<AccordState>[]> {
+  const maybeAccounts = await fetchAllMaybeAccordState(rpc, addresses, config);
   assertAccountsExist(maybeAccounts);
   return maybeAccounts;
 }
 
-export async function fetchAllMaybePauseState(
+export async function fetchAllMaybeAccordState(
   rpc: Parameters<typeof fetchEncodedAccounts>[0],
   addresses: Array<Address>,
   config?: FetchAccountsConfig,
-): Promise<MaybeAccount<PauseState>[]> {
+): Promise<MaybeAccount<AccordState>[]> {
   const maybeAccounts = await fetchEncodedAccounts(rpc, addresses, config);
-  return maybeAccounts.map((maybeAccount) => decodePauseState(maybeAccount));
+  return maybeAccounts.map((maybeAccount) => decodeAccordState(maybeAccount));
 }

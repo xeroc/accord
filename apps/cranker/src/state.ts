@@ -12,7 +12,7 @@
  * `request_vrf`, `draw_seat`, `finalize_round`, `finalize_dispute`,
  * `settle_round`, `cancel_dispute`, `redraw`. The slot-based timelock cranks
  * (`execute_subaccord_update`, `execute_unpause`) and `claim_appeal_refund`
- * read different account families (PendingUpdate / PauseState / AppealBond) on
+ * read different account families (PendingUpdate / AccordState / AppealBond) on
  * a slot clock, so they are resolved by separate functions over their own
  * inputs — this signature cannot compute them.
  *

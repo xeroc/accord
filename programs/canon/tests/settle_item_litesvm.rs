@@ -364,11 +364,7 @@ fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling
 }
 
 fn dispute_pda(filer: &Pubkey, nonce: u64) -> Pubkey {
-    Pubkey::find_program_address(
-        &[b"dispute", filer.as_ref(), &nonce.to_le_bytes()],
-        &ACCORD_ID,
-    )
-    .0
+    accord::dispute_pda(filer, nonce).0
 }
 
 fn read_item(env: &TestEnv, curated: &Pubkey) -> CanonItem {

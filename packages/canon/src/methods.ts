@@ -180,8 +180,8 @@ export interface ChallengeItemAccounts {
 export interface ChallengeItemExtras {
   /** [0] Accord Dispute PDA (mut — Accord inits). */
   accordDispute: Address;
-  /** [1] Accord PauseState (readonly). */
-  accordPauseState: Address;
+  /** [1] Accord AccordState (readonly). */
+  accordState: Address;
   /** [2] Accord Subaccord fee_vault ATA (mut). */
   accordFeeVault: Address;
   /** [3] Accord program id (readonly; address checked on-chain). */
@@ -213,7 +213,7 @@ export function challengeItem(
   // writable is rejected as "Invalid program argument").
   const extrasMetas: AccountMeta[] = [
     { address: extras.accordDispute, role: AccountRole.WRITABLE },
-    { address: extras.accordPauseState, role: AccountRole.READONLY },
+    { address: extras.accordState, role: AccountRole.READONLY },
     { address: extras.accordFeeVault, role: AccountRole.WRITABLE },
     { address: extras.accordProgram, role: AccountRole.READONLY },
   ];

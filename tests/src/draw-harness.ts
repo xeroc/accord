@@ -29,7 +29,7 @@ import {
   type CreateSubaccordArgs,
   findJurorStakePda,
   findRoundPda,
-  findPauseStatePda,
+  findAccordStatePda,
   getDisputeDecoder,
   getRoundDecoder,
   getJurorStakeDecoder,
@@ -173,7 +173,7 @@ export interface DrawFixture {
   mint: Address;
   vault: Address;
   subaccord: Address;
-  pauseState: Address;
+  accordState: Address;
   jurors: JurorCtx[];
   tree: TreeTracker;
   jurorPdaByHex: Map<string, Address>;
@@ -188,7 +188,7 @@ function offlineFixture(env: TestEnv): DrawFixture {
     mint: ZERO,
     vault: ZERO,
     subaccord: ZERO,
-    pauseState: ZERO,
+    accordState: ZERO,
     jurors: [],
     tree: null as unknown as TreeTracker,
     jurorPdaByHex: new Map(),
@@ -196,7 +196,7 @@ function offlineFixture(env: TestEnv): DrawFixture {
 }
 
 export async function ensurePause(env: TestEnv): Promise<Address> {
-  const [pausePda] = await findPauseStatePda();
+  const [pausePda] = await findAccordStatePda();
   const acc = await env.rpc
     .getAccountInfo(pausePda, { encoding: "base64" })
     .send();
@@ -212,7 +212,7 @@ export async function ensurePause(env: TestEnv): Promise<Address> {
 
 export async function armSubaccordAndJurors(
   env: TestEnv,
-  pauseState: Address,
+  accordState: Address,
   subaccordOverrides: Partial<CreateSubaccordArgs> = {},
 ): Promise<Omit<DrawFixture, "env" | "up">> {
   const { mint } = await createMint(env, 6);
@@ -259,7 +259,7 @@ export async function armSubaccordAndJurors(
       {
         juror: signer.address,
         subaccord,
-        pauseState,
+        accordState,
         jurorStake: stakePda,
         stakingToken: mint,
         jurorTokenAccount: jurorAta,
@@ -275,7 +275,7 @@ export async function armSubaccordAndJurors(
     jurorPdaByHex.set(toHex(addressBytes(signer.address)), stakePda);
   }
 
-  return { mint, vault, subaccord, pauseState, jurors, tree, jurorPdaByHex };
+  return { mint, vault, subaccord, accordState, jurors, tree, jurorPdaByHex };
 }
 
 /**
@@ -288,7 +288,7 @@ export async function armSubaccordAndJurors(
  */
 export async function armCanonJurors(
   env: TestEnv,
-  pauseState: Address,
+  accordState: Address,
   subaccord: Address,
   mint: Address,
   depth: number,
@@ -313,7 +313,7 @@ export async function armCanonJurors(
         {
           juror: signer.address,
           subaccord,
-          pauseState,
+          accordState,
           jurorStake: stakePda,
           stakingToken: mint,
           jurorTokenAccount: jurorAta,
@@ -327,14 +327,14 @@ export async function armCanonJurors(
     jurors.push({ signer, stakePda, jurorAta, accord: jurorAccord });
     jurorPdaByHex.set(toHex(addressBytes(signer.address)), stakePda);
   }
-  return { mint, vault, subaccord, pauseState, jurors, tree, jurorPdaByHex };
+  return { mint, vault, subaccord, accordState, jurors, tree, jurorPdaByHex };
 }
 
 export async function setupDrawFixture(): Promise<DrawFixture> {
   const env = await createTestEnv();
   if (!env.up) return offlineFixture(env);
-  const pauseState = await ensurePause(env);
-  const core = await armSubaccordAndJurors(env, pauseState);
+  const accordState = await ensurePause(env);
+  const core = await armSubaccordAndJurors(env, accordState);
   return { env, up: true, ...core };
 }
 
@@ -351,7 +351,7 @@ export async function armDispute(
   fx: DrawFixture,
   nonce: bigint,
 ): Promise<ArmedDispute> {
-  const { env, subaccord, mint, vault, pauseState } = fx;
+  const { env, subaccord, mint, vault, accordState } = fx;
   const fee = requiredFee(FEE_PER_JUROR);
   if (fee === null) throw new Error("fee overflow");
 
@@ -365,7 +365,7 @@ export async function armDispute(
       feeToken: mint,
       filerTokenAccount: filerAta,
       feeVault: vault,
-      pauseState,
+      accordState,
     },
     {
       options: [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)],

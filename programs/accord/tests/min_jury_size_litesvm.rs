@@ -10,7 +10,6 @@
 //!
 //! Run via `make test_unit`.
 
-use accord::constants::{SEED_PAUSE, SEED_SUBACCORD};
 use accord::state::{Aggregation, CreateSubaccordParams, ShortfallPolicy, Subaccord};
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize};
@@ -34,11 +33,11 @@ fn load_program() -> Vec<u8> {
 }
 
 fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    Pubkey::find_program_address(&[SEED_SUBACCORD, creator.as_ref(), risk_type], &ID).0
+    accord::subaccord_pda(creator, risk_type).0
 }
 
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[SEED_PAUSE], &ID).0
+    accord::accord_state_pda().0
 }
 
 fn create_mint(ctx: &mut anchor_litesvm::AnchorContext, mint: &Pubkey) {
@@ -104,7 +103,7 @@ fn setup() -> (anchor_litesvm::AnchorContext, Keypair, Pubkey) {
         .program()
         .accounts(accounts::InitializePause {
             authority: creator.pubkey(),
-            pause_state: pause,
+            accord_state: pause,
             system_program: system_program::ID,
         })
         .args(instruction::InitializePause {})

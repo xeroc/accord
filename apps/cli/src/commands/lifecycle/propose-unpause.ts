@@ -5,7 +5,7 @@
  * The loaded `--keypair` wallet must be the pause authority. Arms
  * `UNPAUSE_TIMELOCK_SLOTS` (24h) of notice before `execute-unpause` can land.
  */
-import { Accord, findPauseStatePda, UNPAUSE_TIMELOCK_SLOTS } from "@useaccord/sdk";
+import { Accord, findAccordStatePda, UNPAUSE_TIMELOCK_SLOTS } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 
@@ -15,7 +15,7 @@ export default class LifecycleProposeUnpause extends ChainCommand {
   static description =
     "Begin the unpause process: arms UNPAUSE_TIMELOCK_SLOTS (24h) of notice before " +
     "lifecycle:execute-unpause can land. Only the pause authority may call this. " +
-    "The PauseState PDA is derived from the canonical program id (singleton).";
+    "The AccordState PDA is derived from the canonical program id (singleton).";
 
   static examples = ["<%= config.bin %> lifecycle:propose-unpause"];
 
@@ -26,10 +26,10 @@ export default class LifecycleProposeUnpause extends ChainCommand {
     this.applyOutput(flags);
 
     const ctx = await this.loadChain(flags);
-    const [pauseState] = await findPauseStatePda({
+    const [accordState] = await findAccordStatePda({
       programAddress: Accord.PROGRAM_ID,
     });
-    const instruction = ctx.accord.methods.proposeUnpause(ctx.signer.address, pauseState);
+    const instruction = ctx.accord.methods.proposeUnpause(ctx.signer.address, accordState);
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);
@@ -39,7 +39,7 @@ export default class LifecycleProposeUnpause extends ChainCommand {
     const signature = await this.sendInstruction(ctx, instruction);
     this.emitSend(signature, {
       authority: ctx.signer.address,
-      pauseState,
+      accordState,
       unpauseTimelockSlots: UNPAUSE_TIMELOCK_SLOTS,
     });
   }

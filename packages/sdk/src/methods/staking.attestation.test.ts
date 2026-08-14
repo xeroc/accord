@@ -34,7 +34,7 @@ const PRUNE_ACCOUNTS: PruneJurorAccounts = {
 const STAKE_ACCOUNTS: StakingAccounts = {
   juror: "J".repeat(44) as Address,
   subaccord: "S".repeat(44) as Address,
-  pauseState: "PZ".repeat(22) as Address,
+  accordState: "PZ".repeat(22) as Address,
   jurorStake: "JS".repeat(22) as Address,
   stakingToken: "T".repeat(44) as Address,
   jurorTokenAccount: "JT".repeat(22) as Address,

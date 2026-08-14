@@ -122,7 +122,7 @@ function config(
     now: () => 1n,
     fetchPendingUpdates: async () => [],
     slot: async () => 0n,
-    fetchPauseState: async () => null,
+    fetchAccordState: async () => null,
     fetchReclaimableSlots: async () => [],
     ...over,
   };

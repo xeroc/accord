@@ -284,7 +284,7 @@ feature that touches the chain.
     `lifecycle.update`, `lifecycle.subaccord`, `staking`, `dispute`, `snapshot`,
     `voting`, `appeal`, `draw`, `full-lifecycle`) + `draw-harness.ts` (the shared
     VRF/MST composite). Each spec is port-agnostic (reads `ACCORD_RPC_URL`) and
-    idempotently guards the PauseState singleton, so the **whole suite runs GREEN
+    idempotently guards the AccordState singleton, so the **whole suite runs GREEN
     together on one Surfnet** (`make test_surfpool`).
 - **The green rule (non-negotiable).** A feature/milestone is **not complete**
   until its e2e spec passes against a running Surfpool — not skipped. "Skip if

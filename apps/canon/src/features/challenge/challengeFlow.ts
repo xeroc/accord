@@ -19,7 +19,7 @@ import {
   sha256,
   type ManifestCtx,
 } from "@useaccord/sdk/evidence";
-import { findDisputePda, findPauseStatePda } from "@useaccord/sdk";
+import { findDisputePda, findAccordStatePda } from "@useaccord/sdk";
 import {
   ACCORD_PROGRAM_ID,
   challengeItem,
@@ -131,7 +131,7 @@ export async function buildChallengeInstruction(
     filer: ctx.list,
     nonce,
   });
-  const [pauseState] = await findPauseStatePda();
+  const [pauseState] = await findAccordStatePda();
 
   // Derive ATAs (Kit-native, no web3.js v1).
   const challengerTokenAccount = await ataAddress(challenger.address, feeMint);
@@ -150,7 +150,7 @@ export async function buildChallengeInstruction(
 
   const extras: ChallengeItemExtras = {
     accordDispute: disputeAddress,
-    accordPauseState: pauseState,
+    accordState: pauseState,
     accordFeeVault,
     accordProgram: ACCORD_PROGRAM_ID,
   };

@@ -8,7 +8,7 @@
  *
  * Account derivation (lazy ponytail — `--dispute` is the only required
  * address; everything else is derived):
- *   - pauseState  : singleton PDA `["pause"]`
+ *   - accordState  : singleton PDA `["state"]`
  *   - round       : prior round PDA `["round", dispute, current_round]`
  *   - appealBond  : `["bond", dispute, current_round]` — keyed by the round
  *                   BEING appealed (before the increment). lib.rs:3361 seeds
@@ -26,7 +26,7 @@ import {
   fetchMaybeSubaccord,
   findAppealBondPda,
   findAssociatedTokenAddress,
-  findPauseStatePda,
+  findAccordStatePda,
   findRoundPda,
 } from "@useaccord/sdk";
 
@@ -99,7 +99,7 @@ export default class AppealOpen extends ChainCommand {
     }
     const feeToken = subAcct.data.feeToken;
 
-    const [pauseState] = await findPauseStatePda({ programAddress: Accord.PROGRAM_ID });
+    const [accordState] = await findAccordStatePda({ programAddress: Accord.PROGRAM_ID });
     const [round] = await findRoundPda({ dispute, roundIdx: currentRound });
     // AppealBond is seeded by the round BEING appealed (currentRound, pre-increment).
     const [appealBond] = await findAppealBondPda({ dispute, roundIdx: currentRound });
@@ -114,7 +114,7 @@ export default class AppealOpen extends ChainCommand {
       {
         appellant,
         subaccord,
-        pauseState,
+        accordState,
         dispute,
         round,
         appealBond,

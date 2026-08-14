@@ -171,7 +171,7 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     let cpi_accounts = accord::cpi::accounts::CreateDispute {
         filer: ctx.accounts.list.to_account_info(),
         subaccord: ctx.accounts.subaccord.to_account_info(),
-        pause_state: accord_state.to_account_info(),
+        accord_state: accord_state.to_account_info(),
         dispute: accord_dispute.to_account_info(),
         fee_token: ctx.accounts.fee_mint.to_account_info(),
         filer_token_account: ctx.accounts.vault.to_account_info(),

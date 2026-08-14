@@ -17,7 +17,7 @@
 //!
 //! Run via `make test_unit`. One fresh `AnchorLiteSVM` context per test.
 
-use accord::constants::{SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD, WITHDRAWAL_DELAY};
+use accord::constants::{SEED_JUROR_STAKE, WITHDRAWAL_DELAY};
 use accord::state::{
     Aggregation, CreateSubaccordParams, JurorStake, MSTNode, ShortfallPolicy, Subaccord,
 };
@@ -191,11 +191,11 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
 }
 
 fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    Pubkey::find_program_address(&[SEED_SUBACCORD, creator.as_ref(), risk_type], &ID).0
+    accord::subaccord_pda(creator, risk_type).0
 }
 
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[SEED_PAUSE], &ID).0
+    accord::accord_state_pda().0
 }
 
 // ─── shared setup ────────────────────────────────────────────────────────────
@@ -218,13 +218,13 @@ fn setup_accumulator() -> AccEnv {
         .airdrop(&creator.pubkey(), 100 * LAMPORTS_PER_SOL)
         .unwrap();
 
-    // PauseState singleton (unpaused).
+    // AccordState singleton (unpaused).
     let pause = pause_pda();
     let ix = ctx
         .program()
         .accounts(accounts::InitializePause {
             authority: creator.pubkey(),
-            pause_state: pause,
+            accord_state: pause,
             system_program: system_program::ID,
         })
         .args(instruction::InitializePause {})
@@ -352,7 +352,7 @@ fn do_stake_with_remaining(
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             juror_stake: js,
             staking_token: env.mint,
             juror_token_account: jata,

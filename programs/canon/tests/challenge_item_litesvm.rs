@@ -125,20 +125,13 @@ fn user_ata(user: &Pubkey, mint: &Pubkey) -> Pubkey {
     get_associated_token_address_with_program_id(user, mint, &TOKEN_PROGRAM_ID)
 }
 fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[accord::SEED_SUBACCORD, creator.as_ref(), risk_type],
-        &accord::ID,
-    )
+    accord::subaccord_pda(creator, risk_type)
 }
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[accord::SEED_PAUSE], &accord::ID).0
+    accord::accord_state_pda().0
 }
 fn dispute_pda(filer: &Pubkey, nonce: u64) -> Pubkey {
-    Pubkey::find_program_address(
-        &[accord::SEED_DISPUTE, filer.as_ref(), &nonce.to_le_bytes()],
-        &accord::ID,
-    )
-    .0
+    accord::dispute_pda(filer, nonce).0
 }
 
 struct TestEnv {
@@ -220,13 +213,13 @@ fn setup() -> TestEnv {
         )
         .unwrap();
 
-    // Accord PauseState (unpaused).
+    // AccordState (unpaused).
     let pause = pause_pda();
-    let ps = accord::state::PauseState {
+    let ps = accord::state::AccordState {
         authority: creator.pubkey(),
         paused: false,
         pending_unpause_after: None,
-        bump: Pubkey::find_program_address(&[accord::SEED_PAUSE], &accord::ID).1,
+        bump: accord::accord_state_pda().1,
     };
     let mut buf = Vec::new();
     ps.try_serialize(&mut buf).unwrap();

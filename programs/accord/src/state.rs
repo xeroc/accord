@@ -399,7 +399,7 @@ pub struct PendingUpdate {
     pub bump: u8,
 }
 
-/// Program-level circuit breaker (ADR-0007). Singleton seeded `["pause"]`.
+/// Program-level circuit breaker (ADR-0007). Singleton seeded `["state"]`.
 /// `pause()` is instant and authority-gated; `unpause()` is timelocked
 /// (`propose_unpause` arms `pending_unpause_after`, `execute_unpause` lands
 /// once the slot passes — permissionless, so a freeze is always recoverable on
@@ -407,7 +407,7 @@ pub struct PendingUpdate {
 /// revert; in-flight disputes resolve normally.
 #[account]
 #[derive(InitSpace)]
-pub struct PauseState {
+pub struct AccordState {
     /// The multisig/upgrade-authority permitted to pause and propose unpause.
     pub authority: Pubkey,
     pub paused: bool,

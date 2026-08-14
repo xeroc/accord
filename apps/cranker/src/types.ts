@@ -56,7 +56,7 @@ export type CrankKind =
  * cancel_dispute/redraw); the reconciler stamps the dispute address before
  * dispatch. The slot-timelock + refund cranks (execute_update/execute_unpause/
  * claim_refund) are emitted by their own resolvers over different account
- * families (PendingUpdate / PauseState / AppealBond).
+ * families (PendingUpdate / AccordState / AppealBond).
  */
 export type CrankAction =
   | { kind: "request_vrf"; dispute: Address }

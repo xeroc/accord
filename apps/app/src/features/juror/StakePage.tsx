@@ -13,7 +13,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { type Address } from "@solana/kit";
 import { Loader2Icon } from "lucide-react";
-import { Accord, findJurorStakePda, findPauseStatePda } from "@useaccord/sdk";
+import { Accord, findJurorStakePda, findAccordStatePda } from "@useaccord/sdk";
 import { toast } from "sonner";
 
 import { useClusterRpc } from "../../shared/rpc";
@@ -195,13 +195,13 @@ function InitialStakeForm({
         getAtaAddress(juror, stakingToken),
         getAtaAddress(subaccordAddr, stakingToken),
       ]);
-      const [pauseState] = await findPauseStatePda();
+      const [accordState] = await findAccordStatePda();
       const accord = new Accord({ endpoint: crpc.endpoint, signer });
       const ix = accord.methods.stake(
         {
           juror,
           subaccord: subaccordAddr,
-          pauseState,
+          accordState,
           jurorStake,
           stakingToken,
           jurorTokenAccount,

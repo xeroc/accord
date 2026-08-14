@@ -3,10 +3,10 @@
  * (lib.rs `pause`). SDK: `methods.pause`.
  *
  * The loaded `--keypair` wallet must be the recorded pause authority (set by
- * `lifecycle:init-pause`). The PauseState PDA is derived from the canonical
+ * `lifecycle:init-pause`). The AccordState PDA is derived from the canonical
  * program id (singleton).
  */
-import { Accord, findPauseStatePda } from "@useaccord/sdk";
+import { Accord, findAccordStatePda } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 
@@ -28,10 +28,10 @@ export default class LifecyclePause extends ChainCommand {
     this.applyOutput(flags);
 
     const ctx = await this.loadChain(flags);
-    const [pauseState] = await findPauseStatePda({
+    const [accordState] = await findAccordStatePda({
       programAddress: Accord.PROGRAM_ID,
     });
-    const instruction = ctx.accord.methods.pause(ctx.signer.address, pauseState);
+    const instruction = ctx.accord.methods.pause(ctx.signer.address, accordState);
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);
@@ -39,6 +39,6 @@ export default class LifecyclePause extends ChainCommand {
     }
 
     const signature = await this.sendInstruction(ctx, instruction);
-    this.emitSend(signature, { authority: ctx.signer.address, pauseState });
+    this.emitSend(signature, { authority: ctx.signer.address, accordState });
   }
 }

@@ -23,7 +23,7 @@ import {
   findAssociatedTokenAddress,
   findJurorStakePda,
   findJurorStakesBySubaccord,
-  findPauseStatePda,
+  findAccordStatePda,
   prepareStakeProof,
   type MSTNode,
   type Subaccord,
@@ -43,7 +43,7 @@ export interface ResolvedStaking {
   feeToken: Address;
   jurorTokenAccount: Address;
   stakeVault: Address;
-  pauseState: Address;
+  accordState: Address;
 }
 
 /**
@@ -54,7 +54,7 @@ export async function resolveStaking(
   ctx: ChainContext,
   subaccordAddr: Address,
   juror: Address,
-  opts: { pauseState?: Address } = {},
+  opts: { accordState?: Address } = {},
 ): Promise<ResolvedStaking> {
   const maybe = await fetchMaybeSubaccord(ctx.accord.rpc, subaccordAddr);
   if (!maybe.exists) {
@@ -65,8 +65,8 @@ export async function resolveStaking(
   const jurorStakePda = await findJurorStakePda({ subaccord: subaccordAddr, juror });
   const jurorAta = await findAssociatedTokenAddress(sub.stakingToken, juror);
   const stakeVault = await findAssociatedTokenAddress(sub.stakingToken, subaccordAddr);
-  const pauseStatePda = await findPauseStatePda();
-  const pauseState = opts.pauseState ?? pauseStatePda[0];
+  const accordStatePda = await findAccordStatePda();
+  const accordState = opts.accordState ?? accordStatePda[0];
 
   return {
     subaccord: subaccordAddr,
@@ -77,19 +77,19 @@ export async function resolveStaking(
     feeToken: sub.feeToken,
     jurorTokenAccount: jurorAta,
     stakeVault,
-    pauseState,
+    accordState,
   };
 }
 
 /**
  * Shared `StakingAccounts` shape (juror / subaccord / jurorStake / token /
- * ATAs / pauseState). Withdraw omits pauseState; the adapter ignores it there.
+ * ATAs / accordState). Withdraw omits accordState; the adapter ignores it there.
  */
 export function stakingAccounts(r: ResolvedStaking) {
   return {
     juror: r.juror,
     subaccord: r.subaccord,
-    pauseState: r.pauseState,
+    accordState: r.accordState,
     jurorStake: r.jurorStake,
     stakingToken: r.stakingToken,
     jurorTokenAccount: r.jurorTokenAccount,

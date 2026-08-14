@@ -1,25 +1,25 @@
 /**
- * `useaccord lifecycle:init-pause` — one-time initialization of the PauseState
+ * `useaccord lifecycle:init-pause` — one-time initialization of the AccordState
  * singleton (lib.rs `initialize_pause`). SDK: `methods.initializePause`.
  *
  * The loaded `--keypair` wallet is the fee payer AND becomes the on-chain pause
  * authority (the adapter hard-wires `authority: accord.signer`). Must run once
  * per program deployment before `pause`/`propose_unpause` are usable.
  *
- * `--skip-if-exists` makes it idempotent: if PauseState is already initialized,
+ * `--skip-if-exists` makes it idempotent: if AccordState is already initialized,
  * the command reports the existing authority and exits 0 without sending.
  */
 import { Flags } from "@oclif/core";
 
-import { fetchMaybePauseState } from "@useaccord/sdk";
+import { fetchMaybeAccordState } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 
 export default class LifecycleInitPause extends ChainCommand {
-  static summary = "Initialize the Accord PauseState singleton (one-time)";
+  static summary = "Initialize the Accord AccordState singleton (one-time)";
 
   static description =
-    "Initialize the PauseState singleton PDA, recording the wallet as the pause " +
+    "Initialize the AccordState singleton PDA, recording the wallet as the pause " +
     "authority. Must be called exactly once per program deployment, before any " +
     "pause / unpause operation. Permissionless to call, but the caller becomes " +
     "the pause authority.";
@@ -32,7 +32,7 @@ export default class LifecycleInitPause extends ChainCommand {
   static flags = {
     ...chainFlags,
     "skip-if-exists": Flags.boolean({
-      description: "Exit 0 without sending if PauseState is already initialized",
+      description: "Exit 0 without sending if AccordState is already initialized",
       default: false,
     }),
   };
@@ -42,19 +42,19 @@ export default class LifecycleInitPause extends ChainCommand {
     this.applyOutput(flags);
 
     const ctx = await this.loadChain(flags);
-    const { instruction, pauseState } = await ctx.accord.methods.initializePause(
+    const { instruction, accordState } = await ctx.accord.methods.initializePause(
       ctx.signer.address,
     );
 
     if (flags["skip-if-exists"]) {
-      const existing = await fetchMaybePauseState(ctx.accord.rpc, pauseState);
+      const existing = await fetchMaybeAccordState(ctx.accord.rpc, accordState);
       if (existing.exists) {
         this.emitRead(
-          { pauseState, initialized: true, skipped: true },
+          { accordState, initialized: true, skipped: true },
           {
-            primary: pauseState,
+            primary: accordState,
             human: [
-              `PauseState already initialized: ${pauseState}`,
+              `AccordState already initialized: ${accordState}`,
               "  (skipped — no transaction sent)",
             ],
           },
@@ -69,6 +69,6 @@ export default class LifecycleInitPause extends ChainCommand {
     }
 
     const signature = await this.sendInstruction(ctx, instruction);
-    this.emitSend(signature, { authority: ctx.signer.address, pauseState });
+    this.emitSend(signature, { authority: ctx.signer.address, accordState });
   }
 }

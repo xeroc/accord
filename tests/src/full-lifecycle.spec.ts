@@ -52,8 +52,8 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
 
     // --- setup: pause + subaccord + 3 staked jurors + MST (driven here so the
     //     single `it` owns the whole machine, per the crown brief) ---
-    const pauseState = await ensurePause(env);
-    const core = await armSubaccordAndJurors(env, pauseState);
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
     const fx: DrawFixture = { env, up: true, ...core };
 
     // --- create_dispute → snapshot → finalize → inject VRF ---

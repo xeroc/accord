@@ -61,7 +61,7 @@ This is what the cranker's state resolver uses to determine the next action.
 | `read:dispute` | `fetchMaybeDispute` |
 | `read:round` | `fetchMaybeRound` |
 | `read:juror-stake` | `fetchMaybeJurorStake` |
-| `read:pause-state` | `fetchMaybePauseState` |
+| `read:pause-state` | `fetchMaybeAccordState` |
 | `read:pending-update` | `fetchMaybePendingUpdate` |
 | `read:appeal-bond` | `fetchMaybeAppealBond` |
 | `read:disputes --by-subaccord` | `findDisputesBySubaccord` |

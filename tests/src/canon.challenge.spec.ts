@@ -79,7 +79,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     if (!env.up) return; // offline CI lane
 
     // --- create_list: CPIs Accord create_subaccord (depth 20, fee_per_juror 10) ---
-    const pauseState = await ensurePause(env);
+    const accordState = await ensurePause(env);
     const { mint } = await createMint(env, 6);
     const rulesHash = crypto.getRandomValues(new Uint8Array(32));
     const listProgram = "11111111111111111111111111111111" as Address; // sentinel ⇒ ownership off
@@ -99,7 +99,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     await env.sendIx(createIx);
 
     // --- stake 3 jurors into the canon-created Subaccord (depth 8) ---
-    const core = await armCanonJurors(env, pauseState, subaccord, mint, 8);
+    const core = await armCanonJurors(env, accordState, subaccord, mint, 8);
     const fx: DrawFixture = { env, up: true, ...core };
 
     // --- submit_item: lock the 500 deposit (accumulated_stake = 500) ---
@@ -152,7 +152,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       { evidence: crypto.getRandomValues(new Uint8Array(32)) },
       {
         accordDispute: dispute,
-        accordPauseState: pauseState,
+        accordState: accordState,
         accordFeeVault,
         accordProgram: ACCORD_PROGRAM_ID,
       },

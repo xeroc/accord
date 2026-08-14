@@ -44,7 +44,7 @@ import {
   getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findDisputePda, findPauseStatePda } from "../pdas";
+import { findAccordStatePda, findDisputePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 export const CREATE_DISPUTE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -61,7 +61,7 @@ export type CreateDisputeInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountFiler extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountFeeToken extends string | AccountMeta<string> = string,
   TAccountFilerTokenAccount extends string | AccountMeta<string> = string,
@@ -84,9 +84,9 @@ export type CreateDisputeInstruction<
       TAccountSubaccord extends string
         ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
-      TAccountPauseState extends string
-        ? ReadonlyAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? ReadonlyAccount<TAccountAccordState>
+        : TAccountAccordState,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
@@ -163,7 +163,7 @@ export function getCreateDisputeInstructionDataCodec(): Codec<
 export type CreateDisputeAsyncInput<
   TAccountFiler extends string = string,
   TAccountSubaccord extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountDispute extends string = string,
   TAccountFeeToken extends string = string,
   TAccountFilerTokenAccount extends string = string,
@@ -174,7 +174,7 @@ export type CreateDisputeAsyncInput<
 > = {
   filer: TransactionSigner<TAccountFiler>;
   subaccord: Address<TAccountSubaccord>;
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
   dispute?: Address<TAccountDispute>;
   feeToken: Address<TAccountFeeToken>;
   filerTokenAccount?: Address<TAccountFilerTokenAccount>;
@@ -195,7 +195,7 @@ export type CreateDisputeAsyncInput<
 export async function getCreateDisputeInstructionAsync<
   TAccountFiler extends string,
   TAccountSubaccord extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountDispute extends string,
   TAccountFeeToken extends string,
   TAccountFilerTokenAccount extends string,
@@ -208,7 +208,7 @@ export async function getCreateDisputeInstructionAsync<
   input: CreateDisputeAsyncInput<
     TAccountFiler,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountFeeToken,
     TAccountFilerTokenAccount,
@@ -223,7 +223,7 @@ export async function getCreateDisputeInstructionAsync<
     TProgramAddress,
     TAccountFiler,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountFeeToken,
     TAccountFilerTokenAccount,
@@ -240,7 +240,7 @@ export async function getCreateDisputeInstructionAsync<
   const originalAccounts = {
     filer: { value: input.filer ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: false },
+    accordState: { value: input.accordState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
@@ -264,8 +264,8 @@ export async function getCreateDisputeInstructionAsync<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
   if (!accounts.dispute.value) {
     accounts.dispute.value = await findDisputePda({
@@ -348,7 +348,7 @@ export async function getCreateDisputeInstructionAsync<
     accounts: [
       getAccountMeta("filer", accounts.filer),
       getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
@@ -365,7 +365,7 @@ export async function getCreateDisputeInstructionAsync<
     TProgramAddress,
     TAccountFiler,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountFeeToken,
     TAccountFilerTokenAccount,
@@ -379,7 +379,7 @@ export async function getCreateDisputeInstructionAsync<
 export type CreateDisputeInput<
   TAccountFiler extends string = string,
   TAccountSubaccord extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountDispute extends string = string,
   TAccountFeeToken extends string = string,
   TAccountFilerTokenAccount extends string = string,
@@ -390,7 +390,7 @@ export type CreateDisputeInput<
 > = {
   filer: TransactionSigner<TAccountFiler>;
   subaccord: Address<TAccountSubaccord>;
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
   dispute: Address<TAccountDispute>;
   feeToken: Address<TAccountFeeToken>;
   filerTokenAccount: Address<TAccountFilerTokenAccount>;
@@ -411,7 +411,7 @@ export type CreateDisputeInput<
 export function getCreateDisputeInstruction<
   TAccountFiler extends string,
   TAccountSubaccord extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountDispute extends string,
   TAccountFeeToken extends string,
   TAccountFilerTokenAccount extends string,
@@ -424,7 +424,7 @@ export function getCreateDisputeInstruction<
   input: CreateDisputeInput<
     TAccountFiler,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountFeeToken,
     TAccountFilerTokenAccount,
@@ -438,7 +438,7 @@ export function getCreateDisputeInstruction<
   TProgramAddress,
   TAccountFiler,
   TAccountSubaccord,
-  TAccountPauseState,
+  TAccountAccordState,
   TAccountDispute,
   TAccountFeeToken,
   TAccountFilerTokenAccount,
@@ -454,7 +454,7 @@ export function getCreateDisputeInstruction<
   const originalAccounts = {
     filer: { value: input.filer ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: false },
+    accordState: { value: input.accordState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     feeToken: { value: input.feeToken ?? null, isWritable: false },
     filerTokenAccount: {
@@ -496,7 +496,7 @@ export function getCreateDisputeInstruction<
     accounts: [
       getAccountMeta("filer", accounts.filer),
       getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("feeToken", accounts.feeToken),
       getAccountMeta("filerTokenAccount", accounts.filerTokenAccount),
@@ -513,7 +513,7 @@ export function getCreateDisputeInstruction<
     TProgramAddress,
     TAccountFiler,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountFeeToken,
     TAccountFilerTokenAccount,
@@ -532,7 +532,7 @@ export type ParsedCreateDisputeInstruction<
   accounts: {
     filer: TAccountMetas[0];
     subaccord: TAccountMetas[1];
-    pauseState: TAccountMetas[2];
+    accordState: TAccountMetas[2];
     dispute: TAccountMetas[3];
     feeToken: TAccountMetas[4];
     filerTokenAccount: TAccountMetas[5];
@@ -576,7 +576,7 @@ export function parseCreateDisputeInstruction<
     accounts: {
       filer: getNextAccount(),
       subaccord: getNextAccount(),
-      pauseState: getNextAccount(),
+      accordState: getNextAccount(),
       dispute: getNextAccount(),
       feeToken: getNextAccount(),
       filerTokenAccount: getNextAccount(),

@@ -25,18 +25,18 @@ import {
   DisputeState,
   canExecuteAt,
   fetchMaybeAppealBond,
-  fetchMaybePauseState,
+  fetchMaybeAccordState,
   fetchMaybeRound,
   findAllDisputes,
   findAllPendingUpdates,
   findAllSubaccords,
   findAppealBondPda,
   findJurorStakesBySubaccord,
-  findPauseStatePda,
+  findAccordStatePda,
   findRoundPda,
   type AppealBond,
   type Dispute,
-  type PauseState,
+  type AccordState,
   type PendingUpdate,
   type Round,
 } from "@useaccord/sdk";
@@ -69,8 +69,8 @@ export interface ReconcilerConfig {
   fetchPendingUpdates?: () => Promise<Account<PendingUpdate>[]>;
   /** Slot clock for timelock cranks (execute_update, execute_unpause). Defaults to `rpc.getSlot()`. */
   slot?: () => Promise<bigint>;
-  /** Override the pause-state check (tests). Defaults to the SDK PauseState PDA read. */
-  fetchPauseState?: () => Promise<Account<PauseState> | null>;
+  /** Override the pause-state check (tests). Defaults to the SDK AccordState PDA read. */
+  fetchAccordState?: () => Promise<Account<AccordState> | null>;
   /** Override the reclaimable-slot scan (tests). Defaults to scanning all subaccords. */
   fetchReclaimableSlots?: () => Promise<ReclaimableSlot[]>;
 }
@@ -107,7 +107,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     fetchRound = (dispute, roundIdx) => fetchRoundAccount(accord.rpc, dispute, roundIdx),
     fetchPendingUpdates = () => findAllPendingUpdates(accord.rpc),
     slot = async () => BigInt((await accord.rpc.getSlot().send()).valueOf()),
-    fetchPauseState = async () => fetchPauseStateAccount(accord.rpc),
+    fetchAccordState = async () => fetchAccordStateAccount(accord.rpc),
     fetchReclaimableSlots = async () => scanReclaimableSlots(accord.rpc),
   } = config;
 
@@ -215,9 +215,9 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     }
   }
 
-  // --- Phase 3: PauseState unpause crank (execute_unpause) ---
-  const pauseState = await fetchPauseState();
-  const pendingUnpauseAfter = pauseState?.data.pendingUnpauseAfter;
+  // --- Phase 3: AccordState unpause crank (execute_unpause) ---
+  const accordState = await fetchAccordState();
+  const pendingUnpauseAfter = accordState?.data.pendingUnpauseAfter;
   if (
     pendingUnpauseAfter &&
     isSome(pendingUnpauseAfter) &&
@@ -280,11 +280,13 @@ async function fetchRoundAccount(
   return null;
 }
 
-/** Default SDK PauseState fetch: derive the singleton PDA, read + decode, null if absent. */
-async function fetchPauseStateAccount(rpc: Rpc<SolanaRpcApi>): Promise<Account<PauseState> | null> {
-  const [pda] = await findPauseStatePda({});
-  const maybe = await fetchMaybePauseState(rpc, pda);
-  if (maybe.exists) return maybe as Account<PauseState>;
+/** Default SDK AccordState fetch: derive the singleton PDA, read + decode, null if absent. */
+async function fetchAccordStateAccount(
+  rpc: Rpc<SolanaRpcApi>,
+): Promise<Account<AccordState> | null> {
+  const [pda] = await findAccordStatePda({});
+  const maybe = await fetchMaybeAccordState(rpc, pda);
+  if (maybe.exists) return maybe as Account<AccordState>;
   return null;
 }
 

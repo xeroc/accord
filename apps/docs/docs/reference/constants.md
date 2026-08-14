@@ -32,7 +32,7 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 | `SEED_ROUND`          | `b"round"`     | `Round`                  |
 | `SEED_PENDING_UPDATE` | `b"update"`    | `PendingUpdate`          |
 | `SEED_APPEAL_BOND`    | `b"bond"`      | `AppealBond`             |
-| `SEED_PAUSE`          | `b"pause"`     | `PauseState` (singleton) |
+| `SEED_ACCORD_STATE`          | `b"state"`     | `AccordState` (singleton) |
 
 > `SEED_SNAPSHOT` (`b"snapshot"`) is removed — there is no `Snapshot` account ([ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)).
 

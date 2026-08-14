@@ -13,7 +13,7 @@
 // appeal economics (bond custody, flip→refund, no-flip→forfeit + coherent-pool
 // split) are unchanged by ADR-0012 — they live in finalize_dispute.
 //
-// Serial (global time-warp + PauseState singleton). Multi-signer: per-juror
+// Serial (global time-warp + AccordState singleton). Multi-signer: per-juror
 // Accord facades (stake/commit/reveal need the juror keypair); permissionless
 // cranks + appellant reuse env.payer.
 import {
@@ -37,7 +37,7 @@ import {
   proofFor,
   findAppealBondPda,
   findJurorStakePda,
-  findPauseStatePda,
+  findAccordStatePda,
   findRoundPda,
   getAppealBondDecoder,
   getDisputeDecoder,
@@ -191,7 +191,7 @@ interface World {
   env: TestEnv;
   mint: Address;
   subaccord: Address;
-  pauseState: Address;
+  accordState: Address;
   vault: Address;
   payerAta: Address;
   dispute: Address;
@@ -340,9 +340,9 @@ async function buildWorldResolved0(
   env: TestEnv,
   opts: { maxAppeals: number; round0Result: number },
 ): Promise<World & { round0: Address; round0JurorStakes: Address[] }> {
-  // PauseState singleton — init once per surfnet session if absent.
-  const [pauseState] = await findPauseStatePda();
-  if (!(await rawAccount(env, pauseState))) {
+  // AccordState singleton — init once per surfnet session if absent.
+  const [accordState] = await findAccordStatePda();
+  if (!(await rawAccount(env, accordState))) {
     const { instruction } = await initializePause(
       env.accord.adapter,
       env.programId,
@@ -391,7 +391,7 @@ async function buildWorldResolved0(
         {
           juror: signer.address,
           subaccord,
-          pauseState,
+          accordState,
           jurorStake,
           stakingToken: mint,
           jurorTokenAccount: jurorAta,
@@ -422,7 +422,7 @@ async function buildWorldResolved0(
       feeToken: mint,
       filerTokenAccount: payerAta,
       feeVault: vault,
-      pauseState,
+      accordState,
     },
     {
       options: [randomBytes32(), randomBytes32()],
@@ -449,7 +449,7 @@ async function buildWorldResolved0(
     env,
     mint,
     subaccord,
-    pauseState,
+    accordState,
     vault,
     payerAta,
     dispute,
@@ -479,7 +479,7 @@ function appealAccounts(w: World & { round0: Address }, appealBond: Address) {
   return {
     appellant: w.env.payer.address,
     subaccord: w.subaccord,
-    pauseState: w.pauseState,
+    accordState: w.accordState,
     dispute: w.dispute,
     round: w.round0,
     appealBond,

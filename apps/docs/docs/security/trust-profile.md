@@ -61,7 +61,7 @@ same path used to audit the accumulator root ([0012](https://github.com/xeroc/ac
 trust_profile:
   authority: <pubkey> # ADR-0005 rule-setter (48h timelock)
   upgrade_authority: <pubkey | null> # ADR-0007; multisig until post-audit freeze (null)
-  paused: <bool> # PauseState singleton
+  paused: <bool> # AccordState singleton
   juror_admission: key_pseudonymous # NOT identity-verified humans (ADR-0001)
   staking_token: <mint> # collateral (ADR-0002/0020)
   fee_token: <mint> # compensation — fees + bonds (ADR-0020)
