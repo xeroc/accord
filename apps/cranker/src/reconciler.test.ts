@@ -3,10 +3,13 @@
  *
  * The dispute + round fetchers are injected, so the cycle runs with no validator.
  * Covers: terminal skip, current-round resolution, prior-round settlement scan,
- * per-dispatch-handler invocation, and unhandled-action logging.
+ * per-dispatch-handler invocation, unhandled-action logging, and the Canon
+ * item phase (bean accord-7fj6: advance_pending / settle_item /
+ * advance_withdrawal).
  */
 import { test, expect } from "bun:test";
 import { address, type Account } from "@solana/kit";
+import { ItemState, type CanonItem, type CanonList } from "@useaccord/canon";
 import {
   Accord,
   Aggregation,
@@ -124,6 +127,8 @@ function config(
     slot: async () => 0n,
     fetchAccordState: async () => null,
     fetchReclaimableSlots: async () => [],
+    fetchCanonItems: async () => [],
+    fetchCanonLists: async () => [],
     ...over,
   };
 }
@@ -259,4 +264,140 @@ test("reconcileOnce returns the count of handled actions across multiple dispute
   // Created → request_vrf (handled); RedrawEligible → redraw (no handler);
   // Closed skipped. Only one handler ran.
   expect(fired).toBe(1);
+});
+
+// --- Canon item phase (bean accord-7fj6) -----------------------------------
+
+const CANON_ITEM_ADDR = address("Canon11111111111111111111111111111111111111");
+const CANON_LIST_ADDR = address("List111111111111111111111111111111111111111");
+const WINDOW = 432_000n; // 5 days, matches the fixtures below
+
+function canonList(over: Partial<CanonList> = {}): CanonList {
+  return {
+    discriminator: new Uint8Array(8),
+    creator: address("11111111111111111111111111111111"),
+    stakeMint: address("11111111111111111111111111111111"),
+    feeMint: address("11111111111111111111111111111111"),
+    listProgram: address("11111111111111111111111111111111"),
+    rulesHash: Z32,
+    subaccord: address("11111111111111111111111111111111"),
+    submitDeposit: 500n,
+    challengePct: 5_000,
+    listingWindow: WINDOW,
+    withdrawalTimelock: WINDOW,
+    authority: CANON_LIST_ADDR,
+    itemCount: 1,
+    disputeCount: 0n,
+    bump: 0,
+    ...over,
+  };
+}
+
+function canonItem(over: Partial<CanonItem> = {}): CanonItem {
+  return {
+    discriminator: new Uint8Array(8),
+    account: address("11111111111111111111111111111111"),
+    list: CANON_LIST_ADDR,
+    submitter: address("11111111111111111111111111111111"),
+    state: ItemState.Pending,
+    accumulatedStake: 500n,
+    submittedAt: 0n,
+    challengeCount: 0,
+    activeDispute: address("11111111111111111111111111111111"),
+    challenger: address("11111111111111111111111111111111"),
+    challengeStake: 0n,
+    challengedAt: 0n,
+    withdrawalRequestedAt: { __option: "None" },
+    bump: 0,
+    ...over,
+  };
+}
+
+test("canon: Pending item past listing_window → advance_pending dispatched", async () => {
+  const { d, calls } = recordingDispatch({ advance_pending: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      now: () => WINDOW, // submittedAt 0 + window → elapsed
+      fetchCanonItems: async () => [
+        {
+          address: CANON_ITEM_ADDR,
+          data: canonItem({ state: ItemState.Pending }),
+        } as Account<CanonItem>,
+      ],
+      fetchCanonLists: async () => [
+        { address: CANON_LIST_ADDR, data: canonList() } as Account<CanonList>,
+      ],
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "advance_pending", item: CANON_ITEM_ADDR }]);
+});
+
+test("canon: Disputed item whose dispute is Final → settle_item; open dispute → nothing", async () => {
+  const { d, calls } = recordingDispatch({ settle_item: async () => {} });
+  const finalDispute = dispute({ state: DisputeState.Final });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [
+        { address: D_ADDR, data: finalDispute } as unknown as Account<Dispute>,
+      ],
+      fetchRound: async () => null,
+      fetchCanonItems: async () => [
+        // activeDispute = D_ADDR (Final) → settle
+        {
+          address: CANON_ITEM_ADDR,
+          data: canonItem({ state: ItemState.Disputed, activeDispute: D_ADDR }),
+        } as Account<CanonItem>,
+        // activeDispute unknown to the cycle → not final → nothing
+        {
+          address: CANON_ITEM_ADDR,
+          data: canonItem({ state: ItemState.Disputed, activeDispute: R_ADDR }),
+        } as Account<CanonItem>,
+      ],
+      fetchCanonLists: async () => [
+        { address: CANON_LIST_ADDR, data: canonList() } as Account<CanonList>,
+      ],
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "settle_item", item: CANON_ITEM_ADDR }]);
+});
+
+test("canon: WithdrawPending past timelock → advance_withdrawal; item without list skipped", async () => {
+  const { d, calls } = recordingDispatch({ advance_withdrawal: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      now: () => WINDOW + 1n,
+      fetchCanonItems: async () => [
+        {
+          address: CANON_ITEM_ADDR,
+          data: canonItem({
+            state: ItemState.WithdrawPending,
+            withdrawalRequestedAt: { __option: "Some", value: 1n },
+          }),
+        } as Account<CanonItem>,
+        // list missing from the list fetch → skipped, no crash
+        {
+          address: CANON_ITEM_ADDR,
+          data: canonItem({
+            list: R_ADDR,
+            state: ItemState.WithdrawPending,
+            withdrawalRequestedAt: { __option: "Some", value: 1n },
+          }),
+        } as Account<CanonItem>,
+      ],
+      fetchCanonLists: async () => [
+        { address: CANON_LIST_ADDR, data: canonList() } as Account<CanonList>,
+      ],
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "advance_withdrawal", item: CANON_ITEM_ADDR }]);
 });

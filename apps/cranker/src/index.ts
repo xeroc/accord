@@ -42,12 +42,15 @@ import { register as registerRedraw } from "./cranks/redraw.js";
 import { register as registerRequestVrf } from "./cranks/request-vrf.js";
 import { register as registerSettleRound } from "./cranks/settle-round.js";
 import { loadCrankerWallet } from "./wallet.js";
+import { register as registerAdvancePending } from "./cranks/advance-pending.js";
+import { register as registerAdvanceWithdrawal } from "./cranks/advance-withdrawal.js";
+import { register as registerSettleItem } from "./cranks/settle-item.js";
 
 function log(msg: string, fields: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ msg, ...fields }));
 }
 
-/** Build a dispatch with all 10 cranks registered. */
+/** Build a dispatch with every crank registered (11 Accord + 3 Canon). */
 function fullDispatch() {
   const d = createCrankDispatch();
   registerRequestVrf(d);
@@ -61,6 +64,9 @@ function fullDispatch() {
   registerExecuteUnpause(d);
   registerReclaimSlot(d);
   registerClaimRefund(d);
+  registerAdvancePending(d);
+  registerSettleItem(d);
+  registerAdvanceWithdrawal(d);
   return d;
 }
 

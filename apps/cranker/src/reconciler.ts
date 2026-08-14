@@ -40,8 +40,16 @@ import {
   type PendingUpdate,
   type Round,
 } from "@useaccord/sdk";
+import {
+  findAllCanonItems as defaultFetchCanonItems,
+  findAllCanonLists as defaultFetchCanonLists,
+  ItemState,
+  type CanonItem,
+  type CanonList,
+} from "@useaccord/canon";
 
-import type { CrankAction, CrankContext, CrankKind } from "./dispatch.js";
+import { resolveCanonAction } from "./canon-state.js";
+import type { CrankAction, CrankContext, CrankDispatch, CrankKind } from "./dispatch.js";
 import type { CrankAction as ResolveAction } from "./state.js";
 import { sendIx } from "./send.js";
 import { resolveNextAction } from "./state.js";
@@ -52,7 +60,7 @@ export interface ReconcilerConfig {
   accord: Accord;
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   wallet: CrankerWallet;
-  dispatch: import("./dispatch.js").CrankDispatch;
+  dispatch: CrankDispatch;
   /** VRF oracle accounts (request_vrf CPI extras). */
   oracleQueue: Address;
   programIdentity: Address;
@@ -65,6 +73,10 @@ export interface ReconcilerConfig {
   fetchDisputes?: () => Promise<Account<Dispute>[]>;
   /** Override the round fetch (tests). Defaults to the SDK round PDA read. */
   fetchRound?: (dispute: Address, roundIdx: number) => Promise<Account<Round> | null>;
+  /** Override the Canon item scan (tests). Defaults to `findAllCanonItems(rpc)`. */
+  fetchCanonItems?: () => Promise<Account<CanonItem>[]>;
+  /** Override the Canon list scan (tests). Defaults to `findAllCanonLists(rpc)`. */
+  fetchCanonLists?: () => Promise<Account<CanonList>[]>;
   /** Override the pending-update scan (tests). Defaults to `findAllPendingUpdates(rpc)`. */
   fetchPendingUpdates?: () => Promise<Account<PendingUpdate>[]>;
   /** Slot clock for timelock cranks (execute_update, execute_unpause). Defaults to `rpc.getSlot()`. */
@@ -109,6 +121,8 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     slot = async () => BigInt((await accord.rpc.getSlot().send()).valueOf()),
     fetchAccordState = async () => fetchAccordStateAccount(accord.rpc),
     fetchReclaimableSlots = async () => scanReclaimableSlots(accord.rpc),
+    fetchCanonItems = () => defaultFetchCanonItems(accord.rpc),
+    fetchCanonLists = () => defaultFetchCanonLists(accord.rpc),
   } = config;
 
   const rpc = accord.rpc;
@@ -178,6 +192,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       oracleQueue,
       programIdentity,
       sendIx: send,
+      signer: wallet.signer,
       log: ctxLog,
       dispute,
       round,
@@ -200,6 +215,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     cranker: wallet.address,
     oracleQueue,
     programIdentity,
+    signer: wallet.signer,
     sendIx: send,
     log: ctxLog,
     rpc,
@@ -240,6 +256,30 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     };
     const handled = await dispatch.execute(baseCtx, action);
     if (handled) fired++;
+  }
+
+  // --- Phase 5: Canon item cranks (advance_pending / settle_item /
+  //     advance_withdrawal) ---
+  // Scan every CanonItem, resolve against its CanonList (windows live on the
+  // list), and settle only once the item's Accord dispute is Final — dispute
+  // finality is read from the Phase-1 Dispute scan (no extra fetch).
+  const canonItems = await fetchCanonItems();
+  if (canonItems.length > 0) {
+    const canonLists = new Map((await fetchCanonLists()).map((l) => [l.address.toString(), l]));
+    const disputeByAddr = new Map(disputes.map((d) => [d.address.toString(), d]));
+    for (const item of canonItems) {
+      const list = canonLists.get(item.data.list.toString());
+      if (list === undefined) continue;
+      const disputeFinal =
+        item.data.state === ItemState.Disputed &&
+        disputeByAddr.get(item.data.activeDispute.toString())?.data.state === DisputeState.Final;
+      const resolved = resolveCanonAction(item.data, list.data, disputeFinal, t);
+      if (resolved === null) continue;
+      const action: CrankAction = { kind: resolved.kind, item: item.address };
+      const handled = await dispatch.execute(baseCtx, action);
+      log("crank action", { item: item.address, action: action.kind, handled });
+      if (handled) fired++;
+    }
   }
 
   return fired;

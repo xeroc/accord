@@ -26,12 +26,14 @@ import type {
   RpcSubscriptions,
   SolanaRpcApi,
   SolanaRpcSubscriptionsApi,
+  TransactionSigner,
 } from "@solana/kit";
-
 /**
- * Every crank kind. The nine non-draw permissionless cranks (bean accord-g5lm)
- * plus `draw_seat` (bean accord-7sky — needs the MST tree cache + per-seat
- * Merkle proofs, lives in its own epic).
+ * Every crank kind. The nine non-draw permissionless Accord cranks (bean
+ * accord-g5lm) plus `draw_seat` (bean accord-7sky — needs the MST tree cache +
+ * per-seat Merkle proofs) and the three Canon item cranks (bean accord-7fj6:
+ * `advance_pending` / `settle_item` / `advance_withdrawal` over the Canon
+ * program's own account family).
  */
 export type CrankKind =
   | "request_vrf"
@@ -44,7 +46,10 @@ export type CrankKind =
   | "execute_update"
   | "execute_unpause"
   | "claim_refund"
-  | "reclaim_slot";
+  | "reclaim_slot"
+  | "advance_pending"
+  | "settle_item"
+  | "advance_withdrawal";
 
 /**
  * Discriminated action payload. `draw_seat.seat`, `settle_round.roundIdx`, and
@@ -56,7 +61,9 @@ export type CrankKind =
  * cancel_dispute/redraw); the reconciler stamps the dispute address before
  * dispatch. The slot-timelock + refund cranks (execute_update/execute_unpause/
  * claim_refund) are emitted by their own resolvers over different account
- * families (PendingUpdate / AccordState / AppealBond).
+ * families (PendingUpdate / AccordState / AppealBond). The Canon cranks
+ * (canon-state.ts) key off the item PDA — every other account (list, dispute,
+ * vault, payee ATAs) is derived from on-chain state by the executor.
  */
 export type CrankAction =
   | { kind: "request_vrf"; dispute: Address }
@@ -69,7 +76,10 @@ export type CrankAction =
   | { kind: "execute_update"; subaccord: Address }
   | { kind: "execute_unpause" }
   | { kind: "claim_refund"; dispute: Address; roundIdx: number }
-  | { kind: "reclaim_slot"; subaccord: Address; jurorStake: Address };
+  | { kind: "reclaim_slot"; subaccord: Address; jurorStake: Address }
+  | { kind: "advance_pending"; item: Address }
+  | { kind: "settle_item"; item: Address }
+  | { kind: "advance_withdrawal"; item: Address };
 
 /** Extract a single crank action variant by kind (for executor signatures). */
 export type ActionOf<K extends CrankKind> = Extract<CrankAction, { kind: K }>;
@@ -90,6 +100,8 @@ export interface CrankContext {
   /** VRF oracle accounts (request_vrf CPI extras). */
   readonly oracleQueue: Address;
   readonly programIdentity: Address;
+  /** The cranker's transaction signer (Canon SDK instruction callers). */
+  readonly signer: TransactionSigner;
   /**
    * Send one instruction as one tx, with retry + priority-fee escalation on
    * send failure. Returns the signature. Simulation failures throw and are

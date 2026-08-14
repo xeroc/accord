@@ -44,6 +44,7 @@ export {
   fetchMaybeCanonList,
   fetchMaybeCanonItem,
 } from "./generated/accounts/index.js";
+export { findAllCanonLists, findAllCanonItems, type QueryConfig } from "./queries.js";
 export {
   createList,
   submitItem,

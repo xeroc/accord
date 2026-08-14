@@ -21,6 +21,9 @@ import { register as registerExecuteUnpause } from "./cranks/execute-unpause.js"
 import { register as registerClaimRefund } from "./cranks/claim-refund.js";
 import { register as registerReclaimSlot } from "./cranks/reclaim-slot.js";
 import { registerDrawSeatCrank } from "./cranks/draw-seat.js";
+import { register as registerAdvancePending } from "./cranks/advance-pending.js";
+import { register as registerSettleItem } from "./cranks/settle-item.js";
+import { register as registerAdvanceWithdrawal } from "./cranks/advance-withdrawal.js";
 
 const ALL_KINDS: CrankKind[] = [
   "request_vrf",
@@ -33,6 +36,10 @@ const ALL_KINDS: CrankKind[] = [
   "execute_update",
   "claim_refund",
   "reclaim_slot",
+  "execute_unpause",
+  "advance_pending",
+  "settle_item",
+  "advance_withdrawal",
 ];
 
 /** Build a dispatch with every crank registered — the production wiring. */
@@ -49,6 +56,9 @@ function fullDispatch() {
   registerExecuteUnpause(d);
   registerClaimRefund(d);
   registerReclaimSlot(d);
+  registerAdvancePending(d);
+  registerSettleItem(d);
+  registerAdvanceWithdrawal(d);
   return d;
 }
 
