@@ -142,8 +142,9 @@ fn setup(withdrawal_timelock: u64) -> TestEnv {
         challenge_pct: DEFAULT_CHALLENGE_PCT_BPS,
         listing_window: 0, // immediately past so make_listed works
         withdrawal_timelock,
-        authority: Pubkey::default(),
+        authority: list_addr,
         item_count: 0,
+        dispute_count: 0,
         bump: list_bump,
     };
     let mut buf = Vec::new();

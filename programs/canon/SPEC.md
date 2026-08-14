@@ -35,7 +35,7 @@ staking.
 
 | # | Instruction | Semantics |
 | --- | --- | --- |
-| 1 | `create_list(stake_mint, fee_mint, list_program, risk_type)` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
+| 1 | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
 | 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
 | 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
 | 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
@@ -84,9 +84,12 @@ LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdra
 Each Canon list's params live on its 1:1 backing Subaccord (per-list, not
 global). They are initialized to the Canon defaults below, **controlled by the
 Subaccord authority (NOT the list creator)**, and retunable via the 48h
-propose/execute timelock (ADR-0005); `authority = Pubkey::default()` ⇒
-immutable. For v1, Canon sets the authority to the Canon governance multisig
-(retunable) at `create_list`.
+propose/execute timelock (ADR-0005). `create_list` sets the authority to the
+**CanonList PDA itself** — no external governance key exists yet, and the PDA
+keeps the court as immutable as `Pubkey::default()` until canon ships a gated
+retuning instruction (not yet implemented) that CPIs
+`propose/execute_subaccord_update` with the list PDA as `invoke_signed`
+signer.
 
 | param | v1 value | notes |
 | --- | --- | --- |

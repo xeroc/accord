@@ -35,7 +35,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findPauseStatePda } from "../pdas";
+import { findAccordStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 export const EXECUTE_UNPAUSE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array(
@@ -51,7 +51,7 @@ export function getExecuteUnpauseDiscriminatorBytes(): ReadonlyUint8Array {
 export type ExecuteUnpauseInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountCaller extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -61,9 +61,9 @@ export type ExecuteUnpauseInstruction<
         ? WritableSignerAccount<TAccountCaller> &
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
-      TAccountPauseState extends string
-        ? WritableAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? WritableAccount<TAccountAccordState>
+        : TAccountAccordState,
       ...TRemainingAccounts,
     ]
   >;
@@ -99,25 +99,29 @@ export function getExecuteUnpauseInstructionDataCodec(): FixedSizeCodec<
 
 export type ExecuteUnpauseAsyncInput<
   TAccountCaller extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
 > = {
   /**
    * Any cranker pays the tx fee; no authority check on execute (ADR-0007:
    * the notice period, not the signer, gates the unpause).
    */
   caller: TransactionSigner<TAccountCaller>;
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
 };
 
 export async function getExecuteUnpauseInstructionAsync<
   TAccountCaller extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: ExecuteUnpauseAsyncInput<TAccountCaller, TAccountPauseState>,
+  input: ExecuteUnpauseAsyncInput<TAccountCaller, TAccountAccordState>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  ExecuteUnpauseInstruction<TProgramAddress, TAccountCaller, TAccountPauseState>
+  ExecuteUnpauseInstruction<
+    TProgramAddress,
+    TAccountCaller,
+    TAccountAccordState
+  >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -125,7 +129,7 @@ export async function getExecuteUnpauseInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -133,48 +137,48 @@ export async function getExecuteUnpauseInstructionAsync<
   >;
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta("caller", accounts.caller),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
     ],
     data: getExecuteUnpauseInstructionDataEncoder().encode({}),
     programAddress,
   } as ExecuteUnpauseInstruction<
     TProgramAddress,
     TAccountCaller,
-    TAccountPauseState
+    TAccountAccordState
   >);
 }
 
 export type ExecuteUnpauseInput<
   TAccountCaller extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
 > = {
   /**
    * Any cranker pays the tx fee; no authority check on execute (ADR-0007:
    * the notice period, not the signer, gates the unpause).
    */
   caller: TransactionSigner<TAccountCaller>;
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
 };
 
 export function getExecuteUnpauseInstruction<
   TAccountCaller extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: ExecuteUnpauseInput<TAccountCaller, TAccountPauseState>,
+  input: ExecuteUnpauseInput<TAccountCaller, TAccountAccordState>,
   config?: { programAddress?: TProgramAddress },
 ): ExecuteUnpauseInstruction<
   TProgramAddress,
   TAccountCaller,
-  TAccountPauseState
+  TAccountAccordState
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -182,7 +186,7 @@ export function getExecuteUnpauseInstruction<
   // Original accounts.
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -193,14 +197,14 @@ export function getExecuteUnpauseInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("caller", accounts.caller),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
     ],
     data: getExecuteUnpauseInstructionDataEncoder().encode({}),
     programAddress,
   } as ExecuteUnpauseInstruction<
     TProgramAddress,
     TAccountCaller,
-    TAccountPauseState
+    TAccountAccordState
   >);
 }
 
@@ -215,7 +219,7 @@ export type ParsedExecuteUnpauseInstruction<
      * the notice period, not the signer, gates the unpause).
      */
     caller: TAccountMetas[0];
-    pauseState: TAccountMetas[1];
+    accordState: TAccountMetas[1];
   };
   data: ExecuteUnpauseInstructionData;
 };
@@ -245,7 +249,7 @@ export function parseExecuteUnpauseInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { caller: getNextAccount(), pauseState: getNextAccount() },
+    accounts: { caller: getNextAccount(), accordState: getNextAccount() },
     data: getExecuteUnpauseInstructionDataDecoder().decode(instruction.data),
   };
 }

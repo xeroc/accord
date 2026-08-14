@@ -1,6 +1,6 @@
 # Circuit Breaker
 
-`PauseState` singleton (`["pause"]`). Instant freeze, timelocked recovery.
+`AccordState` singleton (`["state"]`). Instant freeze, timelocked recovery.
 
 ## Surface
 

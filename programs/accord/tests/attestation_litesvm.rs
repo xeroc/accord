@@ -16,7 +16,7 @@
 //! program as owner and the confirmed variable-length layout (see
 //! `sas_layout` in lib.rs). Run via `make test_unit`.
 
-use accord::constants::{SEED_JUROR_STAKE, SEED_PAUSE, SEED_SUBACCORD, WITHDRAWAL_DELAY};
+use accord::constants::{SEED_JUROR_STAKE, WITHDRAWAL_DELAY};
 use accord::state::{
     Aggregation, CreateSubaccordParams, JurorStake, MSTNode, ShortfallPolicy, Subaccord,
 };
@@ -190,11 +190,11 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
 }
 
 fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    Pubkey::find_program_address(&[SEED_SUBACCORD, creator.as_ref(), risk_type], &ID).0
+    accord::subaccord_pda(creator, risk_type).0
 }
 
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[SEED_PAUSE], &ID).0
+    accord::accord_state_pda().0
 }
 
 // ─── SAS attestation fabrication ────────────────────────────────────────────
@@ -306,7 +306,7 @@ fn setup(gated: bool) -> Env {
         .program()
         .accounts(accounts::InitializePause {
             authority: creator.pubkey(),
-            pause_state: pause,
+            accord_state: pause,
             system_program: system_program::ID,
         })
         .args(instruction::InitializePause {})
@@ -411,7 +411,7 @@ fn do_stake(
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             juror_stake: js,
             staking_token: env.mint,
             juror_token_account: jata,
@@ -586,7 +586,7 @@ fn do_stake_gated_recycled(
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             juror_stake: js,
             staking_token: env.mint,
             juror_token_account: jata,
@@ -650,7 +650,7 @@ fn create_rejects_half_bound_credential() {
         .program()
         .accounts(accounts::InitializePause {
             authority: creator.pubkey(),
-            pause_state: pause,
+            accord_state: pause,
             system_program: system_program::ID,
         })
         .args(instruction::InitializePause {})

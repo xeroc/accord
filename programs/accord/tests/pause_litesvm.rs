@@ -16,7 +16,7 @@
 #![cfg(feature = "no-entrypoint")]
 
 use accord::constants::UNPAUSE_TIMELOCK_SLOTS;
-use accord::state::PauseState;
+use accord::state::AccordState;
 use accord::{accounts, instruction, ID};
 use anchor_lang::AccountDeserialize;
 use anchor_litesvm::AnchorLiteSVM;
@@ -33,7 +33,7 @@ fn load_program() -> Vec<u8> {
 }
 
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[b"pause"], &ID).0
+    accord::accord_state_pda().0
 }
 
 /// Fresh context + a funded authority + a funded attacker.
@@ -50,9 +50,9 @@ fn setup() -> (anchor_litesvm::AnchorContext, Keypair, Keypair) {
     (svm, authority, attacker)
 }
 
-fn read_pause(svm: &anchor_litesvm::AnchorContext) -> PauseState {
+fn read_pause(svm: &anchor_litesvm::AnchorContext) -> AccordState {
     let acc = svm.svm.get_account(&pause_pda()).expect("pause PDA exists");
-    PauseState::try_deserialize(&mut &acc.data[..]).unwrap()
+    AccordState::try_deserialize(&mut &acc.data[..]).unwrap()
 }
 
 /// Init the singleton with `authority` as the pause authority. Returns a ready ctx.
@@ -61,7 +61,7 @@ fn init(svm: &mut anchor_litesvm::AnchorContext, authority: &Keypair) {
         .program()
         .accounts(accounts::InitializePause {
             authority: authority.pubkey(),
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             system_program: anchor_lang::system_program::ID,
         })
         .args(instruction::InitializePause {})
@@ -84,7 +84,7 @@ fn full_pause_unpause_flow() {
         .program()
         .accounts(accounts::Pause {
             authority: authority.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::Pause {})
         .instruction()
@@ -104,7 +104,7 @@ fn full_pause_unpause_flow() {
         .program()
         .accounts(accounts::ProposeUnpause {
             authority: authority.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::ProposeUnpause {})
         .instruction()
@@ -123,7 +123,7 @@ fn full_pause_unpause_flow() {
         .program()
         .accounts(accounts::ExecuteUnpause {
             caller: authority.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::ExecuteUnpause {})
         .instruction()
@@ -142,7 +142,7 @@ fn full_pause_unpause_flow() {
         .program()
         .accounts(accounts::ExecuteUnpause {
             caller: authority.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::ExecuteUnpause {})
         .instruction()
@@ -165,7 +165,7 @@ fn non_authority_cannot_pause() {
         .program()
         .accounts(accounts::Pause {
             authority: attacker.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::Pause {})
         .instruction()
@@ -189,7 +189,7 @@ fn double_pause_fails() {
         .program()
         .accounts(accounts::Pause {
             authority: authority.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::Pause {})
         .instruction()
@@ -212,7 +212,7 @@ fn propose_unpause_while_unpaused_fails() {
         .program()
         .accounts(accounts::ProposeUnpause {
             authority: authority.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::ProposeUnpause {})
         .instruction()

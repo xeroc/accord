@@ -91,8 +91,11 @@ export type CanonList = {
   /** Seconds the `WithdrawPending` fraud-challenge window stays open. */
   withdrawalTimelock: bigint;
   /**
-   * Canon governance multisig (set at `create_list`); passed as the backing
-   * Subaccord's authority so it controls dispute-param retuning.
+   * The CanonList PDA itself (set at `create_list`); also passed as the
+   * backing Subaccord's authority, so dispute-param retuning can only flow
+   * through a canon instruction CPIing `propose_subaccord_update` with the
+   * list PDA as signer (not yet implemented). `CanonList.authority`
+   * mirrors it for display/traceability.
    */
   authority: Address;
   /**
@@ -100,6 +103,15 @@ export type CanonList = {
    * guarantee; monotonic, never decremented).
    */
   itemCount: number;
+  /**
+   * Count of disputes ever filed by this list — the Accord filer-nonce for
+   * the dispute PDA `["dispute", list, dispute_count]` (monotonic, never
+   * decremented). Per-LIST, not per-item: the filer is the CanonList PDA,
+   * so a per-item counter would collide (two items challenged for the
+   * first time would derive the same PDA and the second `create_dispute`
+   * would hit an already-initialized account).
+   */
+  disputeCount: bigint;
   bump: number;
 };
 
@@ -142,8 +154,11 @@ export type CanonListArgs = {
   /** Seconds the `WithdrawPending` fraud-challenge window stays open. */
   withdrawalTimelock: number | bigint;
   /**
-   * Canon governance multisig (set at `create_list`); passed as the backing
-   * Subaccord's authority so it controls dispute-param retuning.
+   * The CanonList PDA itself (set at `create_list`); also passed as the
+   * backing Subaccord's authority, so dispute-param retuning can only flow
+   * through a canon instruction CPIing `propose_subaccord_update` with the
+   * list PDA as signer (not yet implemented). `CanonList.authority`
+   * mirrors it for display/traceability.
    */
   authority: Address;
   /**
@@ -151,6 +166,15 @@ export type CanonListArgs = {
    * guarantee; monotonic, never decremented).
    */
   itemCount: number;
+  /**
+   * Count of disputes ever filed by this list — the Accord filer-nonce for
+   * the dispute PDA `["dispute", list, dispute_count]` (monotonic, never
+   * decremented). Per-LIST, not per-item: the filer is the CanonList PDA,
+   * so a per-item counter would collide (two items challenged for the
+   * first time would derive the same PDA and the second `create_dispute`
+   * would hit an already-initialized account).
+   */
+  disputeCount: number | bigint;
   bump: number;
 };
 
@@ -171,6 +195,7 @@ export function getCanonListEncoder(): FixedSizeEncoder<CanonListArgs> {
       ["withdrawalTimelock", getU64Encoder()],
       ["authority", getAddressEncoder()],
       ["itemCount", getU32Encoder()],
+      ["disputeCount", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CANON_LIST_DISCRIMINATOR }),
@@ -193,6 +218,7 @@ export function getCanonListDecoder(): FixedSizeDecoder<CanonList> {
     ["withdrawalTimelock", getU64Decoder()],
     ["authority", getAddressDecoder()],
     ["itemCount", getU32Decoder()],
+    ["disputeCount", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -256,5 +282,5 @@ export async function fetchAllMaybeCanonList(
 }
 
 export function getCanonListSize(): number {
-  return 263;
+  return 271;
 }

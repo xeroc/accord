@@ -125,20 +125,13 @@ fn user_ata(user: &Pubkey, mint: &Pubkey) -> Pubkey {
     get_associated_token_address_with_program_id(user, mint, &TOKEN_PROGRAM_ID)
 }
 fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[accord::SEED_SUBACCORD, creator.as_ref(), risk_type],
-        &accord::ID,
-    )
+    accord::subaccord_pda(creator, risk_type)
 }
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[accord::SEED_PAUSE], &accord::ID).0
+    accord::accord_state_pda().0
 }
 fn dispute_pda(filer: &Pubkey, nonce: u64) -> Pubkey {
-    Pubkey::find_program_address(
-        &[accord::SEED_DISPUTE, filer.as_ref(), &nonce.to_le_bytes()],
-        &accord::ID,
-    )
-    .0
+    accord::dispute_pda(filer, nonce).0
 }
 
 struct TestEnv {
@@ -220,13 +213,13 @@ fn setup() -> TestEnv {
         )
         .unwrap();
 
-    // Accord PauseState (unpaused).
+    // AccordState (unpaused).
     let pause = pause_pda();
-    let ps = accord::state::PauseState {
+    let ps = accord::state::AccordState {
         authority: creator.pubkey(),
         paused: false,
         pending_unpause_after: None,
-        bump: Pubkey::find_program_address(&[accord::SEED_PAUSE], &accord::ID).1,
+        bump: accord::accord_state_pda().1,
     };
     let mut buf = Vec::new();
     ps.try_serialize(&mut buf).unwrap();
@@ -261,8 +254,9 @@ fn setup() -> TestEnv {
         challenge_pct: DEFAULT_CHALLENGE_PCT_BPS,
         listing_window: DEFAULT_LISTING_WINDOW_SECS,
         withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
-        authority: Pubkey::default(),
+        authority: list_addr,
         item_count: 0,
+        dispute_count: 0,
         bump: list_bump,
     };
     let mut buf = Vec::new();
@@ -341,11 +335,11 @@ fn do_challenge(
     challenger: &Keypair,
     account: &Pubkey,
     evidence: [u8; 32],
+    dispute: Pubkey,
 ) -> anchor_litesvm::TransactionResult {
     let item = item_pda(&env.list, account);
     let cata = user_ata(&challenger.pubkey(), &env.mint);
     let vata = vault_ata(&env.list, &env.mint);
-    let dispute = dispute_pda(&env.list, 0);
     let pause = pause_pda();
     let fee_vault = vault_ata(&env.subaccord, &env.mint);
     let mut ix = env
@@ -381,6 +375,29 @@ fn read_item(env: &TestEnv, account: &Pubkey) -> CanonItem {
     CanonItem::try_deserialize(&mut &acc.data[..]).unwrap()
 }
 
+/// Plant `CanonList.dispute_count` directly (simulates "n disputes already
+/// filed by this list" without needing a successful CPI).
+fn set_list_dispute_count(env: &mut TestEnv, count: u64) {
+    let acc = env.ctx.svm.get_account(&env.list).expect("list exists");
+    let mut list = CanonList::try_deserialize(&mut &acc.data[..]).unwrap();
+    list.dispute_count = count;
+    let mut buf = Vec::new();
+    list.try_serialize(&mut buf).unwrap();
+    env.ctx
+        .svm
+        .set_account(
+            env.list,
+            SvmAccount {
+                lamports: acc.lamports,
+                data: buf,
+                owner: CANON_ID,
+                executable: false,
+                rent_epoch: acc.rent_epoch,
+            },
+        )
+        .unwrap();
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 /// Happy path: challenge a Pending item. Locks stake + fee, item → Disputed,
@@ -397,7 +414,8 @@ fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
     let challenger = Keypair::new();
     arm_user(&mut env, &challenger, 10_000);
     let evidence = [0xBB; 32];
-    do_challenge(&mut env, &challenger, &curated, evidence).assert_success();
+    let dispute0 = dispute_pda(&env.list, 0);
+    do_challenge(&mut env, &challenger, &curated, evidence, dispute0).assert_success();
 
     let item = read_item(&env, &curated);
     assert_eq!(item.state, ItemState::Disputed);
@@ -405,6 +423,11 @@ fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
     assert_eq!(item.challenge_count, 1);
     let expected_challenge_stake = (DEFAULT_CHALLENGE_PCT_BPS as u64) * env.deposit / 10_000;
     assert_eq!(item.challenge_stake, expected_challenge_stake);
+
+    // The filer-nonce advanced (list-level, not per-item).
+    let acc = env.ctx.svm.get_account(&env.list).expect("list exists");
+    let list = CanonList::try_deserialize(&mut &acc.data[..]).unwrap();
+    assert_eq!(list.dispute_count, 1);
 
     // Dispute created on Accord.
     let dispute_addr = dispute_pda(&env.list, 0);
@@ -431,10 +454,11 @@ fn challenge_item_reverts_if_already_disputed() {
     let curated = submit_item(&mut env, &submitter);
     let challenger = Keypair::new();
     arm_user(&mut env, &challenger, 10_000);
-    do_challenge(&mut env, &challenger, &curated, [0xBB; 32]).assert_success();
+    let dispute0 = dispute_pda(&env.list, 0);
+    do_challenge(&mut env, &challenger, &curated, [0xBB; 32], dispute0).assert_success();
     let challenger2 = Keypair::new();
     arm_user(&mut env, &challenger2, 10_000);
-    let r = do_challenge(&mut env, &challenger2, &curated, [0xCC; 32]);
+    let r = do_challenge(&mut env, &challenger2, &curated, [0xCC; 32], dispute0);
     assert!(!r.is_success(), "challenge on Disputed must revert");
 }
 
@@ -447,7 +471,54 @@ fn challenge_item_reverts_on_insufficient_funds() {
     let curated = submit_item(&mut env, &submitter);
     let challenger = Keypair::new();
     arm_user(&mut env, &challenger, 1);
-    let r = do_challenge(&mut env, &challenger, &curated, [0xDD; 32]);
+    let dispute0 = dispute_pda(&env.list, 0);
+    let r = do_challenge(&mut env, &challenger, &curated, [0xDD; 32], dispute0);
     assert!(!r.is_success(), "insufficient funds must revert");
+    assert_eq!(read_item(&env, &curated).state, ItemState::Pending);
+}
+
+/// Regression: the dispute nonce must be the LIST-level `dispute_count`, not
+/// the item's `challenge_count`. Two items in one list challenged for the
+/// first time used to derive the SAME dispute PDA (`["dispute", list, 0]`);
+/// Accord's `init` would then revert the second challenge forever (the
+/// per-item nonce never advances past the first item's history). Plant
+/// `dispute_count = 1` (one dispute already filed), then challenge a
+/// never-challenged item (`challenge_count = 0`):
+///   - the old per-item derivation (`nonce = 0`) must fail the PDA check;
+///   - the list-scoped derivation (`nonce = 1`) must pass it (the tx still
+///     fails at the known LiteSVM rent-payer CPI limitation — a later,
+///     different failure).
+#[test]
+fn challenge_item_nonces_disputes_per_list_not_per_item() {
+    let mut env = setup();
+    let submitter = Keypair::new();
+    arm_user(&mut env, &submitter, 10_000);
+    let curated = submit_item(&mut env, &submitter);
+    assert_eq!(read_item(&env, &curated).challenge_count, 0);
+    set_list_dispute_count(&mut env, 1);
+
+    let challenger = Keypair::new();
+    arm_user(&mut env, &challenger, 10_000);
+
+    // Old (buggy) per-item derivation → rejected at the PDA check.
+    let per_item = dispute_pda(&env.list, 0);
+    let r = do_challenge(&mut env, &challenger, &curated, [0xEE; 32], per_item);
+    assert!(!r.is_success());
+    assert!(
+        r.has_log("DisputePdaMismatch"),
+        "per-item nonce must fail the PDA check; error: {:?}; logs: {:?}",
+        r.error(),
+        r.logs()
+    );
+
+    // List-scoped derivation → passes the check (fails later, elsewhere).
+    let per_list = dispute_pda(&env.list, 1);
+    let r = do_challenge(&mut env, &challenger, &curated, [0xEF; 32], per_list);
+    assert!(!r.is_success());
+    assert!(
+        !r.has_log("DisputePdaMismatch"),
+        "list-scoped nonce must pass the PDA check"
+    );
+    // Atomic revert: nothing stuck.
     assert_eq!(read_item(&env, &curated).state, ItemState::Pending);
 }

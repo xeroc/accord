@@ -35,7 +35,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findPauseStatePda } from "../pdas";
+import { findAccordStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 export const PAUSE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -49,7 +49,7 @@ export function getPauseDiscriminatorBytes(): ReadonlyUint8Array {
 export type PauseInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -59,9 +59,9 @@ export type PauseInstruction<
         ? WritableSignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
-      TAccountPauseState extends string
-        ? WritableAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? WritableAccount<TAccountAccordState>
+        : TAccountAccordState,
       ...TRemainingAccounts,
     ]
   >;
@@ -95,21 +95,21 @@ export function getPauseInstructionDataCodec(): FixedSizeCodec<
 
 export type PauseAsyncInput<
   TAccountAuthority extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
 };
 
 export async function getPauseInstructionAsync<
   TAccountAuthority extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: PauseAsyncInput<TAccountAuthority, TAccountPauseState>,
+  input: PauseAsyncInput<TAccountAuthority, TAccountAccordState>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  PauseInstruction<TProgramAddress, TAccountAuthority, TAccountPauseState>
+  PauseInstruction<TProgramAddress, TAccountAuthority, TAccountAccordState>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
@@ -117,7 +117,7 @@ export async function getPauseInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -125,48 +125,48 @@ export async function getPauseInstructionAsync<
   >;
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
     ],
     data: getPauseInstructionDataEncoder().encode({}),
     programAddress,
   } as PauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState
+    TAccountAccordState
   >);
 }
 
 export type PauseInput<
   TAccountAuthority extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
 };
 
 export function getPauseInstruction<
   TAccountAuthority extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
-  input: PauseInput<TAccountAuthority, TAccountPauseState>,
+  input: PauseInput<TAccountAuthority, TAccountAccordState>,
   config?: { programAddress?: TProgramAddress },
-): PauseInstruction<TProgramAddress, TAccountAuthority, TAccountPauseState> {
+): PauseInstruction<TProgramAddress, TAccountAuthority, TAccountAccordState> {
   // Program address.
   const programAddress = config?.programAddress ?? ACCORD_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
     keyof typeof originalAccounts,
@@ -177,14 +177,14 @@ export function getPauseInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
     ],
     data: getPauseInstructionDataEncoder().encode({}),
     programAddress,
   } as PauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState
+    TAccountAccordState
   >);
 }
 
@@ -195,7 +195,7 @@ export type ParsedPauseInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
-    pauseState: TAccountMetas[1];
+    accordState: TAccountMetas[1];
   };
   data: PauseInstructionData;
 };
@@ -225,7 +225,7 @@ export function parsePauseInstruction<
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { authority: getNextAccount(), pauseState: getNextAccount() },
+    accounts: { authority: getNextAccount(), accordState: getNextAccount() },
     data: getPauseInstructionDataDecoder().decode(instruction.data),
   };
 }

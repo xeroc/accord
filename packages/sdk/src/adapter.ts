@@ -119,7 +119,7 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         {
           filer: accord.signer,
           subaccord: accounts.subaccord,
-          pauseState: accounts.pauseState,
+          accordState: accounts.accordState,
           dispute: input.disputePda,
           feeToken: accounts.feeToken,
           filerTokenAccount: accounts.filerTokenAccount,
@@ -178,26 +178,26 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       return getInitializePauseInstruction(
         {
           authority: accord.signer,
-          pauseState: input.pauseStatePda,
+          accordState: input.accordStatePda,
         },
         { programAddress: input.programId },
       );
     },
     buildPause(input) {
       return getPauseInstruction(
-        { authority: accord.signer, pauseState: input.pauseState },
+        { authority: accord.signer, accordState: input.accordState },
         { programAddress: input.programId },
       );
     },
     buildProposeUnpause(input) {
       return getProposeUnpauseInstruction(
-        { authority: accord.signer, pauseState: input.pauseState },
+        { authority: accord.signer, accordState: input.accordState },
         { programAddress: input.programId },
       );
     },
     buildExecuteUnpause(input) {
       return getExecuteUnpauseInstruction(
-        { caller: accord.signer, pauseState: input.pauseState },
+        { caller: accord.signer, accordState: input.accordState },
         { programAddress: input.programId },
       );
     },
@@ -214,16 +214,16 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
 
     // ── staking (ADR-0012: path-verified accumulator update) ───────────────
     buildStake(input) {
-      if (!input.accounts.pauseState) {
+      if (!input.accounts.accordState) {
         throw new Error(
-          "StakePausedStateMissing: stake requires the pauseState PDA",
+          "StakePausedStateMissing: stake requires the accordState PDA",
         );
       }
       const ix = getStakeInstruction(
         {
           juror: accord.signer,
           subaccord: input.accounts.subaccord,
-          pauseState: input.accounts.pauseState,
+          accordState: input.accounts.accordState,
           jurorStake: input.accounts.jurorStake,
           stakingToken: input.accounts.stakingToken,
           jurorTokenAccount: input.accounts.jurorTokenAccount,
@@ -544,7 +544,7 @@ function mapCreateSubaccordArgs(
 function mapAppealAccounts(a: AppealAccounts) {
   return {
     subaccord: a.subaccord,
-    pauseState: a.pauseState,
+    accordState: a.accordState,
     dispute: a.dispute,
     round: a.round,
     appealBond: a.appealBond,

@@ -8,14 +8,14 @@
 //
 // The shared adapter hardcodes `accord.signer` (the TestEnv payer) as the pause
 // authority for every lifecycle builder, so the payer is both fee-payer and
-// authority. PauseState is a singleton — a fresh `--db :memory:` surfpool is
+// authority. AccordState is a singleton — a fresh `--db :memory:` surfpool is
 // required so `initializePause` succeeds exactly once.
 import {
   initializePause,
   pause,
   proposeUnpause,
   executeUnpause,
-  getPauseStateDecoder,
+  getAccordStateDecoder,
   UNPAUSE_TIMELOCK_SLOTS,
 } from "@useaccord/sdk";
 
@@ -33,15 +33,15 @@ describe("e2e: lifecycle.pause.timelock (requires Surfpool)", () => {
   it("full pause → propose_unpause → timelock → execute_unpause", async () => {
     if (!env.up) return; // offline CI lane — see AGENTS.md "green rule"
 
-    // ── ensure PauseState exists (idempotent — singleton shared across specs on
+    // ── ensure AccordState exists (idempotent — singleton shared across specs on
     //    one Surfnet; skip init if a sibling already created it) ─────────────
-    const { pauseState } = await initializePause(
+    const { accordState } = await initializePause(
       env.accord.adapter,
       env.programId,
       env.payer.address,
     );
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) {
       const { instruction: initIx } = await initializePause(
@@ -52,27 +52,27 @@ describe("e2e: lifecycle.pause.timelock (requires Surfpool)", () => {
       await env.sendIx(initIx);
     }
     expect(
-      (await fetchDecoded(env, pauseState, getPauseStateDecoder()))!.paused,
+      (await fetchDecoded(env, accordState, getAccordStateDecoder()))!.paused,
     ).toBe(false);
 
     // ── pause: instant emergency freeze ───────────────────────────────────
     await env.sendIx(
-      pause(env.accord.adapter, env.programId, env.payer.address, pauseState),
+      pause(env.accord.adapter, env.programId, env.payer.address, accordState),
     );
     expect(
-      (await fetchDecoded(env, pauseState, getPauseStateDecoder()))!.paused,
+      (await fetchDecoded(env, accordState, getAccordStateDecoder()))!.paused,
     ).toBe(true);
 
     // ── proposeUnpause: arms the 24h notice timelock (pendingUnpauseAfter) ──
     await env.sendIx(
-      proposeUnpause(env.accord.adapter, env.programId, env.payer.address, pauseState),
+      proposeUnpause(env.accord.adapter, env.programId, env.payer.address, accordState),
     );
 
     // ── proposeUnpause: arms the 24h timelock ─────────────────────────────
     const afterPropose = await fetchDecoded(
       env,
-      pauseState,
-      getPauseStateDecoder(),
+      accordState,
+      getAccordStateDecoder(),
     );
     expect(afterPropose).not.toBeNull();
     expect(afterPropose!.paused).toBe(true); // still paused until execute
@@ -83,7 +83,7 @@ describe("e2e: lifecycle.pause.timelock (requires Surfpool)", () => {
       env.accord.adapter,
       env.programId,
       env.payer.address,
-      pauseState,
+      accordState,
     );
     await expect(env.sendIx(execBeforeIx)).rejects.toThrow();
 
@@ -92,12 +92,12 @@ describe("e2e: lifecycle.pause.timelock (requires Surfpool)", () => {
 
     // ── execute AFTER timelock: unpause lands ─────────────────────────────
     await env.sendIx(
-      executeUnpause(env.accord.adapter, env.programId, env.payer.address, pauseState),
+      executeUnpause(env.accord.adapter, env.programId, env.payer.address, accordState),
     );
     const afterExec = await fetchDecoded(
       env,
-      pauseState,
-      getPauseStateDecoder(),
+      accordState,
+      getAccordStateDecoder(),
     );
     expect(afterExec).not.toBeNull();
     expect(afterExec!.paused).toBe(false);

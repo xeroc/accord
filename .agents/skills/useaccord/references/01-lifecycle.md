@@ -121,7 +121,7 @@ SDK: `proposeSubaccordUpdate` → `{ instruction, pendingUpdate }`;
 
 ## Circuit breaker (`initialize_pause` / `pause` / `unpause`)
 
-A global `PauseState` singleton (PDA `["pause"]`). While paused, `create_dispute`
+A global `AccordState` singleton (PDA `["state"]`). While paused, `create_dispute`
 reverts with `ProgramPaused` — staking/withdraw still work. Run `init-pause` once
 per program deployment; the caller becomes the pause authority.
 

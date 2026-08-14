@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { isSome, type ReadonlyUint8Array } from "@solana/kit";
-import { findAppealBondPda, findPauseStatePda } from "@useaccord/sdk";
+import { findAppealBondPda, findAccordStatePda } from "@useaccord/sdk";
 
 import {
   DISPUTE_STATE_LABELS,
@@ -105,7 +105,7 @@ export function DisputeDetail() {
         dispute: dispute.address,
         roundIdx: dispute.data.currentRound,
       });
-      const [pauseState] = await findPauseStatePda();
+      const [accordState] = await findAccordStatePda();
       const feeToken = subaccord.data.feeToken;
       const feeVault = await getAtaAddress(subaccord.address, feeToken);
       const appellantTokenAccount = await getAtaAddress(
@@ -116,7 +116,7 @@ export function DisputeDetail() {
         {
           appellant: env.signer.address,
           subaccord: subaccord.address,
-          pauseState,
+          accordState,
           dispute: dispute.address,
           round: round.address,
           appealBond: appealBondPda,

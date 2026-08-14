@@ -5,7 +5,7 @@
  *   SEED_SUBACCORD = "subaccord"   SEED_DISPUTE = "dispute"
  *   SEED_JUROR_STAKE = "stake"     SEED_ROUND = "round"
  *   SEED_PENDING_UPDATE = "update" SEED_APPEAL_BOND = "bond"
- *   SEED_PAUSE = "pause"
+ *   SEED_ACCORD_STATE = "state"
  *
  * Five of seven PDAs are emitted by Codama into `./generated/pdas/` and
  * re-exported here unchanged. `Round` is hand-written because its on-chain seeds
@@ -44,7 +44,7 @@ export {
   findJurorStakePda,
   type JurorStakeSeeds,
 } from "./generated/pdas/jurorStake";
-export { findPauseStatePda } from "./generated/pdas/pauseState";
+export { findAccordStatePda } from "./generated/pdas/accordState";
 export {
   findPendingUpdatePda,
   type PendingUpdateSeeds,

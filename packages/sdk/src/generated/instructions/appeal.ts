@@ -39,7 +39,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findPauseStatePda } from "../pdas";
+import { findAccordStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 export const APPEAL_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -54,7 +54,7 @@ export type AppealInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountAppellant extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
   TAccountRound extends string | AccountMeta<string> = string,
   TAccountAppealBond extends string | AccountMeta<string> = string,
@@ -79,9 +79,9 @@ export type AppealInstruction<
       TAccountSubaccord extends string
         ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
-      TAccountPauseState extends string
-        ? ReadonlyAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? ReadonlyAccount<TAccountAccordState>
+        : TAccountAccordState,
       TAccountDispute extends string
         ? WritableAccount<TAccountDispute>
         : TAccountDispute,
@@ -150,7 +150,7 @@ export function getAppealInstructionDataCodec(): FixedSizeCodec<
 export type AppealAsyncInput<
   TAccountAppellant extends string = string,
   TAccountSubaccord extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountDispute extends string = string,
   TAccountRound extends string = string,
   TAccountAppealBond extends string = string,
@@ -163,7 +163,7 @@ export type AppealAsyncInput<
 > = {
   appellant: TransactionSigner<TAccountAppellant>;
   subaccord: Address<TAccountSubaccord>;
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
   dispute: Address<TAccountDispute>;
   /**
    * The round just resolved (`dispute.current_round`) — read-only; supplies
@@ -184,7 +184,7 @@ export type AppealAsyncInput<
 export async function getAppealInstructionAsync<
   TAccountAppellant extends string,
   TAccountSubaccord extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountDispute extends string,
   TAccountRound extends string,
   TAccountAppealBond extends string,
@@ -199,7 +199,7 @@ export async function getAppealInstructionAsync<
   input: AppealAsyncInput<
     TAccountAppellant,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
@@ -216,7 +216,7 @@ export async function getAppealInstructionAsync<
     TProgramAddress,
     TAccountAppellant,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
@@ -235,7 +235,7 @@ export async function getAppealInstructionAsync<
   const originalAccounts = {
     appellant: { value: input.appellant ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: false },
+    accordState: { value: input.accordState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
@@ -261,8 +261,8 @@ export async function getAppealInstructionAsync<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
   if (!accounts.appellantTokenAccount.value) {
     accounts.appellantTokenAccount.value = await getProgramDerivedAddress({
@@ -336,7 +336,7 @@ export async function getAppealInstructionAsync<
     accounts: [
       getAccountMeta("appellant", accounts.appellant),
       getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("round", accounts.round),
       getAccountMeta("appealBond", accounts.appealBond),
@@ -355,7 +355,7 @@ export async function getAppealInstructionAsync<
     TProgramAddress,
     TAccountAppellant,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
@@ -371,7 +371,7 @@ export async function getAppealInstructionAsync<
 export type AppealInput<
   TAccountAppellant extends string = string,
   TAccountSubaccord extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountDispute extends string = string,
   TAccountRound extends string = string,
   TAccountAppealBond extends string = string,
@@ -384,7 +384,7 @@ export type AppealInput<
 > = {
   appellant: TransactionSigner<TAccountAppellant>;
   subaccord: Address<TAccountSubaccord>;
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
   dispute: Address<TAccountDispute>;
   /**
    * The round just resolved (`dispute.current_round`) — read-only; supplies
@@ -405,7 +405,7 @@ export type AppealInput<
 export function getAppealInstruction<
   TAccountAppellant extends string,
   TAccountSubaccord extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountDispute extends string,
   TAccountRound extends string,
   TAccountAppealBond extends string,
@@ -420,7 +420,7 @@ export function getAppealInstruction<
   input: AppealInput<
     TAccountAppellant,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
@@ -436,7 +436,7 @@ export function getAppealInstruction<
   TProgramAddress,
   TAccountAppellant,
   TAccountSubaccord,
-  TAccountPauseState,
+  TAccountAccordState,
   TAccountDispute,
   TAccountRound,
   TAccountAppealBond,
@@ -454,7 +454,7 @@ export function getAppealInstruction<
   const originalAccounts = {
     appellant: { value: input.appellant ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: false },
+    accordState: { value: input.accordState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: false },
     appealBond: { value: input.appealBond ?? null, isWritable: true },
@@ -498,7 +498,7 @@ export function getAppealInstruction<
     accounts: [
       getAccountMeta("appellant", accounts.appellant),
       getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("dispute", accounts.dispute),
       getAccountMeta("round", accounts.round),
       getAccountMeta("appealBond", accounts.appealBond),
@@ -517,7 +517,7 @@ export function getAppealInstruction<
     TProgramAddress,
     TAccountAppellant,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountDispute,
     TAccountRound,
     TAccountAppealBond,
@@ -538,7 +538,7 @@ export type ParsedAppealInstruction<
   accounts: {
     appellant: TAccountMetas[0];
     subaccord: TAccountMetas[1];
-    pauseState: TAccountMetas[2];
+    accordState: TAccountMetas[2];
     dispute: TAccountMetas[3];
     /**
      * The round just resolved (`dispute.current_round`) — read-only; supplies
@@ -585,7 +585,7 @@ export function parseAppealInstruction<
     accounts: {
       appellant: getNextAccount(),
       subaccord: getNextAccount(),
-      pauseState: getNextAccount(),
+      accordState: getNextAccount(),
       dispute: getNextAccount(),
       round: getNextAccount(),
       appealBond: getNextAccount(),

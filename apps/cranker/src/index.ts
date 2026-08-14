@@ -30,37 +30,42 @@ import {
 import { createCrankDispatch } from "./dispatch.js";
 import { ProgramAccountListener } from "./listener.js";
 import { reconcileOnce, startReconciler, type ReconcilerConfig } from "./reconciler.js";
-import { register as registerCancelDispute } from "./cranks/cancel-dispute.js";
-import { register as registerClaimRefund } from "./cranks/claim-refund.js";
-import { registerDrawSeatCrank } from "./cranks/draw-seat.js";
-import { register as registerExecuteUnpause } from "./cranks/execute-unpause.js";
-import { register as registerExecuteUpdate } from "./cranks/execute-update.js";
-import { register as registerReclaimSlot } from "./cranks/reclaim-slot.js";
-import { register as registerFinalizeDispute } from "./cranks/finalize-dispute.js";
-import { register as registerFinalizeRound } from "./cranks/finalize-round.js";
-import { register as registerRedraw } from "./cranks/redraw.js";
-import { register as registerRequestVrf } from "./cranks/request-vrf.js";
-import { register as registerSettleRound } from "./cranks/settle-round.js";
+import { register as registerAccordCancelDispute } from "./cranks/accord/cancel-dispute.js";
+import { register as registerAccordClaimRefund } from "./cranks/accord/claim-refund.js";
+import { registerDrawSeatCrank as registerAccordDrawSeat } from "./cranks/accord/draw-seat.js";
+import { register as registerAccordExecuteUnpause } from "./cranks/accord/execute-unpause.js";
+import { register as registerAccordExecuteUpdate } from "./cranks/accord/execute-update.js";
+import { register as registerAccordFinalizeDispute } from "./cranks/accord/finalize-dispute.js";
+import { register as registerAccordFinalizeRound } from "./cranks/accord/finalize-round.js";
+import { register as registerAccordReclaimSlot } from "./cranks/accord/reclaim-slot.js";
+import { register as registerAccordRedraw } from "./cranks/accord/redraw.js";
+import { register as registerAccordRequestVrf } from "./cranks/accord/request-vrf.js";
+import { register as registerAccordSettleRound } from "./cranks/accord/settle-round.js";
+import { register as registerCanonAdvancePending } from "./cranks/canon/advance-pending.js";
+import { register as registerCanonAdvanceWithdrawal } from "./cranks/canon/advance-withdrawal.js";
+import { register as registerCanonSettleItem } from "./cranks/canon/settle-item.js";
 import { loadCrankerWallet } from "./wallet.js";
+import { log } from "./log.js";
 
-function log(msg: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ msg, ...fields }));
-}
-
-/** Build a dispatch with all 10 cranks registered. */
+/** Build a dispatch with every crank registered (11 Accord + 3 Canon). */
 function fullDispatch() {
   const d = createCrankDispatch();
-  registerRequestVrf(d);
-  registerDrawSeatCrank(d);
-  registerFinalizeRound(d);
-  registerFinalizeDispute(d);
-  registerSettleRound(d);
-  registerCancelDispute(d);
-  registerRedraw(d);
-  registerExecuteUpdate(d);
-  registerExecuteUnpause(d);
-  registerReclaimSlot(d);
-  registerClaimRefund(d);
+  // Accord — the host program (dispute lifecycle, timelocks, refunds).
+  registerAccordRequestVrf(d);
+  registerAccordDrawSeat(d);
+  registerAccordFinalizeRound(d);
+  registerAccordFinalizeDispute(d);
+  registerAccordSettleRound(d);
+  registerAccordCancelDispute(d);
+  registerAccordRedraw(d);
+  registerAccordExecuteUpdate(d);
+  registerAccordExecuteUnpause(d);
+  registerAccordReclaimSlot(d);
+  registerAccordClaimRefund(d);
+  // Canon — the Arbitrable guest program (curated-item lifecycle).
+  registerCanonAdvancePending(d);
+  registerCanonSettleItem(d);
+  registerCanonAdvanceWithdrawal(d);
   return d;
 }
 

@@ -104,10 +104,10 @@ export interface AccordMethods {
   ): Instruction;
   initializePause(
     authority: Address,
-  ): Promise<{ instruction: Instruction; pauseState: Address }>;
-  pause(authority: Address, pauseState: Address): Instruction;
-  proposeUnpause(authority: Address, pauseState: Address): Instruction;
-  executeUnpause(caller: Address, pauseState: Address): Instruction;
+  ): Promise<{ instruction: Instruction; accordState: Address }>;
+  pause(authority: Address, accordState: Address): Instruction;
+  proposeUnpause(authority: Address, accordState: Address): Instruction;
+  executeUnpause(caller: Address, accordState: Address): Instruction;
 
   // staking (ADR-0012: path-verified accumulator update)
   stake(
@@ -223,12 +223,12 @@ export function createAccordMethods(
       ),
     initializePause: (authority) =>
       pureInitializePause(adapter, programId, authority),
-    pause: (authority, pauseState) =>
-      purePause(adapter, programId, authority, pauseState),
-    proposeUnpause: (authority, pauseState) =>
-      pureProposeUnpause(adapter, programId, authority, pauseState),
-    executeUnpause: (caller, pauseState) =>
-      pureExecuteUnpause(adapter, programId, caller, pauseState),
+    pause: (authority, accordState) =>
+      purePause(adapter, programId, authority, accordState),
+    proposeUnpause: (authority, accordState) =>
+      pureProposeUnpause(adapter, programId, authority, accordState),
+    executeUnpause: (caller, accordState) =>
+      pureExecuteUnpause(adapter, programId, caller, accordState),
 
     // staking
     stake: (accounts, amount, path, attestation) =>

@@ -16,8 +16,8 @@
 //! no-entrypoint`). One fresh `AnchorLiteSVM` context per test.
 
 use accord::constants::{
-    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PAUSE,
-    SEED_PENDING_UPDATE, SEED_SUBACCORD, WITHDRAWAL_DELAY,
+    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PENDING_UPDATE,
+    WITHDRAWAL_DELAY,
 };
 use accord::state::{
     Aggregation, CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode,
@@ -195,15 +195,15 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
 }
 
 fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    Pubkey::find_program_address(&[SEED_SUBACCORD, creator.as_ref(), risk_type], &ID).0
+    accord::subaccord_pda(creator, risk_type).0
 }
 
 fn pause_pda() -> Pubkey {
-    Pubkey::find_program_address(&[SEED_PAUSE], &ID).0
+    accord::accord_state_pda().0
 }
 
 fn dispute_pda(filer: &Pubkey, nonce: u64) -> Pubkey {
-    Pubkey::find_program_address(&[b"dispute", filer.as_ref(), &nonce.to_le_bytes()], &ID).0
+    accord::dispute_pda(filer, nonce).0
 }
 
 fn round_pda(dispute: &Pubkey, round_idx: u32) -> Pubkey {
@@ -247,13 +247,13 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
         .airdrop(&creator.pubkey(), 100 * LAMPORTS_PER_SOL)
         .unwrap();
 
-    // 1) PauseState singleton (unpaused).
+    // 1) AccordState singleton (unpaused).
     let pause = pause_pda();
     let ix = ctx
         .program()
         .accounts(accounts::InitializePause {
             authority: creator.pubkey(),
-            pause_state: pause,
+            accord_state: pause,
             system_program: system_program::ID,
         })
         .args(instruction::InitializePause {})
@@ -374,7 +374,7 @@ fn do_stake(
         .accounts(accounts::Stake {
             juror: juror.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             juror_stake: js,
             staking_token: env.mint,
             juror_token_account: jata,
@@ -744,7 +744,7 @@ fn commit_vrf_callback_freezes_live_root() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -831,7 +831,7 @@ fn draw_seat_fills_round_against_frozen_root() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -1033,7 +1033,7 @@ fn out_of_order_seat_rejected() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -1172,7 +1172,7 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -1519,7 +1519,7 @@ fn create_dispute_under_a(env: &mut AccEnv) -> (Pubkey, Keypair) {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -2177,7 +2177,7 @@ fn cancel_dispute_does_not_drain_shared_vault() {
         .accounts(accounts::CreateDispute {
             filer: filer_b.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute: dispute_b,
             fee_token: env.mint,
             filer_token_account: fata_b,
@@ -2304,7 +2304,7 @@ fn cancel_releases_partially_drawn_panel() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -2757,7 +2757,7 @@ fn commit_reveal_finalize_settle_single_round() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -3066,7 +3066,7 @@ fn setup_drawn_panel_3() -> DrawnPanel {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -3394,7 +3394,7 @@ fn pause_blocks_stake_and_create_dispute() {
         .program()
         .accounts(accounts::Pause {
             authority: env.creator.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::Pause {})
         .instruction()
@@ -3429,7 +3429,7 @@ fn pause_blocks_stake_and_create_dispute() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -3463,7 +3463,7 @@ fn unpause_after_timelock_restores_stake() {
         .program()
         .accounts(accounts::Pause {
             authority: env.creator.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::Pause {})
         .instruction()
@@ -3477,7 +3477,7 @@ fn unpause_after_timelock_restores_stake() {
         .program()
         .accounts(accounts::ProposeUnpause {
             authority: env.creator.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::ProposeUnpause {})
         .instruction()
@@ -3495,7 +3495,7 @@ fn unpause_after_timelock_restores_stake() {
         .program()
         .accounts(accounts::ExecuteUnpause {
             caller: env.creator.pubkey(),
-            pause_state: pda,
+            accord_state: pda,
         })
         .args(instruction::ExecuteUnpause {})
         .instruction()
@@ -3542,7 +3542,7 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -3783,7 +3783,7 @@ fn setup_prior_round_settlement() -> PriorRoundSetup {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -4068,7 +4068,7 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -4333,7 +4333,7 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -4776,7 +4776,7 @@ fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -5519,7 +5519,7 @@ fn create_dispute_with_evidence(env: &mut AccEnv, evidence_hash: [u8; 32]) -> (P
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute,
             fee_token: env.mint,
             filer_token_account: fata,
@@ -5644,7 +5644,7 @@ fn do_appeal(
         .accounts(accounts::Appeal {
             appellant: appellant.pubkey(),
             subaccord: env.subaccord,
-            pause_state: pause_pda(),
+            accord_state: pause_pda(),
             dispute: *dispute,
             round,
             appeal_bond,

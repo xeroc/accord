@@ -163,7 +163,7 @@ describe("evidence module: unit (no validator)", () => {
 describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
   let env: TestEnv;
   let mint!: Address;
-  let pauseState!: Address;
+  let accordState!: Address;
   let mainSub!: Address;
   let mainVault!: Address;
   let filerAta!: Address;
@@ -177,9 +177,9 @@ describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
       env.programId,
       env.payer.address,
     );
-    pauseState = pause.pauseState;
+    accordState = pause.accordState;
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) await env.sendIx(pause.instruction);
 
@@ -218,7 +218,7 @@ describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
       const accounts: StakingAccounts = {
         juror: juror.address,
         subaccord: mainSub,
-        pauseState,
+        accordState,
         jurorStake: jurorStakeAddr,
         stakingToken: mint,
         jurorTokenAccount: await ata(mint, juror.address),
@@ -281,7 +281,7 @@ describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
       feeToken: mint,
       filerTokenAccount: filerAta,
       feeVault: mainVault,
-      pauseState,
+      accordState,
     };
     const { instruction, dispute } = await createDispute(
       env.accord.adapter,
@@ -346,7 +346,7 @@ describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
         feeToken: mint,
         filerTokenAccount: filerAta,
         feeVault: mainVault,
-        pauseState,
+        accordState,
       },
       { options: optionHashes, evidenceHash, nonce, fee: REQUIRED_FEE },
       env.programId,

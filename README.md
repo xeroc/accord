@@ -252,7 +252,7 @@ to fit BPF's stack.
 | `Round`         | `["round", dispute, round_idx]`     | Per-round jurors, commits, reveals, result (zero-copy)                                                                                                       |
 | `AppealBond`    | `["bond", dispute, round_idx]`      | Custody record for one appeal bond                                                                                                                           |
 | `PendingUpdate` | `["update", subaccord, nonce]`      | Timelocked Subaccord parameter update (48h)                                                                                                                  |
-| `PauseState`    | `["pause"]`                         | Singleton program-level circuit breaker                                                                                                                      |
+| `AccordState`   | `["state"]`                         | Singleton program-level circuit breaker                                                                                                                      |
 | token vaults    | Subaccord-PDA-owned SPL accounts    | Stake pool + fee pool                                                                                                                                        |
 
 ### Draw & Verifiable Sortition
@@ -477,8 +477,8 @@ solana program show <PROGRAM_ID>
 ### Upgrade authority (ADR-0007)
 
 The upgrade authority is a **Squads multisig** at launch; after a sufficient
-audit it is set to `None` (frozen, immutable). The on-chain `PauseState`
-singleton (seeds `["pause"]`) is a separate circuit breaker: `pause()` is
+audit it is set to `None` (frozen, immutable). The on-chain `AccordState`
+singleton (seeds `["state"]`) is a separate circuit breaker: `pause()` is
 instant and authority-gated; `unpause()` is timelocked
 (`propose_unpause` → `execute_unpause` after `UNPAUSE_TIMELOCK_SLOTS`) so a
 freeze is always recoverable on a known schedule. While paused, `create_dispute`
@@ -495,6 +495,47 @@ Bundle the pause-singleton init with deploy (front-running is an ops concern):
 # the SDK / a small script, e.g.:
 #   accord.methods.initializePause().accounts({...}).rpc()
 ```
+
+### Mainnet readiness — re-evaluate before the first mainnet deploy
+
+Everything below freezes the moment real state exists on mainnet. Renames and
+layout decisions are one-way doors; walk this list (and the open findings in
+`programs/*/security-checklist.md` + the
+[Trust Profile](apps/docs/docs/security/trust-profile.md)) before deploying:
+
+- **PDA seeds.** Every `SEED_*` constant (`programs/accord/src/constants.rs`,
+  `programs/canon/src/constants.rs`) becomes permanent once its accounts
+  exist. ✅ Done pre-mainnet (2026-08-14): the circuit-breaker singleton was
+  renamed end-to-end — type `PauseState` → `AccordState`, seed `b"pause"` →
+  `b"state"`, IDL/SDK surface `pauseState` → `accordState` — with a **fresh
+  discriminator (deliberately not pinned)** and the devnet reset accepted.
+  Preps consumed by that reset: redeploy accord, re-run `initialize_pause`,
+  re-stake. Any seed change after the first mainnet deploy means new PDAs +
+  state migration — treat seeds as frozen from that point on.
+- **Program IDs + deploy keypairs.** `declare_id!` (accord
+  `cordhVosh…`, canon `can5Zhfg…`) is immutable once deployed. Generate the
+  final keypairs under multisig control, provision them per AGENTS.md
+  §Gotchas, and keep `anchor build --ignore-keys` discipline until then.
+- **Account data layouts.** `InitSpace`, field order, Anchor discriminators,
+  and the zero-copy `Round` offset consts — any post-deploy change requires a
+  state migration. Freeze layouts in review before deploy.
+- **Instruction wire format.** Argument order/types + account order are the
+  IDL/SDK contract; changing them after deploy breaks every client and
+  indexer bound to the published IDL.
+- **Open sentinel decisions** (`Pubkey::default()` / `ponytail` markers):
+  `evidence_operator` identity (ADR-0006/0011), the canon retuning gate
+  (Subaccord authority = CanonList PDA; the gated instruction is not yet
+  built), and the upgrade authority hand-off (ADR-0007 Squads multisig →
+  freeze).
+- **Protocol constants.** `MAX_JURORS`, accumulator tree depth, the panel
+  ladder, `UPDATE_TIMELOCK_SLOTS` / `UNPAUSE_TIMELOCK_SLOTS`,
+  `MIN_APPEAL_WINDOW_SECS`, fee/bond shapes. Per-Subaccord economics stay
+  retunable; these constants do not.
+- **VRF provider identity.** The Magicblock scoped-VRF identity and oracle
+  trust assumptions (ADR-0012) — confirm the production configuration.
+- **Audit sign-off.** Resolve the open L-/M-/REVIEW findings cited in
+  `security-checklist.md` and re-baseline the trust-profile
+  security-value ceiling for mainnet stakes.
 
 ---
 

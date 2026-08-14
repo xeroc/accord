@@ -139,7 +139,11 @@ export type SettleItemAsyncInput<
   caller: TransactionSigner<TAccountCaller>;
   list: Address<TAccountList>;
   item: Address<TAccountItem>;
-  /** Accord Dispute PDA — read for `final_ruling`. */
+  /**
+   * Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
+   * `state` + `final_ruling` are read directly. Boxed to keep the struct
+   * off the stack during the token-transfer CPI call chain.
+   */
   dispute: Address<TAccountDispute>;
   feeMint: Address<TAccountFeeMint>;
   vault?: Address<TAccountVault>;
@@ -287,7 +291,11 @@ export type SettleItemInput<
   caller: TransactionSigner<TAccountCaller>;
   list: Address<TAccountList>;
   item: Address<TAccountItem>;
-  /** Accord Dispute PDA — read for `final_ruling`. */
+  /**
+   * Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
+   * `state` + `final_ruling` are read directly. Boxed to keep the struct
+   * off the stack during the token-transfer CPI call chain.
+   */
   dispute: Address<TAccountDispute>;
   feeMint: Address<TAccountFeeMint>;
   vault: Address<TAccountVault>;
@@ -404,7 +412,11 @@ export type ParsedSettleItemInstruction<
     caller: TAccountMetas[0];
     list: TAccountMetas[1];
     item: TAccountMetas[2];
-    /** Accord Dispute PDA — read for `final_ruling`. */
+    /**
+     * Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
+     * `state` + `final_ruling` are read directly. Boxed to keep the struct
+     * off the stack during the token-transfer CPI call chain.
+     */
     dispute: TAccountMetas[3];
     feeMint: TAccountMetas[4];
     vault: TAccountMetas[5];

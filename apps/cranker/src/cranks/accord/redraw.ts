@@ -7,8 +7,8 @@
  * (lib.rs redraw, ADR-0021, milestone accord-27r5.)
  */
 import { DisputeState, redraw, type RedrawAccounts } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
 import {
   ataOf,
   fetchDispute,
@@ -17,7 +17,7 @@ import {
   panelStakePdas,
   roundPda,
   TOKEN_PROGRAM_ID,
-} from "../util.js";
+} from "../../util.js";
 
 export async function execute(ctx: CrankContext, action: ActionOf<"redraw">): Promise<CrankResult> {
   const d = await fetchDispute(ctx.accord.rpc, action.dispute);

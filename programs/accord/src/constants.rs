@@ -82,8 +82,11 @@ pub const SEED_ROUND: &[u8] = b"round";
 pub const SEED_PENDING_UPDATE: &[u8] = b"update";
 /// Per-appeal bond custody (ADR-0004). Seeds: `["bond", dispute, round_idx]`.
 pub const SEED_APPEAL_BOND: &[u8] = b"bond";
-/// Singleton program-level pause flag (ADR-0007 circuit breaker).
-pub const SEED_PAUSE: &[u8] = b"pause";
+/// `AccordState` singleton (ADR-0007 circuit breaker). Seed renamed
+/// `b"pause"` → `b"state"` pre-mainnet (2026-08-14) — the PDA moved; devnet
+/// requires redeploy + re-init. Type renamed `PauseState` → `AccordState`
+/// with a fresh discriminator (no pin — reset accepted).
+pub const SEED_ACCORD_STATE: &[u8] = b"state";
 
 // --- v1 default economics (per-Subaccord configurable; these are the
 //     milestone defaults table) ----------------------------------------------

@@ -1,10 +1,11 @@
 ---
 # accord-z05f
 title: '@useaccord/sdk test script clobbers tsup-bundled dist — breaks workspace ''pnpm -r test'''
-status: draft
+status: completed
 type: task
+priority: normal
 created_at: 2026-08-13T03:29:18Z
-updated_at: 2026-08-13T03:29:18Z
+updated_at: 2026-08-14T19:10:37Z
 ---
 
 ## Problem

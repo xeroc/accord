@@ -34,21 +34,21 @@ import {
   type SelfPlanAndSendFunctions,
 } from "@solana/kit/program-client-core";
 import {
+  getAccordStateCodec,
   getAppealBondCodec,
   getDisputeCodec,
   getJurorStakeCodec,
-  getPauseStateCodec,
   getPendingUpdateCodec,
   getRoundCodec,
   getSubaccordCodec,
+  type AccordState,
+  type AccordStateArgs,
   type AppealBond,
   type AppealBondArgs,
   type Dispute,
   type DisputeArgs,
   type JurorStake,
   type JurorStakeArgs,
-  type PauseState,
-  type PauseStateArgs,
   type PendingUpdate,
   type PendingUpdateArgs,
   type Round,
@@ -175,10 +175,10 @@ import {
   type WithdrawFeesAsyncInput,
 } from "../instructions";
 import {
+  findAccordStatePda,
   findAppealBondPda,
   findDisputePda,
   findJurorStakePda,
-  findPauseStatePda,
   findPendingUpdatePda,
   findProgramIdentityPda,
   findRoundPda,
@@ -189,10 +189,10 @@ export const ACCORD_PROGRAM_ADDRESS =
   "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed" as Address<"cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed">;
 
 export enum AccordAccount {
+  AccordState,
   AppealBond,
   Dispute,
   JurorStake,
-  PauseState,
   PendingUpdate,
   Round,
   Subaccord,
@@ -202,6 +202,17 @@ export function identifyAccordAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): AccordAccount {
   const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([218, 6, 196, 225, 25, 89, 50, 183]),
+      ),
+      0,
+    )
+  ) {
+    return AccordAccount.AccordState;
+  }
   if (
     containsBytes(
       data,
@@ -234,17 +245,6 @@ export function identifyAccordAccount(
     )
   ) {
     return AccordAccount.JurorStake;
-  }
-  if (
-    containsBytes(
-      data,
-      fixEncoderSize(getBytesEncoder(), 8).encode(
-        new Uint8Array([21, 123, 173, 77, 60, 203, 197, 145]),
-      ),
-      0,
-    )
-  ) {
-    return AccordAccount.PauseState;
   }
   if (
     containsBytes(
@@ -963,14 +963,14 @@ export type AccordPlugin = {
 };
 
 export type AccordPluginAccounts = {
+  accordState: ReturnType<typeof getAccordStateCodec> &
+    SelfFetchFunctions<AccordStateArgs, AccordState>;
   appealBond: ReturnType<typeof getAppealBondCodec> &
     SelfFetchFunctions<AppealBondArgs, AppealBond>;
   dispute: ReturnType<typeof getDisputeCodec> &
     SelfFetchFunctions<DisputeArgs, Dispute>;
   jurorStake: ReturnType<typeof getJurorStakeCodec> &
     SelfFetchFunctions<JurorStakeArgs, JurorStake>;
-  pauseState: ReturnType<typeof getPauseStateCodec> &
-    SelfFetchFunctions<PauseStateArgs, PauseState>;
   pendingUpdate: ReturnType<typeof getPendingUpdateCodec> &
     SelfFetchFunctions<PendingUpdateArgs, PendingUpdate>;
   round: ReturnType<typeof getRoundCodec> &
@@ -1089,7 +1089,7 @@ export type AccordPluginInstructions = {
 };
 
 export type AccordPluginPdas = {
-  pauseState: typeof findPauseStatePda;
+  accordState: typeof findAccordStatePda;
   appealBond: typeof findAppealBondPda;
   dispute: typeof findDisputePda;
   subaccord: typeof findSubaccordPda;
@@ -1112,10 +1112,10 @@ export function accordProgram() {
     return extendClient(client, {
       accord: <AccordPlugin>{
         accounts: {
+          accordState: addSelfFetchFunctions(client, getAccordStateCodec()),
           appealBond: addSelfFetchFunctions(client, getAppealBondCodec()),
           dispute: addSelfFetchFunctions(client, getDisputeCodec()),
           jurorStake: addSelfFetchFunctions(client, getJurorStakeCodec()),
-          pauseState: addSelfFetchFunctions(client, getPauseStateCodec()),
           pendingUpdate: addSelfFetchFunctions(client, getPendingUpdateCodec()),
           round: addSelfFetchFunctions(client, getRoundCodec()),
           subaccord: addSelfFetchFunctions(client, getSubaccordCodec()),
@@ -1253,7 +1253,7 @@ export function accordProgram() {
             ),
         },
         pdas: {
-          pauseState: findPauseStatePda,
+          accordState: findAccordStatePda,
           appealBond: findAppealBondPda,
           dispute: findDisputePda,
           subaccord: findSubaccordPda,

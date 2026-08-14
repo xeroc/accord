@@ -21,7 +21,12 @@
  *   - AppealBond struct + seeds: state.rs (174-193)  `["bond", dispute, round_idx]`
  *   - appeal ladder: lib.rs:2553-2570, ADR-0004
  */
-import type { Address, Instruction } from "@solana/kit";
+import {
+  getAddressEncoder,
+  getProgramDerivedAddress,
+  type Address,
+  type Instruction,
+} from "@solana/kit";
 import { MAX_JURORS, panelSizeForRound } from "../constants.js";
 
 export {
@@ -111,8 +116,6 @@ export async function findAppealBondPda(
   dispute: Address,
   roundIdx: number,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } =
-    await import("@solana/kit");
   const disputeBytes = new Uint8Array(getAddressEncoder().encode(dispute));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
@@ -130,7 +133,7 @@ export interface AppealAccounts {
   /** Any appellant (permissionless). Fee + bond payer. Signer. */
   appellant: Address;
   subaccord: Address;
-  pauseState: Address;
+  accordState: Address;
   dispute: Address;
   /** The just-resolved round (`current_round`) — read for `prior_result`. */
   round: Address;

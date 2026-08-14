@@ -156,8 +156,10 @@ export type ChallengeItemAsyncInput<
   list: Address<TAccountList>;
   item: Address<TAccountItem>;
   /**
-   * Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
-   * `fee_vault_deposited` on it during the CPI.
+   * Backing Accord Subaccord. Seeds link it to this list (`creator`,
+   * `rules_hash`); `Account<Subaccord>` validates ownership + deserialises.
+   * `mut`: Accord's `create_dispute` writes `fee_vault_deposited` during the
+   * CPI — Anchor's `exit()` is a no-op (owner ≠ canon), so the write survives.
    */
   subaccord: Address<TAccountSubaccord>;
   feeMint: Address<TAccountFeeMint>;
@@ -358,8 +360,10 @@ export type ChallengeItemInput<
   list: Address<TAccountList>;
   item: Address<TAccountItem>;
   /**
-   * Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
-   * `fee_vault_deposited` on it during the CPI.
+   * Backing Accord Subaccord. Seeds link it to this list (`creator`,
+   * `rules_hash`); `Account<Subaccord>` validates ownership + deserialises.
+   * `mut`: Accord's `create_dispute` writes `fee_vault_deposited` during the
+   * CPI — Anchor's `exit()` is a no-op (owner ≠ canon), so the write survives.
    */
   subaccord: Address<TAccountSubaccord>;
   feeMint: Address<TAccountFeeMint>;
@@ -501,8 +505,10 @@ export type ParsedChallengeItemInstruction<
     list: TAccountMetas[1];
     item: TAccountMetas[2];
     /**
-     * Backing Accord Subaccord. `mut`: Accord's `create_dispute` writes
-     * `fee_vault_deposited` on it during the CPI.
+     * Backing Accord Subaccord. Seeds link it to this list (`creator`,
+     * `rules_hash`); `Account<Subaccord>` validates ownership + deserialises.
+     * `mut`: Accord's `create_dispute` writes `fee_vault_deposited` during the
+     * CPI — Anchor's `exit()` is a no-op (owner ≠ canon), so the write survives.
      */
     subaccord: TAccountMetas[3];
     feeMint: TAccountMetas[4];

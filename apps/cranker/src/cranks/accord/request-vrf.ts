@@ -5,9 +5,9 @@
  */
 import { isSome } from "@solana/kit";
 import { requestVrf, type VrfDrawAccounts } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { fetchDispute } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { fetchDispute } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

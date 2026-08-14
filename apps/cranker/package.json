@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@solana/kit": "^7.0.0",
+    "@useaccord/canon": "workspace:^",
     "@useaccord/sdk": "workspace:*"
   },
   "devDependencies": {

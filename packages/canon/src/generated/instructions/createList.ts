@@ -58,8 +58,8 @@ export function getCreateListDiscriminatorBytes(): ReadonlyUint8Array {
 
 export type CreateListInstruction<
   TProgram extends string = typeof CANON_PROGRAM_ADDRESS,
-  TAccountStakeMintAcc extends string | AccountMeta<string> = string,
-  TAccountFeeMintAcc extends string | AccountMeta<string> = string,
+  TAccountStakeMint extends string | AccountMeta<string> = string,
+  TAccountFeeMint extends string | AccountMeta<string> = string,
   TAccountCreator extends string | AccountMeta<string> = string,
   TAccountList extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
@@ -72,12 +72,12 @@ export type CreateListInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountStakeMintAcc extends string
-        ? ReadonlyAccount<TAccountStakeMintAcc>
-        : TAccountStakeMintAcc,
-      TAccountFeeMintAcc extends string
-        ? ReadonlyAccount<TAccountFeeMintAcc>
-        : TAccountFeeMintAcc,
+      TAccountStakeMint extends string
+        ? ReadonlyAccount<TAccountStakeMint>
+        : TAccountStakeMint,
+      TAccountFeeMint extends string
+        ? ReadonlyAccount<TAccountFeeMint>
+        : TAccountFeeMint,
       TAccountCreator extends string
         ? WritableSignerAccount<TAccountCreator> &
             AccountSignerMeta<TAccountCreator>
@@ -100,8 +100,6 @@ export type CreateListInstruction<
 
 export type CreateListInstructionData = {
   discriminator: ReadonlyUint8Array;
-  stakeMint: Address;
-  feeMint: Address;
   listProgram: Address;
   rulesHash: ReadonlyUint8Array;
   submitDeposit: bigint;
@@ -111,8 +109,6 @@ export type CreateListInstructionData = {
 };
 
 export type CreateListInstructionDataArgs = {
-  stakeMint: Address;
-  feeMint: Address;
   listProgram: Address;
   rulesHash: ReadonlyUint8Array;
   submitDeposit: number | bigint;
@@ -125,8 +121,6 @@ export function getCreateListInstructionDataEncoder(): FixedSizeEncoder<CreateLi
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["stakeMint", getAddressEncoder()],
-      ["feeMint", getAddressEncoder()],
       ["listProgram", getAddressEncoder()],
       ["rulesHash", fixEncoderSize(getBytesEncoder(), 32)],
       ["submitDeposit", getU64Encoder()],
@@ -141,8 +135,6 @@ export function getCreateListInstructionDataEncoder(): FixedSizeEncoder<CreateLi
 export function getCreateListInstructionDataDecoder(): FixedSizeDecoder<CreateListInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["stakeMint", getAddressDecoder()],
-    ["feeMint", getAddressDecoder()],
     ["listProgram", getAddressDecoder()],
     ["rulesHash", fixDecoderSize(getBytesDecoder(), 32)],
     ["submitDeposit", getU64Decoder()],
@@ -163,17 +155,24 @@ export function getCreateListInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type CreateListAsyncInput<
-  TAccountStakeMintAcc extends string = string,
-  TAccountFeeMintAcc extends string = string,
+  TAccountStakeMint extends string = string,
+  TAccountFeeMint extends string = string,
   TAccountCreator extends string = string,
   TAccountList extends string = string,
   TAccountSubaccord extends string = string,
   TAccountAccordProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** L-4: validated legacy SPL Mint forwarded to Accord create_subaccord CPI. */
-  stakeMintAcc: Address<TAccountStakeMintAcc>;
-  feeMintAcc: Address<TAccountFeeMintAcc>;
+  /**
+   * L-4: validated legacy SPL Mint — the single mint reference: forwarded
+   * to the Accord `create_subaccord` CPI and stored on `CanonList.stake_mint`.
+   */
+  stakeMint: Address<TAccountStakeMint>;
+  /**
+   * L-4: validated legacy SPL Mint — forwarded to the CPI and stored on
+   * `CanonList.fee_mint`.
+   */
+  feeMint: Address<TAccountFeeMint>;
   creator: TransactionSigner<TAccountCreator>;
   /**
    * The new Canon list PDA. Seeds: `["canon", creator, rules_hash]`.
@@ -190,8 +189,6 @@ export type CreateListAsyncInput<
   /** Accord program (CPI target). */
   accordProgram?: Address<TAccountAccordProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
-  stakeMint: CreateListInstructionDataArgs["stakeMint"];
-  feeMint: CreateListInstructionDataArgs["feeMint"];
   listProgram: CreateListInstructionDataArgs["listProgram"];
   rulesHash: CreateListInstructionDataArgs["rulesHash"];
   submitDeposit: CreateListInstructionDataArgs["submitDeposit"];
@@ -201,8 +198,8 @@ export type CreateListAsyncInput<
 };
 
 export async function getCreateListInstructionAsync<
-  TAccountStakeMintAcc extends string,
-  TAccountFeeMintAcc extends string,
+  TAccountStakeMint extends string,
+  TAccountFeeMint extends string,
   TAccountCreator extends string,
   TAccountList extends string,
   TAccountSubaccord extends string,
@@ -211,8 +208,8 @@ export async function getCreateListInstructionAsync<
   TProgramAddress extends Address = typeof CANON_PROGRAM_ADDRESS,
 >(
   input: CreateListAsyncInput<
-    TAccountStakeMintAcc,
-    TAccountFeeMintAcc,
+    TAccountStakeMint,
+    TAccountFeeMint,
     TAccountCreator,
     TAccountList,
     TAccountSubaccord,
@@ -223,8 +220,8 @@ export async function getCreateListInstructionAsync<
 ): Promise<
   CreateListInstruction<
     TProgramAddress,
-    TAccountStakeMintAcc,
-    TAccountFeeMintAcc,
+    TAccountStakeMint,
+    TAccountFeeMint,
     TAccountCreator,
     TAccountList,
     TAccountSubaccord,
@@ -237,8 +234,8 @@ export async function getCreateListInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    stakeMintAcc: { value: input.stakeMintAcc ?? null, isWritable: false },
-    feeMintAcc: { value: input.feeMintAcc ?? null, isWritable: false },
+    stakeMint: { value: input.stakeMint ?? null, isWritable: false },
+    feeMint: { value: input.feeMint ?? null, isWritable: false },
     creator: { value: input.creator ?? null, isWritable: true },
     list: { value: input.list ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
@@ -298,8 +295,8 @@ export async function getCreateListInstructionAsync<
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta("stakeMintAcc", accounts.stakeMintAcc),
-      getAccountMeta("feeMintAcc", accounts.feeMintAcc),
+      getAccountMeta("stakeMint", accounts.stakeMint),
+      getAccountMeta("feeMint", accounts.feeMint),
       getAccountMeta("creator", accounts.creator),
       getAccountMeta("list", accounts.list),
       getAccountMeta("subaccord", accounts.subaccord),
@@ -312,8 +309,8 @@ export async function getCreateListInstructionAsync<
     programAddress,
   } as CreateListInstruction<
     TProgramAddress,
-    TAccountStakeMintAcc,
-    TAccountFeeMintAcc,
+    TAccountStakeMint,
+    TAccountFeeMint,
     TAccountCreator,
     TAccountList,
     TAccountSubaccord,
@@ -323,17 +320,24 @@ export async function getCreateListInstructionAsync<
 }
 
 export type CreateListInput<
-  TAccountStakeMintAcc extends string = string,
-  TAccountFeeMintAcc extends string = string,
+  TAccountStakeMint extends string = string,
+  TAccountFeeMint extends string = string,
   TAccountCreator extends string = string,
   TAccountList extends string = string,
   TAccountSubaccord extends string = string,
   TAccountAccordProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** L-4: validated legacy SPL Mint forwarded to Accord create_subaccord CPI. */
-  stakeMintAcc: Address<TAccountStakeMintAcc>;
-  feeMintAcc: Address<TAccountFeeMintAcc>;
+  /**
+   * L-4: validated legacy SPL Mint — the single mint reference: forwarded
+   * to the Accord `create_subaccord` CPI and stored on `CanonList.stake_mint`.
+   */
+  stakeMint: Address<TAccountStakeMint>;
+  /**
+   * L-4: validated legacy SPL Mint — forwarded to the CPI and stored on
+   * `CanonList.fee_mint`.
+   */
+  feeMint: Address<TAccountFeeMint>;
   creator: TransactionSigner<TAccountCreator>;
   /**
    * The new Canon list PDA. Seeds: `["canon", creator, rules_hash]`.
@@ -350,8 +354,6 @@ export type CreateListInput<
   /** Accord program (CPI target). */
   accordProgram?: Address<TAccountAccordProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
-  stakeMint: CreateListInstructionDataArgs["stakeMint"];
-  feeMint: CreateListInstructionDataArgs["feeMint"];
   listProgram: CreateListInstructionDataArgs["listProgram"];
   rulesHash: CreateListInstructionDataArgs["rulesHash"];
   submitDeposit: CreateListInstructionDataArgs["submitDeposit"];
@@ -361,8 +363,8 @@ export type CreateListInput<
 };
 
 export function getCreateListInstruction<
-  TAccountStakeMintAcc extends string,
-  TAccountFeeMintAcc extends string,
+  TAccountStakeMint extends string,
+  TAccountFeeMint extends string,
   TAccountCreator extends string,
   TAccountList extends string,
   TAccountSubaccord extends string,
@@ -371,8 +373,8 @@ export function getCreateListInstruction<
   TProgramAddress extends Address = typeof CANON_PROGRAM_ADDRESS,
 >(
   input: CreateListInput<
-    TAccountStakeMintAcc,
-    TAccountFeeMintAcc,
+    TAccountStakeMint,
+    TAccountFeeMint,
     TAccountCreator,
     TAccountList,
     TAccountSubaccord,
@@ -382,8 +384,8 @@ export function getCreateListInstruction<
   config?: { programAddress?: TProgramAddress },
 ): CreateListInstruction<
   TProgramAddress,
-  TAccountStakeMintAcc,
-  TAccountFeeMintAcc,
+  TAccountStakeMint,
+  TAccountFeeMint,
   TAccountCreator,
   TAccountList,
   TAccountSubaccord,
@@ -395,8 +397,8 @@ export function getCreateListInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    stakeMintAcc: { value: input.stakeMintAcc ?? null, isWritable: false },
-    feeMintAcc: { value: input.feeMintAcc ?? null, isWritable: false },
+    stakeMint: { value: input.stakeMint ?? null, isWritable: false },
+    feeMint: { value: input.feeMint ?? null, isWritable: false },
     creator: { value: input.creator ?? null, isWritable: true },
     list: { value: input.list ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
@@ -424,8 +426,8 @@ export function getCreateListInstruction<
   const getAccountMeta = getAccountMetaFactory(programAddress, "programId");
   return Object.freeze({
     accounts: [
-      getAccountMeta("stakeMintAcc", accounts.stakeMintAcc),
-      getAccountMeta("feeMintAcc", accounts.feeMintAcc),
+      getAccountMeta("stakeMint", accounts.stakeMint),
+      getAccountMeta("feeMint", accounts.feeMint),
       getAccountMeta("creator", accounts.creator),
       getAccountMeta("list", accounts.list),
       getAccountMeta("subaccord", accounts.subaccord),
@@ -438,8 +440,8 @@ export function getCreateListInstruction<
     programAddress,
   } as CreateListInstruction<
     TProgramAddress,
-    TAccountStakeMintAcc,
-    TAccountFeeMintAcc,
+    TAccountStakeMint,
+    TAccountFeeMint,
     TAccountCreator,
     TAccountList,
     TAccountSubaccord,
@@ -454,9 +456,16 @@ export type ParsedCreateListInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** L-4: validated legacy SPL Mint forwarded to Accord create_subaccord CPI. */
-    stakeMintAcc: TAccountMetas[0];
-    feeMintAcc: TAccountMetas[1];
+    /**
+     * L-4: validated legacy SPL Mint — the single mint reference: forwarded
+     * to the Accord `create_subaccord` CPI and stored on `CanonList.stake_mint`.
+     */
+    stakeMint: TAccountMetas[0];
+    /**
+     * L-4: validated legacy SPL Mint — forwarded to the CPI and stored on
+     * `CanonList.fee_mint`.
+     */
+    feeMint: TAccountMetas[1];
     creator: TAccountMetas[2];
     /**
      * The new Canon list PDA. Seeds: `["canon", creator, rules_hash]`.
@@ -503,8 +512,8 @@ export function parseCreateListInstruction<
   return {
     programAddress: instruction.programAddress,
     accounts: {
-      stakeMintAcc: getNextAccount(),
-      feeMintAcc: getNextAccount(),
+      stakeMint: getNextAccount(),
+      feeMint: getNextAccount(),
       creator: getNextAccount(),
       list: getNextAccount(),
       subaccord: getNextAccount(),

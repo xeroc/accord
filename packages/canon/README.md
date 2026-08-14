@@ -46,6 +46,10 @@ const { instruction, item } = await submitItem(
 
 ### Instruction facades
 
+- `createList(accounts, args)` — permissionless list creation; CPIs Accord
+  `create_subaccord` for the 1:1 backing court. `accounts`:
+  `{ creator, stakeMint, feeMint }`; `args`: `{ listProgram, rulesHash,
+  submitDeposit, challengePct, listingWindow, withdrawalTimelock }`
 - `submitItem(accounts, { evidence, deposit })` — permissionless item submission
 - `advancePending({ caller, list, item })` — crank: Pending → Listed
 - `challengeItem(accounts, { evidence }, extras)` — lock stake + fee, CPI Accord
@@ -53,13 +57,12 @@ const { instruction, item } = await submitItem(
 - `requestWithdrawal({ submitter, list, item })` — submitter-only; Listed → WithdrawPending
 - `advanceWithdrawal(accounts)` — crank: return stake, item → Removed
 
-> `create_list` is not yet shipped on-chain (bean accord-73yx). A `createList`
-> facade will land with it.
-
 ### Account fetchers
 
 - `fetchCanonList(canon, address)` / `fetchCanonListMaybe(canon, address)`
 - `fetchCanonItem(canon, address)` / `fetchCanonItemMaybe(canon, address)`
+- `findAllCanonLists(rpc)` / `findAllCanonItems(rpc)` — decoded
+  `getProgramAccounts` scans (discriminator-filtered); bare RPC, no client
 
 ## Build
 

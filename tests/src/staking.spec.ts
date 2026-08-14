@@ -19,7 +19,7 @@
 // (not the fee payer) funds JurorStake + vault-ATA rent, so it is airdropped
 // SOL up front via fundSigner.
 //
-// Singleton: PauseState is a program-wide singleton; initializePause is only
+// Singleton: AccordState is a program-wide singleton; initializePause is only
 // sent when it does not already exist, so the suite is re-runnable and
 // coexists with sibling specs.
 import {
@@ -186,7 +186,7 @@ describe("e2e: staking (requires Surfpool)", () => {
   let mint!: Address;
   let subaccord!: Address;
   let vault!: Address;
-  let pauseState!: Address;
+  let accordState!: Address;
   let tree!: TreeTracker;
 
   beforeAll(async () => {
@@ -200,9 +200,9 @@ describe("e2e: staking (requires Surfpool)", () => {
       env.programId,
       env.payer.address,
     );
-    pauseState = pause.pauseState;
+    accordState = pause.accordState;
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) await env.sendIx(pause.instruction);
 
@@ -246,7 +246,7 @@ describe("e2e: staking (requires Surfpool)", () => {
     const accounts: StakingAccounts = {
       juror: juror.address,
       subaccord,
-      pauseState,
+      accordState,
       jurorStake,
       stakingToken: mint,
       jurorTokenAccount: jurorAta,

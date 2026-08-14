@@ -5,7 +5,7 @@ import {
   INITIAL_NUM_JURORS,
   MAX_OPTIONS,
   findDisputePda,
-  findPauseStatePda,
+  findAccordStatePda,
   requiredFee,
 } from "@useaccord/sdk";
 import { type Address, getAddressEncoder } from "@solana/kit";
@@ -229,7 +229,7 @@ export function CreateDispute() {
 
       // --- SPINE (unchanged — only the source of options/evidenceHash differs) ---
       const feeToken = subaccord.data.feeToken;
-      const [pauseState] = await findPauseStatePda();
+      const [accordState] = await findAccordStatePda();
       const feeVault = await getAtaAddress(subaccord.address, feeToken);
       const filerTokenAccount = await getAtaAddress(signer.address, feeToken);
 
@@ -241,7 +241,7 @@ export function CreateDispute() {
           feeToken,
           filerTokenAccount,
           feeVault,
-          pauseState,
+          accordState,
         },
         {
           options: resolvedOptions,

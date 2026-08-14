@@ -21,7 +21,12 @@
  *   - v1 constants:           programs/accord/src/constants.rs (MAX_OPTIONS)
  */
 
-import type { Address, Instruction } from "@solana/kit";
+import {
+  getAddressEncoder,
+  getProgramDerivedAddress,
+  type Address,
+  type Instruction,
+} from "@solana/kit";
 import { MAX_OPTIONS } from "../constants.js";
 
 export { MAX_OPTIONS } from "../constants.js";
@@ -66,8 +71,8 @@ export interface CreateDisputeAccounts {
   filerTokenAccount: Address;
   /** Subaccord PDA's fee_vault ATA (fee sink, ADR-0020). */
   feeVault: Address;
-  /** Circuit-breaker singleton PDA (`["pause"]`); stake/create revert while paused. */
-  pauseState: Address;
+  /** Circuit-breaker singleton PDA (`["state"]`); stake/create revert while paused. */
+  accordState: Address;
 }
 
 /** Result of preparing a `create_dispute`: the derived Dispute PDA + its instruction. */
@@ -177,16 +182,12 @@ export function disputeSeeds(
 
 /**
  * Derive the canonical Dispute PDA (`["dispute", filer, nonce.to_le()]`).
- * Kit is imported lazily so importing this module (and running its unit tests)
- * never loads the runtime unless PDA derivation is actually called.
  */
 export async function findDisputePda(
   programAddress: Address,
   filer: Address,
   nonce: bigint,
 ): Promise<{ address: Address; bump: number }> {
-  const { getAddressEncoder, getProgramDerivedAddress } =
-    await import("@solana/kit");
   // kit's encoder returns ReadonlyUint8Array (TS 5.7+ typed-array generics);
   // copy into a mutable Uint8Array for the seeds vector.
   const filerBytes = new Uint8Array(getAddressEncoder().encode(filer));

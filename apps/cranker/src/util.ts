@@ -18,22 +18,28 @@ import {
 import {
   fetchMaybeAppealBond,
   fetchMaybeDispute,
-  fetchMaybePauseState,
+  fetchMaybeAccordState,
   fetchMaybePendingUpdate,
   fetchMaybeRound,
   fetchMaybeSubaccord,
   findAppealBondPda,
   findJurorStakePda,
-  findPauseStatePda,
+  findAccordStatePda,
   findPendingUpdatePda,
   findRoundPda,
   type AppealBond,
   type Dispute,
-  type PauseState,
+  type AccordState,
   type PendingUpdate,
   type Round,
   type Subaccord,
 } from "@useaccord/sdk";
+import {
+  fetchMaybeCanonItem as fetchMaybeCanonItemGenerated,
+  fetchMaybeCanonList as fetchMaybeCanonListGenerated,
+  type CanonItem,
+  type CanonList,
+} from "@useaccord/canon";
 
 /** SPL Token program. */
 export const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -93,14 +99,14 @@ export async function fetchAppealBond(
   return acc as Account<AppealBond>;
 }
 
-/** Fetch + decode the singleton PauseState, throw if missing. */
-export async function fetchPauseState(
+/** Fetch + decode the singleton AccordState, throw if missing. */
+export async function fetchAccordState(
   rpc: Rpc<GetAccountInfoApi>,
-  pauseState: Address,
-): Promise<Account<PauseState>> {
-  const acc = await fetchMaybePauseState(rpc, pauseState);
-  if (!acc.exists) throw new Error(`PauseState not found: ${pauseState}`);
-  return acc as Account<PauseState>;
+  accordState: Address,
+): Promise<Account<AccordState>> {
+  const acc = await fetchMaybeAccordState(rpc, accordState);
+  if (!acc.exists) throw new Error(`AccordState not found: ${accordState}`);
+  return acc as Account<AccordState>;
 }
 
 /** Resolve a Round PDA address by index. */
@@ -123,9 +129,9 @@ export async function appealBondPda(
   return address;
 }
 
-/** Resolve the singleton PauseState PDA address. */
-export async function pauseStatePda(programId: Address): Promise<Address> {
-  const [address] = await findPauseStatePda({ programAddress: programId });
+/** Resolve the singleton AccordState PDA address. */
+export async function accordStatePda(programId: Address): Promise<Address> {
+  const [address] = await findAccordStatePda({ programAddress: programId });
   return address;
 }
 
@@ -173,4 +179,26 @@ export async function findPendingUpdateForSubaccord(
     }
   }
   return null;
+}
+
+// --- Canon (bare-RPC generated fetchers; the Canon client is not needed) ---
+
+/** Fetch + decode a CanonItem, throw if missing. */
+export async function fetchCanonItem(
+  rpc: Rpc<GetAccountInfoApi>,
+  item: Address,
+): Promise<Account<CanonItem>> {
+  const acc = await fetchMaybeCanonItemGenerated(rpc, item);
+  if (!acc.exists) throw new Error(`CanonItem not found: ${item}`);
+  return acc as Account<CanonItem>;
+}
+
+/** Fetch + decode a CanonList, throw if missing. */
+export async function fetchCanonList(
+  rpc: Rpc<GetAccountInfoApi>,
+  list: Address,
+): Promise<Account<CanonList>> {
+  const acc = await fetchMaybeCanonListGenerated(rpc, list);
+  if (!acc.exists) throw new Error(`CanonList not found: ${list}`);
+  return acc as Account<CanonList>;
 }

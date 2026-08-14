@@ -12,7 +12,7 @@ import {
   assertValidMaxAppeals,
   assertValidRiskType,
   canExecuteAt,
-  pauseSeeds,
+  accordStateSeeds,
   pendingUpdateSeeds,
   subaccordSeeds,
 } from "./lifecycle.ts";
@@ -60,10 +60,10 @@ test("pendingUpdateSeeds: [b'update', subaccord[32], nonce_le8]", () => {
   );
 });
 
-test("pauseSeeds: singleton [b'pause']", () => {
-  const seeds = pauseSeeds();
+test("accordStateSeeds: singleton [b'state']", () => {
+  const seeds = accordStateSeeds();
   assert.equal(seeds.length, 1);
-  assert.deepEqual(Array.from(seeds[0]!), [112, 97, 117, 115, 101]); // "pause"
+  assert.deepEqual(Array.from(seeds[0]!), [115, 116, 97, 116, 101]); // "state"
 });
 
 test("assertValidMaxAppeals: 0..=MAX_APPEALS", () => {

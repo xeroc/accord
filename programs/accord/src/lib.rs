@@ -38,11 +38,13 @@ use ephemeral_rollups_sdk::vrf::types::SerializableAccountMeta;
 pub mod constants;
 pub mod errors;
 pub mod events;
+pub mod pda;
 pub mod state;
 
 pub use constants::*;
 pub use errors::AccordError;
 pub use events::*;
+pub use pda::*;
 pub use state::*;
 
 // Program id for the Accord. (`anchor build` normally provisions this; it is
@@ -437,30 +439,33 @@ pub mod accord {
     // exposure); appeal + finalize_dispute are never pausable, so in-flight
     // disputes always resolve and the pause authority cannot select an
     // adjudicative outcome. The halt is enforced inside create_dispute and
-    // stake (`require!(!pause_state.paused, ProgramPaused)`); this module only
+    // stake (`require!(!accord_state.paused, ProgramPaused)`); this module only
     // owns the breaker itself.
 
     /// One-time init of the pause singleton. The caller becomes the pause
     /// authority (typically the Squads multisig / upgrade authority). Call at
     /// deploy; front-running is an ops concern (bundle init with deploy).
     pub fn initialize_pause(ctx: Context<InitializePause>) -> Result<()> {
-        ctx.accounts.pause_state.authority = ctx.accounts.authority.key();
-        ctx.accounts.pause_state.paused = false;
-        ctx.accounts.pause_state.pending_unpause_after = None;
-        ctx.accounts.pause_state.bump = ctx.bumps.pause_state;
+        ctx.accounts.accord_state.authority = ctx.accounts.authority.key();
+        ctx.accounts.accord_state.paused = false;
+        ctx.accounts.accord_state.pending_unpause_after = None;
+        ctx.accounts.accord_state.bump = ctx.bumps.accord_state;
         Ok(())
     }
 
     /// Instant, authority-gated emergency freeze.
     pub fn pause(ctx: Context<Pause>) -> Result<()> {
         require!(
-            ctx.accounts.authority.key() == ctx.accounts.pause_state.authority,
+            ctx.accounts.authority.key() == ctx.accounts.accord_state.authority,
             AccordError::NotPauseAuthority
         );
-        require!(!ctx.accounts.pause_state.paused, AccordError::AlreadyPaused);
-        ctx.accounts.pause_state.paused = true;
+        require!(
+            !ctx.accounts.accord_state.paused,
+            AccordError::AlreadyPaused
+        );
+        ctx.accounts.accord_state.paused = true;
         // a fresh pause cancels any pending unpause
-        ctx.accounts.pause_state.pending_unpause_after = None;
+        ctx.accounts.accord_state.pending_unpause_after = None;
         emit!(Paused {
             authority: ctx.accounts.authority.key(),
         });
@@ -470,15 +475,15 @@ pub mod accord {
     /// Authority-gated: arms an unpause executable after `UNPAUSE_TIMELOCK_SLOTS`.
     pub fn propose_unpause(ctx: Context<ProposeUnpause>) -> Result<()> {
         require!(
-            ctx.accounts.authority.key() == ctx.accounts.pause_state.authority,
+            ctx.accounts.authority.key() == ctx.accounts.accord_state.authority,
             AccordError::NotPauseAuthority
         );
-        require!(ctx.accounts.pause_state.paused, AccordError::NotPaused);
+        require!(ctx.accounts.accord_state.paused, AccordError::NotPaused);
         let slot = Clock::get()?.slot;
         let execute_after = slot
             .checked_add(UNPAUSE_TIMELOCK_SLOTS)
             .ok_or(AccordError::ArithmeticOverflow)?;
-        ctx.accounts.pause_state.pending_unpause_after = Some(execute_after);
+        ctx.accounts.accord_state.pending_unpause_after = Some(execute_after);
         emit!(UnpauseProposed {
             execute_after_slot: execute_after,
         });
@@ -489,7 +494,7 @@ pub mod accord {
     pub fn execute_unpause(ctx: Context<ExecuteUnpause>) -> Result<()> {
         let execute_after = ctx
             .accounts
-            .pause_state
+            .accord_state
             .pending_unpause_after
             .ok_or(AccordError::NoPendingUnpause)?;
         let slot = Clock::get()?.slot;
@@ -497,9 +502,9 @@ pub mod accord {
             slot >= execute_after,
             AccordError::UnpauseTimelockNotElapsed
         );
-        let authority = ctx.accounts.pause_state.authority;
-        ctx.accounts.pause_state.paused = false;
-        ctx.accounts.pause_state.pending_unpause_after = None;
+        let authority = ctx.accounts.accord_state.authority;
+        ctx.accounts.accord_state.paused = false;
+        ctx.accounts.accord_state.pending_unpause_after = None;
         emit!(Unpaused { authority });
         Ok(())
     }
@@ -645,7 +650,10 @@ pub mod accord {
     /// new canonical root — O(log N). A wrong (stale/fabricated) path reverts,
     /// leaving the root untouched. Reverts while the circuit breaker is paused.
     pub fn stake(ctx: Context<Stake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
-        require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
+        require!(
+            !ctx.accounts.accord_state.paused,
+            AccordError::ProgramPaused
+        );
         require!(amount > 0, AccordError::InvalidAmount);
         // PROG-ATTESTTION: optional credential gate. On a credential-gated
         // Subaccord (`juror_credential != default`), the juror must supply a
@@ -1304,15 +1312,16 @@ pub mod accord {
         nonce: u64,
         fee: u64,
     ) -> Result<()> {
-        require!(!ctx.accounts.pause_state.paused, AccordError::ProgramPaused);
+        require!(
+            !ctx.accounts.accord_state.paused,
+            AccordError::ProgramPaused
+        );
 
         let n = options.len();
         require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
 
         let sub = &mut ctx.accounts.subaccord;
-        let required_fee = (sub.min_jury_size as u64)
-            .checked_mul(sub.fee_per_juror)
-            .ok_or(AccordError::ArithmeticOverflow)?;
+        let required_fee = sub.filing_fee()?;
         require!(fee == required_fee, AccordError::FeeMismatch);
 
         require!(
@@ -2694,8 +2703,7 @@ pub mod accord {
     /// this via CPI to lazily read the outcome. Returns `None` until the
     /// dispute reaches `Final` (stored on-chain as the `u8::MAX` sentinel).
     pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
-        let r = ctx.accounts.dispute.final_ruling;
-        Ok((r != u8::MAX).then_some(r))
+        Ok(ctx.accounts.dispute.ruling())
     }
 
     /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls earned fees
@@ -3479,11 +3487,11 @@ pub struct InitializePause<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + PauseState::INIT_SPACE,
-        seeds = [SEED_PAUSE],
+        space = 8 + AccordState::INIT_SPACE,
+        seeds = [SEED_ACCORD_STATE],
         bump,
     )]
-    pub pause_state: Account<'info, PauseState>,
+    pub accord_state: Account<'info, AccordState>,
     pub system_program: Program<'info, System>,
 }
 
@@ -3491,16 +3499,16 @@ pub struct InitializePause<'info> {
 pub struct Pause<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
-    pub pause_state: Account<'info, PauseState>,
+    #[account(mut, seeds = [SEED_ACCORD_STATE], bump = accord_state.bump)]
+    pub accord_state: Account<'info, AccordState>,
 }
 
 #[derive(Accounts)]
 pub struct ProposeUnpause<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
-    pub pause_state: Account<'info, PauseState>,
+    #[account(mut, seeds = [SEED_ACCORD_STATE], bump = accord_state.bump)]
+    pub accord_state: Account<'info, AccordState>,
 }
 
 #[derive(Accounts)]
@@ -3509,8 +3517,8 @@ pub struct ExecuteUnpause<'info> {
     /// the notice period, not the signer, gates the unpause).
     #[account(mut)]
     pub caller: Signer<'info>,
-    #[account(mut, seeds = [SEED_PAUSE], bump = pause_state.bump)]
-    pub pause_state: Account<'info, PauseState>,
+    #[account(mut, seeds = [SEED_ACCORD_STATE], bump = accord_state.bump)]
+    pub accord_state: Account<'info, AccordState>,
 }
 
 /// Account context for `create_subaccord` (veridao-ek65).
@@ -3549,7 +3557,7 @@ pub struct CreateSubaccord<'info> {
 ///   the program can move funds out on `unstake` (PDA-signed).
 /// - `juror_stake` is init'd on first stake, topped up thereafter
 ///   (`init_if_needed`); `active_draws` is never touched here.
-/// - `pause_state` enforces the ADR-0007 circuit breaker.
+/// - `accord_state` enforces the ADR-0007 circuit breaker.
 #[derive(Accounts)]
 pub struct Stake<'info> {
     #[account(mut)]
@@ -3561,8 +3569,8 @@ pub struct Stake<'info> {
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,
     /// Circuit breaker (ADR-0007): stake reverts while paused.
-    #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
-    pub pause_state: Account<'info, PauseState>,
+    #[account(seeds = [SEED_ACCORD_STATE], bump = accord_state.bump)]
+    pub accord_state: Account<'info, AccordState>,
     #[account(
         init_if_needed,
         payer = juror,
@@ -3794,8 +3802,8 @@ pub struct CreateDispute<'info> {
         bump = subaccord.bump,
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,
-    #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
-    pub pause_state: Account<'info, PauseState>,
+    #[account(seeds = [SEED_ACCORD_STATE], bump = accord_state.bump)]
+    pub accord_state: Account<'info, AccordState>,
     #[account(
         init,
         payer = filer,
@@ -4061,11 +4069,11 @@ pub struct Appeal<'info> {
         bump = subaccord.bump,
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,
-    // ponytail: `pause_state` is retained here for IDL/SDK stability but is NOT
+    // ponytail: `accord_state` is retained here for IDL/SDK stability but is NOT
     // consulted — `appeal` is never pausable (ADR-0016). Drop this field in a
     // coordinated IDL revision (pair with the accord-r6ti settlement rework).
-    #[account(seeds = [SEED_PAUSE], bump = pause_state.bump)]
-    pub pause_state: Account<'info, PauseState>,
+    #[account(seeds = [SEED_ACCORD_STATE], bump = accord_state.bump)]
+    pub accord_state: Account<'info, AccordState>,
     #[account(
         mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],

@@ -24,13 +24,16 @@ use crate::SEED_CANON_LIST;
 /// and no PDA signing is needed — the creator's signer privilege propagates
 /// through the CPI.
 #[derive(Accounts)]
-// `rules_hash` is the 4th handler arg; anchor requires listing all preceding
+// `rules_hash` is the 2nd handler arg; anchor requires listing all preceding
 // args positionally (no `_` skip in this anchor version).
-#[instruction(stake_mint: Pubkey, fee_mint: Pubkey, list_program: Pubkey, rules_hash: [u8; 32])]
+#[instruction(list_program: Pubkey, rules_hash: [u8; 32])]
 pub struct CreateList<'info> {
-    /// L-4: validated legacy SPL Mint forwarded to Accord create_subaccord CPI.
-    pub stake_mint_acc: Account<'info, Mint>,
-    pub fee_mint_acc: Account<'info, Mint>,
+    /// L-4: validated legacy SPL Mint — the single mint reference: forwarded
+    /// to the Accord `create_subaccord` CPI and stored on `CanonList.stake_mint`.
+    pub stake_mint: Account<'info, Mint>,
+    /// L-4: validated legacy SPL Mint — forwarded to the CPI and stored on
+    /// `CanonList.fee_mint`.
+    pub fee_mint: Account<'info, Mint>,
 
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -126,12 +129,22 @@ pub struct CanonList {
     pub listing_window: u64,
     /// Seconds the `WithdrawPending` fraud-challenge window stays open.
     pub withdrawal_timelock: u64,
-    /// Canon governance multisig (set at `create_list`); passed as the backing
-    /// Subaccord's authority so it controls dispute-param retuning.
+    /// The CanonList PDA itself (set at `create_list`); also passed as the
+    /// backing Subaccord's authority, so dispute-param retuning can only flow
+    /// through a canon instruction CPIing `propose_subaccord_update` with the
+    /// list PDA as signer (not yet implemented). `CanonList.authority`
+    /// mirrors it for display/traceability.
     pub authority: Pubkey,
     /// Count of `CanonItem`s ever filed under this list (PDA-distinctness
     /// guarantee; monotonic, never decremented).
     pub item_count: u32,
+    /// Count of disputes ever filed by this list — the Accord filer-nonce for
+    /// the dispute PDA `["dispute", list, dispute_count]` (monotonic, never
+    /// decremented). Per-LIST, not per-item: the filer is the CanonList PDA,
+    /// so a per-item counter would collide (two items challenged for the
+    /// first time would derive the same PDA and the second `create_dispute`
+    /// would hit an already-initialized account).
+    pub dispute_count: u64,
     pub bump: u8,
 }
 

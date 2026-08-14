@@ -142,8 +142,9 @@ fn setup() -> TestEnv {
         challenge_pct: DEFAULT_CHALLENGE_PCT_BPS,
         listing_window: 0,
         withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
-        authority: Pubkey::default(),
+        authority: list_addr,
         item_count: 0,
+        dispute_count: 0,
         bump: list_bump,
     };
     let mut buf = Vec::new();
@@ -364,11 +365,7 @@ fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling
 }
 
 fn dispute_pda(filer: &Pubkey, nonce: u64) -> Pubkey {
-    Pubkey::find_program_address(
-        &[b"dispute", filer.as_ref(), &nonce.to_le_bytes()],
-        &ACCORD_ID,
-    )
-    .0
+    accord::dispute_pda(filer, nonce).0
 }
 
 fn read_item(env: &TestEnv, curated: &Pubkey) -> CanonItem {

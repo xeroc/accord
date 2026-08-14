@@ -75,7 +75,7 @@ import {
   findSubaccordPda,
   findDisputePda,
   findJurorStakePda,
-  findPauseStatePda,
+  findAccordStatePda,
 } from "@useaccord/sdk";
 
 const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, riskType);

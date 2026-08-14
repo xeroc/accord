@@ -43,7 +43,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findJurorStakePda, findPauseStatePda } from "../pdas";
+import { findAccordStatePda, findJurorStakePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 import {
   getMSTNodeDecoder,
@@ -64,7 +64,7 @@ export type StakeInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountJuror extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TAccountJurorStake extends string | AccountMeta<string> = string,
   TAccountStakingToken extends string | AccountMeta<string> = string,
   TAccountJurorTokenAccount extends string | AccountMeta<string> = string,
@@ -87,9 +87,9 @@ export type StakeInstruction<
       TAccountSubaccord extends string
         ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
-      TAccountPauseState extends string
-        ? ReadonlyAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? ReadonlyAccount<TAccountAccordState>
+        : TAccountAccordState,
       TAccountJurorStake extends string
         ? WritableAccount<TAccountJurorStake>
         : TAccountJurorStake,
@@ -158,7 +158,7 @@ export function getStakeInstructionDataCodec(): Codec<
 export type StakeAsyncInput<
   TAccountJuror extends string = string,
   TAccountSubaccord extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountJurorStake extends string = string,
   TAccountStakingToken extends string = string,
   TAccountJurorTokenAccount extends string = string,
@@ -170,7 +170,7 @@ export type StakeAsyncInput<
   juror: TransactionSigner<TAccountJuror>;
   subaccord: Address<TAccountSubaccord>;
   /** Circuit breaker (ADR-0007): stake reverts while paused. */
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
   jurorStake?: Address<TAccountJurorStake>;
   /** Must be the Subaccord's declared staking token. */
   stakingToken: Address<TAccountStakingToken>;
@@ -187,7 +187,7 @@ export type StakeAsyncInput<
 export async function getStakeInstructionAsync<
   TAccountJuror extends string,
   TAccountSubaccord extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountJurorStake extends string,
   TAccountStakingToken extends string,
   TAccountJurorTokenAccount extends string,
@@ -200,7 +200,7 @@ export async function getStakeInstructionAsync<
   input: StakeAsyncInput<
     TAccountJuror,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
@@ -215,7 +215,7 @@ export async function getStakeInstructionAsync<
     TProgramAddress,
     TAccountJuror,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
@@ -232,7 +232,7 @@ export async function getStakeInstructionAsync<
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: false },
+    accordState: { value: input.accordState ?? null, isWritable: false },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
     jurorTokenAccount: {
@@ -256,8 +256,8 @@ export async function getStakeInstructionAsync<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
   if (!accounts.jurorStake.value) {
     accounts.jurorStake.value = await findJurorStakePda({
@@ -343,7 +343,7 @@ export async function getStakeInstructionAsync<
     accounts: [
       getAccountMeta("juror", accounts.juror),
       getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("jurorStake", accounts.jurorStake),
       getAccountMeta("stakingToken", accounts.stakingToken),
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
@@ -360,7 +360,7 @@ export async function getStakeInstructionAsync<
     TProgramAddress,
     TAccountJuror,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
@@ -374,7 +374,7 @@ export async function getStakeInstructionAsync<
 export type StakeInput<
   TAccountJuror extends string = string,
   TAccountSubaccord extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountJurorStake extends string = string,
   TAccountStakingToken extends string = string,
   TAccountJurorTokenAccount extends string = string,
@@ -386,7 +386,7 @@ export type StakeInput<
   juror: TransactionSigner<TAccountJuror>;
   subaccord: Address<TAccountSubaccord>;
   /** Circuit breaker (ADR-0007): stake reverts while paused. */
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
   jurorStake: Address<TAccountJurorStake>;
   /** Must be the Subaccord's declared staking token. */
   stakingToken: Address<TAccountStakingToken>;
@@ -403,7 +403,7 @@ export type StakeInput<
 export function getStakeInstruction<
   TAccountJuror extends string,
   TAccountSubaccord extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountJurorStake extends string,
   TAccountStakingToken extends string,
   TAccountJurorTokenAccount extends string,
@@ -416,7 +416,7 @@ export function getStakeInstruction<
   input: StakeInput<
     TAccountJuror,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
@@ -430,7 +430,7 @@ export function getStakeInstruction<
   TProgramAddress,
   TAccountJuror,
   TAccountSubaccord,
-  TAccountPauseState,
+  TAccountAccordState,
   TAccountJurorStake,
   TAccountStakingToken,
   TAccountJurorTokenAccount,
@@ -446,7 +446,7 @@ export function getStakeInstruction<
   const originalAccounts = {
     juror: { value: input.juror ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: false },
+    accordState: { value: input.accordState ?? null, isWritable: false },
     jurorStake: { value: input.jurorStake ?? null, isWritable: true },
     stakingToken: { value: input.stakingToken ?? null, isWritable: false },
     jurorTokenAccount: {
@@ -488,7 +488,7 @@ export function getStakeInstruction<
     accounts: [
       getAccountMeta("juror", accounts.juror),
       getAccountMeta("subaccord", accounts.subaccord),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("jurorStake", accounts.jurorStake),
       getAccountMeta("stakingToken", accounts.stakingToken),
       getAccountMeta("jurorTokenAccount", accounts.jurorTokenAccount),
@@ -505,7 +505,7 @@ export function getStakeInstruction<
     TProgramAddress,
     TAccountJuror,
     TAccountSubaccord,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountJurorStake,
     TAccountStakingToken,
     TAccountJurorTokenAccount,
@@ -525,7 +525,7 @@ export type ParsedStakeInstruction<
     juror: TAccountMetas[0];
     subaccord: TAccountMetas[1];
     /** Circuit breaker (ADR-0007): stake reverts while paused. */
-    pauseState: TAccountMetas[2];
+    accordState: TAccountMetas[2];
     jurorStake: TAccountMetas[3];
     /** Must be the Subaccord's declared staking token. */
     stakingToken: TAccountMetas[4];
@@ -567,7 +567,7 @@ export function parseStakeInstruction<
     accounts: {
       juror: getNextAccount(),
       subaccord: getNextAccount(),
-      pauseState: getNextAccount(),
+      accordState: getNextAccount(),
       jurorStake: getNextAccount(),
       stakingToken: getNextAccount(),
       jurorTokenAccount: getNextAccount(),

@@ -13,7 +13,7 @@ import {
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
-export async function findPauseStatePda(
+export async function findAccordStatePda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
@@ -21,6 +21,6 @@ export async function findPauseStatePda(
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
-    seeds: [getBytesEncoder().encode(new Uint8Array([112, 97, 117, 115, 101]))],
+    seeds: [getBytesEncoder().encode(new Uint8Array([115, 116, 97, 116, 101]))],
   });
 }

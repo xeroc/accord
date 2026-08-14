@@ -6,7 +6,7 @@
  * Anyone can call this once `UNPAUSE_TIMELOCK_SLOTS` (24h) has elapsed since
  * `propose_unpause` landed. The loaded `--keypair` is only the fee payer.
  */
-import { Accord, findPauseStatePda } from "@useaccord/sdk";
+import { Accord, findAccordStatePda } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 
@@ -27,10 +27,10 @@ export default class LifecycleExecuteUnpause extends ChainCommand {
     this.applyOutput(flags);
 
     const ctx = await this.loadChain(flags);
-    const [pauseState] = await findPauseStatePda({
+    const [accordState] = await findAccordStatePda({
       programAddress: Accord.PROGRAM_ID,
     });
-    const instruction = ctx.accord.methods.executeUnpause(ctx.signer.address, pauseState);
+    const instruction = ctx.accord.methods.executeUnpause(ctx.signer.address, accordState);
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);
@@ -38,6 +38,6 @@ export default class LifecycleExecuteUnpause extends ChainCommand {
     }
 
     const signature = await this.sendInstruction(ctx, instruction);
-    this.emitSend(signature, { caller: ctx.signer.address, pauseState });
+    this.emitSend(signature, { caller: ctx.signer.address, accordState });
   }
 }

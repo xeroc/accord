@@ -36,7 +36,7 @@ import {
   getAccountMetaFactory,
   type ResolvedInstructionAccount,
 } from "@solana/kit/program-client-core";
-import { findPauseStatePda } from "../pdas";
+import { findAccordStatePda } from "../pdas";
 import { ACCORD_PROGRAM_ADDRESS } from "../programs";
 
 export const INITIALIZE_PAUSE_DISCRIMINATOR: ReadonlyUint8Array =
@@ -51,7 +51,7 @@ export function getInitializePauseDiscriminatorBytes(): ReadonlyUint8Array {
 export type InitializePauseInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
-  TAccountPauseState extends string | AccountMeta<string> = string,
+  TAccountAccordState extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -63,9 +63,9 @@ export type InitializePauseInstruction<
         ? WritableSignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
-      TAccountPauseState extends string
-        ? WritableAccount<TAccountPauseState>
-        : TAccountPauseState,
+      TAccountAccordState extends string
+        ? WritableAccount<TAccountAccordState>
+        : TAccountAccordState,
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
@@ -104,23 +104,23 @@ export function getInitializePauseInstructionDataCodec(): FixedSizeCodec<
 
 export type InitializePauseAsyncInput<
   TAccountAuthority extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  pauseState?: Address<TAccountPauseState>;
+  accordState?: Address<TAccountAccordState>;
   systemProgram?: Address<TAccountSystemProgram>;
 };
 
 export async function getInitializePauseInstructionAsync<
   TAccountAuthority extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
   input: InitializePauseAsyncInput<
     TAccountAuthority,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
@@ -128,7 +128,7 @@ export async function getInitializePauseInstructionAsync<
   InitializePauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountSystemProgram
   >
 > {
@@ -138,7 +138,7 @@ export async function getInitializePauseInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -147,8 +147,8 @@ export async function getInitializePauseInstructionAsync<
   >;
 
   // Resolve default values.
-  if (!accounts.pauseState.value) {
-    accounts.pauseState.value = await findPauseStatePda();
+  if (!accounts.accordState.value) {
+    accounts.accordState.value = await findAccordStatePda();
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
@@ -159,7 +159,7 @@ export async function getInitializePauseInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getInitializePauseInstructionDataEncoder().encode({}),
@@ -167,37 +167,37 @@ export async function getInitializePauseInstructionAsync<
   } as InitializePauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountSystemProgram
   >);
 }
 
 export type InitializePauseInput<
   TAccountAuthority extends string = string,
-  TAccountPauseState extends string = string,
+  TAccountAccordState extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
   authority: TransactionSigner<TAccountAuthority>;
-  pauseState: Address<TAccountPauseState>;
+  accordState: Address<TAccountAccordState>;
   systemProgram?: Address<TAccountSystemProgram>;
 };
 
 export function getInitializePauseInstruction<
   TAccountAuthority extends string,
-  TAccountPauseState extends string,
+  TAccountAccordState extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ACCORD_PROGRAM_ADDRESS,
 >(
   input: InitializePauseInput<
     TAccountAuthority,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountSystemProgram
   >,
   config?: { programAddress?: TProgramAddress },
 ): InitializePauseInstruction<
   TProgramAddress,
   TAccountAuthority,
-  TAccountPauseState,
+  TAccountAccordState,
   TAccountSystemProgram
 > {
   // Program address.
@@ -206,7 +206,7 @@ export function getInitializePauseInstruction<
   // Original accounts.
   const originalAccounts = {
     authority: { value: input.authority ?? null, isWritable: true },
-    pauseState: { value: input.pauseState ?? null, isWritable: true },
+    accordState: { value: input.accordState ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<
@@ -224,7 +224,7 @@ export function getInitializePauseInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
-      getAccountMeta("pauseState", accounts.pauseState),
+      getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("systemProgram", accounts.systemProgram),
     ],
     data: getInitializePauseInstructionDataEncoder().encode({}),
@@ -232,7 +232,7 @@ export function getInitializePauseInstruction<
   } as InitializePauseInstruction<
     TProgramAddress,
     TAccountAuthority,
-    TAccountPauseState,
+    TAccountAccordState,
     TAccountSystemProgram
   >);
 }
@@ -244,7 +244,7 @@ export type ParsedInitializePauseInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     authority: TAccountMetas[0];
-    pauseState: TAccountMetas[1];
+    accordState: TAccountMetas[1];
     systemProgram: TAccountMetas[2];
   };
   data: InitializePauseInstructionData;
@@ -277,7 +277,7 @@ export function parseInitializePauseInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       authority: getNextAccount(),
-      pauseState: getNextAccount(),
+      accordState: getNextAccount(),
       systemProgram: getNextAccount(),
     },
     data: getInitializePauseInstructionDataDecoder().decode(instruction.data),

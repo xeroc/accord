@@ -6,10 +6,10 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./accordState";
 export * from "./appealBond";
 export * from "./dispute";
 export * from "./jurorStake";
-export * from "./pauseState";
 export * from "./pendingUpdate";
 export * from "./round";
 export * from "./subaccord";

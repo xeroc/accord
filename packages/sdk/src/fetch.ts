@@ -28,9 +28,9 @@ export {
   fetchMaybeJurorStake as fetchJurorStakeMaybe,
 } from "./generated/accounts/jurorStake.js";
 export {
-  fetchPauseState,
-  fetchMaybePauseState as fetchPauseStateMaybe,
-} from "./generated/accounts/pauseState.js";
+  fetchAccordState,
+  fetchMaybeAccordState as fetchAccordStateMaybe,
+} from "./generated/accounts/accordState.js";
 export {
   fetchPendingUpdate,
   fetchMaybePendingUpdate as fetchPendingUpdateMaybe,

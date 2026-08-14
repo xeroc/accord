@@ -29,6 +29,7 @@ import {
   CANON_PROGRAM_ID,
   ACCORD_PROGRAM_ID,
   getCanonItemDecoder,
+  getCanonListDecoder,
   ItemState,
 } from "@useaccord/canon";
 import { getProgramDerivedAddress, getAddressEncoder, type Address } from "@solana/kit";
@@ -79,7 +80,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     if (!env.up) return; // offline CI lane
 
     // --- create_list: CPIs Accord create_subaccord (depth 20, fee_per_juror 10) ---
-    const pauseState = await ensurePause(env);
+    const accordState = await ensurePause(env);
     const { mint } = await createMint(env, 6);
     const rulesHash = crypto.getRandomValues(new Uint8Array(32));
     const listProgram = "11111111111111111111111111111111" as Address; // sentinel ⇒ ownership off
@@ -99,7 +100,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     await env.sendIx(createIx);
 
     // --- stake 3 jurors into the canon-created Subaccord (depth 8) ---
-    const core = await armCanonJurors(env, pauseState, subaccord, mint, 8);
+    const core = await armCanonJurors(env, accordState, subaccord, mint, 8);
     const fx: DrawFixture = { env, up: true, ...core };
 
     // --- submit_item: lock the 500 deposit (accumulated_stake = 500) ---
@@ -128,7 +129,9 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     const challenger = await fundSigner(env);
     await setTokenBalance(env, challenger.address, mint, 100_000n);
     const challengerAta = await ataOf(mint, challenger.address);
-    // Dispute PDA: ["dispute", filer=list, nonce=0] (first challenge ⇒ count 0).
+    // Dispute PDA: ["dispute", filer=list, nonce=0] (list's first-ever
+    // dispute ⇒ dispute_count = 0; nonce is the LIST filer-nonce, not the
+    // item's challengeCount).
     const [dispute] = await getProgramDerivedAddress({
       programAddress: ACCORD_PROGRAM_ID,
       seeds: [
@@ -152,7 +155,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       { evidence: crypto.getRandomValues(new Uint8Array(32)) },
       {
         accordDispute: dispute,
-        accordPauseState: pauseState,
+        accordState: accordState,
         accordFeeVault,
         accordProgram: ACCORD_PROGRAM_ID,
       },
@@ -275,11 +278,67 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         CANON_PROGRAM_ID,
       ),
     );
-
     const after = (await fetchDecoded(env, item, getCanonItemDecoder()))!;
     // keep: no transfer; challenge_stake (250) folds into accumulated_stake (500→750).
     expect(after.state).toBe(ItemState.Listed);
     expect(after.accumulatedStake).toBe(750n);
     expect(after.activeDispute).toBe("11111111111111111111111111111111"); // cleared
+
+    // --- regression: a SECOND item in the same list must get a distinct
+    // dispute PDA on its own FIRST challenge. The nonce is the list-level
+    // dispute_count (= 1 after the dispute above), not the item's
+    // challengeCount (= 0) — the old per-item scheme collided on
+    // ["dispute", list, 0] and made the second item permanently
+    // unchallengeable (Accord's `init` would hit an existing PDA).
+    const submitter2 = await fundSigner(env);
+    await setTokenBalance(env, submitter2.address, mint, 10_000n);
+    const curatedAccount2 = await fundSigner(env);
+    const { instruction: submitIx2, item: item2 } = await submitItem(
+      {
+        submitter: submitter2,
+        list,
+        account: curatedAccount2.address,
+        feeMint: mint,
+        submitterTokenAccount: await ataOf(mint, submitter2.address),
+        vault: canonVault,
+      },
+      { evidence: crypto.getRandomValues(new Uint8Array(32)), deposit: 500n },
+      CANON_PROGRAM_ID,
+    );
+    await env.sendIx(submitIx2);
+
+    const [dispute2] = await getProgramDerivedAddress({
+      programAddress: ACCORD_PROGRAM_ID,
+      seeds: [
+        new TextEncoder().encode("dispute"),
+        getAddressEncoder().encode(list),
+        new Uint8Array(new BigUint64Array([1n]).buffer), // nonce 1 LE
+      ],
+    });
+    expect(dispute2).not.toBe(dispute); // distinct PDAs — the collision bug
+    await env.sendIx(
+      challengeItem(
+        {
+          challenger,
+          list,
+          item: item2,
+          subaccord,
+          feeMint: mint,
+          challengerTokenAccount: challengerAta,
+          vault: canonVault,
+        },
+        { evidence: crypto.getRandomValues(new Uint8Array(32)) },
+        {
+          accordDispute: dispute2,
+          accordState: accordState,
+          accordFeeVault,
+          accordProgram: ACCORD_PROGRAM_ID,
+        },
+        CANON_PROGRAM_ID,
+      ),
+    );
+    expect(await readDisputeState(env, dispute2)).toBe(0); // Created
+    const listAfter = (await fetchDecoded(env, list, getCanonListDecoder()))!;
+    expect(listAfter.disputeCount).toBe(2n); // filer-nonce advanced twice
   }, 600_000);
 });

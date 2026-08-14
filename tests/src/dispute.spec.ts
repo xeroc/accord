@@ -14,7 +14,7 @@
 // (the adapter pins `juror = accord.signer`); the filer reuses `env.accord`
 // (payer-backed) so `env.sendIx` signs the create with the fee payer alone.
 //
-// Singleton note: PauseState is shared across specs; `initializePause` is only
+// Singleton note: AccordState is shared across specs; `initializePause` is only
 // sent when it does not already exist on this Surfnet.
 import {
   Accord,
@@ -120,7 +120,7 @@ async function disputePda(
 describe("e2e: dispute (requires Surfpool)", () => {
   let env: TestEnv;
   let mint!: Address;
-  let pauseState!: Address;
+  let accordState!: Address;
   // A fully-armed Subaccord (≥ INITIAL_NUM_JURORS stakers) + its vault.
   let mainSub!: Address;
   let mainVault!: Address;
@@ -136,9 +136,9 @@ describe("e2e: dispute (requires Surfpool)", () => {
       env.programId,
       env.payer.address,
     );
-    pauseState = pause.pauseState;
+    accordState = pause.accordState;
     const existing = await env.rpc
-      .getAccountInfo(pauseState, { encoding: "base64" })
+      .getAccountInfo(accordState, { encoding: "base64" })
       .send();
     if (!existing.value) await env.sendIx(pause.instruction);
 
@@ -189,7 +189,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
       const accounts: StakingAccounts = {
         juror: juror.address,
         subaccord: sub.subaccord,
-        pauseState,
+        accordState,
         jurorStake,
         stakingToken: mint,
         jurorTokenAccount: await ata(mint, juror.address),
@@ -221,7 +221,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
       feeToken: mint,
       filerTokenAccount: filerAta,
       feeVault: vault,
-      pauseState,
+      accordState,
     };
   }
 

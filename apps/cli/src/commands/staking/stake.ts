@@ -58,7 +58,7 @@ export default class StakingStake extends ChainCommand {
       description: "Staking juror (defaults to the loaded signer)",
     }),
     "pause-state": Flags.string({
-      description: "PauseState PDA (auto-derived singleton if omitted)",
+      description: "AccordState PDA (auto-derived singleton if omitted)",
     }),
     "path-from": Flags.string({
       description:
@@ -83,7 +83,7 @@ export default class StakingStake extends ChainCommand {
     const amount = BigInt(flags.amount);
 
     const r = await resolveStaking(ctx, flags.subaccord as Address, juror, {
-      pauseState: flags["pause-state"] as Address | undefined,
+      accordState: flags["pause-state"] as Address | undefined,
     });
     const { path, index } = manualPath
       ? { path: manualPath, index: null }

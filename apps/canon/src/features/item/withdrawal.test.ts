@@ -58,6 +58,7 @@ function makeList(over: Partial<CanonList> = {}): CanonList {
     withdrawalTimelock: BigInt(5 * 86_400),
     authority: "AuthXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" as CanonList["authority"],
     itemCount: 1,
+    disputeCount: 0n,
     bump: 255,
     ...over,
   };

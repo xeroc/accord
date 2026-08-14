@@ -1,18 +1,18 @@
 /**
- * `useaccord read:pause-state` — fetch + decode the PauseState singleton PDA.
- * SDK: `fetchMaybePauseState` (derives the canonical singleton; no address arg).
+ * `useaccord read:pause-state` — fetch + decode the AccordState singleton PDA.
+ * SDK: `fetchMaybeAccordState` (derives the canonical singleton; no address arg).
  * Missing ⇒ `{exists:false}` (init-pause has not run), exit 0.
  */
-import { findPauseStatePda, fetchMaybePauseState } from "@useaccord/sdk";
+import { findAccordStatePda, fetchMaybeAccordState } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 import { emitAccountRead, outFlag } from "../../read-io.js";
 
-export default class ReadPauseState extends ChainCommand {
-  static summary = "Fetch + decode the PauseState singleton";
+export default class ReadAccordState extends ChainCommand {
+  static summary = "Fetch + decode the AccordState singleton";
 
   static description =
-    "Read the program-wide PauseState singleton (one per deployment). Decodes " +
+    "Read the program-wide AccordState singleton (one per deployment). Decodes " +
     "the pause authority, paused flag, and any armed unpause slot. Not yet " +
     "initialized ⇒ {exists:false} (run lifecycle:init-pause).";
 
@@ -24,12 +24,12 @@ export default class ReadPauseState extends ChainCommand {
   static flags = { ...chainFlags, out: outFlag };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(ReadPauseState);
+    const { flags } = await this.parse(ReadAccordState);
     this.applyOutput(flags);
 
     const ctx = await this.loadChain(flags);
-    const [pauseState] = await findPauseStatePda();
-    const maybe = await fetchMaybePauseState(ctx.accord.rpc, pauseState);
-    emitAccountRead(this.emitRead.bind(this), flags, maybe, "pauseState");
+    const [accordState] = await findAccordStatePda();
+    const maybe = await fetchMaybeAccordState(ctx.accord.rpc, accordState);
+    emitAccountRead(this.emitRead.bind(this), flags, maybe, "accordState");
   }
 }

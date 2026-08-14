@@ -6,6 +6,7 @@
 //! structs themselves are plain `#[account]` types.
 
 use crate::constants::{MAX_JURORS, MAX_OPTIONS, NUM_EVIDENCE_SLOTS};
+use crate::errors::AccordError;
 use anchor_lang::prelude::*;
 
 /// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
@@ -132,6 +133,18 @@ pub struct Subaccord {
     /// and `stake` (pop).
     pub free_head: u32,
     pub bump: u8,
+}
+
+impl Subaccord {
+    /// Round-1 filing fee a filer must tender to `create_dispute`:
+    /// `min_jury_size · fee_per_juror` (in `fee_token`). Single source for
+    /// Accord's `FeeMismatch` check and for Arbitrables deriving their CPI
+    /// tender (e.g. Canon's `challenge_item`).
+    pub fn filing_fee(&self) -> Result<u64> {
+        (self.min_jury_size as u64)
+            .checked_mul(self.fee_per_juror)
+            .ok_or(error!(AccordError::ArithmeticOverflow))
+    }
 }
 
 /// A Juror's staked capital in a Subaccord. `unstake` reverts while
@@ -277,6 +290,18 @@ pub struct Dispute {
     pub bump: u8,
 }
 
+impl Dispute {
+    /// The final ruling, iff the dispute reached `Final`. `final_ruling` uses
+    /// the `u8::MAX` sentinel until `finalize_dispute` writes the real index
+    /// atomically with `state = Final` — this method is the single source for
+    /// that contract (Accord's `get_ruling` and Arbitrables settling off the
+    /// deserialized `Dispute` both go through it).
+    pub fn ruling(&self) -> Option<u8> {
+        (self.state == DisputeState::Final && self.final_ruling != u8::MAX)
+            .then_some(self.final_ruling)
+    }
+}
+
 /// Per-round draw/vote state. One `Round` per dispute round (initial + appeals).
 ///
 /// Seeds: `["round", dispute, round_idx]`.
@@ -386,7 +411,7 @@ pub struct PendingUpdate {
     pub bump: u8,
 }
 
-/// Program-level circuit breaker (ADR-0007). Singleton seeded `["pause"]`.
+/// Program-level circuit breaker (ADR-0007). Singleton seeded `["state"]`.
 /// `pause()` is instant and authority-gated; `unpause()` is timelocked
 /// (`propose_unpause` arms `pending_unpause_after`, `execute_unpause` lands
 /// once the slot passes — permissionless, so a freeze is always recoverable on
@@ -394,7 +419,7 @@ pub struct PendingUpdate {
 /// revert; in-flight disputes resolve normally.
 #[account]
 #[derive(InitSpace)]
-pub struct PauseState {
+pub struct AccordState {
     /// The multisig/upgrade-authority permitted to pause and propose unpause.
     pub authority: Pubkey,
     pub paused: bool,
@@ -515,4 +540,55 @@ pub struct JurorMembership {
 pub struct LeafClaim {
     pub juror: Pubkey,
     pub stake: u64,
+}
+
+#[cfg(test)]
+mod dispute_ruling_tests {
+    use super::*;
+
+    fn dispute(state: DisputeState, final_ruling: u8) -> Dispute {
+        Dispute {
+            subaccord: Pubkey::default(),
+            filer: Pubkey::default(),
+            nonce: 0,
+            num_options: 2,
+            options: [[0; 32]; MAX_OPTIONS],
+            evidence_hashes: [[0; 32]; NUM_EVIDENCE_SLOTS],
+            state,
+            current_round: 0,
+            terms: CaseTerms {
+                alpha_bps: 0,
+                min_stake: 0,
+                fee_per_juror: 0,
+                review_window: 0,
+                commit_window: 0,
+                reveal_window: 0,
+                appeal_window: 0,
+                max_appeals: 0,
+                min_jury_size: 1,
+                aggregation: Aggregation::Plurality,
+                reveal_threshold_bps: 0,
+                shortfall_policy: ShortfallPolicy::Redraw,
+                max_draw_attempts: 1,
+            },
+            final_ruling,
+            finalized_at: 0,
+            fee_paid: 0,
+            committed_vrf: None,
+            frozen_root: [0; 32],
+            frozen_total_stake: 0,
+            filed_at: 0,
+            bump: 0,
+        }
+    }
+
+    #[test]
+    fn ruling_exists_only_at_final_with_real_index() {
+        assert_eq!(dispute(DisputeState::Final, 1).ruling(), Some(1));
+        assert_eq!(dispute(DisputeState::Created, u8::MAX).ruling(), None);
+        assert_eq!(dispute(DisputeState::Failed, u8::MAX).ruling(), None);
+        // Defense in depth: never leak the sentinel even if the
+        // Final⟺ruling-written invariant were ever broken.
+        assert_eq!(dispute(DisputeState::Final, u8::MAX).ruling(), None);
+    }
 }

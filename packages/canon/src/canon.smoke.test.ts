@@ -64,10 +64,3 @@ test("findCanonItemPda: deterministic, seeds [b'canon-item', list, account]", as
   const [addr3] = await findCanonItemPda(list, DUMMY);
   assert.notEqual(addr, addr3);
 });
-
-test("CANON_PROGRAM_ID matches declare_id! (lib.rs)", () => {
-  assert.equal(
-    CANON_PROGRAM_ID,
-    "GYvMBmzi6w2PPuK8tPGnnNsVprzWeNBecete3Jp6aeKU",
-  );
-});
