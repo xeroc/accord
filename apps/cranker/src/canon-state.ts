@@ -22,9 +22,9 @@ import { isSome } from "@solana/kit";
 import { ItemState, type CanonItem, type CanonList } from "@useaccord/canon";
 
 export type CanonCrankAction =
-  | { readonly kind: "advance_pending" }
-  | { readonly kind: "settle_item" }
-  | { readonly kind: "advance_withdrawal" };
+  | { readonly kind: "canon_advance_pending" }
+  | { readonly kind: "canon_settle_item" }
+  | { readonly kind: "canon_advance_withdrawal" };
 
 /**
  * Resolve the next Canon crank action for an (item, list) snapshot, or `null`
@@ -39,15 +39,17 @@ export function resolveCanonAction(
 ): CanonCrankAction | null {
   switch (item.state) {
     case ItemState.Pending:
-      return now >= item.submittedAt + list.listingWindow ? { kind: "advance_pending" } : null;
+      return now >= item.submittedAt + list.listingWindow
+        ? { kind: "canon_advance_pending" }
+        : null;
     case ItemState.Disputed:
-      return disputeFinal ? { kind: "settle_item" } : null;
+      return disputeFinal ? { kind: "canon_settle_item" } : null;
     case ItemState.WithdrawPending: {
       const requestedAt = item.withdrawalRequestedAt;
       // isSome guard: None + WithdrawPending is an invariant break — nothing to crank.
       if (!isSome(requestedAt)) return null;
       return now >= requestedAt.value + list.withdrawalTimelock
-        ? { kind: "advance_withdrawal" }
+        ? { kind: "canon_advance_withdrawal" }
         : null;
     }
     default:

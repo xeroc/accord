@@ -1,12 +1,12 @@
 /**
  * Crank dispatch — the single merge point between the reconciler and the
  * per-crank implementations (milestone accord-27r5 §2).
- *
  * The map starts empty; each crank registers its handler in its own epic
- * (`src/cranks/<name>.ts` calls {@link registerCrank} / {@link CrankDispatch.register}).
- * The reconciler never imports a crank directly — it looks the action kind up
- * here. That keeps every crank an independent addition: no shared file is
- * edited to ship one.
+ * (`src/cranks/accord/<name>.ts` or `src/cranks/canon/<name>.ts` calls
+ * {@link registerCrank} / {@link CrankDispatch.register}). The reconciler
+ * never imports a crank directly — it looks the action kind up here. That
+ * keeps every crank an independent addition: no shared file is edited to
+ * ship one.
  *
  * Two registration flavours, both one-liners per crank:
  *   - {@link registerCrank} — adapts the nine SDK-direct executors
@@ -57,7 +57,7 @@ export function createCrankDispatch(): CrankDispatch {
 }
 
 /**
- * Register one of the nine SDK-direct executors. The executor returns a
+ * Register one of the SDK-direct executors. The executor returns a
  * {@link CrankResult} (`{signature}` on success, `{skipped}` on a deliberate
  * no-op); this wrapper funnels the skip reason into the per-crank log so a
  * silent skip still leaves a trail. Success-path logging stays in each
@@ -71,8 +71,16 @@ export function registerCrank<K extends CrankKind>(
   dispatch.register(kind, async (ctx, action) => {
     const result = await execute(ctx, action as ActionOf<K>);
     if (result.skipped !== undefined) {
-      const dispute = "dispute" in action ? (action as { dispute: Address }).dispute : null;
-      ctx.log(kind, dispute, `skipped: ${result.skipped}`);
+      ctx.log(kind, subjectOf(action), `skipped: ${result.skipped}`);
     }
   });
+}
+
+/** The account a crank action targets: Accord Dispute PDA, Canon item PDA, or
+ * the Subaccord for program-wide cranks. Null when the action has no subject. */
+function subjectOf(action: CrankAction): Address | null {
+  if ("dispute" in action) return action.dispute;
+  if ("item" in action) return action.item;
+  if ("subaccord" in action) return action.subaccord;
+  return null;
 }

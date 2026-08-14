@@ -5,9 +5,9 @@
  * credits land when `fee_per_juror > 0`. (lib.rs:1136, milestone accord-27r5.)
  */
 import { DisputeState, finalizeRound, type VotingAccounts } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { CrankContext, CrankResult, ActionOf } from "../types.js";
-import { fetchDispute, fetchRound, panelStakePdas, roundPda } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { CrankContext, CrankResult, ActionOf } from "../../types.js";
+import { fetchDispute, fetchRound, panelStakePdas, roundPda } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

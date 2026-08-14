@@ -38,9 +38,9 @@ import {
   type VrfDrawAccounts,
 } from "@useaccord/sdk";
 
-import type { CrankContext, CrankDispatch, CrankHandler } from "../dispatch.js";
-import { SimulationError } from "../send.js";
-import { TreeCache } from "../tree-cache.js";
+import type { CrankContext, CrankDispatch, CrankHandler } from "../../dispatch.js";
+import { SimulationError } from "../../send.js";
+import { TreeCache } from "../../tree-cache.js";
 
 /** A resolved seat: sortition result + the seat number it maps to. */
 export interface ResolvedSeat {

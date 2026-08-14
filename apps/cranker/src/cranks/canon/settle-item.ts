@@ -9,13 +9,13 @@
  */
 import { ItemState, settleItem } from "@useaccord/canon";
 
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { ataOf, fetchCanonItem, fetchCanonList } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { ataOf, fetchCanonItem, fetchCanonList } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,
-  action: ActionOf<"settle_item">,
+  action: ActionOf<"canon_settle_item">,
 ): Promise<CrankResult> {
   const item = await fetchCanonItem(ctx.rpc, action.item);
   if (item.data.state !== ItemState.Disputed) {
@@ -34,11 +34,11 @@ export async function execute(
     submitterTokenAccount: await ataOf(feeMint, item.data.submitter),
   });
   const signature = await ctx.sendIx(ix);
-  ctx.log("settle_item", null, `${action.item} ${signature}`);
+  ctx.log("canon_settle_item", action.item, `${action.item} ${signature}`);
   return { signature };
 }
 
 /** Register this crank on the dispatch map. */
 export function register(d: CrankDispatch): void {
-  registerCrank(d, "settle_item", execute);
+  registerCrank(d, "canon_settle_item", execute);
 }

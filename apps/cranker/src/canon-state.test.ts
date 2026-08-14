@@ -58,7 +58,7 @@ function item(over: Partial<CanonItem> & Pick<CanonItem, "state"> = {} as never)
 test("Pending item past listing_window → advance_pending", () => {
   const i = item({ state: ItemState.Pending, submittedAt: 1_000n });
   expect(resolveCanonAction(i, list(), false, 1_000n + 432_000n)).toEqual({
-    kind: "advance_pending",
+    kind: "canon_advance_pending",
   });
 });
 
@@ -69,7 +69,7 @@ test("Pending item inside listing_window → null", () => {
 
 test("Disputed item with Final dispute → settle_item; not final → null", () => {
   const i = item({ state: ItemState.Disputed });
-  expect(resolveCanonAction(i, list(), true, 2_000n)).toEqual({ kind: "settle_item" });
+  expect(resolveCanonAction(i, list(), true, 2_000n)).toEqual({ kind: "canon_settle_item" });
   expect(resolveCanonAction(i, list(), false, 2_000n)).toBeNull();
 });
 
@@ -79,7 +79,7 @@ test("WithdrawPending past withdrawal_timelock → advance_withdrawal", () => {
     withdrawalRequestedAt: { __option: "Some", value: 5_000n },
   });
   expect(resolveCanonAction(i, list(), false, 5_000n + 432_000n)).toEqual({
-    kind: "advance_withdrawal",
+    kind: "canon_advance_withdrawal",
   });
 });
 

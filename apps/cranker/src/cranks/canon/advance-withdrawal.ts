@@ -8,13 +8,13 @@
  */
 import { ItemState, advanceWithdrawal } from "@useaccord/canon";
 
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { ataOf, fetchCanonItem, fetchCanonList } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { ataOf, fetchCanonItem, fetchCanonList } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,
-  action: ActionOf<"advance_withdrawal">,
+  action: ActionOf<"canon_advance_withdrawal">,
 ): Promise<CrankResult> {
   const item = await fetchCanonItem(ctx.rpc, action.item);
   if (item.data.state !== ItemState.WithdrawPending) {
@@ -33,11 +33,11 @@ export async function execute(
     vault: await ataOf(feeMint, item.data.list),
   });
   const signature = await ctx.sendIx(ix);
-  ctx.log("advance_withdrawal", null, `${action.item} ${signature}`);
+  ctx.log("canon_advance_withdrawal", action.item, `${action.item} ${signature}`);
   return { signature };
 }
 
 /** Register this crank on the dispatch map. */
 export function register(d: CrankDispatch): void {
-  registerCrank(d, "advance_withdrawal", execute);
+  registerCrank(d, "canon_advance_withdrawal", execute);
 }

@@ -7,9 +7,9 @@
  */
 import { DisputeState, finalizeDispute, type VotingAccounts } from "@useaccord/sdk";
 import type { Address } from "@solana/kit";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { appealBondPda, fetchDispute, fetchRound, panelStakePdas, roundPda } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { appealBondPda, fetchDispute, fetchRound, panelStakePdas, roundPda } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

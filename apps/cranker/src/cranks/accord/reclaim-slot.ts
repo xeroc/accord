@@ -12,9 +12,9 @@ import {
   type JurorStakeLeaf,
   type SubaccordAccumulatorView,
 } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { fetchSubaccord } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { fetchSubaccord } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

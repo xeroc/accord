@@ -40,9 +40,12 @@ no extra fetch), because the on-chain handler reverts on non-Final.
 - `apps/cranker/src/canon-state.ts` (new) — pure `resolveCanonAction(item,
   list, disputeFinal, now)` gating the three cranks exactly like the on-chain
   handlers.
-- `apps/cranker/src/cranks/advance-pending.ts` / `settle-item.ts` /
+- `apps/cranker/src/cranks/canon/advance-pending.ts` / `settle-item.ts` /
   `advance-withdrawal.ts` (new) — executors + `register` per crank, wired into
-  `fullDispatch` (index.ts).
+  `fullDispatch` (index.ts). Follow-up refactor: cranks split into
+  `cranks/accord/` + `cranks/canon/`, kinds prefixed `canon_`, and the log
+  sink's `dispute` field renamed `subject` — kind prefix, folder, and logs all
+  name the program.
 - `apps/cranker/src/reconciler.ts` — Phase 5 (Canon item scan; lists indexed
   once per cycle; dispute finality from the Phase-1 scan), injectable
   `fetchCanonItems`/`fetchCanonLists` for tests, `signer` on both CrankContext

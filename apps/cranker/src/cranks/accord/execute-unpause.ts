@@ -6,9 +6,9 @@
  */
 import { isNone } from "@solana/kit";
 import { canExecuteAt, executeUnpause } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { CrankContext, CrankResult } from "../types.js";
-import { fetchAccordState, accordStatePda } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { CrankContext, CrankResult } from "../../types.js";
+import { fetchAccordState, accordStatePda } from "../../util.js";
 
 export async function execute(ctx: CrankContext): Promise<CrankResult> {
   const accordStateAddr = await accordStatePda(ctx.programId);

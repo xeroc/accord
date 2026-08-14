@@ -9,13 +9,13 @@
  */
 import { ItemState, advancePending } from "@useaccord/canon";
 
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { fetchCanonItem } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { fetchCanonItem } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,
-  action: ActionOf<"advance_pending">,
+  action: ActionOf<"canon_advance_pending">,
 ): Promise<CrankResult> {
   const item = await fetchCanonItem(ctx.rpc, action.item);
   if (item.data.state !== ItemState.Pending) {
@@ -27,11 +27,11 @@ export async function execute(
     item: action.item,
   });
   const signature = await ctx.sendIx(ix);
-  ctx.log("advance_pending", null, `${action.item} ${signature}`);
+  ctx.log("canon_advance_pending", action.item, `${action.item} ${signature}`);
   return { signature };
 }
 
 /** Register this crank on the dispatch map. */
 export function register(d: CrankDispatch): void {
-  registerCrank(d, "advance_pending", execute);
+  registerCrank(d, "canon_advance_pending", execute);
 }

@@ -314,7 +314,7 @@ function canonItem(over: Partial<CanonItem> = {}): CanonItem {
 }
 
 test("canon: Pending item past listing_window → advance_pending dispatched", async () => {
-  const { d, calls } = recordingDispatch({ advance_pending: async () => {} });
+  const { d, calls } = recordingDispatch({ canon_advance_pending: async () => {} });
   const fired = await reconcileOnce(
     config({
       dispatch: d,
@@ -333,11 +333,11 @@ test("canon: Pending item past listing_window → advance_pending dispatched", a
     }),
   );
   expect(fired).toBe(1);
-  expect(calls).toEqual([{ kind: "advance_pending", item: CANON_ITEM_ADDR }]);
+  expect(calls).toEqual([{ kind: "canon_advance_pending", item: CANON_ITEM_ADDR }]);
 });
 
 test("canon: Disputed item whose dispute is Final → settle_item; open dispute → nothing", async () => {
-  const { d, calls } = recordingDispatch({ settle_item: async () => {} });
+  const { d, calls } = recordingDispatch({ canon_settle_item: async () => {} });
   const finalDispute = dispute({ state: DisputeState.Final });
   const fired = await reconcileOnce(
     config({
@@ -364,11 +364,11 @@ test("canon: Disputed item whose dispute is Final → settle_item; open dispute 
     }),
   );
   expect(fired).toBe(1);
-  expect(calls).toEqual([{ kind: "settle_item", item: CANON_ITEM_ADDR }]);
+  expect(calls).toEqual([{ kind: "canon_settle_item", item: CANON_ITEM_ADDR }]);
 });
 
 test("canon: WithdrawPending past timelock → advance_withdrawal; item without list skipped", async () => {
-  const { d, calls } = recordingDispatch({ advance_withdrawal: async () => {} });
+  const { d, calls } = recordingDispatch({ canon_advance_withdrawal: async () => {} });
   const fired = await reconcileOnce(
     config({
       dispatch: d,
@@ -399,5 +399,5 @@ test("canon: WithdrawPending past timelock → advance_withdrawal; item without 
     }),
   );
   expect(fired).toBe(1);
-  expect(calls).toEqual([{ kind: "advance_withdrawal", item: CANON_ITEM_ADDR }]);
+  expect(calls).toEqual([{ kind: "canon_advance_withdrawal", item: CANON_ITEM_ADDR }]);
 });

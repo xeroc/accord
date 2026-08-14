@@ -7,9 +7,9 @@
  * (lib.rs:1481, ADR-0004, milestone accord-27r5.)
  */
 import { DisputeState, claimAppealRefund, type ClaimRefundAccounts } from "@useaccord/sdk";
-import { registerCrank, type CrankDispatch } from "../dispatch.js";
-import type { ActionOf, CrankContext, CrankResult } from "../types.js";
-import { appealBondPda, ataOf, fetchAppealBond, fetchDispute, fetchSubaccord } from "../util.js";
+import { registerCrank, type CrankDispatch } from "../../dispatch.js";
+import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
+import { appealBondPda, ataOf, fetchAppealBond, fetchDispute, fetchSubaccord } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,

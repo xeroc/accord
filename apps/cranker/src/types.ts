@@ -29,11 +29,12 @@ import type {
   TransactionSigner,
 } from "@solana/kit";
 /**
- * Every crank kind. The nine non-draw permissionless Accord cranks (bean
- * accord-g5lm) plus `draw_seat` (bean accord-7sky — needs the MST tree cache +
- * per-seat Merkle proofs) and the three Canon item cranks (bean accord-7fj6:
- * `advance_pending` / `settle_item` / `advance_withdrawal` over the Canon
- * program's own account family).
+ * Every crank kind, program-qualified by prefix: Accord cranks (the host
+ * program — beans accord-g5lm / accord-7sky) are bare instruction names; Canon
+ * cranks (the Arbitrable guest program, bean accord-7fj6) carry the `canon_`
+ * prefix. Executors live in `./cranks/accord/` and `./cranks/canon/`
+ * respectively, so the kind prefix, the filesystem, and every log line
+ * (`crank <kind>`) all name the program.
  */
 export type CrankKind =
   | "request_vrf"
@@ -47,9 +48,9 @@ export type CrankKind =
   | "execute_unpause"
   | "claim_refund"
   | "reclaim_slot"
-  | "advance_pending"
-  | "settle_item"
-  | "advance_withdrawal";
+  | "canon_advance_pending"
+  | "canon_settle_item"
+  | "canon_advance_withdrawal";
 
 /**
  * Discriminated action payload. `draw_seat.seat`, `settle_round.roundIdx`, and
@@ -77,9 +78,9 @@ export type CrankAction =
   | { kind: "execute_unpause" }
   | { kind: "claim_refund"; dispute: Address; roundIdx: number }
   | { kind: "reclaim_slot"; subaccord: Address; jurorStake: Address }
-  | { kind: "advance_pending"; item: Address }
-  | { kind: "settle_item"; item: Address }
-  | { kind: "advance_withdrawal"; item: Address };
+  | { kind: "canon_advance_pending"; item: Address }
+  | { kind: "canon_settle_item"; item: Address }
+  | { kind: "canon_advance_withdrawal"; item: Address };
 
 /** Extract a single crank action variant by kind (for executor signatures). */
 export type ActionOf<K extends CrankKind> = Extract<CrankAction, { kind: K }>;
@@ -108,11 +109,14 @@ export interface CrankContext {
    * NOT retried (another cranker / the user may have advanced the state).
    */
   readonly sendIx: (ix: Instruction) => Promise<string>;
-  /** Structured per-crank log sink — `{kind} {dispute} {msg}`. */
-  readonly log: (kind: CrankKind, dispute: Address | null, msg: string) => void;
+  /** Structured per-crank log sink — `{kind} {subject} {msg}`. `subject` is
+   * the account the crank acts on: the Dispute PDA for Accord lifecycle
+   * cranks, the CanonItem PDA for Canon cranks. */
+  readonly log: (kind: CrankKind, subject: Address | null, msg: string) => void;
   /**
    * The dispute this cycle resolved against (dispute-lifecycle cranks only).
-   * Undefined for program-wide cranks (`execute_update`, `execute_unpause`).
+   * Undefined for program-wide cranks (`execute_update`, `execute_unpause`)
+   * and every Canon crank (which key off the item instead).
    */
   readonly dispute?: Account<Dispute>;
   /**

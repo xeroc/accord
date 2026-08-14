@@ -136,8 +136,8 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       log,
     });
   /** Adapt the reconciler's `(msg, fields)` logger to the cranks' per-kind sink. */
-  const ctxLog = (kind: CrankKind, dispute: Address | null, msg: string): void =>
-    log(`crank ${kind}`, { dispute, msg });
+  const ctxLog = (kind: CrankKind, subject: Address | null, msg: string): void =>
+    log(`crank ${kind}`, { subject, msg });
 
   let fired = 0;
   const disputes = await fetchDisputes();
@@ -258,8 +258,8 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     if (handled) fired++;
   }
 
-  // --- Phase 5: Canon item cranks (advance_pending / settle_item /
-  //     advance_withdrawal) ---
+  // --- Phase 5: Canon item cranks (canon_advance_pending / canon_settle_item /
+  //     canon_advance_withdrawal — the Arbitrable guest program) ---
   // Scan every CanonItem, resolve against its CanonList (windows live on the
   // list), and settle only once the item's Accord dispute is Final — dispute
   // finality is read from the Phase-1 Dispute scan (no extra fetch).
