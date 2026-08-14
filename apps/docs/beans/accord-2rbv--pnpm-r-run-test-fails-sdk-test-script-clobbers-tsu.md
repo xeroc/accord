@@ -1,10 +1,11 @@
 ---
 # accord-2rbv
 title: 'pnpm -r run test fails: SDK test script clobbers tsup dist'
-status: draft
+status: completed
 type: bug
+priority: normal
 created_at: 2026-08-13T03:56:43Z
-updated_at: 2026-08-13T03:56:43Z
+updated_at: 2026-08-14T19:10:16Z
 ---
 
 Aggregate `pnpm -r run test` (the CI lane per AGENTS.md workflow) fails in `packages/canon` with `Cannot find module '.../packages/sdk/dist/accord'`.

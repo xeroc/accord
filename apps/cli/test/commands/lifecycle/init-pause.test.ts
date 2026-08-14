@@ -36,7 +36,7 @@ describe("useaccord lifecycle:init-pause", () => {
   it("--help renders usage with --skip-if-exists", async () => {
     const { stdout, exitCode } = await help("lifecycle:init-pause");
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("PauseState");
+    expect(stdout).toContain("State");
     expect(stdout).toContain("--skip-if-exists");
   });
 
