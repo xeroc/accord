@@ -35,6 +35,15 @@ pub fn create_list_handler(
     );
 
     // --- CPI: create the backing Subaccord with Canon canonical defaults ---
+    // The court's authority is the CanonList PDA itself: no external key exists
+    // yet, and `Pubkey::default()` would burn the retuning upgrade path forever
+    // (immutable even after a canon upgrade). With the PDA as authority, a
+    // future gated canon instruction can CPI `propose_subaccord_update` with
+    // the list PDA as `invoke_signed` signer (same PDA-signing pattern as the
+    // vault transfers in settle_item / advance_withdrawal). Until that
+    // instruction ships, the PDA signs nothing — as immutable as `default()`,
+    // but upgradeable.
+    let list_pda = ctx.accounts.list.key();
     let cpi_accounts = accord::cpi::accounts::CreateSubaccord {
         creator: ctx.accounts.creator.to_account_info(),
         subaccord: ctx.accounts.subaccord.to_account_info(),
@@ -62,11 +71,8 @@ pub fn create_list_handler(
             reveal_threshold_bps: DEFAULT_REVEAL_THRESHOLD_BPS,
             shortfall_policy: ShortfallPolicy::Redraw,
             max_draw_attempts: DEFAULT_MAX_DRAW_ATTEMPTS,
-            // ponytail: Pubkey::default() => immutable Subaccord. The SPEC
-            // intends a Canon governance multisig for retunable params, but
-            // the multisig address is not deployed yet. Immutable is the safe
-            // default — update when the multisig exists.
-            authority: Pubkey::default(),
+            // The CanonList PDA — see the CPI comment above.
+            authority: list_pda,
             evidence_operator: Pubkey::default(),
             depth: DEFAULT_TREE_DEPTH,
             // PROG-ATTESTTION: stake-only backing court (no credential gate).
@@ -88,8 +94,8 @@ pub fn create_list_handler(
     list.challenge_pct = challenge_pct;
     list.listing_window = listing_window;
     list.withdrawal_timelock = withdrawal_timelock;
-    // ponytail: mirrors the Subaccord authority (immutable for now).
-    list.authority = Pubkey::default();
+    // Mirrors the backing Subaccord's authority (the PDA itself).
+    list.authority = list_pda;
     list.item_count = 0;
     list.bump = ctx.bumps.list;
 

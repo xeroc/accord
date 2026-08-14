@@ -181,6 +181,10 @@ fn create_list_inits_canon_list_and_subaccord() {
     assert_eq!(list.listing_window, DEFAULT_LISTING_WINDOW_SECS);
     assert_eq!(list.withdrawal_timelock, DEFAULT_WITHDRAWAL_TIMELOCK_SECS);
     assert_eq!(list.item_count, 0);
+    assert_eq!(
+        list.authority, list_pda,
+        "list authority mirrors the court's"
+    );
     assert!(list.bump > 0);
 
     // --- Verify backing Subaccord has canonical defaults ---
@@ -202,7 +206,10 @@ fn create_list_inits_canon_list_and_subaccord() {
     assert_eq!(sub.reveal_threshold_bps, DEFAULT_REVEAL_THRESHOLD_BPS);
     assert_eq!(sub.shortfall_policy, ShortfallPolicy::Redraw);
     assert_eq!(sub.max_draw_attempts, DEFAULT_MAX_DRAW_ATTEMPTS);
-    assert_eq!(sub.authority, Pubkey::default());
+    // The CanonList PDA is the court's authority: retuning must flow through
+    // canon (a future gated instruction CPIs propose_subaccord_update with the
+    // list PDA as signer). No external key, no burned upgrade path.
+    assert_eq!(sub.authority, list_pda);
     assert_eq!(sub.evidence_operator, Pubkey::default());
     assert_eq!(sub.depth, DEFAULT_TREE_DEPTH);
 }

@@ -142,7 +142,7 @@ fn setup() -> TestEnv {
         challenge_pct: DEFAULT_CHALLENGE_PCT_BPS,
         listing_window: 0,
         withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
-        authority: Pubkey::default(),
+        authority: list_addr,
         item_count: 0,
         bump: list_bump,
     };

@@ -84,9 +84,12 @@ LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdra
 Each Canon list's params live on its 1:1 backing Subaccord (per-list, not
 global). They are initialized to the Canon defaults below, **controlled by the
 Subaccord authority (NOT the list creator)**, and retunable via the 48h
-propose/execute timelock (ADR-0005); `authority = Pubkey::default()` ⇒
-immutable. For v1, Canon sets the authority to the Canon governance multisig
-(retunable) at `create_list`.
+propose/execute timelock (ADR-0005). `create_list` sets the authority to the
+**CanonList PDA itself** — no external governance key exists yet, and the PDA
+keeps the court as immutable as `Pubkey::default()` until canon ships a gated
+retuning instruction (not yet implemented) that CPIs
+`propose/execute_subaccord_update` with the list PDA as `invoke_signed`
+signer.
 
 | param | v1 value | notes |
 | --- | --- | --- |

@@ -98,7 +98,7 @@ async function fabricateCanonList(
     challengePct: 5_000, // 50%
     listingWindow: LISTING_WINDOW,
     withdrawalTimelock: WITHDRAWAL_TIMELOCK,
-    authority: DEFAULT_PUBKEY,
+    authority: listAddr,
     itemCount: 0,
     bump: listBump,
   };
