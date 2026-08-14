@@ -23,3 +23,17 @@ test("log emits a JSON line with an ISO-8601 time, msg, and fields", () => {
   expect(Number.isNaN(t)).toBe(false);
   expect(new Date(t).toISOString()).toBe(parsed.time);
 });
+
+test("log drops reserved keys (msg/time) from fields instead of clobbering", () => {
+  const lines: string[] = [];
+  const original = console.log;
+  console.log = (line: string) => lines.push(line);
+  try {
+    log("crank canon_settle_item", { subject: "ItemPda", msg: "skipped: not pending" });
+  } finally {
+    console.log = original;
+  }
+  const parsed = JSON.parse(lines[0]!) as { msg: string; subject: string };
+  expect(parsed.msg).toBe("crank canon_settle_item"); // kind survives
+  expect(parsed.subject).toBe("ItemPda");
+});

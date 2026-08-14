@@ -137,8 +137,8 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       log,
     });
   /** Adapt the reconciler's `(msg, fields)` logger to the cranks' per-kind sink. */
-  const ctxLog = (kind: CrankKind, subject: Address | null, msg: string): void =>
-    log(`crank ${kind}`, { subject, msg });
+  const ctxLog = (kind: CrankKind, subject: Address | null, detail: string): void =>
+    log(`crank ${kind}`, { subject, detail });
 
   let fired = 0;
   const disputes = await fetchDisputes();
