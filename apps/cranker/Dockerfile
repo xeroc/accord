@@ -37,11 +37,13 @@ FROM deps AS build
 # Shared TS base config (every workspace tsconfig extends ../../tsconfig.base.json).
 COPY tsconfig.base.json ./
 COPY packages/sdk packages/sdk
+COPY packages/canon packages/canon
 COPY apps/cranker apps/cranker
 # SDK compiles src/generated (committed) -> dist/. No anchor/IDL step needed.
-RUN pnpm --filter @useaccord/sdk build
-# cranker build is `tsc --noEmit` (typecheck only; bun runs .ts directly).
-RUN pnpm --filter @useaccord/cranker build
+RUN pnpm --filter @useaccord/sdk \
+    --filter @useaccord/canon \
+    --filter @useaccord/cranker \
+    build
 
 ############################
 # 3. Prune to one self-contained package
