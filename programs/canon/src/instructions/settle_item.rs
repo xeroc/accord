@@ -3,7 +3,7 @@
 //! After the Accord dispute finalises, reads `final_ruling` and redistributes.
 
 use crate::{constants::*, errors::CanonError, events::*, state::*};
-use accord::state::{Dispute, DisputeState};
+use accord::state::Dispute;
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
@@ -50,14 +50,15 @@ pub struct SettleItem<'info> {
 pub fn handler(ctx: Context<SettleItem>) -> Result<()> {
     let item = &mut ctx.accounts.item;
     require!(item.state == ItemState::Disputed, CanonError::NotDisputed);
-    // `state == Final` gates settlement; `final_ruling` is the winning option
-    // index (Canon: 0 = keep, 1 = remove). Ownership + address are validated
-    // by `Account<Dispute>` + the struct constraint.
-    require!(
-        ctx.accounts.dispute.state == DisputeState::Final,
-        CanonError::DisputeNotFinal
-    );
-    let ruling = ctx.accounts.dispute.final_ruling;
+    // `Dispute::ruling()` is Accord's single source for the Final +
+    // u8::MAX-sentinel contract; ownership + address are validated by
+    // `Account<Dispute>` + the struct constraint.
+    let ruling = ctx
+        .accounts
+        .dispute
+        .ruling()
+        .ok_or(CanonError::DisputeNotFinal)?;
+    // Canon filed exactly two options (0 = keep, 1 = remove).
     require!(ruling < 2, CanonError::InvalidRuling);
 
     let is_withdrawal = item.withdrawal_requested_at.is_some();

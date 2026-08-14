@@ -2703,8 +2703,7 @@ pub mod accord {
     /// this via CPI to lazily read the outcome. Returns `None` until the
     /// dispute reaches `Final` (stored on-chain as the `u8::MAX` sentinel).
     pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
-        let r = ctx.accounts.dispute.final_ruling;
-        Ok((r != u8::MAX).then_some(r))
+        Ok(ctx.accounts.dispute.ruling())
     }
 
     /// Withdraw aggregate earned fees (ADR-0020). Per-juror: pulls earned fees

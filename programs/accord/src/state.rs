@@ -290,6 +290,18 @@ pub struct Dispute {
     pub bump: u8,
 }
 
+impl Dispute {
+    /// The final ruling, iff the dispute reached `Final`. `final_ruling` uses
+    /// the `u8::MAX` sentinel until `finalize_dispute` writes the real index
+    /// atomically with `state = Final` — this method is the single source for
+    /// that contract (Accord's `get_ruling` and Arbitrables settling off the
+    /// deserialized `Dispute` both go through it).
+    pub fn ruling(&self) -> Option<u8> {
+        (self.state == DisputeState::Final && self.final_ruling != u8::MAX)
+            .then_some(self.final_ruling)
+    }
+}
+
 /// Per-round draw/vote state. One `Round` per dispute round (initial + appeals).
 ///
 /// Seeds: `["round", dispute, round_idx]`.
@@ -528,4 +540,55 @@ pub struct JurorMembership {
 pub struct LeafClaim {
     pub juror: Pubkey,
     pub stake: u64,
+}
+
+#[cfg(test)]
+mod dispute_ruling_tests {
+    use super::*;
+
+    fn dispute(state: DisputeState, final_ruling: u8) -> Dispute {
+        Dispute {
+            subaccord: Pubkey::default(),
+            filer: Pubkey::default(),
+            nonce: 0,
+            num_options: 2,
+            options: [[0; 32]; MAX_OPTIONS],
+            evidence_hashes: [[0; 32]; NUM_EVIDENCE_SLOTS],
+            state,
+            current_round: 0,
+            terms: CaseTerms {
+                alpha_bps: 0,
+                min_stake: 0,
+                fee_per_juror: 0,
+                review_window: 0,
+                commit_window: 0,
+                reveal_window: 0,
+                appeal_window: 0,
+                max_appeals: 0,
+                min_jury_size: 1,
+                aggregation: Aggregation::Plurality,
+                reveal_threshold_bps: 0,
+                shortfall_policy: ShortfallPolicy::Redraw,
+                max_draw_attempts: 1,
+            },
+            final_ruling,
+            finalized_at: 0,
+            fee_paid: 0,
+            committed_vrf: None,
+            frozen_root: [0; 32],
+            frozen_total_stake: 0,
+            filed_at: 0,
+            bump: 0,
+        }
+    }
+
+    #[test]
+    fn ruling_exists_only_at_final_with_real_index() {
+        assert_eq!(dispute(DisputeState::Final, 1).ruling(), Some(1));
+        assert_eq!(dispute(DisputeState::Created, u8::MAX).ruling(), None);
+        assert_eq!(dispute(DisputeState::Failed, u8::MAX).ruling(), None);
+        // Defense in depth: never leak the sentinel even if the
+        // Final⟺ruling-written invariant were ever broken.
+        assert_eq!(dispute(DisputeState::Final, u8::MAX).ruling(), None);
+    }
 }
