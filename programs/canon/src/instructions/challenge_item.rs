@@ -112,11 +112,9 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
         .ok_or(CanonError::ArithmeticOverflow)?
         / 10_000;
 
-    // `min_jury_size · fee_per_juror` is the fee Accord expects.
-    // `Account<Subaccord>` deserialises at entry — no manual borrow/parse.
-    let accord_fee = (ctx.accounts.subaccord.min_jury_size as u64)
-        .checked_mul(ctx.accounts.subaccord.fee_per_juror)
-        .ok_or(CanonError::ArithmeticOverflow)?;
+    // The fee Accord expects — `Subaccord::filing_fee` is the single source
+    // (`Account<Subaccord>` deserialises at entry, no manual borrow/parse).
+    let accord_fee = ctx.accounts.subaccord.filing_fee()?;
 
     let total = challenge_stake
         .checked_add(accord_fee)

@@ -1310,9 +1310,7 @@ pub mod accord {
         require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
 
         let sub = &mut ctx.accounts.subaccord;
-        let required_fee = (sub.min_jury_size as u64)
-            .checked_mul(sub.fee_per_juror)
-            .ok_or(AccordError::ArithmeticOverflow)?;
+        let required_fee = sub.filing_fee()?;
         require!(fee == required_fee, AccordError::FeeMismatch);
 
         require!(

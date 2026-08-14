@@ -6,6 +6,7 @@
 //! structs themselves are plain `#[account]` types.
 
 use crate::constants::{MAX_JURORS, MAX_OPTIONS, NUM_EVIDENCE_SLOTS};
+use crate::errors::AccordError;
 use anchor_lang::prelude::*;
 
 /// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
@@ -132,6 +133,18 @@ pub struct Subaccord {
     /// and `stake` (pop).
     pub free_head: u32,
     pub bump: u8,
+}
+
+impl Subaccord {
+    /// Round-1 filing fee a filer must tender to `create_dispute`:
+    /// `min_jury_size · fee_per_juror` (in `fee_token`). Single source for
+    /// Accord's `FeeMismatch` check and for Arbitrables deriving their CPI
+    /// tender (e.g. Canon's `challenge_item`).
+    pub fn filing_fee(&self) -> Result<u64> {
+        (self.min_jury_size as u64)
+            .checked_mul(self.fee_per_juror)
+            .ok_or(error!(AccordError::ArithmeticOverflow))
+    }
 }
 
 /// A Juror's staked capital in a Subaccord. `unstake` reverts while
