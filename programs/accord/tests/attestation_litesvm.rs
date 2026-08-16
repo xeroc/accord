@@ -14,7 +14,7 @@
 //!
 //! The SAS attestation account is fabricated in the SVM with the real SAS
 //! program as owner and the confirmed variable-length layout (see
-//! `sas_layout` in lib.rs). Run via `make test_unit`.
+//! `sas_layout` in `src/attestation.rs`). Run via `make test_unit`.
 
 use accord::constants::{SEED_JUROR_STAKE, WITHDRAWAL_DELAY};
 use accord::state::{
@@ -34,7 +34,7 @@ use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint
 use spl_token::ID as TOKEN_PROGRAM_ID;
 use std::path::PathBuf;
 
-// --- SAS layout constants (mirror `sas_layout` in lib.rs) ---
+// --- SAS layout constants (mirror `sas_layout` in `src/attestation.rs`) ---
 const SAS_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG");
 const SAS_DISC: u8 = 2;
@@ -55,7 +55,7 @@ fn load_program() -> Vec<u8> {
         .unwrap_or_else(|_| panic!("read {so:?} — run `anchor build` (or cargo build-sbf) first"))
 }
 
-// ─── MST helpers (must match lib.rs mst_leaf_hash / mst_node_hash) ──────────
+// ─── MST helpers (must match utils.rs mst_leaf_hash / mst_node_hash) ──────────
 
 fn mst_leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
     use solana_program::hash::hashv;
@@ -65,14 +65,6 @@ fn mst_leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
 fn mst_node_hash(lh: &[u8; 32], ls: u64, rh: &[u8; 32], rs: u64) -> [u8; 32] {
     use solana_program::hash::hashv;
     hashv(&[lh, &ls.to_le_bytes(), rh, &rs.to_le_bytes()]).to_bytes()
-}
-
-fn empty_tree_root(depth: u8) -> [u8; 32] {
-    let mut h = mst_leaf_hash(&Pubkey::default(), 0);
-    for _ in 0..depth {
-        h = mst_node_hash(&h, 0, &h, 0);
-    }
-    h
 }
 
 fn build_root_and_path(
@@ -95,7 +87,11 @@ fn build_root_and_path(
     let mut path = Vec::new();
     let mut idx = target as usize;
     for _ in 0..depth {
-        let sib = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sib = if idx.is_multiple_of(2) {
+            idx + 1
+        } else {
+            idx - 1
+        };
         path.push(MSTNode {
             sibling_hash: hashes[sib],
             sibling_sum: sums[sib],
@@ -262,7 +258,6 @@ fn now_of(ctx: &anchor_litesvm::AnchorContext) -> i64 {
 
 struct Env {
     ctx: anchor_litesvm::AnchorContext,
-    creator: Keypair,
     mint: Pubkey,
     subaccord: Pubkey,
     credential: Pubkey,
@@ -355,7 +350,6 @@ fn setup(gated: bool) -> Env {
 
     Env {
         ctx,
-        creator,
         mint,
         subaccord: sub,
         credential,

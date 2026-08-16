@@ -183,9 +183,13 @@ See [Testing](#testing) for the two-harness philosophy.
 ├── programs/
 │   └── accord/                 # The on-chain arbitration program (Anchor)
 │       ├── src/
-│       │   ├── lib.rs          # #[program] instructions + account contexts
+│       │   ├── lib.rs          # Thin #[program] wrappers (IDL docs + dispatch)
+│       │   ├── instructions/   # Per-instruction handler + Accounts context
 │       │   ├── state.rs        # Account structs, enums, PDA proof types
-│       │   ├── constants.rs    # Size bounds, windows, PDA seed prefixes
+│       │   ├── constants.rs    # Size bounds, windows, seeds, byte-offset layout
+│       │   ├── attestation.rs  # SAS attestation parsing + credential gate
+│       │   ├── utils.rs        # MST math, settlement, panel-sizing helpers
+│       │   ├── tests.rs        # Host unit tests (layout pins, MST math)
 │       │   ├── errors.rs       # AccordError codes
 │       │   └── events.rs       # Emitted events for off-chain indexers
 │       ├── tests/              # LiteSVM unit tests (one file per instruction)

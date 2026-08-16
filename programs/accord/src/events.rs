@@ -1,6 +1,4 @@
-//! Accord events. Emitted by each instruction for off-chain indexers; future
-//! instruction beans add the events they fire (only `HealthChecked` exists today
-//! alongside the `health` harness anchor).
+//! Accord events. Emitted by each instruction for off-chain indexers.
 
 use crate::state::UpdatePayload;
 use anchor_lang::prelude::*;
@@ -213,4 +211,10 @@ pub struct SlotAllocated {
     pub subaccord: Pubkey,
     pub juror: Pubkey,
     pub index: u32,
+}
+
+/// Emitted by `health`. Carries the program version byte.
+#[event]
+pub struct HealthChecked {
+    pub version: u8,
 }

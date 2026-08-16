@@ -7,7 +7,7 @@
 //! rebuild audit → locality → `commit_vrf_callback` freezes the root → `draw_seat`
 //! membership + sortition.
 //!
-//! The inline `accumulator_tests` mod in `lib.rs` covers the pure helpers
+//! The inline `accumulator_tests` mod in `src/tests.rs` covers the pure helpers
 //! (`verify_and_recompute`, `verify_membership_and_prefix`, `empty_tree_root`);
 //! this file covers the **instruction surface** — real SPL token transfers,
 //! real PDA creation, real account deserialization against the compiled `.so`.
@@ -40,7 +40,7 @@ use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint
 use spl_token::ID as TOKEN_PROGRAM_ID;
 use std::path::PathBuf;
 
-// ─── helpers: MST hashing (must match lib.rs mst_leaf_hash / mst_node_hash) ──
+// ─── helpers: MST hashing (must match utils.rs mst_leaf_hash / mst_node_hash) ──
 
 fn mst_leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
     hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
@@ -81,7 +81,11 @@ fn build_root_and_path(
     let mut path = Vec::new();
     let mut idx = target as usize;
     for _ in 0..depth {
-        let sib = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sib = if idx.is_multiple_of(2) {
+            idx + 1
+        } else {
+            idx - 1
+        };
         path.push(MSTNode {
             sibling_hash: hashes[sib],
             sibling_sum: sums[sib],

@@ -13,8 +13,6 @@
 //!
 //! Run via `make test_unit`. One fresh `AnchorLiteSVM` context per test.
 
-#![cfg(feature = "no-entrypoint")]
-
 use accord::constants::UNPAUSE_TIMELOCK_SLOTS;
 use accord::state::AccordState;
 use accord::{accounts, instruction, ID};
