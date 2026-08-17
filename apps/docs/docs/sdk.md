@@ -78,7 +78,7 @@ import {
   findAccordStatePda,
 } from "@useaccord/sdk";
 
-const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, riskType);
+const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, domainRef);
 ```
 
 Seeds reference: [accounts](reference/accounts.md), [constants](reference/constants.md).

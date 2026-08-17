@@ -10,8 +10,8 @@ wallet to be the on-chain authority.
 
 ## `lifecycle:create-subaccord`
 
-Permissionless creation. Seeds `["subaccord", creator, risk_type]` — each
-creator owns a private namespace per `risk_type`. `risk_type` and
+Permissionless creation. Seeds `["subaccord", creator, domain_ref]` — each
+creator owns a private namespace per `domain_ref`. `domain_ref` and
 `evidence_spec` are **immutable** identity hashes; all other params route
 through propose/execute.
 
@@ -19,8 +19,8 @@ Flags mirror `CreateSubaccordArgs` (`methods/lifecycle.ts`):
 
 | Flag | Type | Notes |
 |---|---|---|
-| `--risk-type <hex>` | 32-byte hex | Identity hash; `≠ [0;32]`. Omit with `--random-risk-type` |
-| `--random-risk-type` | flag | Mints a fresh 32-byte risk_type ⇒ unique PDA |
+| `--domain-id <hex>` | 32-byte hex | Identity hash; `≠ [0;32]`. Omit with `--random-domain-id` |
+| `--random-domain-id` | flag | Mints a fresh 32-byte domain_ref ⇒ unique PDA |
 | `--evidence-spec <hex>` | 32-byte hex | Immutable evidence-format spec (ADR-0006) |
 | `--staking-token <mint>` | address | Collateral mint (L-4: validated as `Account<Mint>`) |
 | `--fee-token <mint>` | address | Compensation mint, distinct from staking (ADR-0020) |
@@ -46,21 +46,21 @@ Flags mirror `CreateSubaccordArgs` (`methods/lifecycle.ts`):
 ```bash
 # Immutable pool, all defaults
 useaccord lifecycle:create-subaccord \
-  --random-risk-type \
+  --random-domain-id \
   --evidence-spec 0x$(openssl rand -hex 32) \
   --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
   --authority none
 
 # Mutable pool governed by an authority (propose/execute enabled)
 useaccord lifecycle:create-subaccord \
-  --risk-type 0xabcd…1234 \
+  --domain-id 0xabcd…1234 \
   --evidence-spec 0x0000…0001 \
   --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
   --min-stake 5_000_000 --alpha-bps 1500 --fee-per-juror 100_000 \
   --authority 9a1K…mQp --depth 16
 # Credential-gated pool — jurors must hold a valid SAS attestation to stake/draw
 useaccord lifecycle:create-subaccord \
-  --random-risk-type \
+  --random-domain-id \
   --evidence-spec 0x0000…0001 \
   --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
   --juror-credential <issuer> --juror-schema <schema>   # both-or-neither
@@ -72,7 +72,7 @@ SDK: `createSubaccord(client, programId, creator, args)` → `{ instruction, sub
 > today's behaviour). Pass both to gate the juror pool on a SAS attestation;
 > jurors must then supply `--attestation` to `staking:stake`, and expired
 > attestations are evicted by the permissionless `staking:prune-juror` crank.
-> Both fields are frozen at creation (immutable, like `risk_type`).
+> Both fields are frozen at creation (immutable, like `domain_ref`).
 >
 > **L-4 fix:** `--staking-token` and `--fee-token` are passed as account
 > addresses (not instruction data). The SDK routes them to the `CreateSubaccord`
@@ -103,7 +103,7 @@ useaccord lifecycle:execute-update \
   --pending-update <pendingUpdate-addr>
 ```
 
-Payload kinds (`--payload <Kind:value>`) — `risk_type`/`evidence_spec` are
+Payload kinds (`--payload <Kind:value>`) — `domain_ref`/`evidence_spec` are
 immutable and absent: `MinStake:<lamports>`, `AlphaBps:<n>`, `ReviewWindow:<secs>`,
 `CommitWindow:<secs>`, `RevealWindow:<secs>`, `AppealWindow:<secs>`,
 `MaxAppeals:<n>`, `FeePerJuror:<lamports>`, `Authority:<addr>`,

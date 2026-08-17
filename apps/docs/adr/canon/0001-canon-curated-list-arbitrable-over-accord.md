@@ -83,7 +83,7 @@ instance, not the whole product.
 + **Two stake pools, cleanly separated:** juror stake/slash in Accord
   (`JurorStake`, in `stake_mint`); item deposits in Canon (`CanonItem`, in
   `fee_mint`). Accord is unaware of submitter/challenger.
-+ **Account model:** `CanonList ["canon", creator, risk_type_hash]` (carries
++ **Account model:** `CanonList ["canon", creator, domain_ref_hash]` (carries
   `list_program` — the program whose accounts this list curates, immutable),
   `CanonItem ["canon-item", list, account]` (the curated account, a PDA owned
   by `list_program`); reuses Accord `Dispute`/`Round`.

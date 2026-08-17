@@ -6,7 +6,7 @@
  *
  * The loaded `--keypair` wallet signs as the Subaccord authority (single-signer
  * model). `--payload` is a single `Kind:value` token naming one mutable field
- * (see UpdatePayload); risk_type/evidence_spec are immutable and absent.
+ * (see UpdatePayload); domain_ref/evidence_spec are immutable and absent.
  *
  * Because the SDK cannot predict the exact landing slot, the flow is: propose →
  * read `execute_after_slot` back from the PendingUpdate account → wait until
@@ -58,7 +58,7 @@ export default class LifecycleProposeUpdate extends ChainCommand {
   static description =
     "Authority-gated proposal to update one mutable Subaccord parameter " +
     "(min_stake, alpha_bps, windows, max_appeals, fee_per_juror, authority, or " +
-    "evidence_operator). risk_type and evidence_spec are immutable. Arms " +
+    "evidence_operator). domain_ref and evidence_spec are immutable. Arms " +
     "UPDATE_TIMELOCK_SLOTS (48h) on-chain; read back the exact execute slot " +
     "from the PendingUpdate account after sending, then run " +
     "lifecycle:execute-update once it elapses.";

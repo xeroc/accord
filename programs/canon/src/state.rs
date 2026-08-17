@@ -17,7 +17,7 @@ use crate::SEED_CANON_LIST;
 ///
 /// Inits the `CanonList` PDA `["canon", creator, rules_hash]` and CPIs Accord
 /// `create_subaccord` for the 1:1 backing court with the Canon canonical
-/// dispute-mechanism defaults. `risk_type := rules_hash`. The Subaccord creator
+/// dispute-mechanism defaults. `domain_ref := rules_hash`. The Subaccord creator
 /// is the list creator (same `Signer`), so the seeds pair naturally:
 ///   CanonList  `["canon",     creator, rules_hash]`
 ///   Subaccord  `["subaccord", creator, rules_hash]`
@@ -49,8 +49,8 @@ pub struct CreateList<'info> {
     pub list: Account<'info, CanonList>,
 
     /// The 1:1 backing Accord Subaccord — CPI-created by Accord's
-    /// `create_subaccord`. Seeds: `["subaccord", creator, risk_type]` where
-    /// `risk_type = rules_hash`. `init` is owned by Accord; we declare the PDA
+    /// `create_subaccord`. Seeds: `["subaccord", creator, domain_ref]` where
+    /// `domain_ref = rules_hash`. `init` is owned by Accord; we declare the PDA
     /// here only so Anchor passes the right account + verifies the seeds.
     /// CHECK: created via CPI into Accord; seeds validated against Accord's ID.
     #[account(
@@ -116,7 +116,7 @@ pub struct CanonList {
     /// data).
     pub list_program: Pubkey,
     /// **Immutable.** Public listing-criteria doc hash jurors apply. Seed
-    /// component. Passed to Accord as the backing Subaccord's `risk_type`.
+    /// component. Passed to Accord as the backing Subaccord's `domain_ref`.
     pub rules_hash: [u8; 32],
     /// The 1:1 backing Accord court that adjudicates this list's item disputes.
     pub subaccord: Pubkey,

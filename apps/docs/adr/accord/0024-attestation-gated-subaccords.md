@@ -9,7 +9,7 @@ two new `Subaccord` fields — `juror_credential` and `juror_schema` — bind th
 to a credential/schema pair at `create_subaccord`. Both `Pubkey::default()` ⇒
 stake-only (today's behavior, unchanged). Both set (both-or-neither) ⇒ the
 Accord reads the juror's SAS `Attestation` account as read-only proof on `stake`
-and `draw_seat`. The fields join `risk_type` + `evidence_spec` as the immutable
+and `draw_seat`. The fields join `domain_ref` + `evidence_spec` as the immutable
 identity set; they are absent from `UpdatePayload`, so a pool's gate can never be
 tightened, loosened, or removed by the 48h timelock.
 
@@ -50,7 +50,7 @@ behavior.
    immutable credential binding. Set at `create_subaccord` (via
    `CreateSubaccordParams`); absent from `UpdatePayload`, so the 48h authority
    timelock (ADR-0005) cannot mutate them. Both `default()` ⇒ stake-only; both
-   set ⇒ gated. They join `risk_type` + `evidence_spec` as the immutable identity
+   set ⇒ gated. They join `domain_ref` + `evidence_spec` as the immutable identity
    set on the account.
 
 2. **Both-or-neither at creation.** `create_subaccord` rejects a half-bound pool
@@ -121,7 +121,7 @@ behavior.
 - **Mutable via the 48h timelock (status quo for other params).** Rejected — a
   pool that could loosen its gate after attracting stake under a stricter one is
   a bait-and-switch on every already-staked juror. Immutability is the
-  no-surprise property; the identity triplet (`risk_type`/`evidence_spec`) is
+  no-surprise property; the identity triplet (`domain_ref`/`evidence_spec`) is
   already immutable for the same reason.
 
 - **A separate gating program / registry.** Rejected — invents a parallel
@@ -213,7 +213,7 @@ behavior.
   with a real expiry and relies on the prune crank for liveness; one that wants
   permanent credentials issues `expiry == 0` attestations.
 
-- **Amends ADR-0005** — `juror_credential`/`juror_schema` join `risk_type` /
+- **Amends ADR-0005** — `juror_credential`/`juror_schema` join `domain_ref` /
   `evidence_spec` as fields excluded from `UpdatePayload` (the immutable identity
   set on `Subaccord`). The timelock's mutability scope is unchanged for every
   other field.

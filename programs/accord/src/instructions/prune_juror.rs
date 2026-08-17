@@ -17,7 +17,7 @@ pub struct PruneJuror<'info> {
     pub juror: UncheckedAccount<'info>,
     #[account(
         mut,
-        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.domain_ref.as_ref()],
         bump = subaccord.bump,
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,

@@ -8,7 +8,7 @@ updated_at: 2026-08-07T23:09:07Z
 parent: accord-pjxh
 ---
 
-Controlled form at /subaccords/new. Fields: stakingToken (address), minStake (bigint), alphaBps (0-10000), reviewWindow/commitWindow/revealWindow (seconds bigint), maxAppeals (0-3), feePerJuror (bigint), authority (address, default = connected wallet or Pubkey::default for immutable), evidenceOperator (default Pubkey::default), riskType (32-byte hex), evidenceSpec (default [0;32]), depth (default 20). On submit: derive subaccord PDA, build createSubaccord instruction via accord.methods, sendInstruction, redirect to /subaccords/:address.
+Controlled form at /subaccords/new. Fields: stakingToken (address), minStake (bigint), alphaBps (0-10000), reviewWindow/commitWindow/revealWindow (seconds bigint), maxAppeals (0-3), feePerJuror (bigint), authority (address, default = connected wallet or Pubkey::default for immutable), evidenceOperator (default Pubkey::default), domainRef (32-byte hex), evidenceSpec (default [0;32]), depth (default 20). On submit: derive subaccord PDA, build createSubaccord instruction via accord.methods, sendInstruction, redirect to /subaccords/:address.
 
 ## Summary of Changes
 
@@ -20,7 +20,7 @@ Controlled form at /subaccords/new. Fields: stakingToken (address), minStake (bi
   typed args, builds the ix via `accord.methods.createSubaccord(signer.address,
 args)`, sends via `sendInstruction`, and redirects to `/subaccords/:address`.
   The creator IS the connected wallet (adapter wires `creator: accord.signer`),
-  so the PDA `[subaccord, signer, riskType]` matches the signing account.
+  so the PDA `[subaccord, signer, domainRef]` matches the signing account.
 - `shared/transaction.ts` — `sendInstruction(rpc, rpcSubscriptions, signer, ix)`
   per the milestone handoff §4 (blockhash → fee-payer signer → lifetime →
   append → sign → sendAndConfirm). Genuinely shared; accord-bobu may adopt it.

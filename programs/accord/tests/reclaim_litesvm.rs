@@ -194,8 +194,8 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[SEED_JUROR_STAKE, subaccord.as_ref(), juror.as_ref()], &ID).0
 }
 
-fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    accord::subaccord_pda(creator, risk_type).0
+fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> Pubkey {
+    accord::subaccord_pda(creator, domain_ref).0
 }
 
 fn pause_pda() -> Pubkey {
@@ -243,12 +243,12 @@ fn setup_accumulator() -> AccEnv {
     create_mint(&mut ctx, &mint);
 
     // Subaccord over the mint.
-    let risk_type = {
+    let domain_ref = {
         let mut rt = [0u8; 32];
         rt[0] = 99; // distinct from accumulator_litesvm
         rt
     };
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let ix = ctx
         .program()
         .accounts(accounts::CreateSubaccord {
@@ -259,7 +259,7 @@ fn setup_accumulator() -> AccEnv {
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,

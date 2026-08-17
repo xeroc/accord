@@ -4,10 +4,10 @@
  *
  * The loaded `--keypair` wallet is the fee payer AND the on-chain Subaccord
  * authority (the SDK adapter hard-wires `authority: accord.signer`; there is no
- * `--authority` flag — single-signer model, CLI.md §7 Q5). `risk_type` and
+ * `--authority` flag — single-signer model, CLI.md §7 Q5). `domain_ref` and
  * `evidence_spec` are 32-byte hashes; pass them as 64-char hex, or use
- * `--random-risk-type` to mint a fresh risk_type (useful for dev so two runs
- * don't collide on the same `["subaccord", creator, risk_type]` PDA).
+ * `--random-domain-id` to mint a fresh domain_ref (useful for dev so two runs
+ * don't collide on the same `["subaccord", creator, domain_ref]` PDA).
  *
  * All args are validated by the SDK's `assertValid*` helpers inside
  * `createSubaccord` before the instruction is built (ADR-0010).
@@ -41,19 +41,19 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
 
   static description =
     "Permissionlessly create a Subaccord — a stake-weighted dispute pool keyed " +
-    "by an immutable (creator, risk_type) namespace. The loaded wallet becomes " +
+    "by an immutable (creator, domain_ref) namespace. The loaded wallet becomes " +
     "the Subaccord authority and the fee payer. All CaseTerms parameters " +
     "(windows, alpha, max_appeals, reveal threshold, shortfall policy, …) are " +
     "frozen at creation; later changes go through propose/execute-update.";
 
   static examples = [
-    "<%= config.bin %> lifecycle:create-subaccord --random-risk-type \\\n" +
+    "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
       "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
       "  --min-stake 1000 --alpha-bps 1000 --review-window 604800 --commit-window 172800 \\\n" +
       "  --reveal-window 172800 --appeal-window 259200 --max-appeals 3 \\\n" +
       "  --fee-per-juror 0 --reveal-threshold-bps 6666 --max-draw-attempts 3 \\\n" +
       "  --evidence-operator <addr>",
-    "<%= config.bin %> lifecycle:create-subaccord --random-risk-type \\\n" +
+    "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
       "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
       "  --min-stake 1000 --juror-credential <issuer> --juror-schema <schema> \\\n" +
       "  --evidence-operator <addr>  # credential-gated (attestation required to stake)",
@@ -61,12 +61,12 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
 
   static flags = {
     ...chainFlags,
-    "random-risk-type": Flags.boolean({
-      description: "Generate a fresh random 32-byte risk_type (dev: avoids PDA collisions)",
+    "random-domain-id": Flags.boolean({
+      description: "Generate a fresh random 32-byte domain_ref (dev: avoids PDA collisions)",
       default: false,
     }),
-    "risk-type": Flags.string({
-      description: "32-byte risk_type as 64 hex chars (immutable Subaccord identity)",
+    "domain-id": Flags.string({
+      description: "32-byte domain_ref as 64 hex chars (immutable Subaccord identity)",
     }),
     "evidence-spec": Flags.string({
       description: "32-byte evidence format spec hash as 64 hex chars (ADR-0006)",
@@ -171,16 +171,16 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       );
     }
 
-    const riskType = flags["random-risk-type"]
+    const domainRef = flags["random-domain-id"]
       ? randomBytes(32)
-      : hexToBytes32("RiskType", flags["risk-type"] ?? "");
-    // Eager validation so a zero/bad risk_type errors before chain load.
-    assertValidRiskType(riskType);
+      : hexToBytes32("RiskType", flags["domain-id"] ?? "");
+    // Eager validation so a zero/bad domain_ref errors before chain load.
+    assertValidRiskType(domainRef);
     const evidenceSpec = hexToBytes32("EvidenceSpec", flags["evidence-spec"]);
 
     const ctx = await this.loadChain(flags);
     const args: CreateSubaccordArgs = {
-      riskType,
+      domainRef,
       evidenceSpec,
       stakingToken: flags["staking-token"] as Address,
       feeToken: flags["fee-token"] as Address,

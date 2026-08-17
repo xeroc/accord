@@ -181,8 +181,8 @@ export type CreateListAsyncInput<
   list?: Address<TAccountList>;
   /**
    * The 1:1 backing Accord Subaccord — CPI-created by Accord's
-   * `create_subaccord`. Seeds: `["subaccord", creator, risk_type]` where
-   * `risk_type = rules_hash`. `init` is owned by Accord; we declare the PDA
+   * `create_subaccord`. Seeds: `["subaccord", creator, domain_ref]` where
+   * `domain_ref = rules_hash`. `init` is owned by Accord; we declare the PDA
    * here only so Anchor passes the right account + verifies the seeds.
    */
   subaccord?: Address<TAccountSubaccord>;
@@ -346,8 +346,8 @@ export type CreateListInput<
   list: Address<TAccountList>;
   /**
    * The 1:1 backing Accord Subaccord — CPI-created by Accord's
-   * `create_subaccord`. Seeds: `["subaccord", creator, risk_type]` where
-   * `risk_type = rules_hash`. `init` is owned by Accord; we declare the PDA
+   * `create_subaccord`. Seeds: `["subaccord", creator, domain_ref]` where
+   * `domain_ref = rules_hash`. `init` is owned by Accord; we declare the PDA
    * here only so Anchor passes the right account + verifies the seeds.
    */
   subaccord: Address<TAccountSubaccord>;
@@ -474,8 +474,8 @@ export type ParsedCreateListInstruction<
     list: TAccountMetas[3];
     /**
      * The 1:1 backing Accord Subaccord — CPI-created by Accord's
-     * `create_subaccord`. Seeds: `["subaccord", creator, risk_type]` where
-     * `risk_type = rules_hash`. `init` is owned by Accord; we declare the PDA
+     * `create_subaccord`. Seeds: `["subaccord", creator, domain_ref]` where
+     * `domain_ref = rules_hash`. `init` is owned by Accord; we declare the PDA
      * here only so Anchor passes the right account + verifies the seeds.
      */
     subaccord: TAccountMetas[4];

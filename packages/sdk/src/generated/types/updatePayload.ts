@@ -31,7 +31,7 @@ import {
 } from "@solana/kit";
 
 /**
- * Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are
+ * Tagged Subaccord parameter update. `domain_ref` and `evidence_spec` are
  * immutable and intentionally absent (ADR-0005).
  */
 export type UpdatePayload =

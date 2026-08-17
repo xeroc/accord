@@ -1,7 +1,7 @@
 // lifecycle.subaccord.spec.ts — create_subaccord PDA creation against Surfpool.
 //
 // Migrated from onchain-smoke.spec.ts. Proves a permissionless Subaccord inits
-// at the canonical PDA (`["subaccord", creator, risk_type]`): random risk_type
+// at the canonical PDA (`["subaccord", creator, domain_ref]`): random domain_ref
 // per run ⇒ a fresh PDA, so this spec is re-runnable within one Surfpool session
 // (unlike the singleton AccordState in lifecycle.pause).
 //

@@ -250,7 +250,7 @@ to fit BPF's stack.
 
 | Account         | Seeds                               | Purpose                                                                                                                                                      |
 | --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Subaccord`     | `["subaccord", creator, risk_type]` | A specialized Juror pool: staking token, windows, alpha, authority. Holds the **stake accumulator root** (`root_hash`, `total_stake`, `next_index`, `depth`) |
+| `Subaccord`     | `["subaccord", creator, domain_ref]` | A specialized Juror pool: staking token, windows, alpha, authority. Holds the **stake accumulator root** (`root_hash`, `total_stake`, `next_index`, `depth`) |
 | `JurorStake`    | `["stake", subaccord, juror]`       | A Juror's staked capital + `active_draws` lock count + `tree_index` (leaf position, assigned at first stake)                                                 |
 | `Dispute`       | `["dispute", filer, nonce]`         | A case: options, evidence hash, state, `final_ruling`, `committed_vrf`, `frozen_root` (set at VRF-commit)                                                    |
 | `Round`         | `["round", dispute, round_idx]`     | Per-round jurors, commits, reveals, result (zero-copy)                                                                                                       |

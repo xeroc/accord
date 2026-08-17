@@ -105,7 +105,7 @@ export type CreateSubaccordInstruction<
 
 export type CreateSubaccordInstructionData = {
   discriminator: ReadonlyUint8Array;
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
   minStake: bigint;
   alphaBps: number;
@@ -141,7 +141,7 @@ export type CreateSubaccordInstructionData = {
 };
 
 export type CreateSubaccordInstructionDataArgs = {
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
   minStake: number | bigint;
   alphaBps: number;
@@ -180,7 +180,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
+      ["domainRef", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["minStake", getU64Encoder()],
       ["alphaBps", getU16Encoder()],
@@ -208,7 +208,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
 export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<CreateSubaccordInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
+    ["domainRef", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["minStake", getU64Decoder()],
     ["alphaBps", getU16Decoder()],
@@ -258,7 +258,7 @@ export type CreateSubaccordAsyncInput<
   stakingToken: Address<TAccountStakingToken>;
   feeToken: Address<TAccountFeeToken>;
   systemProgram?: Address<TAccountSystemProgram>;
-  riskType: CreateSubaccordInstructionDataArgs["riskType"];
+  domainRef: CreateSubaccordInstructionDataArgs["domainRef"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
@@ -332,7 +332,7 @@ export async function getCreateSubaccordInstructionAsync<
         "creator",
         accounts.creator.value,
       ),
-      riskType: getNonNullResolvedInstructionInput("riskType", args.riskType),
+      domainRef: getNonNullResolvedInstructionInput("domainRef", args.domainRef),
     });
   }
   if (!accounts.systemProgram.value) {
@@ -380,7 +380,7 @@ export type CreateSubaccordInput<
   stakingToken: Address<TAccountStakingToken>;
   feeToken: Address<TAccountFeeToken>;
   systemProgram?: Address<TAccountSystemProgram>;
-  riskType: CreateSubaccordInstructionDataArgs["riskType"];
+  domainRef: CreateSubaccordInstructionDataArgs["domainRef"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];

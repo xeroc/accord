@@ -60,7 +60,7 @@ status banner is annotated.
 - **0023** amends **0006** / **0017** (the on-chain evidence surface is one hash _per round_,
   not one hash frozen at filing; ADR-0017's `sha256(manifest.yaml)` remains each slot's
   content). The round-0 commitment and `create_dispute`'s filer-facing arg are unchanged.
-- **0024** amends **0005** (`juror_credential`/`juror_schema` join `risk_type`/`evidence_spec` as the immutable identity set on `Subaccord`, excluded from `UpdatePayload`). The gate is opt-in (both `default` ⇒ stake-only); the Credential Authority is a trusted off-chain peer of the Evidence Operator (ADR-0006), not a trustless oracle.
+- **0024** amends **0005** (`juror_credential`/`juror_schema` join `domain_ref`/`evidence_spec` as the immutable identity set on `Subaccord`, excluded from `UpdatePayload`). The gate is opt-in (both `default` ⇒ stake-only); the Credential Authority is a trusted off-chain peer of the Evidence Operator (ADR-0006), not a trustless oracle.
 
 ## How to read them
 

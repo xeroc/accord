@@ -7,7 +7,7 @@
  * sends via `sendInstruction`, and redirects to `/subaccords/:address`.
  *
  * The creator IS the connected wallet — the SDK adapter wires `creator:
- * accord.signer` (adapter.ts:144), so the PDA is `[subaccord, signer, riskType]`.
+ * accord.signer` (adapter.ts:144), so the PDA is `[subaccord, signer, domainRef]`.
  * `authority` defaults to the signer (governable) or the zero key (immutable).
  *
  * Signer seam: `useSigner()` resolves the connected wallet via ConnectorKit.
@@ -47,7 +47,7 @@ import { ErrorShake } from "../../components/motion";
 
 /** String-valued form state — every input is text; parsed on submit. */
 interface FormState {
-  riskType: string; // 64 hex chars
+  domainRef: string; // 64 hex chars
   evidenceSpec: string; // 64 hex chars, empty → [0;32]
   stakingToken: string;
   feeToken: string;
@@ -68,7 +68,7 @@ interface FormState {
 }
 
 const DEFAULTS: FormState = {
-  riskType: "",
+  domainRef: "",
   evidenceSpec: "",
   stakingToken: "",
   feeToken: "",
@@ -157,8 +157,8 @@ export function SubaccordCreatePage() {
               label="Risk type"
               help="32-byte hex (64 chars). The immutable dispute class. Cannot be zero."
               placeholder="a1b2… (64 hex chars)"
-              value={form.riskType}
-              onChange={(v) => set("riskType", v.trim())}
+              value={form.domainRef}
+              onChange={(v) => set("domainRef", v.trim())}
               required
               mono
             />
@@ -338,7 +338,7 @@ function buildArgs(
   signerAddress: Address,
 ): CreateSubaccordArgs {
   return {
-    riskType: parseHex32(form.riskType, "Risk type"),
+    domainRef: parseHex32(form.domainRef, "Risk type"),
     evidenceSpec: form.evidenceSpec
       ? parseHex32(form.evidenceSpec, "Evidence spec")
       : new Uint8Array(32),

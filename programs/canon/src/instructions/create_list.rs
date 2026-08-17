@@ -2,7 +2,7 @@
 //!
 //! Inits the `CanonList` PDA `["canon", creator, rules_hash]` and CPIs Accord
 //! `create_subaccord` for the 1:1 backing court with the Canon canonical
-//! dispute-mechanism defaults. `risk_type := rules_hash`. The Subaccord creator
+//! dispute-mechanism defaults. `domain_ref := rules_hash`. The Subaccord creator
 //! is the list creator (same `Signer`), so the seeds pair naturally:
 //!   CanonList  `["canon",     creator, rules_hash]`
 //!   Subaccord  `["subaccord", creator, rules_hash]`
@@ -55,7 +55,7 @@ pub fn create_list_handler(
 
     accord::cpi::create_subaccord(
         cpi_ctx,
-        rules_hash, // risk_type
+        rules_hash, // domain_ref
         [0u8; 32],  // evidence_spec — no canonical evidence spec yet (ADR-0006)
         CreateSubaccordParams {
             min_stake: DEFAULT_MIN_STAKE,

@@ -55,7 +55,7 @@ const SUBACCORD_DEFAULT = {
   maxDrawAttempts: 0,
   authority: ZERO,
   evidenceOperator: ZERO,
-  riskType: z32(),
+  domainRef: z32(),
   evidenceSpec: z32(),
   jurorCredential: ZERO,
   jurorSchema: ZERO,

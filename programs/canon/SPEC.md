@@ -23,7 +23,7 @@ arbitrary registry.
 
 | Account | Seeds | Key fields |
 | --- | --- | --- |
-| `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `risk_type`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
+| `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `domain_ref`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
 | `CanonItem` | `["canon-item", list, account]` | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`. |
 | token vault | `CanonList`-PDA-owned SPL | deposit pool (`fee_mint`) |
 
@@ -122,7 +122,7 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
   the project's official account + deployer signature"). Public by nature
   (transparent criteria ⇒ consistent, auditable rulings); anyone reads and
   verifies it against the on-chain hash. Passed to Accord as the Subaccord
-  `risk_type`.
+  `domain_ref`.
 - **Evidence (juror-only, dispute-level, single-party).** The per-dispute
   manifest (`evidence_hash`, `accord-evidence/v1`) carries the `item` reference
   plus the **challenger's** claim and proof — the challenger files via Canon

@@ -10,7 +10,7 @@ pub struct SubaccordCreated {
     pub subaccord: Pubkey,
     pub staking_token: Pubkey,
     pub fee_token: Pubkey,
-    pub risk_type: [u8; 32],
+    pub domain_ref: [u8; 32],
 }
 
 /// Emitted when a Juror stakes capital into a Subaccord.

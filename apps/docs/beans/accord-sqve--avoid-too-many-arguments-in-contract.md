@@ -32,7 +32,7 @@ A pattern that works well in practice:
 ```rust
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct CreateSubaccordParams {
-    pub risk_type: [u8; 32],
+    pub domain_ref: [u8; 32],
     pub evidence_spec: [u8; 32],
     pub staking_token: Pubkey,
     pub min_stake: u64,
@@ -51,12 +51,12 @@ pub struct CreateSubaccordParams {
 pub fn create_subaccord(ctx: Context<CreateSubaccord>, params: CreateSubaccordParams) -> Result<()> {
 ```
 
-One caveat: since `risk_type` and `evidence_spec` are used as PDA seeds, double check that Anchor's `#[instruction(...)]` seed macro can still destructure them off the struct in your `Accounts` context (it can — you just reference `params.risk_type` etc. in the seeds — but it's slightly less ergonomic than having them as bare top-level args, so some teams keep seed-relevant args positional/separate and bundle only the "everything else" into a params struct). Given you only have two seed-driving fields here, that hybrid is worth considering too:
+One caveat: since `domain_ref` and `evidence_spec` are used as PDA seeds, double check that Anchor's `#[instruction(...)]` seed macro can still destructure them off the struct in your `Accounts` context (it can — you just reference `params.domain_ref` etc. in the seeds — but it's slightly less ergonomic than having them as bare top-level args, so some teams keep seed-relevant args positional/separate and bundle only the "everything else" into a params struct). Given you only have two seed-driving fields here, that hybrid is worth considering too:
 
 ```rust
 pub fn create_subaccord(
     ctx: Context<CreateSubaccord>,
-    risk_type: [u8; 32],
+    domain_ref: [u8; 32],
     evidence_spec: [u8; 32],
     params: CreateSubaccordParams, // the other 12 fields
 ) -> Result<()>
@@ -72,10 +72,10 @@ That keeps seed derivation dead simple in the `Accounts` macro while still killi
 
 ## Summary of Changes
 
-Grouped `create_subaccord`'s 12 non-seed args into a `CreateSubaccordParams` struct (bean accord-sqve), keeping `risk_type` + `evidence_spec` positional since `risk_type` drives the Subaccord PDA seed.
+Grouped `create_subaccord`'s 12 non-seed args into a `CreateSubaccordParams` struct (bean accord-sqve), keeping `domain_ref` + `evidence_spec` positional since `domain_ref` drives the Subaccord PDA seed.
 
 - `programs/accord/src/state.rs`: added `CreateSubaccordParams` (12 fields) next to `UpdatePayload`.
-- `programs/accord/src/lib.rs`: `create_subaccord` now takes `(ctx, risk_type, evidence_spec, params: CreateSubaccordParams)`; dropped `#[allow(clippy::too_many_arguments)]`.
+- `programs/accord/src/lib.rs`: `create_subaccord` now takes `(ctx, domain_ref, evidence_spec, params: CreateSubaccordParams)`; dropped `#[allow(clippy::too_many_arguments)]`.
 - `programs/accord/tests/accumulator_litesvm.rs`: 2 ix-args call sites wrapped into `params: CreateSubaccordParams { ... }`.
 
 Scope decisions:

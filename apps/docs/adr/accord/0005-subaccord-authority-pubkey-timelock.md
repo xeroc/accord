@@ -10,6 +10,6 @@ A Subaccord's mutable parameters (fees, windows, α, min_stake) are governed by 
 ## Consequences
 
 - The on-chain timelock is the staker-protection primitive: a Juror who dislikes a pending change can unstake (if not actively drawn) before it lands, so the authority cannot retroactively raise slash risk on locked capital.
-- `risk_type` and `evidence_spec` are immutable at creation regardless of authority.
+- `domain_ref` and `evidence_spec` are immutable at creation regardless of authority.
 - v2 may replace the authority with stake-weighted self-governance without changing the rest of the model.
 - `UpdatePayload::AppealWindow` (ADR-0022) joins the timelocked-update set.

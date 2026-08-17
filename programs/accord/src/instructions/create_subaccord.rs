@@ -8,7 +8,7 @@ use anchor_spl::token::Mint;
 /// re-init guard and namespace-capture prevention for free. The canonical bump
 /// from `find_program_address` is reused and stored on the account.
 #[derive(Accounts)]
-#[instruction(risk_type: [u8; 32])]
+#[instruction(domain_ref: [u8; 32])]
 pub struct CreateSubaccord<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -16,7 +16,7 @@ pub struct CreateSubaccord<'info> {
         init,
         payer = creator,
         space = 8 + Subaccord::INIT_SPACE,
-        seeds = [SEED_SUBACCORD, creator.key().as_ref(), risk_type.as_ref()],
+        seeds = [SEED_SUBACCORD, creator.key().as_ref(), domain_ref.as_ref()],
         bump,
     )]
     pub subaccord: Account<'info, Subaccord>,
@@ -31,7 +31,7 @@ pub struct CreateSubaccord<'info> {
 impl<'info> CreateSubaccord<'info> {
     pub fn handler_create_subaccord(
         ctx: Context<CreateSubaccord>,
-        risk_type: [u8; 32],
+        domain_ref: [u8; 32],
         evidence_spec: [u8; 32],
         params: CreateSubaccordParams,
     ) -> Result<()> {
@@ -55,9 +55,9 @@ impl<'info> CreateSubaccord<'info> {
             juror_credential,
             juror_schema,
         } = params;
-        // Namespace guard: reject the degenerate zero-hash risk_type so the
+        // Namespace guard: reject the degenerate zero-hash domain_ref so the
         // default identity can't be silently squatting a namespace.
-        require!(risk_type != [0u8; 32], AccordError::InvalidOptions);
+        require!(domain_ref != [0u8; 32], AccordError::InvalidOptions);
         // Appeal-bond arrays on `Dispute` are sized to `MAX_APPEALS`; a
         // Subaccord may not promise more appeals than the program can custody.
         // The appeal ladder `(min_jury_size+1)·2^k − 1` must fit `MAX_JURORS`
@@ -128,7 +128,7 @@ impl<'info> CreateSubaccord<'info> {
         acc.max_draw_attempts = max_draw_attempts;
         acc.authority = authority;
         acc.evidence_operator = evidence_operator;
-        acc.risk_type = risk_type;
+        acc.domain_ref = domain_ref;
         acc.evidence_spec = evidence_spec;
         // Immutable identity-triplet extension (PROG-ATTESTTION).
         acc.juror_credential = juror_credential;
@@ -147,7 +147,7 @@ impl<'info> CreateSubaccord<'info> {
             subaccord: acc.key(),
             staking_token: ctx.accounts.staking_token.key(),
             fee_token: ctx.accounts.fee_token.key(),
-            risk_type,
+            domain_ref,
         });
         Ok(())
     }

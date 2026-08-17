@@ -198,8 +198,8 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[SEED_JUROR_STAKE, subaccord.as_ref(), juror.as_ref()], &ID).0
 }
 
-fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    accord::subaccord_pda(creator, risk_type).0
+fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> Pubkey {
+    accord::subaccord_pda(creator, domain_ref).0
 }
 
 fn pause_pda() -> Pubkey {
@@ -272,12 +272,12 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
     create_mint(&mut ctx, &mint);
 
     // 3) Subaccord over the mint.
-    let risk_type = {
+    let domain_ref = {
         let mut rt = [0u8; 32];
         rt[0] = 42;
         rt
     };
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let ix = ctx
         .program()
         .accounts(accounts::CreateSubaccord {
@@ -288,7 +288,7 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,
@@ -1445,14 +1445,14 @@ fn last_change_slot_field_absent_from_juror_stake() {
 
 // ─── wrong-pool negative tests (REVIEW #1: cross-Subaccord substitution) ───
 
-/// Create a second Subaccord over the same mint (different risk_type).
+/// Create a second Subaccord over the same mint (different domain_ref).
 fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
-    let risk_type_b = {
+    let domain_ref_b = {
         let mut rt = [0u8; 32];
         rt[0] = 99;
         rt
     };
-    let sub_b = subaccord_pda(&env.creator.pubkey(), &risk_type_b);
+    let sub_b = subaccord_pda(&env.creator.pubkey(), &domain_ref_b);
     let ix = env
         .ctx
         .program()
@@ -1464,7 +1464,7 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type: risk_type_b,
+            domain_ref: domain_ref_b,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,
@@ -4983,13 +4983,13 @@ fn try_create_subaccord(
     ctx.svm
         .airdrop(&creator.pubkey(), 10 * LAMPORTS_PER_SOL)
         .unwrap();
-    // Non-zero risk_type (namespace-squat guard); distinct from setup_accumulator.
-    let risk_type = {
+    // Non-zero domain_ref (namespace-squat guard); distinct from setup_accumulator.
+    let domain_ref = {
         let mut rt = [0u8; 32];
         rt[0] = 0x7F;
         rt
     };
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let mint = Pubkey::new_unique();
     create_mint(&mut ctx, &mint); // L-4: create_subaccord validates the mint
     let ix = ctx
@@ -5002,7 +5002,7 @@ fn try_create_subaccord(
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,

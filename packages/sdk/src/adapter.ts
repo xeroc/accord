@@ -512,7 +512,7 @@ function mapCreateSubaccordArgs(
   jurorSchema: Address;
 } {
   return {
-    riskType: args.riskType,
+    domainRef: args.domainRef,
     evidenceSpec: args.evidenceSpec,
     minStake: args.minStake,
     alphaBps: args.alphaBps,

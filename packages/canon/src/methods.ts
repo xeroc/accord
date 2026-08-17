@@ -51,7 +51,7 @@ export interface CreateListAccounts {
 export interface CreateListArgs {
   /** The program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check off. */
   listProgram: Address;
-  /** Public listing criteria hash (immutable); becomes the Subaccord `risk_type`. */
+  /** Public listing criteria hash (immutable); becomes the Subaccord `domain_ref`. */
   rulesHash: Uint8Array;
   /** Base skin-in-the-game locked at submit (fee_mint). */
   submitDeposit: bigint;

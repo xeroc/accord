@@ -205,7 +205,7 @@ function SubaccordDetail({
           />
           <Row
             label="Risk type"
-            value={<Copyable value={fullHex(d.riskType)} />}
+            value={<Copyable value={fullHex(d.domainRef)} />}
           />
           <Row
             label="Evidence spec"

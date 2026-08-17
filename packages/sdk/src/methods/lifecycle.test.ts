@@ -31,7 +31,7 @@ test("constants: timelocks match on-chain (constants.rs)", () => {
   assert.equal(MAX_APPEALS, 3);
 });
 
-test("subaccordSeeds: [b'subaccord', creator[32], risk_type[32]]", () => {
+test("subaccordSeeds: [b'subaccord', creator[32], domain_ref[32]]", () => {
   const seeds = subaccordSeeds(CREATOR, RISK);
   assert.equal(seeds.length, 3);
   assert.deepEqual(
@@ -41,7 +41,7 @@ test("subaccordSeeds: [b'subaccord', creator[32], risk_type[32]]", () => {
   assert.equal(seeds[1]!.length, 32);
   assert.equal(seeds[2]!.length, 32);
   assert.deepEqual(Array.from(seeds[2]!), Array.from(RISK));
-  // zero risk_type rejected
+  // zero domain_ref rejected
   assert.throws(() => subaccordSeeds(CREATOR, ZERO32), /InvalidRiskType/);
 });
 

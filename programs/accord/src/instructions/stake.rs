@@ -5,7 +5,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 /// Account context for `stake` (veridao-ja2w).
 ///
-/// - `subaccord` is re-derived from its stored seeds (`creator`, `risk_type`)
+/// - `subaccord` is re-derived from its stored seeds (`creator`, `domain_ref`)
 ///   + canonical bump so a wrong/forged pool is rejected.
 /// - `staking_token` is constrained to the Subaccord's declared mint.
 /// - `juror_token_account` is the Juror's canonical ATA for that mint.
@@ -20,7 +20,7 @@ pub struct Stake<'info> {
     pub juror: Signer<'info>,
     #[account(
         mut,
-        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.domain_ref.as_ref()],
         bump = subaccord.bump,
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,

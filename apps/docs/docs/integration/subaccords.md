@@ -1,12 +1,12 @@
 # Subaccords
 
-A specialized Juror pool. Permissionless to create; one per `(creator, risk_type)`.
+A specialized Juror pool. Permissionless to create; one per `(creator, domain_ref)`.
 
 ## `create_subaccord` params
 
 | Param               | Type          | Notes                                                                                                                                                                                      |
 | ------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `risk_type`         | `[u8; 32]`    | Immutable identity hash. `!= [0;32]`. Namespaces the PDA.                                                                                                                                  |
+| `domain_ref`         | `[u8; 32]`    | Immutable identity hash. `!= [0;32]`. Namespaces the PDA.                                                                                                                                  |
 | `evidence_spec`     | `[u8; 32]`    | Immutable evidence-format hash. [ADR-0006](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0006-evidence-onchain-hash-trusted-re-encryption-operator.md)                                                                            |
 | `staking_token`     | `Pubkey`      | SPL mint for juror capital. [ADR-0002](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0002-per-subaccord-staking-token-no-accord-token-v1.md)                                                                                      |
 | `min_stake`         | `u64`         | Draw eligibility threshold (in `staking_token`).                                                                                                                                           |
@@ -23,19 +23,19 @@ A specialized Juror pool. Permissionless to create; one per `(creator, risk_type
 ## PDA
 
 ```
-["subaccord", creator, risk_type]
+["subaccord", creator, domain_ref]
 ```
 
 ## Mutability
 
-- Immutable: `risk_type`, `evidence_spec`.
+- Immutable: `domain_ref`, `evidence_spec`.
 - Mutable only via 48h timelock (`propose_subaccord_update` → `execute_subaccord_update`): `min_stake`, `alpha_bps`, `review/commit/reveal_window`, `max_appeals`, `fee_per_juror`, `authority`, `evidence_operator`. Round-1 panel size is not configurable (fixed `INITIAL_NUM_JURORS` = 3); `aggregation` is immutable ([ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)).
 - `authority == Pubkey::default()` ⇒ `propose_subaccord_update` reverts with `ImmutableSubaccord`.
 
 ```rust
 accord::create_subaccord(
     ctx,
-    risk_type, evidence_spec, staking_token, min_stake,
+    domain_ref, evidence_spec, staking_token, min_stake,
     alpha_bps,
     review_window, commit_window, reveal_window,
     max_appeals, aggregation, fee_per_juror,
@@ -50,11 +50,11 @@ import { createSubaccord, findSubaccordPda, Aggregation } from "@useaccord/sdk";
 const [subaccord] = await findSubaccordPda(
   accord.PROGRAM_ID,
   creator,
-  riskType, // 32-byte hash
+  domainRef, // 32-byte hash
 );
 await createSubaccord(accord.adapter, accord.PROGRAM_ID, {
   creator,
-  riskType,
+  domainRef,
   evidenceSpec,
   stakingToken,
   minStake,

@@ -78,14 +78,14 @@ useaccord lifecycle:init-pause
   pauseState: AaNWS…XVG9
 ```
 
-### `lifecycle:create-subaccord [flags] [--random-risk-type] [--dry-run]`
+### `lifecycle:create-subaccord [flags] [--random-domain-id] [--dry-run]`
 
 Permissionlessly create a Subaccord (dispute pool). The loaded wallet becomes
 the Subaccord authority and the fee payer. All `CaseTerms` params are frozen at
 creation; later changes go through `propose-update`/`execute-update`.
 
 ```bash
-useaccord lifecycle:create-subaccord --random-risk-type \
+useaccord lifecycle:create-subaccord --random-domain-id \
   --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \
   --min-stake 1000 --alpha-bps 1000 --review-window 604800 --commit-window 172800 \
   --reveal-window 172800 --appeal-window 259200 --max-appeals 3 \

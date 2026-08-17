@@ -41,7 +41,7 @@ Blocked on `veridao-ja2w` (stake) and `veridao-ek65` (create_subaccord). unstake
   can never trap user funds. This is the safer user-protection default.
 - **PDA-signed vault withdrawal** reuses the Subaccord PDA (vault wallet) as the
   transfer authority with `new_with_signer` over `[SEED_SUBACCORD, creator,
-  risk_type, bump]` — the canonical bump stored on the account. Establishes the
+  domain_ref, bump]` — the canonical bump stored on the account. Establishes the
   PDA-sign-out mechanic that appeals/redistribution will also use.
 - **Exact-amount accounting** (not delta): the vault sends exactly `amount` and the
   JurorStake is debited exactly `amount`. For feeless SPL token (v1) vault and

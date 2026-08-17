@@ -104,17 +104,17 @@ pub mod accord {
     // --- Subaccord management (ADR-0005; veridao-ek65) ---
 
     /// Permissionless creation of a specialized Juror pool. Seeds
-    /// `["subaccord", creator, risk_type]`, so each creator owns a private
-    /// namespace per `risk_type`. `risk_type` + `evidence_spec` are immutable
+    /// `["subaccord", creator, domain_ref]`, so each creator owns a private
+    /// namespace per `domain_ref`. `domain_ref` + `evidence_spec` are immutable
     /// identity hashes; every other param routes through propose/execute
     /// (ADR-0005). `authority == Pubkey::default()` => immutable.
     pub fn create_subaccord(
         ctx: Context<CreateSubaccord>,
-        risk_type: [u8; 32],
+        domain_ref: [u8; 32],
         evidence_spec: [u8; 32],
         params: CreateSubaccordParams,
     ) -> Result<()> {
-        CreateSubaccord::handler_create_subaccord(ctx, risk_type, evidence_spec, params)
+        CreateSubaccord::handler_create_subaccord(ctx, domain_ref, evidence_spec, params)
     }
 
     /// Stake Juror capital into a Subaccord. SPL-transfers `amount` of the

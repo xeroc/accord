@@ -97,7 +97,7 @@ import {
   findAccordStatePda,
 } from "@useaccord/sdk";
 
-const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, riskType);
+const [pda] = await findSubaccordPda(accord.PROGRAM_ID, creator, domainRef);
 ```
 
 ## Client-side crypto

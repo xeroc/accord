@@ -116,7 +116,7 @@ export type Subaccord = {
   authority: Address;
   evidenceOperator: Address;
   /** Immutable identity hash: what class of dispute this pool adjudicates. */
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
@@ -124,7 +124,7 @@ export type Subaccord = {
    * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
    * unchanged). When set, jurors must hold a valid SAS attestation from
    * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
-   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * at creation — joins `domain_ref` + `evidence_spec` as the identity
    * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
    * at `create_subaccord` (`AttestationBindingPartial`).
    */
@@ -239,7 +239,7 @@ export type SubaccordArgs = {
   authority: Address;
   evidenceOperator: Address;
   /** Immutable identity hash: what class of dispute this pool adjudicates. */
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
@@ -247,7 +247,7 @@ export type SubaccordArgs = {
    * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
    * unchanged). When set, jurors must hold a valid SAS attestation from
    * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
-   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * at creation — joins `domain_ref` + `evidence_spec` as the identity
    * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
    * at `create_subaccord` (`AttestationBindingPartial`).
    */
@@ -331,7 +331,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["maxDrawAttempts", getU8Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
-      ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
+      ["domainRef", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["jurorCredential", getAddressEncoder()],
       ["jurorSchema", getAddressEncoder()],
@@ -373,7 +373,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["maxDrawAttempts", getU8Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
-    ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
+    ["domainRef", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["jurorCredential", getAddressDecoder()],
     ["jurorSchema", getAddressDecoder()],

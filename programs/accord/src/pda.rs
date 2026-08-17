@@ -18,9 +18,9 @@ pub fn dispute_pda(filer: &Pubkey, nonce: u64) -> (Pubkey, u8) {
     )
 }
 
-/// The Subaccord account: `["subaccord", creator, risk_type]`.
-pub fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[SEED_SUBACCORD, creator.as_ref(), risk_type], &crate::ID)
+/// The Subaccord account: `["subaccord", creator, domain_ref]`.
+pub fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[SEED_SUBACCORD, creator.as_ref(), domain_ref], &crate::ID)
 }
 
 /// The `AccordState` singleton (ADR-0007 circuit breaker): `["state"]`.

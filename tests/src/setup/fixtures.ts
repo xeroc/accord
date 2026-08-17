@@ -14,15 +14,15 @@ export const DEFAULT_PUBKEY: Address = address(
   "11111111111111111111111111111111",
 );
 
-/** Cryptographically random 32 bytes. Unique per call ⇒ unique risk_type/PDA. */
+/** Cryptographically random 32 bytes. Unique per call ⇒ unique domain_ref/PDA. */
 export function randomBytes32(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(32));
 }
 
 /**
  * Canonical `create_subaccord` args for tests, from AGENTS.md "v1 Defaults".
- * `risk_type`/`evidence_spec` are freshly random so each run mints a distinct
- * Subaccord PDA (namespace-squat guard requires risk_type ≠ 0). Override any
+ * `domain_ref`/`evidence_spec` are freshly random so each run mints a distinct
+ * Subaccord PDA (namespace-squat guard requires domain_ref ≠ 0). Override any
  * field via `overrides`.
  */
 export function defaultSubaccordArgs(
@@ -32,7 +32,7 @@ export function defaultSubaccordArgs(
   overrides: Partial<CreateSubaccordArgs> = {},
 ): CreateSubaccordArgs {
   return {
-    riskType: randomBytes32(),
+    domainRef: randomBytes32(),
     evidenceSpec: randomBytes32(),
     stakingToken,
     feeToken,

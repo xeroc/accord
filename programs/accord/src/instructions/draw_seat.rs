@@ -19,7 +19,7 @@ pub struct DrawSeat<'info> {
     /// PROG-ATTESTTION: the backing Subaccord. Always passed; the credential
     /// re-check activates only when `juror_credential != default`.
     #[account(
-        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.risk_type.as_ref()],
+        seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.domain_ref.as_ref()],
         bump = subaccord.bump,
         constraint = dispute.subaccord == subaccord.key() @ AccordError::SubaccordMismatch,
     )]

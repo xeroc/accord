@@ -32,10 +32,10 @@ pub enum ShortfallPolicy {
 
 /// A specialized Juror pool. Permissionless; `staking_token`, `fee_token`,
 /// windows, `alpha`, `min_stake`, `fee_per_juror`, `authority`, and
-/// `evidence_operator` are mutable via propose/execute (ADR-0005); `risk_type`
+/// `evidence_operator` are mutable via propose/execute (ADR-0005); `domain_ref`
 /// and `evidence_spec` are immutable.
 ///
-/// Seeds: `["subaccord", creator, risk_type]`.
+/// Seeds: `["subaccord", creator, domain_ref]`.
 #[account]
 #[derive(InitSpace)]
 pub struct Subaccord {
@@ -80,14 +80,14 @@ pub struct Subaccord {
     pub authority: Pubkey,
     pub evidence_operator: Pubkey, // ADR-0006 trusted re-encryption service
     /// Immutable identity hash: what class of dispute this pool adjudicates.
-    pub risk_type: [u8; 32],
+    pub domain_ref: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
     /// Attestation-gated juror pool (PROG-ATTESTTION). When both are
     /// `Pubkey::default()` the Subaccord is stake-only (today's behavior,
     /// unchanged). When set, jurors must hold a valid SAS attestation from
     /// `juror_credential` under `juror_schema` to stake and be drawn. Immutable
-    /// at creation — joins `risk_type` + `evidence_spec` as the identity
+    /// at creation — joins `domain_ref` + `evidence_spec` as the identity
     /// triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
     /// at `create_subaccord` (`AttestationBindingPartial`).
     pub juror_credential: Pubkey,
@@ -454,8 +454,8 @@ pub enum DisputeState {
 }
 
 /// Grouped args for `create_subaccord`'s non-seed fields (bean accord-sqve).
-/// `risk_type` / `evidence_spec` stay positional in the instruction signature
-/// since `risk_type` drives the Subaccord PDA seed; everything else lands here
+/// `domain_ref` / `evidence_spec` stay positional in the instruction signature
+/// since `domain_ref` drives the Subaccord PDA seed; everything else lands here
 /// so the instruction avoids the `too_many_arguments` smell and the IDL exposes
 /// a single named object instead of 14 positional scalars.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
@@ -489,7 +489,7 @@ pub struct CreateSubaccordParams {
     pub juror_schema: Pubkey,
 }
 
-/// Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are
+/// Tagged Subaccord parameter update. `domain_ref` and `evidence_spec` are
 /// immutable and intentionally absent (ADR-0005).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub enum UpdatePayload {
