@@ -1,12 +1,13 @@
 /**
  * EvidenceEditor.tsx — structured form for authoring the `accord-evidence/v1`
- * manifest in format mode. Collects title, option labels, and URL entries;
- * builds the manifest buffer (single serialization); shows a read-only YAML
- * preview; provides a manual Download button.
+ * manifest. Collects title, option labels, and URL entries; builds the
+ * manifest buffer (single serialization) and propagates it via onChange.
+ * The YAML preview + download button live in CreateDispute's advanced
+ * settings, not here — this component is the essentials-only authoring surface.
  *
- * Authority: milestone accord-ebel §1 (format-mode submit), §2 (module contract),
+ * Authority: milestone accord-ebel §1 (manifest submit), §2 (module contract),
  * §3 (single-buffer invariant — buildManifest runs once in useMemo, that same
- * Uint8Array feeds preview + hash + encrypt downstream).
+ * Uint8Array feeds hash + encrypt downstream).
  */
 import { useMemo, useEffect, useRef, useState } from "react";
 
@@ -91,8 +92,6 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manifest, isValid]);
-
-  const yamlPreview = manifest ? new TextDecoder().decode(manifest) : "";
 
   function addLabel() {
     if (labels.length < MAX_OPTIONS) setLabels([...labels, ""]);
@@ -209,27 +208,6 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
           + Add URL
         </button>
       </div>
-
-      {/* YAML preview + download */}
-      {yamlPreview && (
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="font-mono text-sm text-text-secondary">
-              manifest.yaml preview
-            </label>
-            <button
-              type="button"
-              onClick={() => manifest && downloadManifest(manifest)}
-              className="font-mono text-xs text-amber hover:underline"
-            >
-              ↓ Download
-            </button>
-          </div>
-          <pre className="max-h-64 overflow-auto rounded-md border border-border-subtle bg-raised p-3 font-mono text-xs text-text-secondary">
-            {yamlPreview}
-          </pre>
-        </div>
-      )}
     </div>
   );
 }
