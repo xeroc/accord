@@ -1,13 +1,12 @@
 /**
  * Home — landing route (`/`) (accord-hvf9; canon HomePage shape).
  *
- * Left-biased hero (SYNOD lockup + Convene-a-case CTA), then:
+ * Left-biased hero (SynodLogo + SYNOD lockup + Convene-a-case CTA), then:
  *  - "Cases awaiting you" inbox — connected wallet ∈ parties[], joined bit
  *    clear, Opening; sorted by join deadline; Join + evidence CTA into the
  *    case detail view (accord-o6nn owns the join flow itself).
  *  - Case browser — every SynodCase with state + roster fill.
  *
- * The SynodLogo mark lands with the branding task (accord-nwkd).
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -19,6 +18,8 @@ import { useClusterRpc } from "@/shared/rpc";
 import { findAllSynodCases } from "@/shared/fetch";
 import { useSigner } from "@/shared/wallet";
 import { describeError } from "@/shared/errors";
+
+import { SynodLogo } from "@/components/synod-logo";
 import { formatAmount, formatTimestamp, shortenAddress } from "@/shared/format";
 import { CASE_STATE_LABELS } from "@/features/case/caseDetail";
 import { inboxCases, rosterFill } from "./homeInbox";
@@ -57,6 +58,7 @@ export function HomePage() {
   return (
     <div className="space-y-10">
       <header className="flex flex-col items-start gap-3">
+        <SynodLogo className="size-10" />
         <h1 className="font-mono text-3xl font-bold tracking-tight">SYNOD</h1>
         <p className="max-w-prose text-sm text-muted-foreground">
           Convene the verdict. Name the parties, stake the pot — an honest jury

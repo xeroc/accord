@@ -2,6 +2,8 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Toaster } from "sonner";
 
+import { Navbar } from "./components/navbar";
+
 import { HomePage } from "./features/home/HomePage";
 import { NewCasePage } from "./features/case/NewCasePage";
 import { CaseDetailPage } from "./features/case/CaseDetailPage";
@@ -14,7 +16,6 @@ import { CaseDetailPage } from "./features/case/CaseDetailPage";
  *   /cases/new              → new-case form — subaccord picker + open_case (accord-3rk5)
  *   /cases/:address         → case detail — roster + state machine + join w/ evidence (accord-o6nn)
  *   /cases/:address/...     → dispute card + manual file/claim/refund (accord-9aoc)
- * Navbar + SynodLogo land with the branding task (accord-nwkd).
  */
 function AnimatedRoutes() {
   const location = useLocation();
@@ -45,6 +46,7 @@ function AnimatedRoutes() {
 export function App() {
   return (
     <>
+      <Navbar />
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
         <AnimatedRoutes />
       </main>
