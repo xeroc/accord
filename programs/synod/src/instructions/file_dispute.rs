@@ -49,7 +49,9 @@ pub(crate) fn evidence_root(
 #[derive(Accounts)]
 #[instruction(nonce: u64)]
 pub struct FileDispute<'info> {
-    /// Anyone (permissionless crank-style caller; pays nothing).
+    /// Anyone (permissionless crank-style caller; pays the dispute + fee_vault
+    /// rent as Accord's `rent_payer` — the data-carrying case PDA cannot).
+    #[account(mut)]
     pub caller: Signer<'info>,
     /// Case opener — seed component of the case PDA. Validated by the `case`
     /// seeds constraint, not trusted on its own.
@@ -61,7 +63,10 @@ pub struct FileDispute<'info> {
         bump = case.bump,
     )]
     pub case: Box<Account<'info, SynodCase>>,
-    #[account(address = case.subaccord)]
+    /// `mut`: Accord's `create_dispute` writes `fee_vault_deposited` to the
+    /// Subaccord during the CPI (canon challenge_item precedent) — a readonly
+    /// outer meta is rejected as writable-privilege escalation.
+    #[account(mut, address = case.subaccord)]
     pub subaccord: Box<Account<'info, accord::state::Subaccord>>,
     #[account(address = subaccord.fee_token)]
     pub fee_mint: Box<Account<'info, Mint>>,
@@ -131,8 +136,11 @@ pub fn handler<'a>(ctx: Context<'a, FileDispute<'a>>, _nonce: u64) -> Result<()>
     let frozen_fee = case.fee;
 
     // CPI Accord create_dispute: case PDA signs, vault pays the frozen fee.
+    // The data-carrying case PDA cannot pay rent (system program rejects
+    // transfers from data accounts) — the permissionless caller wallet does.
     let cpi_accounts = accord::cpi::accounts::CreateDispute {
         filer: ctx.accounts.case.to_account_info(),
+        rent_payer: ctx.accounts.caller.to_account_info(),
         subaccord: ctx.accounts.subaccord.to_account_info(),
         accord_state: accord_state.to_account_info(),
         dispute: accord_dispute.to_account_info(),

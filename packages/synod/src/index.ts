@@ -6,31 +6,43 @@
  * from a named 2–7 party roster, files one dispute via CPI when the roster is
  * full, and pays the pot to the prevailing party from the Accord ruling.
  *
- * Public surface:
- *   - `Synod`            — facade class (primary entry point)
- *   - `pda`              — canonical PDA derivations (SynodCase + vault ATA)
- *   - `methods`          — per-instruction facades (openCase, join,
- *                          fileDispute, refundRosterMiss, claim)
- *   - `fetch`            — typed account fetchers (SynodCase)
+ * Public surface (mirrors @useaccord/canon):
+ *   - `Synod`            — facade class over the generated Kit client
+ *                          (read path: `synod.client.synod.accounts.*`)
+ *   - `pda`              — canonical PDA derivations (SynodCase + vault ATA
+ *                          + bound dispute)
+ *   - `methods`          — per-instruction facades (openCase, join, fileDispute,
+ *                          refundRosterMiss, claim)
+ *   - `fetch`            — standalone generated account fetchers (SynodCase)
  *   - `generated`        — raw Codama output (codecs, Ix builders, accounts)
  *
  * @see ADR-0010
  */
 
 export { Synod, type SynodClient, type SynodConfig } from "./synod.js";
+export { SYNOD_PROGRAM_ADDRESS } from "./synod.js";
 export {
   SYNOD_PROGRAM_ID,
   ACCORD_PROGRAM_ID,
-  findSynodCasePda,
+  findCasePda,
+  findBoundDisputePda,
   findCaseVaultPda,
-  type SynodCaseSeeds,
+  type CaseSeeds,
 } from "./pda.js";
-export { SYNOD_PROGRAM_ADDRESS } from "./synod.js";
-export { fetchSynodCase, fetchSynodCaseMaybe } from "./fetch.js";
-// Standalone generated fetchers — read accounts over a bare RPC, no signer.
-// Mirrors @useaccord/sdk's / @useaccord/canon's `fetchMaybeX` exports so
-// read-only consumers (and the jest e2e harness) never need a `Synod` client.
-export { fetchMaybeSynodCase } from "./generated/accounts/index.js";
+// Milestone-lane alias (accord-nsxa facade).
+export { findSynodCasePda, type SynodCaseSeeds } from "./pda.js";
+export {
+  fetchSynodCase,
+  fetchMaybeSynodCase,
+  type SynodCase,
+} from "./fetch.js";
+// Raw codecs/decoders for `getAccountInfo`-based decoding (e2e harness rule).
+export {
+  getSynodCaseEncoder,
+  getSynodCaseCodec,
+  getSynodCaseDecoder,
+  SYNOD_CASE_DISCRIMINATOR,
+} from "./generated/accounts/index.js";
 export {
   openCase,
   join,
@@ -45,20 +57,8 @@ export {
   type RefundRosterMissAccounts,
   type ClaimAccounts,
 } from "./methods.js";
-
-// Account codecs + decoders — exposed for advanced/test use (decode raw
-// `getAccountInfo` bytes without a `ClientWithRpc`).
-export {
-  getSynodCaseEncoder,
-  getSynodCaseCodec,
-  getSynodCaseDecoder,
-  SYNOD_CASE_DISCRIMINATOR,
-} from "./generated/accounts/index.js";
-
-// Re-export the domain type. The SynodCase struct lives in the generated
-// accounts module; CaseState is a runtime enum from generated types.
-export type { SynodCase, SynodCaseArgs } from "./generated/accounts/index.js";
 export { CaseState } from "./generated/types/index.js";
+export type { SynodCaseArgs } from "./generated/accounts/index.js";
 
 export const SDK_NAME = "@useaccord/synod";
 export const SDK_VERSION = "0.1.0";

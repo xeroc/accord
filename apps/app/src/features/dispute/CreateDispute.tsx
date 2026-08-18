@@ -237,6 +237,7 @@ export function CreateDispute() {
       const { instruction, dispute } = await accord.methods.createDispute(
         {
           filer: signer.address,
+          rentPayer: signer.address,
           subaccord: subaccord.address,
           feeToken,
           filerTokenAccount,

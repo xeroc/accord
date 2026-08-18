@@ -17,6 +17,14 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 pub struct CreateDispute<'info> {
     #[account(mut)]
     pub filer: Signer<'info>,
+    /// Rent payer for the dispute `init` + fee_vault `init_if_needed`. MUST be
+    /// data-free (the system program rejects lamport transfers from
+    /// data-carrying accounts), so Arbitrables whose filer is a data-carrying
+    /// PDA pass their crank caller here; wallet filers pass themselves. The
+    /// dispute-fee itself still flows from `filer_token_account` — this
+    /// account only carries rent lamports (canon.challenge.spec BLOCKER fix).
+    #[account(mut)]
+    pub rent_payer: Signer<'info>,
     #[account(
         mut,
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.domain_ref.as_ref()],
@@ -27,7 +35,7 @@ pub struct CreateDispute<'info> {
     pub accord_state: Account<'info, AccordState>,
     #[account(
         init,
-        payer = filer,
+        payer = rent_payer,
         space = 8 + Dispute::INIT_SPACE,
         seeds = [SEED_DISPUTE, filer.key().as_ref(), &nonce.to_le_bytes()],
         bump,
@@ -45,7 +53,7 @@ pub struct CreateDispute<'info> {
     /// it doesn't exist yet.
     #[account(
         init_if_needed,
-        payer = filer,
+        payer = rent_payer,
         associated_token::mint = fee_token,
         associated_token::authority = subaccord,
     )]

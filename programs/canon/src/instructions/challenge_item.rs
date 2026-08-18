@@ -181,6 +181,9 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
     // the Dispute PDA. Program id + discriminator come from the `accord` crate.
     let cpi_accounts = accord::cpi::accounts::CreateDispute {
         filer: ctx.accounts.list.to_account_info(),
+        // Data-carrying CanonList PDA can't pay rent (system program rejects
+        // transfers from data accounts) — the challenger wallet does.
+        rent_payer: ctx.accounts.challenger.to_account_info(),
         subaccord: ctx.accounts.subaccord.to_account_info(),
         accord_state: accord_state.to_account_info(),
         dispute: accord_dispute.to_account_info(),

@@ -1,21 +1,12 @@
 /**
  * Instruction facades for Synod — typed builders over the generated Codama
- * Kit instruction builders. Each facade takes explicit accounts + args,
- * derives any needed PDAs/ATAs, and returns an unsigned `Instruction` for the
- * caller to sign + send.
- * The five v1 instructions:
- *   openCase · join · fileDispute · refundRosterMiss · claim
+ * instruction builders (ADR-0010 two-layer pattern, mirrors @useaccord/canon).
  *
- * Derived addresses (canonical, constraint-pinned on-chain):
- *   - SynodCase PDA `["case", opener, nonce]` (`openCase`)
- *   - case vault ATA of `feeMint` owned by the case PDA (every token flow)
- *   - the joining party's ATA of `feeMint` (`join`; `associated_token`
- *     constraint pins it, so the canonical ATA is the only valid source)
- * Explicit addresses (non-canonical or caller-owned): `refundRosterMiss` /
- * `claim` destinations (any token account the party owns) and the four Accord
- * CPI-only accounts `fileDispute` passes via `remainingAccounts`.
- *
- * @see ADR-0010
+ * Every facade resolves PDAs from `./pda.js` (single source) and returns a
+ * plain Kit `Instruction` for `sendAndConfirmTransactionFactory` pipelines —
+ * no `ClientWithRpc` needed. Signers stay in the caller's hands: `openCase`
+ * signs with the opener, `join` with the joining party; the three crank-style
+ * calls (`fileDispute`, `refundRosterMiss`, `claim`) sign with any payer.
  */
 
 import {
@@ -25,47 +16,50 @@ import {
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
-import { findAssociatedTokenAddress } from "@useaccord/sdk";
 
-import { getOpenCaseInstruction } from "./generated/instructions/openCase.js";
-import { getJoinInstruction } from "./generated/instructions/join.js";
-import { getFileDisputeInstruction } from "./generated/instructions/fileDispute.js";
-import { getRefundRosterMissInstruction } from "./generated/instructions/refundRosterMiss.js";
-import { getClaimInstruction } from "./generated/instructions/claim.js";
-import { SYNOD_PROGRAM_ID, findCaseVaultPda, findSynodCasePda } from "./pda.js";
+import { getOpenCaseInstructionAsync } from "./generated/instructions/openCase.js";
+import { getJoinInstructionAsync } from "./generated/instructions/join.js";
+import { getFileDisputeInstructionAsync } from "./generated/instructions/fileDispute.js";
+import { getRefundRosterMissInstructionAsync } from "./generated/instructions/refundRosterMiss.js";
+import { getClaimInstructionAsync } from "./generated/instructions/claim.js";
 
-// ─── open_case ───────────────────────────────────────────────────────────────
+import {
+  ACCORD_PROGRAM_ID,
+  SYNOD_PROGRAM_ID,
+  findCasePda,
+} from "./pda.js";
+
+// ─── open_case ──────────────────────────────────────────────────────────────
 
 export interface OpenCaseAccounts {
-  /** Permissionless opener; names itself at roster index 0 (joins like anyone). */
+  /** Case opener — becomes `parties[0]`; signs + pays the case PDA rent. */
   opener: TransactionSigner;
-  /** The hosting Accord court — read once for aggregation + the frozen fee. */
+  /** The hosting Accord court (fee source snapshot: min_jury_size · fee_per_juror frozen at open). */
   subaccord: Address;
 }
 
 export interface OpenCaseArgs {
-  /** Roster in naming order, opener first: 2..=7 distinct parties. */
+  /** Party roster in naming order, `2..=7` distinct pubkeys; `parties[0]` MUST be the opener. */
   parties: Address[];
-  /** Per-party stake `S` (`subaccord.fee_token`); the only economic dial. */
-  stake: number | bigint;
+  /** Per-party stake `S` (fee_token). */
+  stake: bigint;
   /** Unix timestamp after which an incomplete roster refunds. */
-  joinDeadline: number | bigint;
-  /** Case PDA seed disambiguator. */
+  joinDeadline: bigint;
+  /** Case seed component — unique per (opener, nonce). */
   nonce: number | bigint;
 }
 
-/** Build `open_case`: derives the SynodCase PDA `["case", opener, nonce]`
- * and inits it in `Opening` with the fee frozen from the Subaccord. */
+/** Build `open_case`: derives the SynodCase PDA and freezes the fee. */
 export async function openCase(
   accounts: OpenCaseAccounts,
   args: OpenCaseArgs,
   programId: Address = SYNOD_PROGRAM_ID,
 ): Promise<{ instruction: Instruction; case: Address }> {
-  const [casePda] = await findSynodCasePda(
+  const [casePda] = await findCasePda(
     { opener: accounts.opener.address, nonce: args.nonce },
     { programAddress: programId },
   );
-  const instruction = getOpenCaseInstruction(
+  const instruction = await getOpenCaseInstructionAsync(
     {
       opener: accounts.opener,
       subaccord: accounts.subaccord,
@@ -80,108 +74,95 @@ export async function openCase(
   return { instruction, case: casePda };
 }
 
-// ─── join ────────────────────────────────────────────────────────────────────
+// ─── join ───────────────────────────────────────────────────────────────────
 
 export interface JoinAccounts {
-  /** A named party (`signer == parties[i]`, unjoined slot). */
+  /** A named party on the case (signer == parties[i]); pays the vault-ATA rent on first join. */
   party: TransactionSigner;
-  /** The SynodCase PDA. */
+  /** The SynodCase PDA (`["case", opener, nonce]`). */
   case: Address;
-  /** Hosting court, linked to the case (read for `fee_token`). */
+  /** The hosting court (linked to the case); read for `fee_token`. */
   subaccord: Address;
-  /** The Subaccord `fee_token` — the single escrow mint (ADR-0020). */
   feeMint: Address;
+  /** The party's ATA of `feeMint` (stake source). */
+  partyTokenAccount: Address;
+  /** Case-PDA-owned vault ATA (stake sink; lazily created). */
+  vault: Address;
 }
 
-/** Build `join`: derives the party ATA (stake source) and the case vault ATA
- * (stake sink; lazily created on first join). */
+/** Build `join`: locks `S` party ATA → vault, freezes the evidence hash slot. */
 export async function join(
   accounts: JoinAccounts,
   args: { evidenceHash: Uint8Array },
   programId: Address = SYNOD_PROGRAM_ID,
-): Promise<{
-  instruction: Instruction;
-  partyTokenAccount: Address;
-  vault: Address;
-}> {
-  const [partyTokenAccount, vault] = await Promise.all([
-    findAssociatedTokenAddress(accounts.feeMint, accounts.party.address),
-    findCaseVaultPda(accounts.feeMint, accounts.case),
-  ]);
-  const instruction = getJoinInstruction(
+): Promise<Instruction> {
+  return await getJoinInstructionAsync(
     {
       party: accounts.party,
       case: accounts.case,
       subaccord: accounts.subaccord,
       feeMint: accounts.feeMint,
-      partyTokenAccount,
-      vault,
+      partyTokenAccount: accounts.partyTokenAccount,
+      vault: accounts.vault,
       evidenceHash: args.evidenceHash,
     },
     { programAddress: programId },
   );
-  return { instruction, partyTokenAccount, vault };
 }
 
-// ─── file_dispute ────────────────────────────────────────────────────────────
-
-export interface FileDisputeAccounts {
-  /** Anyone (permissionless crank-style caller; pays nothing). */
-  caller: TransactionSigner;
-  /** Case opener — seed component, re-validated by the `case` seeds check. */
-  opener: Address;
-  /** The SynodCase PDA. */
-  case: Address;
-  /** Hosting court, linked to the case. */
-  subaccord: Address;
-  /** The Subaccord `fee_token`. */
-  feeMint: Address;
-}
+// ─── file_dispute ───────────────────────────────────────────────────────────
 
 /** The four Accord CPI-only accounts, passed via `remaining_accounts`. */
 export interface FileDisputeExtras {
-  /** [0] Accord Dispute PDA `["dispute", case, 0]` (mut — Accord inits). */
+  /** [0] Accord Dispute PDA (mut — Accord inits). */
   accordDispute: Address;
-  /** [1] Accord AccordState (readonly — must be unpaused). */
+  /** [1] Accord AccordState (readonly). */
   accordState: Address;
   /** [2] Accord Subaccord fee_vault ATA (mut). */
   accordFeeVault: Address;
-  /** [3] Accord program id (readonly; address checked on-chain). */
-  accordProgram: Address;
 }
 
-/** Build `file_dispute`: derives the case vault ATA (the Accord CPI
- * `filer_token_account` — the frozen fee flows vault → Subaccord fee_vault)
- * and appends the four Accord CPI-only accounts as remaining accounts. */
+export interface FileDisputeAccounts {
+  /** Permissionless caller; pays nothing. */
+  caller: TransactionSigner;
+  /** Case opener — seed component of the case PDA. */
+  opener: Address;
+  /** The SynodCase PDA. */
+  case: Address;
+  subaccord: Address;
+  feeMint: Address;
+  /** Case-PDA-owned vault; doubles as the Accord CPI `filer_token_account`. */
+  vault: Address;
+}
+
+/** Build `file_dispute`: full-roster gate, CPI Accord `create_dispute` as the
+ * case PDA (vault pays the frozen fee), bind `["dispute", case, 0]`, go Live. */
 export async function fileDispute(
   accounts: FileDisputeAccounts,
   args: { nonce: number | bigint },
   extras: FileDisputeExtras,
   programId: Address = SYNOD_PROGRAM_ID,
 ): Promise<Instruction> {
-  const vault = await findCaseVaultPda(accounts.feeMint, accounts.case);
-  const ix = getFileDisputeInstruction(
+  const ix = await getFileDisputeInstructionAsync(
     {
       caller: accounts.caller,
       opener: accounts.opener,
       case: accounts.case,
       subaccord: accounts.subaccord,
       feeMint: accounts.feeMint,
-      vault,
+      vault: accounts.vault,
       nonce: args.nonce,
     },
     { programAddress: programId },
   );
   // The four Accord CPI-only accounts as remaining_accounts, with the roles
-  // Accord's create_dispute expects (the executable accord_program + the
-  // read-only accord_state MUST be readonly — marking an executable program
-  // writable is rejected as "Invalid program argument"). Order matches
-  // file_dispute.rs remaining_accounts[0..3] — same as canon challenge_item.
+  // Accord's create_dispute expects (executable accord_program + read-only
+  // accord_state MUST be readonly — mirroring canon challengeItem).
   const extrasMetas: AccountMeta[] = [
     { address: extras.accordDispute, role: AccountRole.WRITABLE },
     { address: extras.accordState, role: AccountRole.READONLY },
     { address: extras.accordFeeVault, role: AccountRole.WRITABLE },
-    { address: extras.accordProgram, role: AccountRole.READONLY },
+    { address: ACCORD_PROGRAM_ID, role: AccountRole.READONLY },
   ];
   return Object.freeze({
     ...ix,
@@ -189,34 +170,29 @@ export async function fileDispute(
   }) as Instruction;
 }
 
-// ─── refund_roster_miss ──────────────────────────────────────────────────────
+// ─── refund_roster_miss ─────────────────────────────────────────────────────
 
 export interface RefundRosterMissAccounts {
-  /** Anyone (permissionless crank). */
+  /** Permissionless caller. */
   caller: TransactionSigner;
-  /** Case opener — seed component, re-validated by the `case` seeds check. */
+  /** Case opener — seed component of the case PDA. */
   opener: Address;
-  /** The SynodCase PDA. */
   case: Address;
-  /** Hosting court, linked to the case. */
   subaccord: Address;
-  /** The Subaccord `fee_token`. */
   feeMint: Address;
-  /** Destination: the joined party's `feeMint` token account (ATA by
-   * convention; any token account the party owns — the owner identifies the
-   * party). */
+  /** The joined party's `fee_token` account — its owner identifies the party. */
   partyTokenAccount: Address;
+  vault: Address;
 }
 
-/** Build `refund_roster_miss`: derives the case vault ATA; one joined
- * party's `S` back per call (pull-only, idempotent via `paid_out` bits). */
+/** Build `refund_roster_miss`: one joined party's `S` back (idempotent per
+ * `paid_out` bit); closes the case when every joined bit is paid. */
 export async function refundRosterMiss(
   accounts: RefundRosterMissAccounts,
   args: { nonce: number | bigint },
   programId: Address = SYNOD_PROGRAM_ID,
 ): Promise<Instruction> {
-  const vault = await findCaseVaultPda(accounts.feeMint, accounts.case);
-  return getRefundRosterMissInstruction(
+  return await getRefundRosterMissInstructionAsync(
     {
       caller: accounts.caller,
       opener: accounts.opener,
@@ -224,43 +200,38 @@ export async function refundRosterMiss(
       subaccord: accounts.subaccord,
       feeMint: accounts.feeMint,
       partyTokenAccount: accounts.partyTokenAccount,
-      vault,
+      vault: accounts.vault,
       nonce: args.nonce,
     },
     { programAddress: programId },
   );
 }
 
-// ─── claim ───────────────────────────────────────────────────────────────────
+// ─── claim ──────────────────────────────────────────────────────────────────
 
 export interface ClaimAccounts {
-  /** Anyone (permissionless crank). */
+  /** Permissionless caller. */
   caller: TransactionSigner;
-  /** Case opener — seed component, re-validated by the `case` seeds check. */
+  /** Case opener — seed component of the case PDA. */
   opener: Address;
-  /** The SynodCase PDA. */
   case: Address;
-  /** The bound Accord dispute (immutable after `file_dispute`). */
+  /** The bound Accord dispute (must equal `case.dispute`). */
   dispute: Address;
-  /** Hosting court, linked to the case. */
   subaccord: Address;
-  /** The Subaccord `fee_token`. */
   feeMint: Address;
-  /** Destination: the claiming party's `feeMint` token account (ATA by
-   * convention; any token account the party owns — the owner identifies the
-   * party). */
+  /** The claiming party's `fee_token` account — its owner identifies the party. */
   partyTokenAccount: Address;
+  vault: Address;
 }
 
-/** Build `claim`: derives the case vault ATA; one party's due share per call
- * (winner pot / neutral split / full `S` on Failed — pull-only, idempotent). */
+/** Build `claim`: one party's due share (winner pot / neutral floor share with
+ * last-claimant remainder / full `S` on Failed); idempotent per `paid_out` bit. */
 export async function claim(
   accounts: ClaimAccounts,
   args: { nonce: number | bigint },
   programId: Address = SYNOD_PROGRAM_ID,
 ): Promise<Instruction> {
-  const vault = await findCaseVaultPda(accounts.feeMint, accounts.case);
-  return getClaimInstruction(
+  return await getClaimInstructionAsync(
     {
       caller: accounts.caller,
       opener: accounts.opener,
@@ -269,7 +240,7 @@ export async function claim(
       subaccord: accounts.subaccord,
       feeMint: accounts.feeMint,
       partyTokenAccount: accounts.partyTokenAccount,
-      vault,
+      vault: accounts.vault,
       nonce: args.nonce,
     },
     { programAddress: programId },

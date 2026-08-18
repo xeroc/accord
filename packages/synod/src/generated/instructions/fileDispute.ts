@@ -31,10 +31,10 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
-  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
+  type WritableSignerAccount,
 } from "@solana/kit";
 import {
   getAccountMetaFactory,
@@ -75,7 +75,7 @@ export type FileDisputeInstruction<
   InstructionWithAccounts<
     [
       TAccountCaller extends string
-        ? ReadonlySignerAccount<TAccountCaller> &
+        ? WritableSignerAccount<TAccountCaller> &
             AccountSignerMeta<TAccountCaller>
         : TAccountCaller,
       TAccountOpener extends string
@@ -85,7 +85,7 @@ export type FileDisputeInstruction<
         ? WritableAccount<TAccountCase>
         : TAccountCase,
       TAccountSubaccord extends string
-        ? ReadonlyAccount<TAccountSubaccord>
+        ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountFeeMint extends string
         ? ReadonlyAccount<TAccountFeeMint>
@@ -151,7 +151,10 @@ export type FileDisputeAsyncInput<
   TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Anyone (permissionless crank-style caller; pays nothing). */
+  /**
+   * Anyone (permissionless crank-style caller; pays the dispute + fee_vault
+   * rent as Accord's `rent_payer` — the data-carrying case PDA cannot).
+   */
   caller: TransactionSigner<TAccountCaller>;
   /**
    * Case opener — seed component of the case PDA. Validated by the `case`
@@ -159,6 +162,11 @@ export type FileDisputeAsyncInput<
    */
   opener: Address<TAccountOpener>;
   case?: Address<TAccountCase>;
+  /**
+   * `mut`: Accord's `create_dispute` writes `fee_vault_deposited` to the
+   * Subaccord during the CPI (canon challenge_item precedent) — a readonly
+   * outer meta is rejected as writable-privilege escalation.
+   */
   subaccord: Address<TAccountSubaccord>;
   feeMint: Address<TAccountFeeMint>;
   /**
@@ -215,10 +223,10 @@ export async function getFileDisputeInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    caller: { value: input.caller ?? null, isWritable: false },
+    caller: { value: input.caller ?? null, isWritable: true },
     opener: { value: input.opener ?? null, isWritable: false },
     case: { value: input.case ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     feeMint: { value: input.feeMint ?? null, isWritable: false },
     vault: { value: input.vault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
@@ -325,7 +333,10 @@ export type FileDisputeInput<
   TAccountAssociatedTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Anyone (permissionless crank-style caller; pays nothing). */
+  /**
+   * Anyone (permissionless crank-style caller; pays the dispute + fee_vault
+   * rent as Accord's `rent_payer` — the data-carrying case PDA cannot).
+   */
   caller: TransactionSigner<TAccountCaller>;
   /**
    * Case opener — seed component of the case PDA. Validated by the `case`
@@ -333,6 +344,11 @@ export type FileDisputeInput<
    */
   opener: Address<TAccountOpener>;
   case: Address<TAccountCase>;
+  /**
+   * `mut`: Accord's `create_dispute` writes `fee_vault_deposited` to the
+   * Subaccord during the CPI (canon challenge_item precedent) — a readonly
+   * outer meta is rejected as writable-privilege escalation.
+   */
   subaccord: Address<TAccountSubaccord>;
   feeMint: Address<TAccountFeeMint>;
   /**
@@ -387,10 +403,10 @@ export function getFileDisputeInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    caller: { value: input.caller ?? null, isWritable: false },
+    caller: { value: input.caller ?? null, isWritable: true },
     opener: { value: input.opener ?? null, isWritable: false },
     case: { value: input.case ?? null, isWritable: true },
-    subaccord: { value: input.subaccord ?? null, isWritable: false },
+    subaccord: { value: input.subaccord ?? null, isWritable: true },
     feeMint: { value: input.feeMint ?? null, isWritable: false },
     vault: { value: input.vault ?? null, isWritable: true },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
@@ -459,7 +475,10 @@ export type ParsedFileDisputeInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Anyone (permissionless crank-style caller; pays nothing). */
+    /**
+     * Anyone (permissionless crank-style caller; pays the dispute + fee_vault
+     * rent as Accord's `rent_payer` — the data-carrying case PDA cannot).
+     */
     caller: TAccountMetas[0];
     /**
      * Case opener — seed component of the case PDA. Validated by the `case`
@@ -467,6 +486,11 @@ export type ParsedFileDisputeInstruction<
      */
     opener: TAccountMetas[1];
     case: TAccountMetas[2];
+    /**
+     * `mut`: Accord's `create_dispute` writes `fee_vault_deposited` to the
+     * Subaccord during the CPI (canon challenge_item precedent) — a readonly
+     * outer meta is rejected as writable-privilege escalation.
+     */
     subaccord: TAccountMetas[3];
     feeMint: TAccountMetas[4];
     /**

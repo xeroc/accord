@@ -785,6 +785,7 @@ fn commit_vrf_callback_freezes_live_root() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -872,6 +873,7 @@ fn draw_seat_fills_round_against_frozen_root() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -1074,6 +1076,7 @@ fn out_of_order_seat_rejected() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -1213,6 +1216,7 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -1561,6 +1565,7 @@ fn create_dispute_under_a(env: &mut AccEnv) -> (Pubkey, Keypair) {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -2220,6 +2225,7 @@ fn cancel_dispute_does_not_drain_shared_vault() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer_b.pubkey(),
+            rent_payer: filer_b.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute: dispute_b,
@@ -2347,6 +2353,7 @@ fn cancel_releases_partially_drawn_panel() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -2800,6 +2807,7 @@ fn commit_reveal_finalize_settle_single_round() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -3123,6 +3131,7 @@ fn drawn_panel_with(mut env: AccEnv, options: Vec<[u8; 32]>) -> DrawnPanel {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -3501,6 +3510,7 @@ fn pause_blocks_stake_and_create_dispute() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -3614,6 +3624,7 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -3855,6 +3866,7 @@ fn setup_prior_round_settlement() -> PriorRoundSetup {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -4141,6 +4153,7 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -4426,6 +4439,7 @@ fn setup_and_finalize_cfg(
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -5006,6 +5020,7 @@ fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,
@@ -5750,6 +5765,7 @@ fn create_dispute_with_evidence(env: &mut AccEnv, evidence_hash: [u8; 32]) -> (P
         .program()
         .accounts(accounts::CreateDispute {
             filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
             subaccord: env.subaccord,
             accord_state: pause_pda(),
             dispute,

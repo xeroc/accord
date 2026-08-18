@@ -25,3 +25,11 @@ action "deploy_canon" "svm::deploy_program" {
     payer = signer.payer
     instant_surfnet_deployment = true
 }
+
+action "deploy_synod" "svm::deploy_program" {
+    description = "Deploy synod program"
+    program = svm::get_program_from_anchor_project("synod")
+    authority = signer.authority
+    payer = signer.payer
+    instant_surfnet_deployment = true
+}
