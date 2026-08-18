@@ -47,8 +47,10 @@ import {
   type CanonItem,
   type CanonList,
 } from "@useaccord/canon";
+import { findAllSynodCases as defaultFetchSynodCases, type SynodCase } from "@useaccord/synod";
 
 import { resolveCanonAction } from "./canon-state.js";
+import { resolveSynodAction } from "./synod-state.js";
 import type { CrankAction, CrankContext, CrankDispatch, CrankKind } from "./dispatch.js";
 import type { CrankAction as ResolveAction } from "./state.js";
 import { log } from "./log.js";
@@ -78,6 +80,9 @@ export interface ReconcilerConfig {
   fetchCanonItems?: () => Promise<Account<CanonItem>[]>;
   /** Override the Canon list scan (tests). Defaults to `findAllCanonLists(rpc)`. */
   fetchCanonLists?: () => Promise<Account<CanonList>[]>;
+  /** Override the Synod case scan (tests). Defaults to `findAllSynodCases(rpc)`. */
+  fetchSynodCases?: () => Promise<Account<SynodCase>[]>;
+
   /** Override the pending-update scan (tests). Defaults to `findAllPendingUpdates(rpc)`. */
   fetchPendingUpdates?: () => Promise<Account<PendingUpdate>[]>;
   /** Slot clock for timelock cranks (execute_update, execute_unpause). Defaults to `rpc.getSlot()`. */
@@ -124,6 +129,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     fetchReclaimableSlots = async () => scanReclaimableSlots(accord.rpc),
     fetchCanonItems = () => defaultFetchCanonItems(accord.rpc),
     fetchCanonLists = () => defaultFetchCanonLists(accord.rpc),
+    fetchSynodCases = () => defaultFetchSynodCases(accord.rpc),
   } = config;
 
   const rpc = accord.rpc;
@@ -259,15 +265,17 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     if (handled) fired++;
   }
 
+  // Dispute lookup shared by the Canon + Synod phases: keyed by address, from
+  // the Phase-1 Dispute scan (no extra fetch).
+  const disputeByAddr = new Map(disputes.map((d) => [d.address.toString(), d]));
+
   // --- Phase 5: Canon item cranks (canon_advance_pending / canon_settle_item /
   //     canon_advance_withdrawal — the Arbitrable guest program) ---
   // Scan every CanonItem, resolve against its CanonList (windows live on the
-  // list), and settle only once the item's Accord dispute is Final — dispute
-  // finality is read from the Phase-1 Dispute scan (no extra fetch).
+  // list), and settle only once the item's Accord dispute is Final.
   const canonItems = await fetchCanonItems();
   if (canonItems.length > 0) {
     const canonLists = new Map((await fetchCanonLists()).map((l) => [l.address.toString(), l]));
-    const disputeByAddr = new Map(disputes.map((d) => [d.address.toString(), d]));
     for (const item of canonItems) {
       const list = canonLists.get(item.data.list.toString());
       if (list === undefined) continue;
@@ -281,6 +289,26 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       log("crank action", { item: item.address, action: action.kind, handled });
       if (handled) fired++;
     }
+  }
+
+  // --- Phase 6: Synod case cranks (synod_file_dispute / synod_refund_roster_miss /
+  //     synod_claim — the N-party escrow Arbitrable, bean accord-i1mp) ---
+  // Scan every SynodCase and resolve against its bound dispute (dispute state
+  // from the Phase-1 scan). One action per case per cycle; the per-party
+  // sweeps advance via the on-chain paid_out bits. Executors land with the
+  // synod crank epic — until registered, dispatch logs + skips.
+  const synodCases = await fetchSynodCases();
+  for (const c of synodCases) {
+    const bound = disputeByAddr.get(c.data.dispute.toString());
+    const resolved = resolveSynodAction(c.data, bound?.data ?? null, t);
+    if (resolved === null) continue;
+    const action: CrankAction =
+      resolved.kind === "synod_file_dispute"
+        ? { kind: resolved.kind, case: c.address }
+        : { kind: resolved.kind, case: c.address, partyIndex: resolved.partyIndex };
+    const handled = await dispatch.execute(baseCtx, action);
+    log("crank action", { case: c.address, action: action.kind, handled });
+    if (handled) fired++;
   }
 
   return fired;

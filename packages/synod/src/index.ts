@@ -14,6 +14,7 @@
  *   - `methods`          — per-instruction facades (openCase, join, fileDispute,
  *                          refundRosterMiss, claim)
  *   - `fetch`            — standalone generated account fetchers (SynodCase)
+ *   - `queries`          — decoded `getProgramAccounts` scans (findAllSynodCases)
  *   - `generated`        — raw Codama output (codecs, Ix builders, accounts)
  *
  * @see ADR-0010
@@ -43,6 +44,7 @@ export {
   getSynodCaseDecoder,
   SYNOD_CASE_DISCRIMINATOR,
 } from "./generated/accounts/index.js";
+export { findAllSynodCases, type QueryConfig } from "./queries.js";
 export {
   openCase,
   join,
