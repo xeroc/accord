@@ -9,15 +9,21 @@ use crate::constants::{MAX_JURORS, MAX_OPTIONS, NUM_EVIDENCE_SLOTS};
 use crate::errors::AccordError;
 use anchor_lang::prelude::*;
 
-/// Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
-/// variants (`RankedChoice`/IRV, `Median`) ship as new enum entries. The rule
+/// Dispute-kit aggregation rule (ADR-0019). `Plurality` counts option-index
+/// votes; `Median` (ADR-0025) tallies scalar u64 votes by median. The rule
 /// is frozen onto `CaseTerms` at filing time and `finalize_round` tallies off
-/// it (`match dispute.terms.aggregation`) — plurality today. The match carries
-/// no wildcard arm, so adding a variant is a compile error until its tally arm
-/// lands — the extension seam is real and machine-checked, not aspirational.
+/// it (`match dispute.terms.aggregation`). The match carries no wildcard arm,
+/// so adding a variant is a compile error until its tally arm lands — the
+/// extension seam is real and machine-checked, not aspirational.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum Aggregation {
     Plurality,
+    /// Scalar voting (ADR-0025): jurors reveal a u64 fixed-point value (e.g.
+    /// base units of the settlement mint, 6 decimals for USDC); the round
+    /// result is the median of the revealed values. Filing takes zero
+    /// options; coherence is a tolerance band around the final median
+    /// (`CaseTerms.coherence_tol_bps`), not exact equality.
+    Median,
 }
 
 /// What happens when a round falls short of its reveal quorum (ADR-0021). v1
@@ -32,10 +38,10 @@ pub enum ShortfallPolicy {
 
 /// A specialized Juror pool. Permissionless; `staking_token`, `fee_token`,
 /// windows, `alpha`, `min_stake`, `fee_per_juror`, `authority`, and
-/// `evidence_operator` are mutable via propose/execute (ADR-0005); `risk_type`
+/// `evidence_operator` are mutable via propose/execute (ADR-0005); `domain_ref`
 /// and `evidence_spec` are immutable.
 ///
-/// Seeds: `["subaccord", creator, risk_type]`.
+/// Seeds: `["subaccord", creator, domain_ref]`.
 #[account]
 #[derive(InitSpace)]
 pub struct Subaccord {
@@ -67,8 +73,8 @@ pub struct Subaccord {
     pub fee_per_juror: u64, // in `fee_token` (ADR-0020)
     /// Reveal-quorum fraction in basis points (ADR-0021). A round is
     /// authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
-    /// Default 6666 (= 2/3); the absolute commitment escalates per appeal for
-    /// free via panel growth.
+    /// Default 6666 (= 2/3); the absolute commitment escalates per appeal
+    /// for free via panel growth.
     pub reveal_threshold_bps: u16,
     /// What to do on a shortfall (ADR-0021). v1 = `Redraw`.
     pub shortfall_policy: ShortfallPolicy,
@@ -76,18 +82,25 @@ pub struct Subaccord {
     /// `(round_idx, draw_attempt)` with `draw_attempt` reaching this bound ⇒
     /// `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
     pub max_draw_attempts: u8,
+    /// Coherence tolerance for `Median` pools (ADR-0025), in bps of the final
+    /// median: a revealed vote is coherent iff
+    /// `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+    /// match. Inert for `Plurality` (exact option equality). Frozen onto
+    /// `CaseTerms` at filing; immutable on the Subaccord (not in
+    /// `UpdatePayload`) — it defines the pool's coherence game.
+    pub coherence_tol_bps: u16,
     /// `Pubkey::default()` => immutable. Otherwise signs propose/execute updates.
     pub authority: Pubkey,
     pub evidence_operator: Pubkey, // ADR-0006 trusted re-encryption service
     /// Immutable identity hash: what class of dispute this pool adjudicates.
-    pub risk_type: [u8; 32],
+    pub domain_ref: [u8; 32],
     /// Immutable evidence-format spec hash (ADR-0006).
     pub evidence_spec: [u8; 32],
     /// Attestation-gated juror pool (PROG-ATTESTTION). When both are
     /// `Pubkey::default()` the Subaccord is stake-only (today's behavior,
     /// unchanged). When set, jurors must hold a valid SAS attestation from
     /// `juror_credential` under `juror_schema` to stake and be drawn. Immutable
-    /// at creation — joins `risk_type` + `evidence_spec` as the identity
+    /// at creation — joins `domain_ref` + `evidence_spec` as the identity
     /// triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
     /// at `create_subaccord` (`AttestationBindingPartial`).
     pub juror_credential: Pubkey,
@@ -227,6 +240,10 @@ pub struct CaseTerms {
     pub shortfall_policy: ShortfallPolicy,
     /// Frozen redraw cap (ADR-0021).
     pub max_draw_attempts: u8,
+    /// Frozen coherence tolerance (ADR-0025). Mirrors
+    /// `Subaccord.coherence_tol_bps` at filing time; read only on the
+    /// `Median` path by `settle_round_accounts`.
+    pub coherence_tol_bps: u16,
 }
 
 /// A case filed by an Arbitrable. Progresses through [`DisputeState`]; the
@@ -252,13 +269,17 @@ pub struct Dispute {
     /// for the dispute's life; governance changes via ADR-0005 affect only
     /// disputes filed after the change lands.
     pub terms: CaseTerms,
-    /// Winning option index once `state == Final`; `u8::MAX` until then.
-    /// Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
-    /// `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
-    /// which made `finalize_dispute`'s `Some` write overflow the account
-    /// (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
-    /// sentinels for `reveals`/`result`.
-    pub final_ruling: u8,
+    /// The round's winning value once `state == Final`; `u64::MAX` until
+    /// then. For `Plurality` disputes this is the winning option index; for
+    /// `Median` disputes (ADR-0025) it is the final median — a u64
+    /// fixed-point value the Arbitrable interprets (e.g. base units of the
+    /// settlement mint, 6 decimals for USDC). Sentinel (not `Option<u64>`):
+    /// keeps the account fixed-size — the SBF `InitSpace` for `Option<T>`
+    /// undercounts its `Some` variant by the option tag, which made
+    /// `finalize_dispute`'s `Some` write overflow the account (Anchor
+    /// `AccountDidNotSerialize` #3004). Mirrors `Round`'s u64::MAX sentinels
+    /// for `reveals`/`result`.
+    pub final_ruling: u64,
     /// Unix timestamp stamped at the single `Final` transition
     /// (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
     /// for downstream consumers (e.g. the Betline primitive's bettor reveal
@@ -292,12 +313,12 @@ pub struct Dispute {
 
 impl Dispute {
     /// The final ruling, iff the dispute reached `Final`. `final_ruling` uses
-    /// the `u8::MAX` sentinel until `finalize_dispute` writes the real index
+    /// the `u64::MAX` sentinel until `finalize_dispute` writes the real value
     /// atomically with `state = Final` — this method is the single source for
     /// that contract (Accord's `get_ruling` and Arbitrables settling off the
     /// deserialized `Dispute` both go through it).
-    pub fn ruling(&self) -> Option<u8> {
-        (self.state == DisputeState::Final && self.final_ruling != u8::MAX)
+    pub fn ruling(&self) -> Option<u64> {
+        (self.state == DisputeState::Final && self.final_ruling != u64::MAX)
             .then_some(self.final_ruling)
     }
 }
@@ -309,42 +330,51 @@ impl Dispute {
 /// `#[zero_copy]`: `Round` is too large for BPF's 4096-byte stack when
 /// deserialized via `Account<Round>`. Zero-copy maps the account data buffer
 /// directly as the struct — no Borsh (de)serialization, no stack copy.
-/// `reveals` and `result` use `u8::MAX` sentinels instead of `Option<u8>`
-/// (which is not `Pod`). Fields are reordered (u32 first) + explicit padding
-/// to satisfy `bytemuck::Pod` (no implicit gaps).
+/// `reveals` and `result` use `u64::MAX` sentinels instead of `Option<u64>`
+/// (which is not `Pod`). Layout (bean accord-jrgf): fields tile the 8-byte
+/// grid exactly — the two u8 scalars fill the alignment hole after the five
+/// u32s, leaving a single 2-byte pad. Total 2816 bytes, a multiple of 8, so
+/// `bytemuck::Pod` holds (no implicit gaps). Data offsets (incl. 8-byte
+/// discriminator): reveal_count @ 20, result @ 56, reveals[i] @ 2576 + i·8.
 #[account(zero_copy)]
 #[repr(C)]
 pub struct Round {
-    // --- u32 fields (4-byte aligned, no gaps) ---
+    // --- u32 fields (4-byte aligned) ---
     pub round_idx: u32,
     pub juror_count: u32,
     pub commit_count: u32,
     pub reveal_count: u32,
-    // --- i64 window deadlines (8-byte aligned at offset 16) ---
-    /// Commit opens at this timestamp (= draw_time + review_window).
-    pub review_end: i64,
-    /// Reveal opens at this timestamp (= review_end + commit_window).
-    pub commit_end: i64,
-    /// Round can be finalized after this timestamp (= commit_end + reveal_window).
-    pub reveal_end: i64,
-    // --- u8 fields ---
-    pub result: u8, // u8::MAX = not set
-    pub bump: u8,
-    pub _pad0: [u8; 2], // align next field group to 4
-    // --- byte arrays (1-byte aligned) ---
-    pub dispute: Pubkey,
-    pub jurors: [Pubkey; MAX_JURORS],
-    /// `hash(vote, salt, juror_pubkey)` per drawn Juror; `[0;32]` until committed.
-    pub commits: [[u8; 32]; MAX_JURORS],
-    /// Revealed vote option index per drawn Juror; `u8::MAX` until revealed.
-    pub reveals: [u8; MAX_JURORS],
+    /// Same-size redraw counter within this round (ADR-0021). Orthogonal to
+    /// `round_idx`: bumping it changes only the sortition seed, never the panel
+    /// size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+    /// new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+    pub draw_attempt: u32,
+    // --- u8 fields (fill the 20→24 alignment hole before the i64 block) ---
     /// Whether this round's coherence settlement has been applied
     /// (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
     /// `finalize_dispute` (final round) or `settle_round` (prior rounds)
     /// processes it; 1 after. Idempotency guard against double-settlement.
     /// (`u8` not `bool` — `bool` is not `Pod`.)
     pub settled: u8,
-    pub _pad1: [u8; 4], // align seat_prefix to 8
+    pub bump: u8,
+    pub _pad0: [u8; 2], // 20 + 2 + 2 = 24: i64 block lands 8-aligned
+    // --- i64 window deadlines + the u64 tally (8-byte aligned at 24) ---
+    /// Commit opens at this timestamp (= draw_time + review_window).
+    pub review_end: i64,
+    /// Reveal opens at this timestamp (= review_end + commit_window).
+    pub commit_end: i64,
+    /// Round can be finalized after this timestamp (= commit_end + reveal_window).
+    pub reveal_end: i64,
+    /// The tallied round result; `u64::MAX` = not set. `Plurality`: winning
+    /// option index. `Median` (ADR-0025): the median of revealed scalar votes.
+    pub result: u64,
+    // --- byte arrays (1-byte aligned) ---
+    pub dispute: Pubkey,
+    pub jurors: [Pubkey; MAX_JURORS],
+    /// `hash(vote_le, salt, juror_pubkey)` per drawn Juror; `[0;32]` until
+    /// committed. `vote_le` = the 8-byte little-endian vote (ADR-0025).
+    pub commits: [[u8; 32]; MAX_JURORS],
+    // --- u64 arrays (2072 is 8-aligned after the byte arrays) ---
     /// Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
     /// when the seat lands; later seats read these to verify that every prior
     /// sortition retry genuinely collided with an already-drawn juror —
@@ -352,14 +382,11 @@ pub struct Round {
     pub seat_prefix: [u64; MAX_JURORS],
     /// Leaf stake per drawn seat. With `seat_prefix`, defines the sortition
     /// range `[prefix, prefix+stake)` used for deterministic collision checks.
-    pub seat_stake: [u64; MAX_JURORS], // total = multiple of 8
-    /// Same-size redraw counter within this round (ADR-0021). Orthogonal to
-    /// `round_idx`: bumping it changes only the sortition seed, never the panel
-    /// size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
-    /// new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
-    /// Appended (with trailing pad) so existing field offsets are stable.
-    pub draw_attempt: u32,
-    pub _pad_draw_attempt: [u8; 4], // keep struct size a multiple of 8 (Pod)
+    pub seat_stake: [u64; MAX_JURORS],
+    /// Revealed vote per drawn Juror; `u64::MAX` until revealed. Option index
+    /// for `Plurality`, fixed-point scalar (settlement-mint base units) for
+    /// `Median` (ADR-0025). Tail field — struct size stays a multiple of 8.
+    pub reveals: [u64; MAX_JURORS],
 }
 
 /// Custody record for a single appeal bond (ADR-0004). One `AppealBond` per
@@ -370,7 +397,7 @@ pub struct Round {
 /// Seeds: `["bond", dispute, round_idx]` where `round_idx` is the round the
 /// appeal opens (the larger panel).
 ///
-/// `prior_result` is the winning option of the round the appellant sought to
+/// `prior_result` is the winning value of the round the appellant sought to
 /// flip (the just-resolved `current_round` at appeal time). Flip detection at
 /// final settlement is `final_ruling != prior_result`. `amount` stores the
 /// **total deposit** (appeal fee + bond); the appeal-fee portion is derived at
@@ -390,8 +417,9 @@ pub struct AppealBond {
     pub round_idx: u32,
     pub appellant: Pubkey,
     pub amount: u64,
-    /// Winning option of the round being appealed (set at `appeal` time).
-    pub prior_result: u8,
+    /// Winning value of the round being appealed (set at `appeal` time).
+    /// Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
+    pub prior_result: u64,
     pub bump: u8,
 }
 
@@ -454,8 +482,8 @@ pub enum DisputeState {
 }
 
 /// Grouped args for `create_subaccord`'s non-seed fields (bean accord-sqve).
-/// `risk_type` / `evidence_spec` stay positional in the instruction signature
-/// since `risk_type` drives the Subaccord PDA seed; everything else lands here
+/// `domain_ref` / `evidence_spec` stay positional in the instruction signature
+/// since `domain_ref` drives the Subaccord PDA seed; everything else lands here
 /// so the instruction avoids the `too_many_arguments` smell and the IDL exposes
 /// a single named object instead of 14 positional scalars.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
@@ -479,6 +507,10 @@ pub struct CreateSubaccordParams {
     pub shortfall_policy: ShortfallPolicy,
     /// Redraw cap per round (ADR-0021). Default 3.
     pub max_draw_attempts: u8,
+    /// Coherence tolerance for `Median` pools in bps of the final median
+    /// (ADR-0025). `0` = exact match. Inert for `Plurality`. Immutable on
+    /// the Subaccord (not in `UpdatePayload`).
+    pub coherence_tol_bps: u16,
     pub authority: Pubkey,
     pub evidence_operator: Pubkey,
     pub depth: u8,
@@ -489,7 +521,7 @@ pub struct CreateSubaccordParams {
     pub juror_schema: Pubkey,
 }
 
-/// Tagged Subaccord parameter update. `risk_type` and `evidence_spec` are
+/// Tagged Subaccord parameter update. `domain_ref` and `evidence_spec` are
 /// immutable and intentionally absent (ADR-0005).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub enum UpdatePayload {
@@ -546,7 +578,7 @@ pub struct LeafClaim {
 mod dispute_ruling_tests {
     use super::*;
 
-    fn dispute(state: DisputeState, final_ruling: u8) -> Dispute {
+    fn dispute(state: DisputeState, final_ruling: u64) -> Dispute {
         Dispute {
             subaccord: Pubkey::default(),
             filer: Pubkey::default(),
@@ -570,6 +602,7 @@ mod dispute_ruling_tests {
                 reveal_threshold_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts: 1,
+                coherence_tol_bps: 0,
             },
             final_ruling,
             finalized_at: 0,
@@ -584,11 +617,11 @@ mod dispute_ruling_tests {
 
     #[test]
     fn ruling_exists_only_at_final_with_real_index() {
-        assert_eq!(dispute(DisputeState::Final, 1).ruling(), Some(1));
-        assert_eq!(dispute(DisputeState::Created, u8::MAX).ruling(), None);
-        assert_eq!(dispute(DisputeState::Failed, u8::MAX).ruling(), None);
+        assert_eq!(dispute(DisputeState::Final, 1).ruling(), Some(1u64));
+        assert_eq!(dispute(DisputeState::Created, u64::MAX).ruling(), None);
+        assert_eq!(dispute(DisputeState::Failed, u64::MAX).ruling(), None);
         // Defense in depth: never leak the sentinel even if the
         // Final⟺ruling-written invariant were ever broken.
-        assert_eq!(dispute(DisputeState::Final, u8::MAX).ruling(), None);
+        assert_eq!(dispute(DisputeState::Final, u64::MAX).ruling(), None);
     }
 }

@@ -46,8 +46,9 @@ the Arbitrable does not pass those — `appeal` does.
 ## 2. Read the ruling
 
 ```rust
-// Returns None until the dispute reaches Final.
-let ruling: Option<u8> = accord::cpi::get_ruling(
+// Returns None until the dispute reaches Final. Then: the winning option
+// index (Plurality) or the final median as a u64 scalar (Median, ADR-0025).
+let ruling: Option<u64> = accord::cpi::get_ruling(
     CpiContext::new(
         ctx.accounts.accord_program.to_account_info(),
         accord::cpi::accounts::GetRuling {

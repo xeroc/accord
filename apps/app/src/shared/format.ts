@@ -9,12 +9,16 @@
  */
 
 import type { Address, ReadonlyUint8Array } from "@solana/kit";
-import type { DisputeState } from "@useaccord/sdk";
-import { DisputeState as DS } from "@useaccord/sdk";
+import {
+  Aggregation,
+  DisputeState as DS,
+  NO_RULING,
+  decodeScalarVote,
+} from "@useaccord/sdk";
 
 // --- Dispute state labels + ruling formatting ---
 
-export const DISPUTE_STATE_LABELS: Record<DisputeState, string> = {
+export const DISPUTE_STATE_LABELS: Record<DS, string> = {
   [DS.Created]: "Created",
   [DS.Drawn]: "Drawn",
   [DS.Review]: "Review",
@@ -27,11 +31,24 @@ export const DISPUTE_STATE_LABELS: Record<DisputeState, string> = {
   [DS.RedrawEligible]: "Redraw eligible",
 };
 
-const FINAL_SENTINEL = 255;
-
-export function formatRuling(ruling: number): string {
-  if (ruling === FINAL_SENTINEL) return "—";
-  return `Option ${ruling}`;
+/**
+ * Format a ruling, u64 on the wire (ADR-0025): `Option N` for Plurality,
+ * a plain decimal for Median (scalar). Mint decimals aren't fetched in these
+ * views, so scalars render at the SDK's canonical 6 decimals — the same
+ * default `encodeScalarVote` uses at commit time, so values round-trip.
+ *
+ * `labels` (plaintext option labels from a decoded evidence manifest) takes
+ * precedence for Plurality: the winning index resolves to its label, falling
+ * back to `Option N` when the manifest is absent or lacks that index.
+ */
+export function formatRuling(
+  ruling: bigint,
+  aggregation: Aggregation = Aggregation.Plurality,
+  labels?: string[],
+): string {
+  if (ruling === NO_RULING) return "—";
+  if (aggregation === Aggregation.Median) return decodeScalarVote(ruling);
+  return labels?.[Number(ruling)]?.trim() || `Option ${ruling}`;
 }
 
 // --- Address formatting ---

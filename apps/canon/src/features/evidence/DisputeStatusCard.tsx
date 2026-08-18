@@ -11,8 +11,8 @@ import type { Address } from "@solana/kit";
 import { getDisputeDecoder, DisputeState } from "@useaccord/sdk";
 import { useClusterRpc } from "../../shared/rpc";
 
-/** Final-ruling sentinel — no ruling yet (u8::MAX). */
-const NO_VOTE = 255;
+/** Final-ruling sentinel — no ruling yet (u64::MAX, ADR-0025). */
+const NO_RULING = 0xffff_ffff_ffff_ffffn;
 
 /** Canon-fixed option labels for ruling display. */
 const CANON_RULING_LABELS = ["keep", "remove"];
@@ -81,10 +81,11 @@ export function DisputeStatusCard({
   }
 
   const isFinal = dispute.state === DisputeState.Final;
-  const hasRuling = isFinal && dispute.finalRuling !== NO_VOTE;
+  const hasRuling = isFinal && dispute.finalRuling !== NO_RULING;
+  const rulingIdx = hasRuling ? Number(dispute.finalRuling) : undefined;
   const rulingLabel =
-    hasRuling && dispute.finalRuling < CANON_RULING_LABELS.length
-      ? CANON_RULING_LABELS[dispute.finalRuling]
+    rulingIdx !== undefined && rulingIdx < CANON_RULING_LABELS.length
+      ? CANON_RULING_LABELS[rulingIdx]
       : undefined;
 
   const accordUrl = `${ACCORD_APP_URL}/#/disputes/${disputeAddress}`;

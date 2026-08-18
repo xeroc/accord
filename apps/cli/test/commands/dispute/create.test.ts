@@ -29,7 +29,7 @@ describe("useaccord dispute:create", () => {
     expect(stdout).toContain("--subaccord");
   });
 
-  it("parseOptions accepts 2..32 hex labels (with/without 0x)", () => {
+  it("parseOptions accepts 2..8 hex labels (with/without 0x)", () => {
     const a = "11".repeat(32);
     const b = "0x" + "22".repeat(32);
     const opts = parseOptions(`${a},${b}`);
@@ -40,9 +40,9 @@ describe("useaccord dispute:create", () => {
     expect(Array.from(opts[1].slice(0, 2))).toEqual([0x22, 0x22]);
   });
 
-  it("parseOptions rejects < 2 and > 32 options", () => {
-    expect(() => parseOptions(HEX32)).toThrow(/2\.\.32/);
-    expect(() => parseOptions(Array(33).fill(HEX32).join(","))).toThrow(/2\.\.32/);
+  it("parseOptions rejects < 2 and > 8 options", () => {
+    expect(() => parseOptions(HEX32)).toThrow(/2\.\.8/);
+    expect(() => parseOptions(Array(9).fill(HEX32).join(","))).toThrow(/2\.\.8/);
   });
 
   it("parseHash32 rejects wrong-length hex", () => {

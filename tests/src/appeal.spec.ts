@@ -212,7 +212,7 @@ interface World {
 async function resolveRound(
   w: World,
   roundIdx: number,
-  votes: number[],
+  votes: bigint[],
 ): Promise<{ roundPda: Address; jurorStakes: Address[] }> {
   const {
     env,
@@ -463,9 +463,9 @@ async function buildWorldResolved0(
   // Round 0: panel 3 (fixed INITIAL_NUM_JURORS); majority (2 of 3) votes the
   // chosen winner, one dissent to keep a realistic coherent/incoherent split.
   const r0 = await resolveRound(world, 0, [
-    opts.round0Result,
-    opts.round0Result,
-    1 - opts.round0Result,
+    BigInt(opts.round0Result),
+    BigInt(opts.round0Result),
+    BigInt(1 - opts.round0Result),
   ]);
   const d0 = await readDispute(env, dispute);
   expect(Number(d0.state)).toBe(STATE_ROUND_RESOLVED);
@@ -537,11 +537,11 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect((await tokenAmount(env, w.vault)) - vaultBefore).toBe(cost.total);
 
     // --- resolve round 1 (flip: plurality 1 ≠ prior 0) ---
-    const r1 = await resolveRound(w, 1, [1, 1, 1, 1, 0, 0, 0]);
+    const r1 = await resolveRound(w, 1, [1n, 1n, 1n, 1n, 0n, 0n, 0n]);
     const r1d = await readRound(env, r1.roundPda);
     expect(Number(r1d.roundIdx)).toBe(1);
     expect(Number(r1d.jurorCount)).toBe(7);
-    expect(r1d.result).toBe(1);
+    expect(r1d.result).toBe(1n);
 
     // --- warp past the appeal window + finalize the dispute ---
     await warpTo(env, r1d.revealEnd + DEFAULT_APPEAL_WINDOW_SECS + 1n);
@@ -561,7 +561,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
 
     const dFinal = await readDispute(env, w.dispute);
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
-    expect(dFinal.finalRuling).toBe(1);
+    expect(dFinal.finalRuling).toBe(1n);
     // finalizedAt stamped at the Final transition (Betline reveal-window
     // anchor); 0 before Final, now > 0 and cannot precede filing.
     expect(dFinal.finalizedAt).toBeGreaterThan(0n);
@@ -634,9 +634,9 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     // Round 1 does NOT flip (result 0 == prior 0). votes [0,0,0,0,1,1,1]:
     // jurors 0-3 coherent (voted 0), jurors 4-6 incoherent (voted 1)
     // ⇒ slash (3 incoherent) + redistribution to the 4 coherent.
-    const r1 = await resolveRound(w, 1, [0, 0, 0, 0, 1, 1, 1]);
+    const r1 = await resolveRound(w, 1, [0n, 0n, 0n, 0n, 1n, 1n, 1n]);
     const r1d = await readRound(env, r1.roundPda);
-    expect(r1d.result).toBe(0);
+    expect(r1d.result).toBe(0n);
     const coherentPdas = r1.jurorStakes.slice(0, 4);
     const incoherentPdas = r1.jurorStakes.slice(4);
     const coherentDeltaBefore = await Promise.all(
@@ -666,7 +666,7 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
 
     const dFinal = await readDispute(env, w.dispute);
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
-    expect(dFinal.finalRuling).toBe(0);
+    expect(dFinal.finalRuling).toBe(0n);
 
     // Coherence redistribution (ADR-0004 + ADR-0020 two-mint/two-vault split):
     // `finalize_dispute` settles the final round against the finalized ruling

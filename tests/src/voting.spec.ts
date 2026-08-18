@@ -71,7 +71,7 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     expect(round!.jurorCount).toBe(drawnJurors.length);
 
     // Votes [0, 0, 1] ⇒ plurality winner is option 0.
-    const votes = [0, 0, 1];
+    const votes = [0n, 0n, 1n];
     const salts = memberships.map(() =>
       crypto.getRandomValues(new Uint8Array(32)),
     );
@@ -146,7 +146,7 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     );
 
     const finalRound = await readRound(env, roundPda);
-    expect(finalRound!.result).toBe(0); // plurality winner = option 0
+    expect(finalRound!.result).toBe(0n); // plurality winner = option 0
     expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
   }, 300_000);
 
@@ -176,7 +176,7 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
         dispute: armed.dispute,
         round: roundPda,
       },
-      { vote: 0, salt: crypto.getRandomValues(new Uint8Array(32)) },
+      { vote: 0n, salt: crypto.getRandomValues(new Uint8Array(32)) },
     );
     await expect(env.sendIx(instruction)).rejects.toThrow();
   }, 200_000);

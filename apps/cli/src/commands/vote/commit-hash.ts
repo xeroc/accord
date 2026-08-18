@@ -2,7 +2,7 @@
  * `useaccord vote:commit-hash` — offline commit-hash derivation (pure).
  * SDK: `commitHash` (voting.ts:77).
  *
- * Computes `sha256(vote_byte ‖ salt[32] ‖ juror_pubkey[32])` — the exact digest
+ * Computes `sha256(vote_le[8] ‖ salt[32] ‖ juror_pubkey[32])` — the exact digest
  * the on-chain `reveal` recomputes via `solana_program::hash::hashv` and checks
  * against the stored commitment. No chain, no signer: the canonical way to
  * preview a commit before sending, or to cross-check that `vote:commit` will
@@ -13,7 +13,7 @@
 import { Flags } from "@oclif/core";
 import { getAddressEncoder, type Address } from "@solana/kit";
 
-import { commitHash } from "@useaccord/sdk";
+import { commitHash, encodeScalarVote } from "@useaccord/sdk";
 
 import { BaseCommand, accordBaseFlags } from "../../lib/base-command.js";
 
@@ -29,13 +29,23 @@ export default class VoteCommitHash extends BaseCommand {
   static examples = [
     "<%= config.bin %> vote:commit-hash --vote 1 --salt 0x0101…01 --juror 9aJb2…",
     "<%= config.bin %> vote:commit-hash --vote 0 --salt 0101…01 --juror 9aJb2… --json",
+    "<%= config.bin %> vote:commit-hash --vote 123.45 --decimals 6 --salt 0101…01 --juror 9aJb2…",
   ];
 
   static flags = {
     ...accordBaseFlags,
-    vote: Flags.integer({
-      description: "Vote option index (0..num_options)",
+    vote: Flags.string({
+      description:
+        "Vote: option index (0..num_options) for Plurality, or decimal scalar " +
+        "(e.g. 123.45) for Median (ADR-0025). Integer strings are used as-is " +
+        "(raw u64 base units); strings containing '.' are scaled by 10^--decimals",
       required: true,
+    }),
+    decimals: Flags.integer({
+      description:
+        "Scalar decimals (ADR-0025): 10^decimals scaling applied when --vote " +
+        "contains '.' (default 0 = no scaling, raw base units / option index)",
+      default: 0,
     }),
     salt: Flags.string({
       description: "32-byte salt as 64 hex chars (optional 0x prefix)",
@@ -53,7 +63,8 @@ export default class VoteCommitHash extends BaseCommand {
 
     const salt = decodeHexSalt(flags.salt, "--salt");
     const jurorBytes = new Uint8Array(getAddressEncoder().encode(flags.juror as Address));
-    const commitment = await commitHash(flags.vote, salt, jurorBytes);
+    const vote = parseVote(flags.vote, flags.decimals);
+    const commitment = await commitHash(vote, salt, jurorBytes);
     const commitmentHex = toHex(commitment);
 
     this.emitRead(
@@ -64,6 +75,15 @@ export default class VoteCommitHash extends BaseCommand {
       },
     );
   }
+}
+
+/**
+ * Parse `--vote` into the u64 bigint the wire takes (ADR-0025): integer
+ * strings are option indexes / raw base units; strings containing "." are
+ * decimal scalars scaled by 10^decimals ({@link encodeScalarVote}).
+ */
+export function parseVote(vote: string, decimals: number): bigint {
+  return vote.includes(".") ? encodeScalarVote(vote, decimals) : BigInt(vote);
 }
 
 /** Parse a 64-hex-char salt (with or without `0x` prefix) into 32 bytes. */

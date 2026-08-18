@@ -7,7 +7,7 @@
 //! rebuild audit → locality → `commit_vrf_callback` freezes the root → `draw_seat`
 //! membership + sortition.
 //!
-//! The inline `accumulator_tests` mod in `lib.rs` covers the pure helpers
+//! The inline `accumulator_tests` mod in `src/tests.rs` covers the pure helpers
 //! (`verify_and_recompute`, `verify_membership_and_prefix`, `empty_tree_root`);
 //! this file covers the **instruction surface** — real SPL token transfers,
 //! real PDA creation, real account deserialization against the compiled `.so`.
@@ -40,7 +40,7 @@ use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint
 use spl_token::ID as TOKEN_PROGRAM_ID;
 use std::path::PathBuf;
 
-// ─── helpers: MST hashing (must match lib.rs mst_leaf_hash / mst_node_hash) ──
+// ─── helpers: MST hashing (must match utils.rs mst_leaf_hash / mst_node_hash) ──
 
 fn mst_leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
     hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
@@ -81,7 +81,11 @@ fn build_root_and_path(
     let mut path = Vec::new();
     let mut idx = target as usize;
     for _ in 0..depth {
-        let sib = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sib = if idx.is_multiple_of(2) {
+            idx + 1
+        } else {
+            idx - 1
+        };
         path.push(MSTNode {
             sibling_hash: hashes[sib],
             sibling_sum: sums[sib],
@@ -194,8 +198,8 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[SEED_JUROR_STAKE, subaccord.as_ref(), juror.as_ref()], &ID).0
 }
 
-fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    accord::subaccord_pda(creator, risk_type).0
+fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> Pubkey {
+    accord::subaccord_pda(creator, domain_ref).0
 }
 
 fn pause_pda() -> Pubkey {
@@ -240,6 +244,23 @@ fn setup_accumulator() -> AccEnv {
 /// Parameterized setup for ADR-0021 tests: same shape as `setup_accumulator`
 /// but with a configurable reveal-quorum threshold and redraw cap.
 fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> AccEnv {
+    setup_accumulator_kind(
+        reveal_threshold_bps,
+        max_draw_attempts,
+        Aggregation::Plurality,
+        0,
+    )
+}
+
+/// Full parameterization (scalar voting, ADR-0025): aggregation rule +
+/// coherence tolerance band in bps. `coherence_tol_bps` is only read on the
+/// `Median` path (Plurality coherence stays exact-match).
+fn setup_accumulator_kind(
+    reveal_threshold_bps: u16,
+    max_draw_attempts: u8,
+    aggregation: Aggregation,
+    coherence_tol_bps: u16,
+) -> AccEnv {
     let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
 
     let creator = Keypair::new();
@@ -268,12 +289,12 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
     create_mint(&mut ctx, &mint);
 
     // 3) Subaccord over the mint.
-    let risk_type = {
+    let domain_ref = {
         let mut rt = [0u8; 32];
         rt[0] = 42;
         rt
     };
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let ix = ctx
         .program()
         .accounts(accounts::CreateSubaccord {
@@ -284,7 +305,7 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,
@@ -295,7 +316,8 @@ fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> A
                 appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
                 max_appeals: 3,
                 min_jury_size: 3,
-                aggregation: Aggregation::Plurality,
+                aggregation,
+                coherence_tol_bps,
                 fee_per_juror: 1_000_000,
                 reveal_threshold_bps,
                 shortfall_policy: ShortfallPolicy::Redraw,
@@ -1441,14 +1463,14 @@ fn last_change_slot_field_absent_from_juror_stake() {
 
 // ─── wrong-pool negative tests (REVIEW #1: cross-Subaccord substitution) ───
 
-/// Create a second Subaccord over the same mint (different risk_type).
+/// Create a second Subaccord over the same mint (different domain_ref).
 fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
-    let risk_type_b = {
+    let domain_ref_b = {
         let mut rt = [0u8; 32];
         rt[0] = 99;
         rt
     };
-    let sub_b = subaccord_pda(&env.creator.pubkey(), &risk_type_b);
+    let sub_b = subaccord_pda(&env.creator.pubkey(), &domain_ref_b);
     let ix = env
         .ctx
         .program()
@@ -1460,7 +1482,7 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type: risk_type_b,
+            domain_ref: domain_ref_b,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,
@@ -1474,6 +1496,7 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 reveal_threshold_bps: 6_666,
+                coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts: 3,
                 authority: env.creator.pubkey(),
@@ -1788,15 +1811,16 @@ fn fabricate_appeal_bond(
         &ID,
     );
     let disc = solana_program::hash::hash(b"account:AppealBond").to_bytes();
-    // disc(8) + dispute(32) + round_idx(4) + appellant(32) + amount(8) + prior(1) + bump(1) = 86
-    let mut data = vec![0u8; 86];
+    // disc(8) + dispute(32) + round_idx(4) + appellant(32) + amount(8)
+    // + prior_result(8, u64 — ADR-0025) + bump(1) = 93
+    let mut data = vec![0u8; 93];
     data[..8].copy_from_slice(&disc[..8]);
     data[8..40].copy_from_slice(dispute.as_ref());
     data[40..44].copy_from_slice(&round_idx.to_le_bytes());
     data[44..76].copy_from_slice(appellant.as_ref());
     data[76..84].copy_from_slice(&amount.to_le_bytes());
-    data[84] = 0; // prior_result
-    data[85] = bump;
+    data[84..92].copy_from_slice(&0u64.to_le_bytes()); // prior_result
+    data[92] = bump;
     env.ctx
         .svm
         .set_account(
@@ -2862,11 +2886,21 @@ fn commit_reveal_finalize_settle_single_round() {
     // Commit phase.
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
     warp_seconds(&mut env, review_end - now + 1);
-    let vote: u8 = 0;
+    let vote: u64 = 0;
     let salt0 = [1u8; 32];
     let salt1 = [2u8; 32];
-    let comm0 = hashv(&[&[vote], &salt0, jurors[drawn[0].1].pubkey().as_ref()]).to_bytes();
-    let comm1 = hashv(&[&[vote], &salt1, jurors[drawn[1].1].pubkey().as_ref()]).to_bytes();
+    let comm0 = hashv(&[
+        &vote.to_le_bytes(),
+        &salt0,
+        jurors[drawn[0].1].pubkey().as_ref(),
+    ])
+    .to_bytes();
+    let comm1 = hashv(&[
+        &vote.to_le_bytes(),
+        &salt1,
+        jurors[drawn[1].1].pubkey().as_ref(),
+    ])
+    .to_bytes();
     for (idx, comm) in [(drawn[0].1, comm0), (drawn[1].1, comm1)] {
         let ix = env
             .ctx
@@ -2990,7 +3024,7 @@ fn commit_reveal_finalize_settle_single_round() {
     let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
         .unwrap();
     assert_eq!(d.state, DisputeState::Final);
-    assert_eq!(d.final_ruling, 0u8);
+    assert_eq!(d.final_ruling, 0u64);
     // finalized_at stamped at the Final transition (Betline reveal-window
     // anchor); 0 before Final, now > 0 and cannot precede filing.
     assert!(d.finalized_at > 0, "finalized_at must be stamped at Final");
@@ -3036,8 +3070,12 @@ struct DrawnPanel {
 /// the Clock before `review_end`. Mirrors `setup_and_finalize`'s setup but
 /// returns control before any vote is cast.
 fn setup_drawn_panel_3() -> DrawnPanel {
-    let mut env = setup_accumulator();
+    drawn_panel_with(setup_accumulator(), vec![[0u8; 32], [1u8; 32]])
+}
 
+/// `setup_drawn_panel_3` over a caller-supplied env + options. `options: vec![]`
+/// files a scalar (Median, ADR-0025) dispute — no option list, u64 votes.
+fn drawn_panel_with(mut env: AccEnv, options: Vec<[u8; 32]>) -> DrawnPanel {
     let stakes = [5_000u64, 3_000, 2_000];
     let mut jurors: Vec<Keypair> = Vec::new();
     let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
@@ -3076,7 +3114,7 @@ fn setup_drawn_panel_3() -> DrawnPanel {
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
-            options: vec![[0u8; 32], [1u8; 32]],
+            options,
             evidence_hash: [0u8; 32],
             nonce,
             fee: 3 * 1_000_000,
@@ -3139,10 +3177,15 @@ fn commit_all_jurors_flips_to_reveal_before_commit_end() {
 
     // Commit all 3 jurors. The last commit must flip state → Reveal even
     // though the commit window has NOT elapsed.
-    let vote: u8 = 0;
+    let vote: u64 = 0;
     for &(_, leaf_idx) in &drawn {
         let salt = [leaf_idx as u8 + 1; 32];
-        let comm = hashv(&[&[vote], &salt, jurors[leaf_idx].pubkey().as_ref()]).to_bytes();
+        let comm = hashv(&[
+            &vote.to_le_bytes(),
+            &salt,
+            jurors[leaf_idx].pubkey().as_ref(),
+        ])
+        .to_bytes();
         let ix = env
             .ctx
             .program()
@@ -3212,10 +3255,15 @@ fn reveal_blocked_until_all_committed_inside_commit_window() {
     warp_seconds(&mut env, review_end - now + 1);
 
     // Commit only the first 2 of 3 jurors.
-    let vote: u8 = 0;
+    let vote: u64 = 0;
     for &(_, leaf_idx) in &drawn[..2] {
         let salt = [leaf_idx as u8 + 1; 32];
-        let comm = hashv(&[&[vote], &salt, jurors[leaf_idx].pubkey().as_ref()]).to_bytes();
+        let comm = hashv(&[
+            &vote.to_le_bytes(),
+            &salt,
+            jurors[leaf_idx].pubkey().as_ref(),
+        ])
+        .to_bytes();
         let ix = env
             .ctx
             .program()
@@ -3287,10 +3335,15 @@ fn finalize_round_resolves_early_once_all_jurors_reveal() {
 
     // Commit all 3 (flips state → Reveal via the panel-full early flip), then
     // reveal all 3 (early reveal — still before commit_end). vote = 1.
-    let vote: u8 = 1;
+    let vote: u64 = 1;
     for &(_, leaf_idx) in &drawn {
         let salt = [leaf_idx as u8 + 1; 32];
-        let comm = hashv(&[&[vote], &salt, jurors[leaf_idx].pubkey().as_ref()]).to_bytes();
+        let comm = hashv(&[
+            &vote.to_le_bytes(),
+            &salt,
+            jurors[leaf_idx].pubkey().as_ref(),
+        ])
+        .to_bytes();
         let ix = env
             .ctx
             .program()
@@ -3667,10 +3720,10 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
         let acc = env.ctx.svm.get_account(&rnd).unwrap();
         let mut data = acc.data.clone();
         data[20..24].copy_from_slice(&3u32.to_le_bytes());
-        data[48] = 0;
-        data[2068] = 0;
-        data[2069] = 0;
-        data[2070] = 1;
+        data[56..64].copy_from_slice(&0u64.to_le_bytes()); // result
+        data[2576..2584].copy_from_slice(&0u64.to_le_bytes()); // reveals[0]
+        data[2584..2592].copy_from_slice(&0u64.to_le_bytes()); // reveals[1]
+        data[2592..2600].copy_from_slice(&1u64.to_le_bytes()); // reveals[2]
         env.ctx
             .svm
             .set_account(
@@ -3849,21 +3902,22 @@ fn setup_prior_round_settlement() -> PriorRoundSetup {
     }
 }
 
-/// Write round-0 reveal data directly into the round account (offsets: 20 =
-/// reveal_count, 48 = result, 2068+i = reveals[i]).
+/// Write round-0 reveal data directly into the round account. Offsets follow
+/// the bean accord-jrgf layout (incl. 8-byte discriminator): reveal_count @
+/// 20, result (u64) @ 56, reveals[i] (u64) @ 2576 + i·8.
 fn write_round_reveals(
     env: &mut AccEnv,
     rnd: Pubkey,
     reveal_count: u32,
-    result: u8,
-    reveals: &[(usize, u8)],
+    result: u64,
+    reveals: &[(usize, u64)],
 ) {
     let acc = env.ctx.svm.get_account(&rnd).unwrap();
     let mut data = acc.data.clone();
     data[20..24].copy_from_slice(&reveal_count.to_le_bytes());
-    data[48] = result;
+    data[56..64].copy_from_slice(&result.to_le_bytes());
     for &(idx, vote) in reveals {
-        data[2068 + idx] = vote;
+        data[2576 + idx * 8..2584 + idx * 8].copy_from_slice(&vote.to_le_bytes());
     }
     env.ctx
         .svm
@@ -4383,11 +4437,16 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
 
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
     warp_seconds(&mut env, review_end - now + 1);
-    let vote: u8 = 0;
+    let vote: u64 = 0;
     let mut salts: Vec<[u8; 32]> = Vec::new();
     for i in 0..n_reveal {
         let salt = [(i as u8) + 7; 32];
-        let comm = hashv(&[&[vote], &salt, jurors[drawn[i].1].pubkey().as_ref()]).to_bytes();
+        let comm = hashv(&[
+            &vote.to_le_bytes(),
+            &salt,
+            jurors[drawn[i].1].pubkey().as_ref(),
+        ])
+        .to_bytes();
         let ix = env
             .ctx
             .program()
@@ -4589,7 +4648,7 @@ fn redraw_slashes_noshows_and_reopens_created() {
     assert_eq!(round.juror_count, 0, "round cleared");
     assert_eq!(round.commit_count, 0);
     assert_eq!(round.reveal_count, 0);
-    assert_eq!(round.result, u8::MAX, "result reset");
+    assert_eq!(round.result, u64::MAX, "result reset");
 
     // State re-opened to Created for the fresh seats.
     assert_eq!(dispute_state(&dd), DisputeState::Created);
@@ -4979,13 +5038,13 @@ fn try_create_subaccord(
     ctx.svm
         .airdrop(&creator.pubkey(), 10 * LAMPORTS_PER_SOL)
         .unwrap();
-    // Non-zero risk_type (namespace-squat guard); distinct from setup_accumulator.
-    let risk_type = {
+    // Non-zero domain_ref (namespace-squat guard); distinct from setup_accumulator.
+    let domain_ref = {
         let mut rt = [0u8; 32];
         rt[0] = 0x7F;
         rt
     };
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let mint = Pubkey::new_unique();
     create_mint(&mut ctx, &mint); // L-4: create_subaccord validates the mint
     let ix = ctx
@@ -4998,7 +5057,7 @@ fn try_create_subaccord(
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,
@@ -5012,6 +5071,7 @@ fn try_create_subaccord(
                 aggregation,
                 fee_per_juror: 1_000_000,
                 reveal_threshold_bps: 6_666,
+                coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts: 3,
                 authority: creator.pubkey(),
@@ -5554,7 +5614,7 @@ fn fabricate_resolved_round(
     env: &mut AccEnv,
     dispute: &Pubkey,
     round_idx: u32,
-    result: u8,
+    result: u64,
 ) -> Pubkey {
     let rnd = round_pda(dispute, round_idx);
     let disc = solana_program::hash::hash(b"account:Round").to_bytes();
@@ -5758,4 +5818,456 @@ fn appeal_beyond_max_appeals_rejected() {
     for slot in d.evidence_hashes.iter().skip(1) {
         assert_eq!(*slot, [0u8; 32], "no slot written by the rejected appeal");
     }
+}
+/// `finalize_round` + the panel's JurorStake remaining-accounts (ADR-0020 fee
+/// credits). Asserts success.
+fn run_finalize_round(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    drawn: &[(u32, usize)],
+    jurors: &[Keypair],
+) {
+    let mut ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeRound {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeRound {})
+        .instruction()
+        .unwrap();
+    for &(.., leaf_idx) in drawn {
+        let js = juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey());
+        ix.accounts.push(solana_program::instruction::AccountMeta {
+            pubkey: js,
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+}
+
+/// `finalize_dispute` + the panel's JurorStake remaining-accounts. Asserts
+/// success.
+fn run_finalize_dispute(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    drawn: &[(u32, usize)],
+    jurors: &[Keypair],
+) {
+    let mut ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeDispute {})
+        .instruction()
+        .unwrap();
+    for &(.., leaf_idx) in drawn {
+        let js = juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey());
+        ix.accounts.push(solana_program::instruction::AccountMeta {
+            pubkey: js,
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+}
+
+// ─── scalar voting: u64 votes + Median aggregation + coherence band (ADR-0025) ─
+
+/// Commit + reveal a full panel of u64 votes. `votes[i]` belongs to
+/// `drawn[i]` (seat order). Uses the canonical 8-byte LE preimage.
+fn scalar_vote_panel(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    jurors: &[Keypair],
+    drawn: &[(u32, usize)],
+    votes: &[u64],
+) {
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let (review_end, commit_end) = (round.review_end, round.commit_end);
+    drop(round_acc);
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(env, review_end - now + 1);
+    for (i, &(_, leaf_idx)) in drawn.iter().enumerate() {
+        let salt = [i as u8 + 1; 32];
+        let comm = hashv(&[
+            &votes[i].to_le_bytes(),
+            &salt,
+            jurors[leaf_idx].pubkey().as_ref(),
+        ])
+        .to_bytes();
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Commit {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Commit { commitment: comm })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(env, commit_end - now + 1);
+    for (i, &(_, leaf_idx)) in drawn.iter().enumerate() {
+        let salt = [i as u8 + 1; 32];
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Reveal {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Reveal {
+                vote: votes[i],
+                salt,
+            })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+}
+
+#[test]
+fn scalar_median_full_lifecycle() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        reveal_end,
+        ..
+    } = drawn_panel_with(
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        vec![],
+    );
+
+    // Filer filed with zero options — a scalar dispute.
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.num_options, 0);
+
+    // 100.000000 / 101.000000 / 99.000000 (6-dec USDC base units). Median =
+    // 100_000_000; ±1% sits exactly inside the 100 bps coherence band.
+    scalar_vote_panel(
+        &mut env,
+        dispute,
+        rnd,
+        &jurors,
+        &drawn,
+        &[100_000_000u64, 101_000_000, 99_000_000],
+    );
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, reveal_end - now + 1);
+    run_finalize_round(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    assert_eq!(round.result, 100_000_000u64, "median of the three reveals");
+    drop(round_acc);
+
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.state, DisputeState::Final);
+    assert_eq!(d.final_ruling, 100_000_000u64);
+    assert_eq!(d.ruling(), Some(100_000_000u64));
+
+    // All three reveals sit inside the band → no slashes, base fees only.
+    for &(.., leaf_idx) in &drawn {
+        let js = read_juror_stake(&env, &env.subaccord, &jurors[leaf_idx].pubkey());
+        assert_eq!(js.stake_delta, 0i64, "coherent juror not slashed");
+        assert_eq!(js.fees_earned, 1_000_000u64);
+        assert_eq!(js.active_draws, 0);
+    }
+}
+
+#[test]
+fn scalar_median_slashes_outlier() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        reveal_end,
+        ..
+    } = drawn_panel_with(
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        vec![],
+    );
+
+    // Median = 100_000_000; band = ±1_000_000. The 500_000_000 outlier is 5x
+    // the median — far outside the band → slashed, the two coherent split it.
+    scalar_vote_panel(
+        &mut env,
+        dispute,
+        rnd,
+        &jurors,
+        &drawn,
+        &[100_000_000u64, 100_000_000, 500_000_000],
+    );
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, reveal_end - now + 1);
+    run_finalize_round(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.final_ruling, 100_000_000u64);
+
+    // slash_per_juror = 1000·1000/10_000 = 100; outlier −100, coherent +50.
+    for (i, &(.., leaf_idx)) in drawn.iter().enumerate() {
+        let js = read_juror_stake(&env, &env.subaccord, &jurors[leaf_idx].pubkey());
+        if i == 2 {
+            assert_eq!(js.stake_delta, -100i64, "outlier slashed");
+        } else {
+            assert_eq!(js.stake_delta, 50i64, "coherent juror share");
+        }
+    }
+}
+
+#[test]
+fn scalar_median_even_reveal_count_takes_upper_middle() {
+    // Quorum with panel 3 @ 6_666 bps needs ceil(1.9998) = 2 reveals — an
+    // EVEN reveal count. The tie convention (ADR-0025): `vs[n/2]` on the
+    // ascending sort = the UPPER middle (n=2 → the larger vote).
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        reveal_end,
+        ..
+    } = drawn_panel_with(
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        vec![],
+    );
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let (review_end, commit_end) = (round.review_end, round.commit_end);
+    drop(round_acc);
+
+    let votes = [100_000_000u64, 300_000_000, 200_000_000];
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+    for (i, &(.., leaf_idx)) in drawn.iter().enumerate() {
+        let salt = [i as u8 + 1; 32];
+        let comm = hashv(&[
+            &votes[i].to_le_bytes(),
+            &salt,
+            jurors[leaf_idx].pubkey().as_ref(),
+        ])
+        .to_bytes();
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Commit {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Commit { commitment: comm })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, commit_end - now + 1);
+    for (i, &(.., leaf_idx)) in drawn.iter().enumerate().take(2) {
+        let salt = [i as u8 + 1; 32];
+        let ix = env
+            .ctx
+            .program()
+            .accounts(accounts::Reveal {
+                juror: jurors[leaf_idx].pubkey(),
+                subaccord: env.subaccord,
+                dispute,
+                round: rnd,
+            })
+            .args(instruction::Reveal {
+                vote: votes[i],
+                salt,
+            })
+            .instruction()
+            .unwrap();
+        env.ctx
+            .execute_instruction(ix, &[&jurors[leaf_idx]])
+            .unwrap()
+            .assert_success();
+    }
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, reveal_end - now + 1);
+    run_finalize_round(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    assert_eq!(
+        round.result, 300_000_000u64,
+        "even reveal count (n=2) takes the UPPER middle"
+    );
+}
+
+#[test]
+fn scalar_vote_sentinel_and_plurality_range_rejected() {
+    // Median dispute: u64::MAX is the no-reveal sentinel — never a valid vote.
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        ..
+    } = drawn_panel_with(
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        vec![],
+    );
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let (review_end, commit_end) = (round.review_end, round.commit_end);
+    drop(round_acc);
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+    let juror = &jurors[drawn[0].1];
+    let salt = [7u8; 32];
+    let comm = hashv(&[&7u64.to_le_bytes(), &salt, juror.pubkey().as_ref()]).to_bytes();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Commit {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Commit { commitment: comm })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[juror])
+        .unwrap()
+        .assert_success();
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, commit_end - now + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Reveal {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Reveal {
+            vote: u64::MAX,
+            salt,
+        })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[juror]).unwrap();
+    assert!(
+        !r.is_success(),
+        "u64::MAX vote must be rejected (sentinel); logs={:?}",
+        r.logs()
+    );
+
+    // Plurality dispute: an out-of-range option index is still rejected.
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        ..
+    } = setup_drawn_panel_3();
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let (review_end, commit_end) = (round.review_end, round.commit_end);
+    drop(round_acc);
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+    let juror = &jurors[drawn[0].1];
+    let comm = hashv(&[&0u64.to_le_bytes(), &salt, juror.pubkey().as_ref()]).to_bytes();
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Commit {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Commit { commitment: comm })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[juror])
+        .unwrap()
+        .assert_success();
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, commit_end - now + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Reveal {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Reveal { vote: 2u64, salt })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[juror]).unwrap();
+    assert!(
+        !r.is_success(),
+        "out-of-range plurality vote must be rejected; logs={:?}",
+        r.logs()
+    );
 }

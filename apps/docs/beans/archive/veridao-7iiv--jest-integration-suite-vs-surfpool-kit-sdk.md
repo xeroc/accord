@@ -23,7 +23,7 @@ The jest↔Kit↔SDK↔validator↔program chain works end-to-end.**
   declared address via `--bpf-program`:
   1. `initializePause` — init + PDA creation; verifies PauseState account exists,
      owned by `ACCORD_PROGRAM_ID`.
-  2. `createSubaccord` — init + PDA creation with full args (riskType,
+  2. `createSubaccord` — init + PDA creation with full args (domainRef,
      stakingToken, economics); verifies Subaccord account exists, owned by the
      program.
 - Tests **skip gracefully** (not fail) when no validator is reachable — the

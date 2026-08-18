@@ -14,8 +14,8 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU8Decoder,
-  getU8Encoder,
+  getU64Decoder,
+  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -78,12 +78,12 @@ export type RevealInstruction<
 
 export type RevealInstructionData = {
   discriminator: ReadonlyUint8Array;
-  vote: number;
+  vote: bigint;
   salt: ReadonlyUint8Array;
 };
 
 export type RevealInstructionDataArgs = {
-  vote: number;
+  vote: number | bigint;
   salt: ReadonlyUint8Array;
 };
 
@@ -91,7 +91,7 @@ export function getRevealInstructionDataEncoder(): FixedSizeEncoder<RevealInstru
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["vote", getU8Encoder()],
+      ["vote", getU64Encoder()],
       ["salt", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: REVEAL_DISCRIMINATOR }),
@@ -101,7 +101,7 @@ export function getRevealInstructionDataEncoder(): FixedSizeEncoder<RevealInstru
 export function getRevealInstructionDataDecoder(): FixedSizeDecoder<RevealInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["vote", getU8Decoder()],
+    ["vote", getU64Decoder()],
     ["salt", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }

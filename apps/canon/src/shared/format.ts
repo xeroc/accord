@@ -38,13 +38,14 @@ export const DISPUTE_STATE_LABELS: Record<DisputeState, string> = {
   [DisputeState.RedrawEligible]: "Redraw eligible",
 };
 
-/** Ruling sentinel — `finalRuling` is 255 until the dispute is final. */
-const NO_RULING = 255;
+/** Ruling sentinel — `finalRuling` is u64::MAX until the dispute is final (ADR-0025). */
+const NO_RULING = 0xffff_ffff_ffff_ffffn;
 
 /** Render a Dispute `finalRuling` index, or "—" when not yet decided. */
-export function formatRuling(ruling: number, optionLabels?: string[]): string {
+export function formatRuling(ruling: bigint, optionLabels?: string[]): string {
   if (ruling === NO_RULING) return "—";
-  return optionLabels?.[ruling] ?? `Option ${ruling}`;
+  const idx = Number(ruling);
+  return optionLabels?.[idx] ?? `Option ${idx}`;
 }
 
 /** Unix-seconds (Clock unix_time, possibly bigint) → locale string. */

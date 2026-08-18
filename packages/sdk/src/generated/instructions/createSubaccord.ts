@@ -105,7 +105,7 @@ export type CreateSubaccordInstruction<
 
 export type CreateSubaccordInstructionData = {
   discriminator: ReadonlyUint8Array;
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
   minStake: bigint;
   alphaBps: number;
@@ -128,6 +128,12 @@ export type CreateSubaccordInstructionData = {
   shortfallPolicy: ShortfallPolicy;
   /** Redraw cap per round (ADR-0021). Default 3. */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools in bps of the final median
+   * (ADR-0025). `0` = exact match. Inert for `Plurality`. Immutable on
+   * the Subaccord (not in `UpdatePayload`).
+   */
+  coherenceTolBps: number;
   authority: Address;
   evidenceOperator: Address;
   depth: number;
@@ -141,7 +147,7 @@ export type CreateSubaccordInstructionData = {
 };
 
 export type CreateSubaccordInstructionDataArgs = {
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   evidenceSpec: ReadonlyUint8Array;
   minStake: number | bigint;
   alphaBps: number;
@@ -164,6 +170,12 @@ export type CreateSubaccordInstructionDataArgs = {
   shortfallPolicy: ShortfallPolicyArgs;
   /** Redraw cap per round (ADR-0021). Default 3. */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools in bps of the final median
+   * (ADR-0025). `0` = exact match. Inert for `Plurality`. Immutable on
+   * the Subaccord (not in `UpdatePayload`).
+   */
+  coherenceTolBps: number;
   authority: Address;
   evidenceOperator: Address;
   depth: number;
@@ -180,7 +192,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
+      ["domainRef", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["minStake", getU64Encoder()],
       ["alphaBps", getU16Encoder()],
@@ -195,6 +207,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["revealThresholdBps", getU16Encoder()],
       ["shortfallPolicy", getShortfallPolicyEncoder()],
       ["maxDrawAttempts", getU8Encoder()],
+      ["coherenceTolBps", getU16Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["depth", getU8Encoder()],
@@ -208,7 +221,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
 export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<CreateSubaccordInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
+    ["domainRef", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["minStake", getU64Decoder()],
     ["alphaBps", getU16Decoder()],
@@ -223,6 +236,7 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["revealThresholdBps", getU16Decoder()],
     ["shortfallPolicy", getShortfallPolicyDecoder()],
     ["maxDrawAttempts", getU8Decoder()],
+    ["coherenceTolBps", getU16Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["depth", getU8Decoder()],
@@ -258,7 +272,7 @@ export type CreateSubaccordAsyncInput<
   stakingToken: Address<TAccountStakingToken>;
   feeToken: Address<TAccountFeeToken>;
   systemProgram?: Address<TAccountSystemProgram>;
-  riskType: CreateSubaccordInstructionDataArgs["riskType"];
+  domainRef: CreateSubaccordInstructionDataArgs["domainRef"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
@@ -273,6 +287,7 @@ export type CreateSubaccordAsyncInput<
   revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
   shortfallPolicy: CreateSubaccordInstructionDataArgs["shortfallPolicy"];
   maxDrawAttempts: CreateSubaccordInstructionDataArgs["maxDrawAttempts"];
+  coherenceTolBps: CreateSubaccordInstructionDataArgs["coherenceTolBps"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
@@ -332,7 +347,10 @@ export async function getCreateSubaccordInstructionAsync<
         "creator",
         accounts.creator.value,
       ),
-      riskType: getNonNullResolvedInstructionInput("riskType", args.riskType),
+      domainRef: getNonNullResolvedInstructionInput(
+        "domainRef",
+        args.domainRef,
+      ),
     });
   }
   if (!accounts.systemProgram.value) {
@@ -380,7 +398,7 @@ export type CreateSubaccordInput<
   stakingToken: Address<TAccountStakingToken>;
   feeToken: Address<TAccountFeeToken>;
   systemProgram?: Address<TAccountSystemProgram>;
-  riskType: CreateSubaccordInstructionDataArgs["riskType"];
+  domainRef: CreateSubaccordInstructionDataArgs["domainRef"];
   evidenceSpec: CreateSubaccordInstructionDataArgs["evidenceSpec"];
   minStake: CreateSubaccordInstructionDataArgs["minStake"];
   alphaBps: CreateSubaccordInstructionDataArgs["alphaBps"];
@@ -395,6 +413,7 @@ export type CreateSubaccordInput<
   revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
   shortfallPolicy: CreateSubaccordInstructionDataArgs["shortfallPolicy"];
   maxDrawAttempts: CreateSubaccordInstructionDataArgs["maxDrawAttempts"];
+  coherenceTolBps: CreateSubaccordInstructionDataArgs["coherenceTolBps"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];

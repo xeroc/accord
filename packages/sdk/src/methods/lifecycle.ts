@@ -71,10 +71,10 @@ const U64_MAX = 0xffffffffffffffffn;
 // Domain types
 // ---------------------------------------------------------------------------
 
-/** Args for `create_subaccord` (lib.rs:146). `risk_type`/`evidence_spec` immutable. */
+/** Args for `create_subaccord` (lib.rs:146). `domain_ref`/`evidence_spec` immutable. */
 export interface CreateSubaccordArgs {
   /** Immutable identity hash: the class of dispute this pool adjudicates. ≠ [0;32]. */
-  riskType: Uint8Array; // 32 bytes
+  domainRef: Uint8Array; // 32 bytes
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: Uint8Array; // 32 bytes
   /** SPL mint juror capital is staked in (collateral, ADR-0002/0020). */
@@ -115,6 +115,15 @@ export interface CreateSubaccordArgs {
    * Orthogonal to {@link CreateSubaccordArgs.maxAppeals} (which bounds rounds).
    */
   maxDrawAttempts: number; // u8, 1..=MAX_DRAW_ATTEMPTS
+  /**
+   * Coherence tolerance for `Median` pools, in bps of the final median
+   * (ADR-0025): a revealed vote is coherent iff
+   * `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+   * match. Inert for `Plurality`. Immutable on the Subaccord (not in
+   * `UpdatePayload`); frozen onto `CaseTerms` at filing. Docs default 100
+   * (1% band) for `Median` pools; use `0` for `Plurality`-only pools.
+   */
+  coherenceTolBps: number; // u16, 0..=10_000
   /** `Pubkey::default()` => immutable Subaccord; else signs propose/execute. */
   authority: Address;
   /** ADR-0006 trusted re-encryption service. */
@@ -134,7 +143,7 @@ export interface CreateSubaccordArgs {
 }
 
 /**
- * Tagged Subaccord parameter update (state.rs:254-266). `risk_type` and
+ * Tagged Subaccord parameter update (state.rs:254-266). `domain_ref` and
  * `evidence_spec` are immutable and absent. Re-exported from
  * {@link ../types.js} (Codama-generated canonical shape).
  */
@@ -150,15 +159,15 @@ function le8(v: bigint): Uint8Array {
   return b;
 }
 
-/** Subaccord PDA seeds (state.rs:1697): `["subaccord", creator, risk_type]`. */
+/** Subaccord PDA seeds (state.rs:1697): `["subaccord", creator, domain_ref]`. */
 export function subaccordSeeds(
   creatorBytes: Uint8Array,
-  riskType: Uint8Array,
+  domainRef: Uint8Array,
 ): Uint8Array[] {
-  assertValidRiskType(riskType);
+  assertValidRiskType(domainRef);
   if (creatorBytes.length !== 32)
     throw new Error("InvalidCreator: expected 32 bytes");
-  return [SEED_SUBACCORD, creatorBytes, riskType];
+  return [SEED_SUBACCORD, creatorBytes, domainRef];
 }
 
 /** PendingUpdate PDA seeds (state.rs:1816): `["update", subaccord, nonce_le]`. */
@@ -256,15 +265,30 @@ export function assertValidMaxDrawAttempts(maxDrawAttempts: number): void {
   }
 }
 
-/** Reject the degenerate zero risk_type (lib.rs:164 namespace squat guard). */
-export function assertValidRiskType(riskType: Uint8Array): void {
-  if (riskType.length !== 32) {
+/** Validate `coherence_tol_bps ≤ 10_000` (lib.rs create_subaccord, ADR-0025).
+ * Mirrors the on-chain `InvalidThreshold` gate — same bound as
+ * {@link assertValidRevealThreshold}. */
+export function assertValidCoherenceTol(coherenceTolBps: number): void {
+  if (
+    !Number.isInteger(coherenceTolBps) ||
+    coherenceTolBps < 0 ||
+    coherenceTolBps > 10_000
+  ) {
     throw new Error(
-      `InvalidRiskType: expected 32 bytes, got ${riskType.length}`,
+      `InvalidThreshold: expected 0..10000 bps, got ${coherenceTolBps}`,
+    );
+  }
+}
+
+/** Reject the degenerate zero domain_ref (lib.rs:164 namespace squat guard). */
+export function assertValidRiskType(domainRef: Uint8Array): void {
+  if (domainRef.length !== 32) {
+    throw new Error(
+      `InvalidRiskType: expected 32 bytes, got ${domainRef.length}`,
     );
   }
   let allZero = 1;
-  for (let i = 0; i < 32; i++) allZero &= riskType[i] === 0 ? 1 : 0;
+  for (let i = 0; i < 32; i++) allZero &= domainRef[i] === 0 ? 1 : 0;
   if (allZero) throw new Error("InvalidRiskType: zero hash is reserved");
 }
 
@@ -283,12 +307,12 @@ export function canExecuteAt(
 export async function findSubaccordPda(
   programAddress: Address,
   creator: Address,
-  riskType: Uint8Array,
+  domainRef: Uint8Array,
 ): Promise<{ address: Address; bump: number }> {
   const creatorBytes = new Uint8Array(getAddressEncoder().encode(creator));
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
-    seeds: subaccordSeeds(creatorBytes, riskType),
+    seeds: subaccordSeeds(creatorBytes, domainRef),
   });
   return { address, bump };
 }
@@ -378,18 +402,19 @@ export async function createSubaccord(
   creator: Address,
   args: CreateSubaccordArgs,
 ): Promise<{ instruction: Instruction; subaccord: Address; bump: number }> {
-  assertValidRiskType(args.riskType);
+  assertValidRiskType(args.domainRef);
   if (args.evidenceSpec.length !== 32)
     throw new Error("InvalidEvidenceSpec: expected 32 bytes");
   assertValidMaxAppeals(args.maxAppeals);
   assertValidAppealWindow(args.appealWindow);
   assertValidRevealThreshold(args.revealThresholdBps);
   assertValidMaxDrawAttempts(args.maxDrawAttempts);
+  assertValidCoherenceTol(args.coherenceTolBps);
   assertValidMinJurySize(args.minJurySize, args.maxAppeals);
   const { address, bump } = await findSubaccordPda(
     programId,
     creator,
-    args.riskType,
+    args.domainRef,
   );
   const instruction = client.buildCreateSubaccord({
     programId,

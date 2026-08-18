@@ -138,7 +138,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
         dispute: armed.dispute,
         round: roundPda,
       },
-      { vote: 0, salt: salt0 },
+      { vote: 0n, salt: salt0 },
     );
     await env.sendIx(commitIx);
 
@@ -156,7 +156,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
           jurorTokenAccount: drawn[0]!.jurorAta,
           vault: fx.vault,
         },
-        { vote: 0, salt: salt0 },
+        { vote: 0n, salt: salt0 },
       ),
     );
 
@@ -238,7 +238,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
           dispute: armed.dispute,
           round: roundPda,
         },
-        { vote: 0, salt: salts[i]! },
+        { vote: 0n, salt: salts[i]! },
       );
       await env.sendIx(instruction);
     }
@@ -257,7 +257,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
             jurorTokenAccount: reDrawn[i]!.jurorAta,
             vault: fx.vault,
           },
-          { vote: 0, salt: salts[i]! },
+          { vote: 0n, salt: salts[i]! },
         ),
       );
     }
@@ -281,7 +281,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
     expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
 
     const finalRound = await readRound(env, roundPda);
-    expect(finalRound!.result).toBe(0); // unanimous option 0
+    expect(finalRound!.result).toBe(0n); // unanimous option 0
 
     // Each revealer's feesEarned credited (ADR-0020).
     for (const j of reDrawn) {
@@ -318,7 +318,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
         dispute: armed.dispute,
         round: roundPda,
       },
-      { vote: 0, salt },
+      { vote: 0n, salt },
     );
     await env.sendIx(commitIx);
     await warpTo(env, round!.commitEnd);
@@ -335,7 +335,7 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
           jurorTokenAccount: drawn[0]!.jurorAta,
           vault: fx.vault,
         },
-        { vote: 0, salt },
+        { vote: 0n, salt },
       ),
     );
 

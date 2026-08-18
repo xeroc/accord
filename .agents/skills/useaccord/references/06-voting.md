@@ -44,10 +44,19 @@ dispute, so a 48h governance timelock cannot shift them mid-dispute.
 Common flags: `--subaccord <addr>`, `--dispute <addr>`, `--round-idx <n>` (the
 Round PDA is derived). Global flags (`--rpc/--keypair/--json/--dry-run/...`) apply.
 
+**Vote encoding (ADR-0025).** `--vote` is a string that becomes a u64: an
+option index for `Plurality` pools (`--vote 1`), or a decimal scalar for
+`Median` pools (`--vote 123.45 --decimals 6` scales by 10^6). Integer strings
+pass through as raw base units; `--decimals` (default `0` = no scaling) only
+applies when `--vote` contains a `.`. SDK pure helpers: `encodeScalarVote` /
+`decodeScalarVote` (default 6 decimals).
+
 ## `vote:commit` — hash(vote, salt, juror) on-chain
 
-Computes `commitment = sha256(vote_byte ‖ salt[32] ‖ juror_pubkey[32])` and
-stores it on the juror's slot. `--vote` is an option index (`0..num_options`);
+Computes `commitment = sha256(vote_le[8] ‖ salt[32] ‖ juror_pubkey[32])` — the
+vote preimage is the 8-byte little-endian u64 (ADR-0025) — and stores it on
+the juror's slot. `--vote` is an option index (`0..num_options`) for
+`Plurality` pools, a decimal scalar (`--decimals`) for `Median` pools.
 `--salt` is 32 bytes (`--salt 0x<64hex>` or `--salt random`, which prints the
 generated salt so it can be reused at reveal). Prints `{ commitment }`.
 
@@ -64,6 +73,12 @@ useaccord vote:commit \
   --vote 1 --salt "$SALT" \
   --keypair ~/juror.json --json
 # {"signature":"…","commitment":"ab12…(64 hex)"}
+
+# Median (scalar) pool — decimal scalar scaled by 10^--decimals (ADR-0025)
+useaccord vote:commit \
+  --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
+  --vote 123.45 --decimals 6 --salt "$SALT" \
+  --keypair ~/juror.json --json
 ```
 
 Gates enforced on-chain: juror is drawn into the round (`NotDrawnJuror`), no
@@ -72,16 +87,23 @@ prior commit (`CommitAlreadyExists`), inside the commit window.
 ## `vote:reveal` — verify hash, record vote
 
 Pass the **exact** `--vote` and `--salt` used at commit. The chain recomputes
-`hashv(&[&[vote], &salt, juror])` and checks it equals the stored commitment
-(`RevealMismatch` on a mismatch). Records the vote; no fee transfer at reveal
-(fees credit later at `finalize_round`).
+`hashv(&[&vote_le[8], &salt, juror])` and checks it equals the stored
+commitment (`RevealMismatch` on a mismatch — same `.`, same `--decimals` as
+commit). Records the u64 vote — option index for `Plurality`, scalar base
+units for `Median` (ADR-0025); no fee transfer at reveal (fees credit later at
+`finalize_round`).
 
 ```bash
 # MUST match the commit pair — wrong salt/vote/byte-order ⇒ RevealMismatch
 useaccord vote:reveal \
   --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
   --vote 1 --salt "$SALT" --keypair ~/juror.json --json
-# {"signature":"…","round_idx":0,"vote":1}
+# {"signature":"…","round":"<round-pda>","salt":"<64hex>"}
+
+# Median (scalar) pool — same decimal form as the commit (ADR-0025)
+useaccord vote:reveal \
+  --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
+  --vote 123.45 --decimals 6 --salt "$SALT" --keypair ~/juror.json --json
 ```
 
 Gates: inside reveal window, a commit exists (`CommitMissing`), not already
@@ -89,12 +111,16 @@ revealed (`AlreadyRevealed`).
 
 ## `vote:commit-hash` — pure helper
 
-Offline precompute of the 32-byte commitment. No RPC, no signer, no send. Use to
-pre-sign, audit a stored commit, or double-check a reveal preimage.
+Offline precompute of the 32-byte commitment (72-byte preimage =
+`vote_le[8] ‖ salt[32] ‖ juror[32]`, ADR-0025). No RPC, no signer, no send.
+Use to pre-sign, audit a stored commit, or double-check a reveal preimage.
 
 ```bash
 useaccord vote:commit-hash --vote 1 --salt 0xa1b2…fe --juror 4zNd…9q
 # {"commitment":"ab12…(64 hex)"}
+
+# scalar form: --vote 123.45 --decimals 6 hashes 123_450_000 (ADR-0025)
+useaccord vote:commit-hash --vote 123.45 --decimals 6 --salt 0xa1b2…fe --juror 4zNd…9q
 ```
 
 ## `vote:finalize-round` — tally + reveal-quorum check (cranker)
@@ -103,8 +129,10 @@ After `reveal_end` **or once every juror has revealed**, anyone tallies the roun
 gates the tally on a reveal quorum
 `reveal_count >= ceil(panel × reveal_threshold_bps / 10_000)`:
 
-- **Quorum met** → plurality `result` written, each revealer credited
-  `fees_earned += fee_per_juror` (ADR-0020), state → `RoundResolved`.
+- **Quorum met** → the aggregation's `result` written (winning option index
+  for `Plurality`; the median of revealed scalars for `Median` — ADR-0025),
+  each revealer credited `fees_earned += fee_per_juror` (ADR-0020), state →
+  `RoundResolved`.
 - **Shortfall** → no result, no fee credits, state → `RedrawEligible` (hand to
   `vote:redraw`). This kills zero-mandate tie-break rulings (CONCEPT-REVIEW §4.9).
 
@@ -115,8 +143,9 @@ when `fee_per_juror > 0`). **The cranker automates this** when `now ≥ reveal_e
 useaccord vote:finalize-round \
   --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
   --remaining-accounts auto --json
-# quorum met  → {"state":"RoundResolved","result":1}
-# shortfall   → {"state":"RedrawEligible","result":null}
+# {"signature":"…","round":"<round-pda>","remainingCount":3}
+# quorum met → RoundResolved; round.result = option index / median (ADR-0025)
+# shortfall  → RedrawEligible, no result (inspect via read:round)
 ```
 
 ## `vote:finalize-dispute` — write ruling + settle final round (cranker)
@@ -133,7 +162,8 @@ prior appeal (collapses to just the panel when there were no appeals).
 useaccord vote:finalize-dispute \
   --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
   --remaining-accounts auto --json
-# {"state":"Final","final_ruling":1,"finalized_at":1723…}
+# {"signature":"…","round":"<round-pda>","remainingCount":3}
+# state → Final; read the u64 ruling via dispute:ruling / read:dispute
 ```
 
 ## `vote:redraw` — shortfall reconvene (cranker, ADR-0021)
@@ -178,5 +208,7 @@ useaccord vote:redraw \
 - **Never pausable (ADR-0016):** `commit`, `reveal`, `finalize_round`,
   `finalize_dispute` are outside the circuit breaker — a pause cannot stall an
   in-flight vote.
-- **NO_VOTE sentinel:** `u8::MAX` (255) marks "not revealed"; option indices are
-  valid only `0..num_options`.
+- **NO_VOTE sentinel (ADR-0025):** votes/results/rulings are u64; `u64::MAX`
+  (`NO_VOTE`, `0xffff…ffff`) marks "not revealed". Valid votes: option
+  indexes `0..num_options` for `Plurality`; any scalar below the sentinel for
+  `Median`. JSON output emits bigints as decimal strings (jq-safe).

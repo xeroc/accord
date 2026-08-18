@@ -19,7 +19,7 @@ redo.
 
 | Command                      | SDK fn                               | Notes                                                                                                                          |
 | ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `lifecycle:create-subaccord` | `createSubaccord` (lifecycle.ts:333) | Many flags (mirror `CreateSubaccordArgs`); `--random-risk-type` mints a fresh 32B risk_type. `emitCreated(subaccord, {bump})`. |
+| `lifecycle:create-subaccord` | `createSubaccord` (lifecycle.ts:333) | Many flags (mirror `CreateSubaccordArgs`); `--random-domain-id` mints a fresh 32B domain_ref. `emitCreated(subaccord, {bump})`. |
 | `lifecycle:propose-update`   | `proposeSubaccordUpdate` (366)       | `--payload <Kind:value>`; print `pendingUpdate`; read `executeAfterSlot` via `getUpdateExecuteAfterSlot`.                      |
 | `lifecycle:execute-update`   | `executeSubaccordUpdate` (400)       | Permissionless crank.                                                                                                          |
 | `lifecycle:pause`            | `pause` (431)                        | Instant freeze.                                                                                                                |
@@ -46,8 +46,8 @@ Implemented all 6 remaining `lifecycle:*` commands, each one file extending
 already done and left untouched):
 
 - `lifecycle:create-subaccord` → `methods.createSubaccord`. Full `CreateSubaccordArgs`
-  flag surface; `--random-risk-type` mints a fresh 32B risk_type; `--evidence-spec`/
-  `--risk-type` take 64-hex; authority hard-wired to the loaded wallet; SDK's
+  flag surface; `--random-domain-id` mints a fresh 32B domain_ref; `--evidence-spec`/
+  `--domain-id` take 64-hex; authority hard-wired to the loaded wallet; SDK's
   `assertValid*` helpers run before build.
 - `lifecycle:propose-update` → `methods.proposeSubaccordUpdate`. `--payload Kind:value`
   parsed by a type-safe switch over all 10 UpdatePayload kinds; after send, reads
@@ -59,7 +59,7 @@ already done and left untouched):
 
 Tests (`test/commands/lifecycle/lifecycle.test.ts`): per-command `--help` smoke,
 `--dry-run` instruction-build (deterministic, no validator needed), and behavior
-assertions (zero risk_type rejected; unknown payload kind rejected). The suite
+assertions (zero domain_ref rejected; unknown payload kind rejected). The suite
 generates a valid keypair via `solana-keygen` in `beforeAll`.
 
 README §"Commands implemented" documents all 6 new commands.

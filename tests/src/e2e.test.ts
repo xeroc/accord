@@ -399,7 +399,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
     // -- create Subaccord (evidence_operator = operator) ---------------------
     const { instruction: createSubIx, subaccord } =
       await accord.methods.createSubaccord(payer.address, {
-        riskType: crypto.getRandomValues(new Uint8Array(32)),
+        domainRef: crypto.getRandomValues(new Uint8Array(32)),
         evidenceSpec: crypto.getRandomValues(new Uint8Array(32)),
         stakingToken,
         minStake: MIN_STAKE,

@@ -41,7 +41,7 @@ total   = fee_new + bond                  // appellant ATA → vault
 ## Bond settlement
 
 - Recorded in `AppealBond` PDA `["bond", dispute, round_idx]` where `round_idx` = the new (larger) round.
-- `prior_result` = winner of the round being appealed.
+- `prior_result: u64` = winning value of the round being appealed — option index (`Plurality`) or median (`Median`); u64 since [ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md).
 - `finalize_dispute` checks each bond: `prior_result == final_ruling` ⇒ **no flip** ⇒ bond folded into the final-round coherent pool and zeroed. `prior_result != final_ruling` ⇒ **flip** ⇒ bond left for `claim_appeal_refund`.
 - `claim_appeal_refund` returns flipped bonds to their appellant (idempotent).
 

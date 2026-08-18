@@ -1,7 +1,7 @@
 ---
 name: useaccord
 description: Work with the Accord arbitration protocol — create Subaccords, stake jurors, file disputes, draw panels, vote, appeal, and settle rulings via the `useaccord` CLI and `@useaccord/sdk`. Covers the full dispute lifecycle, the two-phase withdraw, MST accumulator proofs, and the cranker service.
-when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point voting, attestation-gated / credential-gated juror pools, the useaccord CLI, or any instruction in the Accord program (create_subaccord, stake, prune_juror, reclaim_slot, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
+when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point or scalar (median) voting, attestation-gated / credential-gated juror pools, the useaccord CLI, or any instruction in the Accord program (create_subaccord, stake, prune_juror, reclaim_slot, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
 version: 0.1.0
 ---
 
@@ -44,6 +44,11 @@ Final`. Permissionless cranks advance each state when its window elapses.
   `juror_schema`). Omit both at creation ⇒ stake-only (default, unchanged). On
   a gated pool, `stake` needs the juror's `--attestation`; expired
   attestations are pruned by the permissionless `staking:prune-juror` crank.
+- **Scalar voting (ADR-0025)**: a Subaccord picks its tally rule at creation —
+  `--aggregation plurality` (option-index votes) or `median` (u64 scalar
+  votes; the ruling is the median, coherence judged within
+  `--coherence-tol-bps`). Votes/results/rulings are u64 (`u64::MAX` = no
+  value); `--vote 123.45 --decimals 6` scales decimal scalars.
 - **Cranker service** (`apps/cranker/`, milestone `accord-27r5`): automates all
   permissionless instructions (request_vrf, draw_seat, finalize, settle,
   cancel, redraw). Reconciler loop (60s) is authoritative; WS is optimization.

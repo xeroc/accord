@@ -5777,6 +5777,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "synod"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-litesvm",
+ "anchor-spl",
+ "solana-program 3.0.0",
+ "solana-sdk",
+ "spl-associated-token-account",
+ "spl-token",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

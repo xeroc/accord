@@ -27,7 +27,7 @@ Account structs (Subaccord, JurorStake, Dispute, Round, Snapshot, PendingUpdate)
 - **Every account stores its canonical `bump`** so handlers reuse one PDA
   (never re-derive). Instruction beans will `Box<>` `Dispute`/`Round` for the
   BPF stack frame — the structs are plain `#[account]`.
-- **`risk_type` + `evidence_spec` immutable** (32-byte hashes each); all other
+- **`domain_ref` + `evidence_spec` immutable** (32-byte hashes each); all other
   Subaccord params route through `UpdatePayload` (ADR-0005).
 - **`DisputeState`** models the full SPEC state machine (Created -> SnapshotPosted
   -> Drawn -> Review -> Commit -> Reveal -> RoundResolved -> Final -> Closed).

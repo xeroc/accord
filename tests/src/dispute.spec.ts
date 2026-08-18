@@ -270,10 +270,9 @@ describe("e2e: dispute (requires Surfpool)", () => {
     // final_ruling: read straight off the decoded Dispute (the `getRuling` facade
     // helper is broken over a raw Rpc). NOTE: the deployed .so + generated SDK
     // treat `final_ruling` as a plain `u8` (stale vs the source's `Option<u8>`);
-    // a freshly-created Dispute carries the no-ruling sentinel. Asserting the
-    // field is present + numeric keeps this independent of the Option/u8 drift
-    // (tracked as a program/SDK build-consistency bug — see appeal.spec header).
-    expect(typeof d!.finalRuling).toBe("number");
+    // field is present + the u64 sentinel keeps this independent of encoding
+    // drift (see appeal.spec header).
+    expect(typeof d!.finalRuling).toBe("bigint");
   }, 60_000);
 
   it("insufficient stakers reverts on-chain (InsufficientJurors)", async () => {

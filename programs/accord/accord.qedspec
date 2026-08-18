@@ -21,7 +21,9 @@
 //     are lifted to flat State fields set by the (out-of-scope) tally and
 //     read here. `slash_bounded` only constrains the per-juror decrement, so
 //     `share`'s exact value is irrelevant to that invariant — it is carried
-//     as a field for completeness.
+//     as a field for completeness. NOTE (ADR-0025 scalar voting): u64 votes
+//     and the Median aggregation do not touch these models — `coherent_flag`
+//     abstracts over how coherence is judged (exact match vs bps band).
 //
 // Verification status: the four properties are DECLARED and handler-scoped
 // (parsing + lint clean). qedgen v2.47 emits a non-vacuous harness for the

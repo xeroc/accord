@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import type { Address, Commitment, Rpc, SolanaRpcApi } from "@solana/kit";
 
 import {
+  Aggregation,
   fetchMaybeSubaccord,
   findAssociatedTokenAddress,
   findAccordStatePda,
@@ -24,12 +25,18 @@ import { parseLamports } from "./required-fee.js";
 
 const ZERO_EVIDENCE = new Uint8Array(32);
 
-/** Fetch the Subaccord's fee economics (feeToken + feeVault ATA + feePerJuror). */
+/** Fetch the Subaccord's fee economics (+ aggregation for the options gate). */
 async function readSubaccordEcons(
   rpc: Rpc<SolanaRpcApi>,
   subaccord: Address,
   commitment: Commitment,
-): Promise<{ feeToken: Address; feeVault: Address; feePerJuror: bigint; minJurySize: number }> {
+): Promise<{
+  feeToken: Address;
+  feeVault: Address;
+  feePerJuror: bigint;
+  minJurySize: number;
+  aggregation: Aggregation;
+}> {
   const account = await fetchMaybeSubaccord(rpc, subaccord, { commitment });
   if (!account.exists) {
     throw new Error(
@@ -43,6 +50,7 @@ async function readSubaccordEcons(
     feeVault,
     feePerJuror: account.data.feePerJuror,
     minJurySize: account.data.minJurySize,
+    aggregation: account.data.aggregation,
   };
 }
 
@@ -51,7 +59,8 @@ export default class DisputeCreate extends ChainCommand {
 
   static description =
     "File a new Dispute. The loaded wallet is the filer and fee payer. Options " +
-    "are 2..32 off-chain label hashes (each 32 bytes). The Dispute PDA is " +
+    "are 2..8 off-chain label hashes (each 32 bytes); scalar (Median) pools " +
+    "file with NO options (ADR-0025). The Dispute PDA is " +
     "derived from [filer, nonce], so a fresh nonce yields a fresh dispute. " +
     "Fee defaults to `auto` (3 × the Subaccord's feePerJuror); pass an explicit " +
     "lamports value with --fee-token to skip the on-chain read (--dry-run friendly).";
@@ -60,6 +69,7 @@ export default class DisputeCreate extends ChainCommand {
     "<%= config.bin %> dispute:create --subcord <pda> --options <hex32>,<hex32>",
     "<%= config.bin %> dispute:create --subcord <pda> --options <a>,<b> --fee auto",
     "<%= config.bin %> dispute:create --subcord <pda> --options <a>,<b> --fee 3_000_000 --fee-token <mint> --dry-run",
+    "<%= config.bin %> dispute:create --subcord <pda> --fee auto  # scalar (Median) pool — no --options",
   ];
 
   static flags = {
@@ -69,8 +79,9 @@ export default class DisputeCreate extends ChainCommand {
       required: true,
     }),
     options: Flags.string({
-      description: "Comma-separated 32-byte option label hashes (hex; 2..32)",
-      required: true,
+      description:
+        "Comma-separated 32-byte option label hashes (hex; 2..8). OMIT for scalar " +
+        "(Median) disputes — they file with zero options (ADR-0025)",
     }),
     nonce: Flags.string({
       description: "Dispute nonce (u64). Omit / 'random' for a random u64",
@@ -92,7 +103,7 @@ export default class DisputeCreate extends ChainCommand {
     const { flags } = await this.parse(DisputeCreate);
     this.applyOutput(flags);
 
-    const options = parseOptions(flags.options);
+    const options = flags.options ? parseOptions(flags.options) : [];
     const evidence = flags.evidence ? parseHash32(flags.evidence, "evidence") : ZERO_EVIDENCE;
     const nonce = resolveNonce(flags.nonce);
 
@@ -100,9 +111,12 @@ export default class DisputeCreate extends ChainCommand {
     const filer = ctx.signer.address;
 
     // Fee + fee-token resolution: explicit fee + fee-token avoids the RPC read
-    // (offline --dry-run); otherwise fetch the Subaccord's economics.
+    // (offline --dry-run); otherwise fetch the Subaccord's economics. The read
+    // also yields the pool's aggregation — required to validate the options
+    // gate (zero options is legal only for Median pools, ADR-0025).
     let fee: bigint;
     let feeToken: Address;
+    let aggregation: Aggregation | undefined;
     if (flags.fee !== "auto") {
       fee = parseLamports(flags.fee, "Fee");
       if (!flags["fee-token"]) {
@@ -113,6 +127,7 @@ export default class DisputeCreate extends ChainCommand {
           ctx.commitment,
         );
         feeToken = econs.feeToken;
+        aggregation = econs.aggregation;
       } else {
         feeToken = flags["fee-token"] as Address;
       }
@@ -123,6 +138,7 @@ export default class DisputeCreate extends ChainCommand {
         ctx.commitment,
       );
       feeToken = econs.feeToken;
+      aggregation = econs.aggregation;
       const computed = requiredFee(econs.feePerJuror, econs.minJurySize);
       if (computed === null) {
         throw new Error(
@@ -130,6 +146,13 @@ export default class DisputeCreate extends ChainCommand {
         );
       }
       fee = computed;
+    }
+    if (options.length === 0 && aggregation === undefined) {
+      throw new Error(
+        "InvalidOptions: no --options given but the Subaccord could not be read " +
+          "(offline --fee/--fee-token mode). Scalar (Median) filing needs the " +
+          "subaccord read — drop --fee-token or pass --fee auto.",
+      );
     }
 
     const filerTokenAccount = await findAssociatedTokenAddress(feeToken, filer);
@@ -145,7 +168,7 @@ export default class DisputeCreate extends ChainCommand {
         feeVault,
         accordState,
       },
-      { options, evidenceHash: evidence, nonce, fee },
+      { options, evidenceHash: evidence, nonce, fee, ...(aggregation && { aggregation }) },
     );
 
     if (flags["dry-run"]) {
@@ -159,7 +182,7 @@ export default class DisputeCreate extends ChainCommand {
 }
 
 /**
- * Parse `--options "<hex>,<hex>,..."` into 2..32 × 32-byte arrays.
+ * Parse `--options "<hex>,<hex>,..."` into 2..MAX_OPTIONS × 32-byte arrays.
  * Each item may have an optional `0x` prefix.
  */
 export function parseOptions(raw: string): Uint8Array[] {
@@ -167,8 +190,8 @@ export function parseOptions(raw: string): Uint8Array[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  if (parts.length < 2 || parts.length > 32) {
-    throw new Error(`InvalidOptions: expected 2..32 options, got ${parts.length}`);
+  if (parts.length < 2 || parts.length > 8) {
+    throw new Error(`InvalidOptions: expected 2..8 options, got ${parts.length}`);
   }
   return parts.map((p, i) => parseHash32(p, `option[${i}]`));
 }

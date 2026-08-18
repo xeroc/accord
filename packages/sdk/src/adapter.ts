@@ -65,6 +65,7 @@ import type {
   AppealAccounts,
   ClaimRefundAccounts,
 } from "./methods/appeal.js";
+import { NO_RULING } from "./methods/dispute.js";
 import type {
   AccordDisputeClient,
   CreateDisputeAccounts,
@@ -135,8 +136,8 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
     async fetchDispute(address): Promise<DisputeRulingView | null> {
       const m = await accord.client.accord.accounts.dispute.fetchMaybe(address);
       if (!m.exists) return null;
-      const fr = m.data.finalRuling; // u8; u8::MAX (255) sentinel = no ruling yet
-      return { finalRuling: fr === 255 ? null : fr };
+      const fr = m.data.finalRuling; // u64; u64::MAX sentinel = no ruling yet (ADR-0025)
+      return { finalRuling: fr === NO_RULING ? null : fr };
     },
 
     // ── lifecycle (Subaccord + circuit breaker) ────────────────────────────
@@ -512,7 +513,7 @@ function mapCreateSubaccordArgs(
   jurorSchema: Address;
 } {
   return {
-    riskType: args.riskType,
+    domainRef: args.domainRef,
     evidenceSpec: args.evidenceSpec,
     minStake: args.minStake,
     alphaBps: args.alphaBps,
@@ -527,6 +528,7 @@ function mapCreateSubaccordArgs(
     revealThresholdBps: args.revealThresholdBps,
     shortfallPolicy: args.shortfallPolicy,
     maxDrawAttempts: args.maxDrawAttempts,
+    coherenceTolBps: args.coherenceTolBps,
     authority: args.authority,
     evidenceOperator: args.evidenceOperator,
     depth: args.depth,

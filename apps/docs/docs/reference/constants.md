@@ -8,7 +8,7 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 | ------------- | ----- | ------------------------------------------------------------------------ |
 | `MAX_JURORS`  | `31`  | Panel ceiling = 3rd-appeal panel. Bounds `Round.jurors/commits/reveals`. |
 | `MAX_APPEALS` | `3`   | Program ceiling on appeals per dispute. Ladder 3→7→15→31.                |
-| `MAX_OPTIONS` | `32`  | Max vote options per Dispute. Bounds `Dispute.options`. Minimum 2.       |
+| `MAX_OPTIONS` | `8`   | Max vote options per Dispute. Bounds `Dispute.options`. Plurality disputes file `2..=8`; Median (scalar) disputes file none ([ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)). |
 
 ## Timelocks & windows
 
@@ -47,5 +47,6 @@ From `constants.rs`. PDA seed prefixes are the literal `&[u8]` bytes prefixed to
 | `DEFAULT_REVEAL_WINDOW_SECS` | `172_800` | 2 days.                                                                                                    |
 | `DEFAULT_APPEAL_WINDOW_SECS` | `259_200` | 3 days. Per-Subaccord appeal window ([ADR-0022](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0022-per-subaccord-configurable-appeal-window.md)). |
 | `DEFAULT_MAX_APPEALS`        | `3`       | Caps at `MAX_APPEALS`.                                                                                     |
+| `DEFAULT_COHERENCE_TOL_BPS`  | `100`     | Median coherence band = ±1% of the final median (`0` = exact, ceiling `10_000`; inert for Plurality; [ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)). |
 
 Program ID: `RokLJyruq34Ubtaj8mFnQETKcZpNCbW6k6xsgrMoHEe`

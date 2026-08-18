@@ -182,7 +182,7 @@ fn create_list_inits_canon_list_and_subaccord() {
     // --- Verify backing Subaccord has canonical defaults ---
     let sub = read_subaccord(&ctx, &sub_pda);
     assert_eq!(sub.creator, creator.pubkey());
-    assert_eq!(sub.risk_type, rules);
+    assert_eq!(sub.domain_ref, rules);
     assert_eq!(sub.evidence_spec, [0u8; 32]);
     assert_eq!(sub.staking_token, stake_mint);
     assert_eq!(sub.fee_token, fee_mint);

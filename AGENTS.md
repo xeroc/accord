@@ -20,9 +20,12 @@ Schelling Point here is **honesty** — Jurors vote truthfully because coherent-
 
 ```
 programs/
-  accord/            Accord — Schelling-point arbitration
+  accord/            Accord — Schelling-point arbitration (source of truth)
+  canon/             Canon — curated-list registry Arbitrable (ADR canon/0001)
+  synod/             Synod — N-party dispute-escrow Arbitrable (stub; SPEC + ADRs synod/0001-0002)
 packages/
   sdk/              @useaccord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @useaccord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
+  canon/            @useaccord/canon — Canon SDK facade (Codama client + PDA helpers)
 tests/              @useaccord/tests — jest integration suite (runs vs test-validator / Surfpool)
 apps/               User-facing applications (web/landing/docs) — land per build phase
 apps/docs/          MkDocs documentation site (developer-facing)
@@ -138,7 +141,7 @@ signature after the SDK had already moved to two.)
 
 | Part              | Path                                                                          | Role                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Program           | `programs/accord/` (`lib.rs`, `state.rs`), `programs/canon/`                  | Source of truth; IDL emitted by `anchor build`.                                                   |
+| Program           | `programs/accord/` (`lib.rs`, `state.rs`), `programs/canon/`, `programs/synod/` (stub — no IDL until its first build) | Source of truth; IDL emitted by `anchor build`.                                                   |
 | Generated clients | `packages/sdk/src/generated/`, `packages/canon/`                              | Codama output from the IDL — regenerated, never hand-edited.                                      |
 | SDK facades       | `packages/sdk/src/methods/*.ts`, `pda.ts`, `token.ts`, `fetch.ts`, `index.ts` | Hand-written public surface over the generated client.                                            |
 | e2e tests         | `tests/src/`                                                                  | Drives the program through the SDK facade (Surfpool).                                             |
@@ -311,7 +314,7 @@ create_dispute(subaccord, options, evidence_hash, fee)    — [Arbitrable CPI]; 
 post_snapshot(dispute, merkle_root)                       — off-chain indexer; 1× bond; 1-day challenge window
 challenge_snapshot(dispute, fraud_proof)                  — contest a wrong root within the window
 draw(dispute, vrf, memberships[])                         — VRF; N distinct Jurors over the Snapshot
-commit / reveal                                           — hash(vote, salt, juror_pubkey) then {vote, salt}
+commit / reveal                                           — hash(vote_le8, salt, juror_pubkey) then {vote: u64, salt}; vote = option index (Plurality, gate vote < num_options) or u64 fixed-point scalar (Median, gate vote != u64::MAX; ADR-0025)
 appeal(dispute)                                           — permissionless; 2N+1; bond forfeited if no flip
 finalize_round / finalize_dispute                         — permissionless crank; redistribution + active_draws--
 redraw(dispute)                                            — permissionless; shortfall redraw (slash no-shows, draw_attempt++) / Failed on exhaustion (ADR-0021)
@@ -320,13 +323,27 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0022` (per-Subaccord appeal window), `0015` (evidence crypto → `@useaccord/sdk/evidence`), `0020` (two-mint/two-vault economics), `0021` (reveal quorum + shortfall redraw).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0022` (per-Subaccord appeal window), `0015` (evidence crypto → `@useaccord/sdk/evidence`), `0020` (two-mint/two-vault economics), `0021` (reveal quorum + shortfall redraw), `0025` (scalar voting — u64 votes, `Median`, coherence band).
+
+## Synod (Arbitrable — specced, stub crate)
+
+N-party dispute-escrow over Accord: named 2–7 party roster, equal stake `S` in
+the Subaccord's `fee_token`, file-on-full-roster (missed deadline → crank
+refunds), one CPI dispute (`option i ≡ party i`, neutral last), pot `N·S − fee`
+to the prevailing party. Passive appeals. **Hard Core dependency before its
+e2e: the tally tie fix (bean `accord-n3vw`).** Program ID is the scaffold
+placeholder — provision the canonical keypair before first build. Authority:
+`programs/synod/SPEC.md`, ADRs `synod/0001`–`0002`, design ledger
+`meta/specs/PROG-MULTI-PARTY.md`. Sister Arbitrable: `programs/canon`
+(curated lists — ADR `canon/0001`, SPEC in-crate).
 
 ## Build Order
 
 1. **Accord** — standalone arbitration. The focus of this repo.
-2. **v2** — Arcium encrypted vote-tally (Juror vote privacy), accord token, tranched staking.
-3. **v3** — futarchy governance, evidence markets, AI risk pricing, ZK proofs.
+2. **Arbitrables** — Canon (curated lists, built) · Synod (N-party escrow,
+   specced + scaffolded; blocked on `accord-n3vw` for e2e).
+3. **v2** — Arcium encrypted vote-tally (Juror vote privacy), accord token, tranched staking.
+4. **v3** — futarchy governance, evidence markets, AI risk pricing, ZK proofs.
 
 ## v1 Defaults (configurable per Subaccord)
 
@@ -344,6 +361,7 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` 
 | Reveal threshold     | 6,666 bps (2/3)          | Reveal-quorum fraction; absolute commitment escalates per appeal for free (ADR-0021) |
 | Shortfall policy     | `Redraw`                 | Same-size redraw via orthogonal `draw_attempt` (ADR-0021)                            |
 | Max draw attempts    | 3                        | Per-round redraw cap before `Failed`; orthogonal to `max_appeals` (ADR-0021)         |
+| Coherence tolerance  | 100 bps of median        | Median pools only (ADR-0025); `0` = exact; ≤10_000; immutable, frozen onto CaseTerms |
 
 ## Beans
 

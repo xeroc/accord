@@ -17,8 +17,9 @@ sweeps the refund.
 (= panel · `terms.fee_per_juror`) **plus** an equal bond, so
 `total = 2 · fee_new`. The AppealBond PDA is seeded by the round **being
 appealed** (the current round, pre-increment): `["bond", dispute, current_round]`.
-Resets the dispute to `Created` for the fresh panel; `prior_result` (the ruling
-the appellant seeks to flip) is recorded for flip detection at
+Resets the dispute to `Created` for the fresh panel; `prior_result` (the u64
+ruling the appellant seeks to flip — option index for `Plurality`, median
+scalar for `Median`, ADR-0025) is recorded for flip detection at
 `finalize_dispute`.
 
 ```bash

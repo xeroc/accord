@@ -80,6 +80,50 @@ _Avoid_: eviction, force-unstake, kick
 
 ---
 
+## Synod Context
+
+Terms for the Synod program — the N-party dispute-escrow Arbitrable. The Accord
+terms above apply unchanged; these are the party-side vocabulary Accord
+deliberately does not have (ADR-0004).
+
+**Synod**:
+The N-party dispute-escrow Arbitrable — a separate program that convenes named Parties under escrowed stakes, files one single-filer Dispute at Accord with party-indexed options, and pays the pot to the prevailing Party. An assembly convened to settle a contested question and issue a ruling.
+_Avoid_: multi-party wrapper, tribunal program, court
+
+**Case**:
+Synod's escrow + roster unit (`SynodCase`, seeds `["case", opener, nonce]`). One Case → at most one Accord Dispute (case PDA is the filer; dispute nonce 0). The Case PDA (hex of base58) is the evidence daemon's grouping key before the Dispute exists.
+_Avoid_: dispute (that's the Accord account), lawsuit, matter
+
+**Party**:
+A wallet named on a Case's roster (2–7, distinct, opener first). Identity-bound to an option: `option i ≡ "party i is right"`, exactly one stake slot. Join is gated `signer == named[i]`.
+_Avoid_: filer (that's the Case PDA at Accord), claimant, respondent
+
+**Roster**:
+The full named set of Parties, fixed at `open_case` in naming order (index = naming order, opener at 0). Freezes early when all Parties join, or at the Join Window deadline. An incomplete roster at deadline kills the Case (crank refunds; no fee was paid).
+_Avoid_: party list, panel (that's the jurors')
+
+**Join Window**:
+The deadline by which every named Party must have joined (stake + evidence hash). Silence is safe: a Party who never joins loses nothing and blocks nothing — the Case dies and everyone is refunded. No default judgment, no ex parte.
+_Avoid_: response period, answer window
+
+**Stake (S)**:
+The equal per-Party deposit in the Subaccord's `fee_token` — pot money, never juror collateral. The only economic dial: it prices skin-in-the-game and absorbs the juror fee. Validated `N·S > fee` at open.
+_Avoid_: bond (that's an appeal bond at Accord), deposit (ambiguous with Canon item deposits), collateral
+
+**Pot**:
+`N·S − fee` — what the prevailing Party claims. Neutral ruling → each Party back minus their fee share; `Failed` → everyone whole.
+_Avoid_: pool (that's the juror stake pool), prize, bounty
+
+**Neutral Option**:
+The reserved highest-index option, "no party prevails." A majority neutral vote resolves normally (refunds). A tie never resolves — it redraws at Accord (bean `accord-n3vw`).
+_Avoid_: abstain, no-award, refuse-to-arbitrate
+
+**Filing**:
+Synod's `file_dispute` CPI — only on a full Roster. Options are program-assigned (Parties never construct them); `evidence_hash[0] = H(case_pda ‖ h_0 ‖ … ‖ h_{N-1})` commits to every Party's evidence bundle.
+_Avoid_: submission, listing (that's Canon)
+
+---
+
 ## Platform
 
 **Cranker**:

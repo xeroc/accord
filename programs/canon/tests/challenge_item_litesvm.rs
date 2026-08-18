@@ -124,8 +124,8 @@ fn vault_ata(list: &Pubkey, mint: &Pubkey) -> Pubkey {
 fn user_ata(user: &Pubkey, mint: &Pubkey) -> Pubkey {
     get_associated_token_address_with_program_id(user, mint, &TOKEN_PROGRAM_ID)
 }
-fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> (Pubkey, u8) {
-    accord::subaccord_pda(creator, risk_type)
+fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> (Pubkey, u8) {
+    accord::subaccord_pda(creator, domain_ref)
 }
 fn pause_pda() -> Pubkey {
     accord::accord_state_pda().0
@@ -160,8 +160,8 @@ fn setup() -> TestEnv {
     create_mint(&mut ctx, &mint);
 
     // Accord Subaccord.
-    let risk_type = RULES_HASH;
-    let (sub_addr, sub_bump) = subaccord_pda(&creator.pubkey(), &risk_type);
+    let domain_ref = RULES_HASH;
+    let (sub_addr, sub_bump) = subaccord_pda(&creator.pubkey(), &domain_ref);
     let fee_per_juror = DEFAULT_FEE_PER_JUROR;
     let sub = accord::Subaccord {
         creator: creator.pubkey(),
@@ -182,7 +182,7 @@ fn setup() -> TestEnv {
         max_draw_attempts: 3,
         authority: Pubkey::default(),
         evidence_operator: Pubkey::default(),
-        risk_type,
+        domain_ref,
         evidence_spec: [0u8; 32],
         juror_credential: Pubkey::default(),
         juror_schema: Pubkey::default(),

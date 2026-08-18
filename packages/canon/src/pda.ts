@@ -14,7 +14,7 @@
  *
  * `findBackingSubaccordPda` is a thin domain adapter over the Accord SDK's
  * `findSubaccordPda`: a CanonList's 1:1 backing court seeds
- * `["subaccord", creator, rules_hash]` where risk_type := rules_hash.
+ * `["subaccord", creator, rules_hash]` where domain_ref := rules_hash.
  *
  * @see ADR-0010
  */
@@ -59,13 +59,13 @@ export async function findCanonItemPda(
 // --- 1:1 backing Subaccord (Accord PDA via @useaccord/sdk) -------------------
 
 /** The 1:1 backing Subaccord for a CanonList. Canon's `rules_hash` IS the
- * Subaccord's `risk_type`; delegating to `findSubaccordPda` keeps the Accord
+ * Subaccord's `domain_ref`; delegating to `findSubaccordPda` keeps the Accord
  * SDK the single source for that derivation (ADR-0010). */
 export async function findBackingSubaccordPda(
   seeds: CanonListSeeds,
 ): Promise<ProgramDerivedAddress> {
   return findSubaccordPda({
     creator: seeds.creator,
-    riskType: seeds.rulesHash,
+    domainRef: seeds.rulesHash,
   });
 }

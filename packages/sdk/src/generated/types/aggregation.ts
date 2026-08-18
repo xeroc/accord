@@ -16,15 +16,16 @@ import {
 } from "@solana/kit";
 
 /**
- * Dispute-kit aggregation rule (ADR-0019). v1 ships a single variant; future
- * variants (`RankedChoice`/IRV, `Median`) ship as new enum entries. The rule
+ * Dispute-kit aggregation rule (ADR-0019). `Plurality` counts option-index
+ * votes; `Median` (ADR-0025) tallies scalar u64 votes by median. The rule
  * is frozen onto `CaseTerms` at filing time and `finalize_round` tallies off
- * it (`match dispute.terms.aggregation`) — plurality today. The match carries
- * no wildcard arm, so adding a variant is a compile error until its tally arm
- * lands — the extension seam is real and machine-checked, not aspirational.
+ * it (`match dispute.terms.aggregation`). The match carries no wildcard arm,
+ * so adding a variant is a compile error until its tally arm lands — the
+ * extension seam is real and machine-checked, not aspirational.
  */
 export enum Aggregation {
   Plurality,
+  Median,
 }
 
 export type AggregationArgs = Aggregation;

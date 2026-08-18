@@ -1,6 +1,4 @@
-//! Accord events. Emitted by each instruction for off-chain indexers; future
-//! instruction beans add the events they fire (only `HealthChecked` exists today
-//! alongside the `health` harness anchor).
+//! Accord events. Emitted by each instruction for off-chain indexers.
 
 use crate::state::UpdatePayload;
 use anchor_lang::prelude::*;
@@ -12,7 +10,7 @@ pub struct SubaccordCreated {
     pub subaccord: Pubkey,
     pub staking_token: Pubkey,
     pub fee_token: Pubkey,
-    pub risk_type: [u8; 32],
+    pub domain_ref: [u8; 32],
 }
 
 /// Emitted when a Juror stakes capital into a Subaccord.
@@ -98,7 +96,7 @@ pub struct Revealed {
     pub dispute: Pubkey,
     pub round_idx: u32,
     pub juror: Pubkey,
-    pub vote: u8,
+    pub vote: u64,
 }
 
 /// Emitted when a round is tallied.
@@ -106,14 +104,14 @@ pub struct Revealed {
 pub struct RoundResolved {
     pub dispute: Pubkey,
     pub round_idx: u32,
-    pub result: u8,
+    pub result: u64,
 }
 
 /// Emitted when a dispute reaches its final ruling (Arbitrable reads this).
 #[event]
 pub struct RulingFinalized {
     pub dispute: Pubkey,
-    pub ruling: u8,
+    pub ruling: u64,
 }
 
 /// Emitted when a prior round's coherence settlement lands via `settle_round`
@@ -213,4 +211,10 @@ pub struct SlotAllocated {
     pub subaccord: Pubkey,
     pub juror: Pubkey,
     pub index: u32,
+}
+
+/// Emitted by `health`. Carries the program version byte.
+#[event]
+pub struct HealthChecked {
+    pub version: u8,
 }

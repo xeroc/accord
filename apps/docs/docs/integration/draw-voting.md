@@ -18,7 +18,7 @@ The crank sequence from `Created` to `RoundResolved`. Every step after `commit_v
 commitment = hash(vote_le ‖ salt ‖ juror_pubkey)
 ```
 
-- `vote_le` = single byte (`[vote]`).
+- `vote_le` = the vote serialized as an **8-byte little-endian u64** (72 preimage bytes: 8 + 32 + 32) — the same preimage for an option index (`Plurality`) and a scalar value (`Median`).
 - `salt` = `[u8; 32]`.
 - `juror_pubkey` is bound in to prevent commit-copying (a copier can never reveal).
 
@@ -26,9 +26,11 @@ On-chain (`hashv`):
 
 ```rust
 use solana_program::hash::hashv;
-let commitment = hashv(&[&[vote], &salt, juror_pubkey.as_ref()]).to_bytes();
+let commitment = hashv(&[&vote.to_le_bytes(), &salt, juror_pubkey.as_ref()]).to_bytes();
 require!(computed == committed, AccordError::RevealMismatch);
 ```
+
+The reveal gate depends on the pool's aggregation ([ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)): `Plurality` requires `vote < num_options`; `Median` requires `vote != u64::MAX` (the no-reveal sentinel). See [scalar voting](#scalar-voting-median) below.
 
 ## Sortition (per seat `i`)
 
@@ -55,8 +57,7 @@ VRF seed selects the seat, and the submitted leaf must cover it.
 `finalize_round` is gated on a reveal-fraction threshold (`Subaccord.reveal_threshold_bps`,
 default 6_666 = 2/3, frozen into `CaseTerms` at filing):
 
-- **Quorum met** (`reveal_count ≥ ceil(panel × bps / 10_000)`): plurality tally,
-  each revealer credited `fees_earned += fee_per_juror`, `fee_paid` decremented →
+- **Quorum met** (`reveal_count ≥ ceil(panel × bps / 10_000)`): tally per `terms.aggregation` — Plurality: modal option index; Median: median of revealed scalars (see below) — each revealer credited `fees_earned += fee_per_juror`, `fee_paid` decremented →
   `RoundResolved` (appeal window / finalization).
 - **Shortfall**: no credits, no result → `RedrawEligible`. The permissionless
   `redraw` crank then slashes the no-shows into `stake_delta` (pending, not
@@ -68,6 +69,34 @@ default 6_666 = 2/3, frozen into `CaseTerms` at filing):
   appeal bonds remain claimable via `claim_appeal_refund`. A `> (1 − threshold)`
   stake holder can force `Failed` but never a wrong ruling; the abstention is
   **priced** (`α · min_stake × seats × attempts`) and **bounded**.
+
+## Scalar voting (Median)
+
+A Subaccord created with `aggregation: Median` adjudicates **scalar** questions
+— "what is the fair price?", "what damages are owed?" — instead of enumerated
+options ([ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)):
+
+- **Filing:** `create_dispute` passes **zero** options (`num_options = 0`); the
+  question and its unit live in the evidence/rules, not on-chain.
+- **Votes:** each Juror commits/reveals a **u64 fixed-point value in the
+  settlement mint's base units** (e.g. 6 decimals for USDC — `1_000_000` =
+  1 USDC). Same commit preimage as Plurality:
+  `hash(vote_le8 ‖ salt ‖ juror)`.
+- **Reveal gate:** `vote != u64::MAX` (the universal no-reveal sentinel); any
+  other u64 is valid.
+- **Tally (`finalize_round`):** the round `result` is the **median** of the
+  revealed values. Panels are odd, but non-revealers can leave an even reveal
+  count — then the **upper middle** element (`sorted[n/2]`) wins
+  (deterministic, biased high).
+- **Coherence (settlement):** not exact equality but a band — a vote is
+  coherent iff `|vote − final_ruling| · 10_000 ≤ final_ruling ·
+  coherence_tol_bps`. `coherence_tol_bps` is set once at `create_subaccord`
+  (default `100` = ±1% of the final median; `0` = exact; ceiling `10_000`),
+  frozen onto `CaseTerms` at filing, and **immutable** — it defines the pool's
+  coherence game. Inert on `Plurality` pools (exact option equality).
+
+`get_ruling` returns the final median as `Option<u64>`; the Arbitrable
+interprets the fixed-point value against the settlement mint's decimals.
 
 ## Gates each `draw_seat` must satisfy
 

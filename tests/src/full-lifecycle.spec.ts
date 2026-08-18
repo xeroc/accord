@@ -83,7 +83,7 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
     });
 
     // Votes: two jurors for option 0, one for option 1 ⇒ plurality = 0.
-    const votes = [0, 0, 1];
+    const votes = [0n, 0n, 1n];
     const salts = memberships.map(() =>
       crypto.getRandomValues(new Uint8Array(32)),
     );
@@ -167,6 +167,6 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
     // dispute.final_ruling field via fetchDecoded — the on-chain get_ruling
     // value.)
     expect(await readDisputeState(env, armed.dispute)).toBe(FINAL);
-    expect(await readDisputeFinalRuling(env, armed.dispute)).toBe(0);
+    expect(await readDisputeFinalRuling(env, armed.dispute)).toBe(0n);
   }, 300_000);
 });

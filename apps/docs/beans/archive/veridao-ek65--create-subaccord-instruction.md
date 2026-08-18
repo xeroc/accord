@@ -9,7 +9,7 @@ updated_at: 2026-08-04T02:47:39Z
 parent: veridao-wyso
 ---
 
-Permissionless; init Subaccord PDA; risk_type+evidence_spec immutable; store authority (Pubkey::default=immutable) + evidence_operator + all params. TDD: happy path + re-init guard + canonical bump. Security: init-if-needed guard, namespace capture check.
+Permissionless; init Subaccord PDA; domain_ref+evidence_spec immutable; store authority (Pubkey::default=immutable) + evidence_operator + all params. TDD: happy path + re-init guard + canonical bump. Security: init-if-needed guard, namespace capture check.
 
 **Parent:** Epic 1 (Foundation & Capital). **TDD:** RED->GREEN->REFACTOR. Risk: Critical.
 
@@ -17,27 +17,27 @@ Permissionless; init Subaccord PDA; risk_type+evidence_spec immutable; store aut
 
 - `programs/accord/src/lib.rs` — added the `create_subaccord` instruction
   (permissionless Subaccord init) + `CreateSubaccord` accounts struct. Seeds
-  `[SEED_SUBACCORD, creator, risk_type]`; `init` (not `init_if_needed`)
+  `[SEED_SUBACCORD, creator, domain_ref]`; `init` (not `init_if_needed`)
   gives the re-init guard + namespace-capture prevention for free. Canonical
-  bump stored via `ctx.bumps.subaccord`. `risk_type`/`evidence_spec` are
+  bump stored via `ctx.bumps.subaccord`. `domain_ref`/`evidence_spec` are
   the immutable identity hashes; `authority == Pubkey::default()` => immutable
-  (ADR-0005). Namespace guard rejects `risk_type == [0;32]`. Emits
+  (ADR-0005). Namespace guard rejects `domain_ref == [0;32]`. Emits
   `SubaccordCreated`.
 - `programs/accord/tests/create_subaccord_litesvm.rs` — 5 LiteSVM tests:
   happy (all fields persist), re-init at same PDA fails, canonical bump ==
-  find_program_address bump, zero risk_type rejected, same-creator different
-  risk_type yields distinct coexisting PDAs.
+  find_program_address bump, zero domain_ref rejected, same-creator different
+  domain_ref yields distinct coexisting PDAs.
 
 ## Design decisions
 
-- **Re-use `InvalidOptions` error** for the zero-`risk_type` namespace guard
+- **Re-use `InvalidOptions` error** for the zero-`domain_ref` namespace guard
   rather than adding a new variant — it's a degenerate-identity rejection and
   the existing message covers it. No new error/event needed (state bean already
   provisioned `SubaccordCreated`).
 - **`init` over `init_if_needed`** — the re-init guard and namespace-capture
   prevention are both free, and `init_if_needed` would require a manual
   `require` on discriminator/owner. Matches the pause instruction pattern.
-- **`risk_type` first in the arg list** so the `#[instruction]` attribute on
+- **`domain_ref` first in the arg list** so the `#[instruction]` attribute on
   `CreateSubaccord` stays minimal (only the seed-referenced arg is declared).
 - **No param-validation beyond the namespace guard** — jurors_per_dispute /
   windows / alpha are creator-owned, opt-in, and fully mutable via

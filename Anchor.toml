@@ -1,4 +1,7 @@
 [toolchain]
+anchor_version = "1.0.2"
+solana_version = "3.0.13"
+package_manager = "pnpm"
 
 [features]
 resolution = true
@@ -10,6 +13,7 @@ accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
 [programs.localnet]
 accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
 canon = "can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs"
+synod = "5o5VDoAZJFTJaBKJjhPMLMMPa8nmqgZdSkUFubNdAxZx"
 
 [provider]
 cluster = "localnet"

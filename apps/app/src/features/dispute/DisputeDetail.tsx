@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { isSome, type ReadonlyUint8Array } from "@solana/kit";
-import { findAppealBondPda, findAccordStatePda } from "@useaccord/sdk";
+import {
+  Aggregation,
+  decodeScalarVote,
+  findAppealBondPda,
+  findAccordStatePda,
+  NO_VOTE,
+} from "@useaccord/sdk";
 
 import {
   DISPUTE_STATE_LABELS,
+  formatHash,
   formatRuling,
   timeRemaining,
 } from "../../shared/format";
@@ -20,9 +27,8 @@ import { useAppealBond, useDispute, useRound } from "./useDispute";
 import { useSubaccord } from "./useSubaccord";
 import { PublishEvidence } from "./evidence/PublishEvidence";
 import { EvidenceManifest } from "./evidence/EvidenceManifest";
-import { useManifest } from "./evidence/useManifest";
+import { useManifest, optionLabels } from "./evidence";
 
-const FINAL_SENTINEL = 255;
 
 function hex(bytes: ReadonlyUint8Array): string {
   return Array.from(bytes)
@@ -52,6 +58,10 @@ export function DisputeDetail() {
     dispute?.address,
     0,
   );
+  // Plaintext option labels from the decoded manifest (round 0); empty until
+  // the daemon has a bundle — every ruling/option display falls back to the
+  // encoded form (index / hash) when these are missing.
+  const labels = optionLabels(manifest);
   const [appealSending, setAppealSending] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
 
@@ -89,8 +99,9 @@ export function DisputeDetail() {
   const d = dispute.data;
   const isFinal = d.state === 6; // DisputeState.Final
   const isRoundResolved = d.state === 5; // DisputeState.RoundResolved
-  const roundResult = round?.data.result ?? FINAL_SENTINEL;
-  const hasRoundResult = isRoundResolved && roundResult !== FINAL_SENTINEL;
+  // u64::MAX sentinel = no result yet (ADR-0025; same value as NO_VOTE).
+  const roundResult = round?.data.result ?? NO_VOTE;
+  const hasRoundResult = isRoundResolved && roundResult !== NO_VOTE;
 
   async function handleAppeal() {
     if (!env || !dispute || !round || !subaccord) return;
@@ -201,84 +212,132 @@ export function DisputeDetail() {
         <InfoRow label="Filed at" value={formatTimestamp(d.filedAt)} />
       </div>
 
-      {/* Options */}
-      <div className="rounded-lg border border-border-subtle bg-raised p-4">
-        <h2 className="mb-3 font-mono text-sm text-text-secondary">
-          Options ({d.numOptions})
-        </h2>
-        <div className="space-y-2">
-          {(() => {
-            // Tally revealed votes per option (round resolved or final).
-            const tally = new Map<number, number>();
-            if (round && (isRoundResolved || isFinal)) {
-              for (const v of round.data.reveals) {
-                if (v !== FINAL_SENTINEL && v < d.numOptions) {
-                  tally.set(v, (tally.get(v) ?? 0) + 1);
-                }
-              }
-            }
-            const showTally = tally.size > 0;
-            return d.options.slice(0, d.numOptions).map((opt, idx) => {
-              const isWinner = isFinal && d.finalRuling === idx;
-              const isRoundWinner = hasRoundResult && roundResult === idx;
-              const votes = tally.get(idx) ?? 0;
-              return (
-                <div
-                  key={idx}
-                  className={`flex items-center gap-3 rounded border px-3 py-2 ${
-                    isWinner
-                      ? "border-amber bg-amber/10"
-                      : isRoundWinner
-                        ? "border-confirm bg-confirm/10"
-                        : "border-border-subtle"
-                  }`}
-                >
-                  <span className="font-mono text-sm text-text-secondary">
-                    {idx}
-                  </span>
-                  <Copyable value={hex(opt)} />
-                  {isWinner && (
-                    <span className="font-mono text-sm text-amber">
-                      ← Verdict
-                    </span>
-                  )}
-                  {isRoundWinner && (
-                    <span className="font-mono text-sm text-confirm">
-                      ← Won round {d.currentRound}
-                    </span>
-                  )}
-                  {showTally && (
-                    <span
-                      className={`ml-auto font-mono text-xs ${
-                        isWinner
-                          ? "text-amber/70"
-                          : isRoundWinner
-                            ? "text-confirm/70"
-                            : "text-text-secondary"
-                      }`}
-                    >
-                      {votes} vote{votes === 1 ? "" : "s"}
-                    </span>
-                  )}
-                  {isRoundWinner && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        document
-                          .getElementById("appeal")
-                          ?.scrollIntoView({ behavior: "smooth" })
+      {/* Evidence manifest — decrypted, public. Occupies the slot the raw
+          option list used to fill: with the plaintext title/claim/labels
+          decoded, the encoded Options block adds no value and is skipped. */}
+      <EvidenceManifest
+        subaccord={d.subaccord}
+        dispute={dispute.address}
+        round={0}
+      />
+
+      {/* Revealed scalars (median, ADR-0025) — always shown. Option hashes
+          (plurality) render only without a decoded manifest, where they are
+          the only representation of the choices. */}
+      {(d.terms.aggregation === Aggregation.Median || manifest === null) && (
+        <div className="rounded-lg border border-border-subtle bg-raised p-4">
+          <h2 className="mb-3 font-mono text-sm text-text-secondary">
+            {d.terms.aggregation === Aggregation.Median
+              ? "Revealed scalars"
+              : `Options (${d.numOptions})`}
+          </h2>
+          <div className="space-y-2">
+            {d.terms.aggregation === Aggregation.Median
+              ? (() => {
+                  // Median disputes file without option hashes (numOptions 0);
+                  // reveals are u64 scalars in settlement-mint base units. No
+                  // per-option tally — list each seat's reveal; the aggregated
+                  // median is `result` (shown in the appeal / ruling blocks).
+                  if (!round || !(isRoundResolved || isFinal)) {
+                    return (
+                      <p className="text-sm text-text-secondary">
+                        No reveals yet.
+                      </p>
+                    );
+                  }
+                  return round.data.reveals.map((v, seat) =>
+                    v === NO_VOTE ? null : (
+                      <div
+                        key={seat}
+                        className="flex items-center gap-3 rounded border border-border-subtle px-3 py-2"
+                      >
+                        <span className="w-16 shrink-0 font-mono text-xs text-text-secondary">
+                          seat {seat}
+                        </span>
+                        <span className="font-mono text-sm text-text-primary">
+                          {decodeScalarVote(v)}
+                        </span>
+                      </div>
+                    ),
+                  );
+                })()
+              : (() => {
+                  // Tally revealed votes per option (round resolved or final).
+                  // Votes are u64 (ADR-0025) — compare against BigInt bounds.
+                  const tally = new Map<number, number>();
+                  if (round && (isRoundResolved || isFinal)) {
+                    for (const v of round.data.reveals) {
+                      if (v !== NO_VOTE && v < BigInt(d.numOptions)) {
+                        const idx = Number(v);
+                        tally.set(idx, (tally.get(idx) ?? 0) + 1);
                       }
-                      className="font-mono text-xs text-text-secondary hover:text-confirm"
-                    >
-                      appeal ↓
-                    </button>
-                  )}
-                </div>
-              );
-            });
-          })()}
+                    }
+                  }
+                  const showTally = tally.size > 0;
+                  return d.options.slice(0, d.numOptions).map((opt, idx) => {
+                    const isWinner = isFinal && d.finalRuling === BigInt(idx);
+                    const isRoundWinner =
+                      hasRoundResult && roundResult === BigInt(idx);
+                    const votes = tally.get(idx) ?? 0;
+                    const label = labels[idx]?.trim();
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center gap-3 rounded border px-3 py-2 ${
+                          isWinner
+                            ? "border-amber bg-amber/10"
+                            : isRoundWinner
+                              ? "border-confirm bg-confirm/10"
+                              : "border-border-subtle"
+                        }`}
+                      >
+                        <span className="font-mono text-sm text-text-secondary">
+                          {idx}
+                        </span>
+                        <Copyable value={hex(opt)} />
+                        {isWinner && (
+                          <span className="font-mono text-sm text-amber">
+                            ← Verdict
+                          </span>
+                        )}
+                        {isRoundWinner && (
+                          <span className="font-mono text-sm text-confirm">
+                            ← Won round {d.currentRound}
+                          </span>
+                        )}
+                        {showTally && (
+                          <span
+                            className={`ml-auto font-mono text-xs ${
+                              isWinner
+                                ? "text-amber/70"
+                                : isRoundWinner
+                                  ? "text-confirm/70"
+                                  : "text-text-secondary"
+                            }`}
+                          >
+                            {votes} vote{votes === 1 ? "" : "s"}
+                          </span>
+                        )}
+                        {isRoundWinner && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              document
+                                .getElementById("appeal")
+                                ?.scrollIntoView({ behavior: "smooth" })
+                            }
+                            className="font-mono text-xs text-text-secondary hover:text-confirm"
+                          >
+                            appeal ↓
+                          </button>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Evidence (per round — ADR-0023) */}
       {/* evidenceHashes is a fixed [0..=MAX_APPEALS] slot array; slot 0 = filer,
@@ -325,27 +384,33 @@ export function DisputeDetail() {
         );
       })()}
 
-      {/* Evidence manifest — decrypted, public. Fetched from the evidence
-          daemon so jurors and the public can inspect the dispute metadata. */}
-      <EvidenceManifest
-        subaccord={d.subaccord}
-        dispute={dispute.address}
-        round={0}
-      />
-
       {/* Publish evidence (recovery) — only shown while no manifest has been
           published to the daemon for round 0 yet. useManifest shares the query
-          cache with EvidenceManifest above (same queryKey), so this adds no
-          extra fetch. PublishEvidence still hash-gates on evidenceHashes[0]. */}
+          cache with the EvidenceManifest card above (same queryKey), so this
+          adds no extra fetch. PublishEvidence still hash-gates on
+          evidenceHashes[0]. */}
       {subaccord && manifest === null && (
         <PublishEvidence dispute={dispute} subaccord={subaccord} />
       )}
 
       {/* Final ruling */}
-      {isFinal && d.finalRuling !== FINAL_SENTINEL && (
+      {isFinal && d.finalRuling !== NO_VOTE && (
         <div className="rounded-lg border border-amber bg-amber/10 p-4">
           <h2 className="mb-1 font-mono text-sm text-amber">Final ruling</h2>
-          <p className="text-lg">Option {d.finalRuling}</p>
+          <p className="text-lg">
+            {formatRuling(d.finalRuling, d.terms.aggregation, labels)}
+          </p>
+          {/* Encoded form as helper detail — only when the manifest decoded
+              a plaintext label for the winning option (see formatRuling). */}
+          {(() => {
+            const idx = Number(d.finalRuling);
+            const opt = d.options[idx];
+            return labels[idx]?.trim() && opt ? (
+              <p className="font-mono text-xs text-text-secondary">
+                Option {idx} · hash {formatHash(opt)}
+              </p>
+            ) : null;
+          })()}
           <p className="mt-1 text-sm text-text-secondary">
             Finalized at {formatTimestamp(d.finalizedAt)}
           </p>
@@ -412,13 +477,21 @@ export function DisputeDetail() {
               }
             />
             <InfoRow
-              label="Amount"
-              value={formatLamports(appealBond.data.amount)}
-              mono
-            />
-            <InfoRow
               label="Prior result"
-              value={formatRuling(appealBond.data.priorResult)}
+              value={
+                <>
+                  {formatRuling(
+                    appealBond.data.priorResult,
+                    d.terms.aggregation,
+                    labels,
+                  )}
+                  {labels[Number(appealBond.data.priorResult)]?.trim() ? (
+                    <span className="ml-2 font-mono text-xs text-text-secondary">
+                      {`(Option ${appealBond.data.priorResult})`}
+                    </span>
+                  ) : null}
+                </>
+              }
               mono
             />
           </div>
@@ -451,8 +524,13 @@ export function DisputeDetail() {
                   <p className="text-sm">
                     Round {d.currentRound} resolved to{" "}
                     <span className="font-mono text-confirm">
-                      Option {roundResult}
+                      {formatRuling(roundResult, d.terms.aggregation, labels)}
                     </span>
+                    {labels[Number(roundResult)]?.trim() ? (
+                      <span className="font-mono text-xs text-text-secondary">
+                        {` (Option ${roundResult})`}
+                      </span>
+                    ) : null}
                     .
                   </p>
                   {remaining && remaining !== "expired" && (

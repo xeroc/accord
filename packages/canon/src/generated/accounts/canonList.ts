@@ -74,7 +74,7 @@ export type CanonList = {
   listProgram: Address;
   /**
    * **Immutable.** Public listing-criteria doc hash jurors apply. Seed
-   * component. Passed to Accord as the backing Subaccord's `risk_type`.
+   * component. Passed to Accord as the backing Subaccord's `domain_ref`.
    */
   rulesHash: ReadonlyUint8Array;
   /** The 1:1 backing Accord court that adjudicates this list's item disputes. */
@@ -137,7 +137,7 @@ export type CanonListArgs = {
   listProgram: Address;
   /**
    * **Immutable.** Public listing-criteria doc hash jurors apply. Seed
-   * component. Passed to Accord as the backing Subaccord's `risk_type`.
+   * component. Passed to Accord as the backing Subaccord's `domain_ref`.
    */
   rulesHash: ReadonlyUint8Array;
   /** The 1:1 backing Accord court that adjudicates this list's item disputes. */

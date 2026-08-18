@@ -51,8 +51,9 @@ pub fn handler(ctx: Context<SettleItem>) -> Result<()> {
     let item = &mut ctx.accounts.item;
     require!(item.state == ItemState::Disputed, CanonError::NotDisputed);
     // `Dispute::ruling()` is Accord's single source for the Final +
-    // u8::MAX-sentinel contract; ownership + address are validated by
-    // `Account<Dispute>` + the struct constraint.
+    // u64::MAX-sentinel contract; ownership + address are validated by
+    // `Account<Dispute>` + the struct constraint. Canon only ever files
+    // Plurality disputes, so the ruling is an option index.
     let ruling = ctx
         .accounts
         .dispute

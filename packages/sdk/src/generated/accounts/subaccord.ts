@@ -100,8 +100,8 @@ export type Subaccord = {
   /**
    * Reveal-quorum fraction in basis points (ADR-0021). A round is
    * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
-   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
-   * free via panel growth.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal
+   * for free via panel growth.
    */
   revealThresholdBps: number;
   /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
@@ -112,11 +112,20 @@ export type Subaccord = {
    * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
    */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools (ADR-0025), in bps of the final
+   * median: a revealed vote is coherent iff
+   * `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+   * match. Inert for `Plurality` (exact option equality). Frozen onto
+   * `CaseTerms` at filing; immutable on the Subaccord (not in
+   * `UpdatePayload`) — it defines the pool's coherence game.
+   */
+  coherenceTolBps: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
   /** Immutable identity hash: what class of dispute this pool adjudicates. */
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
@@ -124,7 +133,7 @@ export type Subaccord = {
    * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
    * unchanged). When set, jurors must hold a valid SAS attestation from
    * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
-   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * at creation — joins `domain_ref` + `evidence_spec` as the identity
    * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
    * at `create_subaccord` (`AttestationBindingPartial`).
    */
@@ -223,8 +232,8 @@ export type SubaccordArgs = {
   /**
    * Reveal-quorum fraction in basis points (ADR-0021). A round is
    * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
-   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
-   * free via panel growth.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal
+   * for free via panel growth.
    */
   revealThresholdBps: number;
   /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
@@ -235,11 +244,20 @@ export type SubaccordArgs = {
    * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
    */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools (ADR-0025), in bps of the final
+   * median: a revealed vote is coherent iff
+   * `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+   * match. Inert for `Plurality` (exact option equality). Frozen onto
+   * `CaseTerms` at filing; immutable on the Subaccord (not in
+   * `UpdatePayload`) — it defines the pool's coherence game.
+   */
+  coherenceTolBps: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
   /** Immutable identity hash: what class of dispute this pool adjudicates. */
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
   /** Immutable evidence-format spec hash (ADR-0006). */
   evidenceSpec: ReadonlyUint8Array;
   /**
@@ -247,7 +265,7 @@ export type SubaccordArgs = {
    * `Pubkey::default()` the Subaccord is stake-only (today's behavior,
    * unchanged). When set, jurors must hold a valid SAS attestation from
    * `juror_credential` under `juror_schema` to stake and be drawn. Immutable
-   * at creation — joins `risk_type` + `evidence_spec` as the identity
+   * at creation — joins `domain_ref` + `evidence_spec` as the identity
    * triplet (ADR-0005). Both-or-neither: a half-bound Subaccord is rejected
    * at `create_subaccord` (`AttestationBindingPartial`).
    */
@@ -329,9 +347,10 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["revealThresholdBps", getU16Encoder()],
       ["shortfallPolicy", getShortfallPolicyEncoder()],
       ["maxDrawAttempts", getU8Encoder()],
+      ["coherenceTolBps", getU16Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
-      ["riskType", fixEncoderSize(getBytesEncoder(), 32)],
+      ["domainRef", fixEncoderSize(getBytesEncoder(), 32)],
       ["evidenceSpec", fixEncoderSize(getBytesEncoder(), 32)],
       ["jurorCredential", getAddressEncoder()],
       ["jurorSchema", getAddressEncoder()],
@@ -371,9 +390,10 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["revealThresholdBps", getU16Decoder()],
     ["shortfallPolicy", getShortfallPolicyDecoder()],
     ["maxDrawAttempts", getU8Decoder()],
+    ["coherenceTolBps", getU16Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
-    ["riskType", fixDecoderSize(getBytesDecoder(), 32)],
+    ["domainRef", fixDecoderSize(getBytesDecoder(), 32)],
     ["evidenceSpec", fixDecoderSize(getBytesDecoder(), 32)],
     ["jurorCredential", getAddressDecoder()],
     ["jurorSchema", getAddressDecoder()],
@@ -450,5 +470,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 442;
+  return 444;
 }

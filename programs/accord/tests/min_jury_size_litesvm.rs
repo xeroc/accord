@@ -32,8 +32,8 @@ fn load_program() -> Vec<u8> {
         .unwrap_or_else(|_| panic!("read {so:?} — run `anchor build` (or cargo build-sbf) first"))
 }
 
-fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    accord::subaccord_pda(creator, risk_type).0
+fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> Pubkey {
+    accord::subaccord_pda(creator, domain_ref).0
 }
 
 fn pause_pda() -> Pubkey {
@@ -79,6 +79,7 @@ fn params(min_jury_size: u32, max_appeals: u8) -> CreateSubaccordParams {
         aggregation: Aggregation::Plurality,
         fee_per_juror: 1_000_000,
         reveal_threshold_bps: 6_666,
+        coherence_tol_bps: 0,
         shortfall_policy: ShortfallPolicy::Redraw,
         max_draw_attempts: 3,
         authority: Pubkey::default(),
@@ -125,10 +126,10 @@ fn try_create(
     ctx: &mut anchor_litesvm::AnchorContext,
     creator: &Keypair,
     mint: &Pubkey,
-    risk_type: [u8; 32],
+    domain_ref: [u8; 32],
     p: CreateSubaccordParams,
 ) -> TransactionResult {
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let ix = ctx
         .program()
         .accounts(accounts::CreateSubaccord {
@@ -139,7 +140,7 @@ fn try_create(
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: p,
         })
@@ -158,9 +159,9 @@ fn nonzero_risk(seed: u8) -> [u8; 32] {
 fn read_subaccord(
     ctx: &anchor_litesvm::AnchorContext,
     creator: &Pubkey,
-    risk_type: &[u8; 32],
+    domain_ref: &[u8; 32],
 ) -> Subaccord {
-    let sub = subaccord_pda(creator, risk_type);
+    let sub = subaccord_pda(creator, domain_ref);
     let acc = ctx.svm.get_account(&sub).unwrap();
     Subaccord::try_deserialize(&mut &acc.data[..]).unwrap()
 }

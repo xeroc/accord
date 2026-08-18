@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   // --- 1. All 8 PDAs produce valid, deterministic addresses ---
 
   const sub = await deriveAndCheck("Subaccord", () =>
-    findSubaccordPda({ creator: CREATOR, riskType: RISK_TYPE }),
+    findSubaccordPda({ creator: CREATOR, domainRef: RISK_TYPE }),
   );
   const js = await deriveAndCheck("JurorStake", () =>
     findJurorStakePda({ subaccord: sub[0], juror: JUROR }),

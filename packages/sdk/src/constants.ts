@@ -68,6 +68,13 @@ export const DEFAULT_REVEAL_THRESHOLD_BPS = 6_666;
 export const MAX_DRAW_ATTEMPTS = 10;
 /** Default same-size redraw cap per round before a dispute fails (ADR-0021). */
 export const DEFAULT_MAX_DRAW_ATTEMPTS = 3;
+/**
+ * Default `Median` coherence tolerance in bps (ADR-0025): a revealed vote is
+ * coherent iff `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. 100 =
+ * a 1% band around the final median. Inert for `Plurality` (exact option
+ * equality) — Plurality-only pools pass `0`.
+ */
+export const DEFAULT_COHERENCE_TOL_BPS = 100;
 export const DEFAULT_MIN_STAKE = 1_000n;
 export const DEFAULT_FEE_PER_JUROR = 0n; // set per-Subaccord
 

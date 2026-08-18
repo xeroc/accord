@@ -22,7 +22,7 @@ use accord::state::{
     Aggregation, CreateSubaccordParams, JurorStake, MSTNode, ShortfallPolicy, Subaccord,
 };
 use accord::{accounts, instruction, ID};
-use anchor_lang::{system_program, AccountDeserialize, AccountSerialize, AnchorSerialize, Space};
+use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
 use solana_program::hash::hashv;
 use solana_program::instruction::AccountMeta;
@@ -39,7 +39,7 @@ use spl_token::state::{Account as SplTokenAccount, AccountState, Mint as SplMint
 use spl_token::ID as TOKEN_PROGRAM_ID;
 use std::path::PathBuf;
 
-// ─── helpers: MST hashing (must match lib.rs mst_leaf_hash / mst_node_hash) ──
+// ─── helpers: MST hashing (must match utils.rs mst_leaf_hash / mst_node_hash) ──
 
 fn mst_leaf_hash(juror: &Pubkey, stake: u64) -> [u8; 32] {
     hashv(&[juror.as_ref(), &stake.to_le_bytes()]).to_bytes()
@@ -80,7 +80,11 @@ fn build_root_and_path(
     let mut path = Vec::new();
     let mut idx = target as usize;
     for _ in 0..depth {
-        let sib = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
+        let sib = if idx.is_multiple_of(2) {
+            idx + 1
+        } else {
+            idx - 1
+        };
         path.push(MSTNode {
             sibling_hash: hashes[sib],
             sibling_sum: sums[sib],
@@ -190,8 +194,8 @@ fn juror_stake_pda(subaccord: &Pubkey, juror: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[SEED_JUROR_STAKE, subaccord.as_ref(), juror.as_ref()], &ID).0
 }
 
-fn subaccord_pda(creator: &Pubkey, risk_type: &[u8; 32]) -> Pubkey {
-    accord::subaccord_pda(creator, risk_type).0
+fn subaccord_pda(creator: &Pubkey, domain_ref: &[u8; 32]) -> Pubkey {
+    accord::subaccord_pda(creator, domain_ref).0
 }
 
 fn pause_pda() -> Pubkey {
@@ -239,12 +243,12 @@ fn setup_accumulator() -> AccEnv {
     create_mint(&mut ctx, &mint);
 
     // Subaccord over the mint.
-    let risk_type = {
+    let domain_ref = {
         let mut rt = [0u8; 32];
         rt[0] = 99; // distinct from accumulator_litesvm
         rt
     };
-    let sub = subaccord_pda(&creator.pubkey(), &risk_type);
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
     let ix = ctx
         .program()
         .accounts(accounts::CreateSubaccord {
@@ -255,7 +259,7 @@ fn setup_accumulator() -> AccEnv {
             system_program: system_program::ID,
         })
         .args(instruction::CreateSubaccord {
-            risk_type,
+            domain_ref,
             evidence_spec: [0u8; 32],
             params: CreateSubaccordParams {
                 min_stake: 1_000,
@@ -269,6 +273,7 @@ fn setup_accumulator() -> AccEnv {
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 reveal_threshold_bps: 6_666,
+                coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts: 3,
                 authority: creator.pubkey(),

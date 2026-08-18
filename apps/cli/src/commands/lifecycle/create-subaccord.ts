@@ -4,10 +4,10 @@
  *
  * The loaded `--keypair` wallet is the fee payer AND the on-chain Subaccord
  * authority (the SDK adapter hard-wires `authority: accord.signer`; there is no
- * `--authority` flag — single-signer model, CLI.md §7 Q5). `risk_type` and
+ * `--authority` flag — single-signer model, CLI.md §7 Q5). `domain_ref` and
  * `evidence_spec` are 32-byte hashes; pass them as 64-char hex, or use
- * `--random-risk-type` to mint a fresh risk_type (useful for dev so two runs
- * don't collide on the same `["subaccord", creator, risk_type]` PDA).
+ * `--random-domain-id` to mint a fresh domain_ref (useful for dev so two runs
+ * don't collide on the same `["subaccord", creator, domain_ref]` PDA).
  *
  * All args are validated by the SDK's `assertValid*` helpers inside
  * `createSubaccord` before the instruction is built (ADR-0010).
@@ -41,32 +41,37 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
 
   static description =
     "Permissionlessly create a Subaccord — a stake-weighted dispute pool keyed " +
-    "by an immutable (creator, risk_type) namespace. The loaded wallet becomes " +
+    "by an immutable (creator, domain_ref) namespace. The loaded wallet becomes " +
     "the Subaccord authority and the fee payer. All CaseTerms parameters " +
-    "(windows, alpha, max_appeals, reveal threshold, shortfall policy, …) are " +
-    "frozen at creation; later changes go through propose/execute-update.";
+    "(windows, alpha, max_appeals, aggregation, reveal threshold, shortfall " +
+    "policy, …) are frozen at creation; later changes go through " +
+    "propose/execute-update.";
 
   static examples = [
-    "<%= config.bin %> lifecycle:create-subaccord --random-risk-type \\\n" +
+    "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
       "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
       "  --min-stake 1000 --alpha-bps 1000 --review-window 604800 --commit-window 172800 \\\n" +
       "  --reveal-window 172800 --appeal-window 259200 --max-appeals 3 \\\n" +
       "  --fee-per-juror 0 --reveal-threshold-bps 6666 --max-draw-attempts 3 \\\n" +
       "  --evidence-operator <addr>",
-    "<%= config.bin %> lifecycle:create-subaccord --random-risk-type \\\n" +
+    "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
       "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
       "  --min-stake 1000 --juror-credential <issuer> --juror-schema <schema> \\\n" +
       "  --evidence-operator <addr>  # credential-gated (attestation required to stake)",
+    "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
+      "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
+      "  --min-stake 1000 --aggregation median --coherence-tol-bps 100 \\\n" +
+      "  --evidence-operator <addr>  # scalar-voting (Median) pool — ADR-0025",
   ];
 
   static flags = {
     ...chainFlags,
-    "random-risk-type": Flags.boolean({
-      description: "Generate a fresh random 32-byte risk_type (dev: avoids PDA collisions)",
+    "random-domain-id": Flags.boolean({
+      description: "Generate a fresh random 32-byte domain_ref (dev: avoids PDA collisions)",
       default: false,
     }),
-    "risk-type": Flags.string({
-      description: "32-byte risk_type as 64 hex chars (immutable Subaccord identity)",
+    "domain-id": Flags.string({
+      description: "32-byte domain_ref as 64 hex chars (immutable Subaccord identity)",
     }),
     "evidence-spec": Flags.string({
       description: "32-byte evidence format spec hash as 64 hex chars (ADR-0006)",
@@ -116,9 +121,11 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       default: 3,
     }),
     aggregation: Flags.string({
-      description: "Dispute-kit aggregation rule (ADR-0019)",
-      options: ["Plurality"],
-      default: "Plurality",
+      description:
+        "Tally rule: plurality (option-index votes, default) or median " +
+        "(scalar u64 votes, ADR-0025); frozen onto CaseTerms at filing",
+      options: ["plurality", "median"],
+      default: "plurality",
     }),
     "fee-per-juror": Flags.string({
       description: "Per-juror fee, in base units of the fee token",
@@ -136,6 +143,13 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
     "max-draw-attempts": Flags.integer({
       description: "Per-round redraw cap before the dispute fails (1..10; ADR-0021)",
       required: true,
+    }),
+    "coherence-tol-bps": Flags.integer({
+      description:
+        "Median coherence band in bps of the final median (100 = 1%; " +
+        "|vote − ruling| · 10_000 ≤ ruling · tol — ADR-0025). Inert for " +
+        "plurality; frozen onto CaseTerms at filing",
+      default: 100,
     }),
     "evidence-operator": Flags.string({
       description: "ADR-0006 trusted re-encryption service address",
@@ -171,16 +185,16 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       );
     }
 
-    const riskType = flags["random-risk-type"]
+    const domainRef = flags["random-domain-id"]
       ? randomBytes(32)
-      : hexToBytes32("RiskType", flags["risk-type"] ?? "");
-    // Eager validation so a zero/bad risk_type errors before chain load.
-    assertValidRiskType(riskType);
+      : hexToBytes32("RiskType", flags["domain-id"] ?? "");
+    // Eager validation so a zero/bad domain_ref errors before chain load.
+    assertValidRiskType(domainRef);
     const evidenceSpec = hexToBytes32("EvidenceSpec", flags["evidence-spec"]);
 
     const ctx = await this.loadChain(flags);
     const args: CreateSubaccordArgs = {
-      riskType,
+      domainRef,
       evidenceSpec,
       stakingToken: flags["staking-token"] as Address,
       feeToken: flags["fee-token"] as Address,
@@ -192,13 +206,13 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       appealWindow: BigInt(flags["appeal-window"]),
       maxAppeals: flags["max-appeals"],
       minJurySize: flags["min-jury-size"],
-      aggregation:
-        flags.aggregation === "Plurality" ? Aggregation.Plurality : Aggregation.Plurality,
+      aggregation: flags.aggregation === "median" ? Aggregation.Median : Aggregation.Plurality,
       feePerJuror: BigInt(flags["fee-per-juror"]),
       revealThresholdBps: flags["reveal-threshold-bps"],
       shortfallPolicy:
         flags["shortfall-policy"] === "Redraw" ? ShortfallPolicy.Redraw : ShortfallPolicy.Redraw,
       maxDrawAttempts: flags["max-draw-attempts"],
+      coherenceTolBps: flags["coherence-tol-bps"],
       // Single-signer model: the wallet IS the authority (no --authority flag).
       authority: ctx.signer.address,
       evidenceOperator: flags["evidence-operator"] as Address,

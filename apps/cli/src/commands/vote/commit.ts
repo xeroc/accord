@@ -20,7 +20,7 @@ import { type Address } from "@solana/kit";
 import { Accord, findRoundPda, type VotingAccounts } from "@useaccord/sdk";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
-import { decodeHexSalt, toHex } from "./commit-hash.js";
+import { decodeHexSalt, parseVote, toHex } from "./commit-hash.js";
 
 export default class VoteCommit extends ChainCommand {
   static summary = "Commit hash(vote, salt, juror) for the loaded juror (signer)";
@@ -36,6 +36,7 @@ export default class VoteCommit extends ChainCommand {
     "<%= config.bin %> vote:commit --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 1 --salt random",
     "<%= config.bin %> vote:commit --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 0 --salt 0x0101…01",
     "<%= config.bin %> vote:commit --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 1 --salt-from ./salt.txt",
+    "<%= config.bin %> vote:commit --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 123.45 --decimals 6 --salt random",
   ];
 
   static flags = {
@@ -46,9 +47,18 @@ export default class VoteCommit extends ChainCommand {
       description: "Round index (u32) — the round PDA is derived from (dispute, round-idx)",
       required: true,
     }),
-    vote: Flags.integer({
-      description: "Vote option index (0..num_options)",
+    vote: Flags.string({
+      description:
+        "Vote: option index (0..num_options) for Plurality, or decimal scalar " +
+        "(e.g. 123.45) for Median (ADR-0025). Integer strings are used as-is " +
+        "(raw u64 base units); strings containing '.' are scaled by 10^--decimals",
       required: true,
+    }),
+    decimals: Flags.integer({
+      description:
+        "Scalar decimals (ADR-0025): 10^decimals scaling applied when --vote " +
+        "contains '.' (default 0 = no scaling, raw base units / option index)",
+      default: 0,
     }),
     salt: Flags.string({
       description: '32-byte salt as 64 hex chars, or the literal "random" to generate one',
@@ -80,7 +90,7 @@ export default class VoteCommit extends ChainCommand {
     };
 
     const { instruction, commitment } = await ctx.accord.methods.commit(accounts, {
-      vote: flags.vote,
+      vote: parseVote(flags.vote, flags.decimals),
       salt,
     });
     const commitmentHex = toHex(commitment);

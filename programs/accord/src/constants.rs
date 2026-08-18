@@ -109,9 +109,15 @@ pub const DEFAULT_MAX_APPEALS: u8 = 3;
 /// The absolute commitment escalates per appeal for free via panel growth.
 pub const DEFAULT_REVEAL_THRESHOLD_BPS: u16 = 6_666;
 
-/// Default maximum same-size redraws per round before a dispute fails
+/// Default maximum same-size redraws per round before the dispute fails
 /// (ADR-0021). Orthogonal to `MAX_APPEALS` (which bounds appeal rounds).
 pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
+
+/// Default coherence tolerance for `Median` pools (ADR-0025): a revealed
+/// scalar vote is coherent iff `|vote − ruling| · 10_000 ≤ ruling · 100`,
+/// i.e. within ±1% of the final median. Scale-free, so it works for any
+/// settlement-mint decimals. Inert for `Plurality` pools.
+pub const DEFAULT_COHERENCE_TOL_BPS: u16 = 100;
 /// Program ceiling on per-round redraw attempts (bounds the redraw ladder).
 pub const MAX_DRAW_ATTEMPTS: u8 = 10;
 
@@ -121,3 +127,80 @@ pub const MAX_DRAW_ATTEMPTS: u8 = 10;
 /// jurors the expected retries per seat is < 1; even a 99 %-whale pool rarely
 /// exceeds a few hundred. Crankers raise the CU limit for degenerate cases.
 pub const MAX_SORTITION_RETRIES: u32 = 1024;
+
+// ===========================================================================
+// Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
+// ===========================================================================
+//
+// Accounts passed via `remaining_accounts` are raw `AccountInfo`s — they are NOT
+// declared in `#[derive(Accounts)]`, so Anchor neither auto-deserializes them
+// on entry nor auto-serializes them on exit. Every field read or mutation is
+// therefore a manual slice into the raw account data.
+//
+// We write ONLY the changed field(s) — never a full `Account::try_serialize`
+// re-encode — as a **compute-budget optimization** in the hot paths: `draw_seat`
+// (once per seat, up to 31 per round), `cancel_dispute`, and settlement. A full
+// re-serialize costs CU proportional to the whole account; a targeted field
+// write costs CU proportional to the field width. The trade is layout-coupling:
+// these offsets must track the Borsh field order/widths.
+//
+// Compile-time pinning is deliberately limited. A true field-POSITION `const`
+// assert is **impossible** for Borsh-serialized Anchor accounts:
+//   - `core::mem::offset_of!` reflects in-memory layout (the compiler may even
+//     reorder non-`repr(C)` fields, and inserts alignment padding) — NOT the
+//     packed Borsh wire format these offsets slice.
+//   - `BorshSerialize`/per-field layout is not `const fn`, so the layout cannot
+//     be discovered in a `const` context.
+// What we do instead: (a) derive every offset from named field-width consts so
+// the arithmetic is self-evident, and (b) compile-time-assert the highest sliced
+// field still fits inside the account (`<= 8 + INIT_SPACE`, which IS derived
+// from the real struct — catches a struct shrink at compile time). The
+// authoritative tie of these offsets to the actual structs is the run-time test
+// `tests::layout_tests::offsets_match_borsh` (serialize a fixture → check the bytes):
+// a field reorder/resize that drifts these consts fails `cargo test`.
+pub(crate) mod layout {
+    use crate::state::{AppealBond, JurorStake};
+    use anchor_lang::Space;
+
+    const DISC: usize = 8;
+    const PUBKEY: usize = 32;
+
+    // --- JurorStake (state.rs) ---
+    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned | next_free
+    const JS_STAKED_W: usize = 8;
+    const JS_ACTIVE_DRAWS_W: usize = 4;
+    const JS_BUMP_W: usize = 1;
+    const JS_TREE_INDEX_W: usize = 4;
+    const JS_STAKE_DELTA_W: usize = 8;
+    const JS_SLASH_RESERVE_W: usize = 8;
+    const JS_WITHDRAW_REQUESTED_AT_W: usize = 8;
+    const JS_PENDING_WITHDRAWAL_W: usize = 8;
+    const JS_FEES_EARNED_W: usize = 8;
+
+    pub(crate) const JS_STAKED_OFF: usize = DISC + PUBKEY + PUBKEY;
+    pub(crate) const JS_ACTIVE_DRAWS_OFF: usize = JS_STAKED_OFF + JS_STAKED_W;
+    pub(crate) const JS_STAKE_DELTA_OFF: usize =
+        JS_ACTIVE_DRAWS_OFF + JS_ACTIVE_DRAWS_W + JS_BUMP_W + JS_TREE_INDEX_W;
+    pub(crate) const JS_SLASH_RESERVE_OFF: usize = JS_STAKE_DELTA_OFF + JS_STAKE_DELTA_W;
+    pub(crate) const JS_FEES_EARNED_OFF: usize = JS_SLASH_RESERVE_OFF
+        + JS_SLASH_RESERVE_W
+        + JS_WITHDRAW_REQUESTED_AT_W
+        + JS_PENDING_WITHDRAWAL_W;
+
+    // --- AppealBond (state.rs) ---
+    // disc | dispute | round_idx | appellant | amount | prior_result | bump
+    const AB_ROUND_IDX_W: usize = 4;
+    const AB_AMOUNT_W: usize = 8;
+    const AB_PRIOR_W: usize = 8; // u64 since scalar voting (ADR-0025)
+
+    pub(crate) const AB_ROUND_IDX_OFF: usize = DISC + PUBKEY;
+    pub(crate) const AB_AMOUNT_OFF: usize = AB_ROUND_IDX_OFF + AB_ROUND_IDX_W + PUBKEY;
+    pub(crate) const AB_PRIOR_OFF: usize = AB_AMOUNT_OFF + AB_AMOUNT_W;
+
+    // Compile-time bounds check (strongest const check available for Borsh
+    // offsets): the highest sliced field must fit inside a serialized account.
+    // Catches a struct shrink; does NOT catch a wrong field — that's
+    // `tests::layout_tests::offsets_match_borsh`.
+    const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
+    const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
+}

@@ -190,7 +190,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     });
 
     // Votes: keep(0) majority ⇒ ruling = keep. Progressive protection applies.
-    const votes = [0, 0, 1];
+    const votes = [0n, 0n, 1n];
     const salts = memberships.map(() => crypto.getRandomValues(new Uint8Array(32)));
 
     // --- commit all (window opens at reviewEnd) ---

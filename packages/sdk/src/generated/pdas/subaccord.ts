@@ -18,7 +18,7 @@ import {
 
 export type SubaccordSeeds = {
   creator: Address;
-  riskType: ReadonlyUint8Array;
+  domainRef: ReadonlyUint8Array;
 };
 
 export async function findSubaccordPda(
@@ -35,7 +35,7 @@ export async function findSubaccordPda(
         new Uint8Array([115, 117, 98, 97, 99, 99, 111, 114, 100]),
       ),
       getAddressEncoder().encode(seeds.creator),
-      fixEncoderSize(getBytesEncoder(), 32).encode(seeds.riskType),
+      fixEncoderSize(getBytesEncoder(), 32).encode(seeds.domainRef),
     ],
   });
 }

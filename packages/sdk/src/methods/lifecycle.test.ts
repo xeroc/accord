@@ -9,6 +9,7 @@ import {
   UNPAUSE_TIMELOCK_SLOTS,
   UPDATE_TIMELOCK_SLOTS,
   assertValidAppealWindow,
+  assertValidCoherenceTol,
   assertValidMaxAppeals,
   assertValidRiskType,
   canExecuteAt,
@@ -31,7 +32,7 @@ test("constants: timelocks match on-chain (constants.rs)", () => {
   assert.equal(MAX_APPEALS, 3);
 });
 
-test("subaccordSeeds: [b'subaccord', creator[32], risk_type[32]]", () => {
+test("subaccordSeeds: [b'subaccord', creator[32], domain_ref[32]]", () => {
   const seeds = subaccordSeeds(CREATOR, RISK);
   assert.equal(seeds.length, 3);
   assert.deepEqual(
@@ -41,7 +42,7 @@ test("subaccordSeeds: [b'subaccord', creator[32], risk_type[32]]", () => {
   assert.equal(seeds[1]!.length, 32);
   assert.equal(seeds[2]!.length, 32);
   assert.deepEqual(Array.from(seeds[2]!), Array.from(RISK));
-  // zero risk_type rejected
+  // zero domain_ref rejected
   assert.throws(() => subaccordSeeds(CREATOR, ZERO32), /InvalidRiskType/);
 });
 
@@ -72,6 +73,15 @@ test("assertValidMaxAppeals: 0..=MAX_APPEALS", () => {
   assert.throws(() => assertValidMaxAppeals(MAX_APPEALS + 1), /MaxAppeals/);
   assert.throws(() => assertValidMaxAppeals(-1), /MaxAppeals/);
   assert.throws(() => assertValidMaxAppeals(1.5), /MaxAppeals/);
+});
+
+test("assertValidCoherenceTol: 0..=10_000 bps (ADR-0025)", () => {
+  assertValidCoherenceTol(0); // exact-match Median; the Plurality inert value
+  assertValidCoherenceTol(100); // docs default: 1% band around the median
+  assertValidCoherenceTol(10_000);
+  assert.throws(() => assertValidCoherenceTol(-1), /InvalidThreshold/);
+  assert.throws(() => assertValidCoherenceTol(10_001), /InvalidThreshold/);
+  assert.throws(() => assertValidCoherenceTol(1.5), /InvalidThreshold/);
 });
 
 test("assertValidAppealWindow: >= MIN_APPEAL_WINDOW_SECS (ADR-0022)", () => {

@@ -47,6 +47,20 @@ describe("read-io — summarizeFields (human rendering)", () => {
     expect(lines.join("\n")).toContain("1_700_000_000");
   });
 
+  it("renders u64::MAX sentinels readably, never the raw digits (ADR-0025)", () => {
+    const U64_MAX = 2n ** 64n - 1n;
+    const lines = summarizeFields({
+      result: U64_MAX,
+      finalRuling: U64_MAX,
+      reveals: [2n, U64_MAX],
+    });
+    const joined = lines.join("\n");
+    expect(joined).toContain("— (not set)"); // result / finalRuling sentinel
+    expect(joined).toContain("2"); // revealed option index / scalar
+    expect(joined).toContain("—"); // not-revealed element
+    expect(joined).not.toContain("18_446"); // raw sentinel must not leak
+  });
+
   it("truncates base58 addresses", () => {
     const lines = summarizeFields({
       filer: "7xKXtQvLdy2FHQ8b5wLq9u2Qv6M2HpL3xLq5v2Q9wL3u",

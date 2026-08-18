@@ -1,17 +1,22 @@
 /**
- * voting.ts — commit-reveal voting + finalization cranks (ADR-0010).
+ * voting.ts — commit-reveal voting + finalization cranks (ADR-0010) with
+ * scalar u64 votes (ADR-0025).
  *
  * The load-bearing client-side cryptography lives here: the commit hash
- *   `sha256(vote_byte ‖ salt[32] ‖ juror_pubkey[32])`
- * which the on-chain `reveal` recomputes via `solana_program::hash::hashv`
- * (lib.rs:1109-1111) and checks against the stored commitment. Mismatching the
- * byte order or lengths here silently breaks every dispute, so `commitHash` is
- * unit-tested against a hardcoded digest vector.
+ *   `sha256(vote_le[8] ‖ salt[32] ‖ juror_pubkey[32])`
+ * where `vote_le` is the vote's 8-byte little-endian encoding — votes are
+ * `u64` on the wire (option index for `Plurality`, fixed-point scalar in
+ * settlement-mint base units for `Median`). The on-chain `reveal`
+ * recomputes this via `solana_program::hash::hashv` (instructions/reveal.rs:
+ * `hashv(&[&vote.to_le_bytes(), &salt, juror_key.as_ref()])`) and checks it
+ * against the stored commitment. Mismatching the byte order or lengths here
+ * silently breaks every dispute, so `commitHash` is unit-tested against a
+ * hardcoded digest vector.
  *
  * Four instructions are orchestrated:
  *   - {@link commit}         juror commits `hash(vote, salt, juror)`.
  *   - {@link reveal}         juror reveals `{vote, salt}` (chain re-derives hash).
- *   - {@link finalizeRound}  permissionless crank: plurality tally → RoundResolved.
+ *   - {@link finalizeRound}  permissionless crank: tally (plurality or median) → RoundResolved.
  *   - {@link finalizeDispute} permissionless crank: settles economics, writes ruling.
  *
  * As in dispute.ts, the module is pure facade orchestration over a typed
@@ -20,19 +25,23 @@
  * lazy-imports Kit so the unit tests load zero runtime deps.
  *
  * Sources of truth:
- *   - commit/reveal/finalize_*: programs/accord/src/lib.rs (lines 1041-1530)
+ *   - commit/reveal/finalize_*: programs/accord/src/instructions/{commit,reveal,finalize_round,finalize_dispute}.rs
  *   - Round struct + seeds:     programs/accord/src/state.rs (Round, SEED_ROUND)
  */
 import type { Address, Instruction } from "@solana/kit";
 
-/** Dispute-state sentinel Round uses for "not revealed" (state.rs: u8::MAX). */
-export const NO_VOTE = 0xff;
+/**
+ * No-reveal sentinel: `u64::MAX` marks "not revealed" in `Round.reveals` and
+ * "not set" in `Round.result` (ADR-0025; was `u8::MAX` before scalar votes).
+ * Both aggregation modes reject it as an actual vote on-chain.
+ */
+export const NO_VOTE = 0xffff_ffff_ffff_ffffn;
 
 /** Round PDA seed prefix, `b"round"` (state.rs: SEED_ROUND). */
 const SEED_ROUND = new Uint8Array([114, 111, 117, 110, 100]); // "round"
 
-/** Commit-hash preimage length: 1 vote byte + 32 salt + 32 juror pubkey. */
-const COMMIT_PREIMAGE_LEN = 1 + 32 + 32;
+/** Commit-hash preimage length: 8 vote bytes (u64 LE) + 32 salt + 32 juror pubkey. */
+const COMMIT_PREIMAGE_LEN = 8 + 32 + 32;
 
 /**
  * Shared accounts every voting instruction takes (juror or cranker signs).
@@ -59,29 +68,34 @@ export interface VotingAccounts {
 
 /** A juror's vote + salt (the reveal preimage). */
 export interface VoteArgs {
-  /** Option index, `0..num_options` (lib.rs:1092: `vote < num_options`). */
-  vote: number;
+  /**
+   * The vote, `u64` on the wire (ADR-0025): an option index for `Plurality`
+   * disputes or a scaled scalar for `Median` (see {@link encodeScalarVote}).
+   */
+  vote: bigint;
   /** 32-byte random salt — secret until reveal. */
   salt: Uint8Array;
 }
 
 /**
- * Compute the commit hash `sha256(vote_byte ‖ salt[32] ‖ juror_pubkey[32])`.
+ * Compute the commit hash `sha256(vote_le[8] ‖ salt[32] ‖ juror_pubkey[32])`.
  *
- * Bit-for-bit compatible with the on-chain `reveal` check (lib.rs:1109-1110):
- *   `hashv(&[&[vote], &salt, juror_key.as_ref()]).to_bytes()`.
+ * Bit-for-bit compatible with the on-chain `reveal` check
+ * (instructions/reveal.rs): `hashv(&[&vote.to_le_bytes(), &salt,
+ * juror_key.as_ref()]).to_bytes()` — the vote is hashed as 8-byte
+ * little-endian (ADR-0025), so the preimage is 72 bytes.
  *
  * Uses the Web Crypto API (`globalThis.crypto.subtle`): zero-dependency,
  * available in Node ≥ 18 and all browsers. `jurorBytes` is the juror's 32-byte
  * pubkey encoding (Kit's `getAddressEncoder().encode(juror)`).
  */
 export async function commitHash(
-  vote: number,
+  vote: bigint,
   salt: Uint8Array,
   jurorBytes: Uint8Array,
 ): Promise<Uint8Array> {
-  if (vote < 0 || vote > 0xff) {
-    throw new Error(`InvalidVote: vote must fit a u8, got ${vote}`);
+  if (typeof vote !== "bigint" || vote < 0n || vote > NO_VOTE) {
+    throw new Error(`InvalidVote: vote must fit a u64 bigint, got ${vote}`);
   }
   if (salt.length !== 32) {
     throw new Error(`InvalidSalt: expected 32 bytes, got ${salt.length}`);
@@ -92,16 +106,21 @@ export async function commitHash(
     );
   }
   const preimage = new Uint8Array(COMMIT_PREIMAGE_LEN);
-  preimage[0] = vote;
-  preimage.set(salt, 1);
-  preimage.set(jurorBytes, 33);
+  new DataView(preimage.buffer).setBigUint64(0, vote, true); // vote LE
+  preimage.set(salt, 8);
+  preimage.set(jurorBytes, 40);
   const digest = await globalThis.crypto.subtle.digest("SHA-256", preimage);
   return new Uint8Array(digest);
 }
 
-/** Validate a vote fits `0..numOptions` (lib.rs:1092). Pure. */
-export function assertValidVote(vote: number, numOptions: number): void {
-  if (!Number.isInteger(vote) || vote < 0 || vote >= numOptions) {
+/**
+ * Validate an option-index vote for `Plurality` disputes: `vote <
+ * num_options` (instructions/reveal.rs). `Median` scalars carry no
+ * client-side range beyond the u64 fit checked in {@link commitHash} and the
+ * facades. Pure.
+ */
+export function assertValidVote(vote: bigint, numOptions: number): void {
+  if (vote < 0n || vote >= BigInt(numOptions)) {
     throw new Error(`InvalidVote: expected 0..${numOptions}, got ${vote}`);
   }
 }
@@ -111,6 +130,63 @@ export function assertValidSalt(salt: Uint8Array): void {
   if (salt.length !== 32) {
     throw new Error(`InvalidSalt: expected 32 bytes, got ${salt.length}`);
   }
+}
+
+/**
+ * Client-side mirror of the vote gates common to both aggregation modes
+ * (instructions/reveal.rs): the vote must be a u64 and must not be the
+ * no-reveal sentinel — `Plurality` bounds it further to a real option index
+ * ({@link assertValidVote}); `Median` only excludes the sentinel.
+ */
+function assertVotable(vote: bigint): void {
+  if (typeof vote !== "bigint" || vote < 0n || vote >= NO_VOTE) {
+    throw new Error(
+      `InvalidVote: expected a u64 below the no-reveal sentinel, got ${vote}`,
+    );
+  }
+}
+
+/**
+ * Encode a human-readable scalar vote (ADR-0025 `Median` disputes) as the
+ * u64 base-unit bigint the wire takes: `input · 10^decimals`. Accepts plain
+ * decimal strings (`"123"`, `"123.45"`); rejects anything else (sign,
+ * exponent, separators, empty string) and fractions longer than `decimals`.
+ * The `u64` fit is enforced downstream ({@link commitHash} / the facades).
+ * Inverse of {@link decodeScalarVote}.
+ */
+export function encodeScalarVote(input: string, decimals = 6): bigint {
+  const m = /^([0-9]+)(?:\.([0-9]+))?$/.exec(input);
+  if (!m) {
+    throw new Error(
+      `InvalidScalarVote: expected a plain decimal string like "123" or "123.45", got ${JSON.stringify(input)}`,
+    );
+  }
+  const frac = m[2] ?? "";
+  if (frac.length > decimals) {
+    throw new Error(
+      `InvalidScalarVote: ${frac.length} fraction digits exceed decimals=${decimals}: ${JSON.stringify(input)}`,
+    );
+  }
+  return BigInt(m[1]! + frac.padEnd(decimals, "0"));
+}
+
+/**
+ * Decode a u64 base-unit vote back to a plain decimal string (inverse of
+ * {@link encodeScalarVote}): `123450000n` → `"123.45"` at the default 6
+ * decimals. Trailing fraction zeros are trimmed; a zero fraction collapses
+ * to the integer form. Pure.
+ */
+export function decodeScalarVote(vote: bigint, decimals = 6): string {
+  if (vote < 0n) {
+    throw new Error(
+      `InvalidScalarVote: expected a non-negative u64, got ${vote}`,
+    );
+  }
+  if (decimals === 0) return vote.toString();
+  const padded = vote.toString().padStart(decimals + 1, "0");
+  const whole = padded.slice(0, -decimals);
+  const frac = padded.slice(-decimals).replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole;
 }
 
 /**
@@ -161,7 +237,7 @@ export interface AccordVotingClient {
   buildReveal(input: {
     programId: Address;
     accounts: VotingAccounts;
-    vote: number;
+    vote: bigint;
     salt: Uint8Array;
   }): Instruction;
   buildFinalizeRound(input: {
@@ -187,10 +263,10 @@ export interface AccordVotingClient {
 
 /**
  * Build a `commit` instruction: compute `commitHash(vote, salt, juror)` and
- * hand the 32-byte commitment to the chain (lib.rs:1041). The juror must be
- * drawn into the round and inside the commit window; those gates are enforced
- * on-chain. Returns the instruction + the computed commitment (for local
- * bookkeeping / indexing).
+ * hand the 32-byte commitment to the chain (instructions/commit.rs). The
+ * juror must be drawn into the round and inside the commit window; those
+ * gates are enforced on-chain. Returns the instruction + the computed
+ * commitment (for local bookkeeping / indexing).
  */
 export async function commit(
   client: AccordVotingClient,
@@ -199,9 +275,7 @@ export async function commit(
   args: VoteArgs,
 ): Promise<{ instruction: Instruction; commitment: Uint8Array }> {
   assertValidSalt(args.salt);
-  if (args.vote < 0 || args.vote > 0xff) {
-    throw new Error(`InvalidVote: vote must fit a u8, got ${args.vote}`);
-  }
+  assertVotable(args.vote);
   const jurorBytes = client.encodeAddress(accounts.signer);
   const commitment = await commitHash(args.vote, args.salt, jurorBytes);
   const instruction = client.buildCommit({
@@ -213,9 +287,10 @@ export async function commit(
 }
 
 /**
- * Build a `reveal` instruction with `{vote, salt}` (lib.rs:1085). The chain
- * recomputes `hash(vote ‖ salt ‖ juror)` and checks it equals the stored
- * commitment — so `args` MUST be the exact pair used in {@link commit}.
+ * Build a `reveal` instruction with `{vote, salt}` (instructions/reveal.rs).
+ * The chain recomputes `hash(vote_le ‖ salt ‖ juror)` and checks it equals
+ * the stored commitment — so `args` MUST be the exact pair used in
+ * {@link commit}.
  */
 export function reveal(
   client: AccordVotingClient,
@@ -223,13 +298,12 @@ export function reveal(
   accounts: VotingAccounts,
   args: VoteArgs,
 ): Instruction {
-  if (args.vote < 0 || args.vote > 0xff) {
-    throw new Error(`InvalidVote: vote must fit a u8, got ${args.vote}`);
-  }
+  assertVotable(args.vote);
   assertValidSalt(args.salt);
   // ponytail: ADR-0020 moved reveal's fee credit to finalize_round — on-chain
-  // Reveal (lib.rs) takes only juror/subaccord/dispute/round. The optional
-  // token fields on VotingAccounts are vestigial; the adapter ignores them.
+  // Reveal (instructions/reveal.rs) takes only juror/subaccord/dispute/round.
+  // The optional token fields on VotingAccounts are vestigial; the adapter
+  // ignores them.
   return client.buildReveal({
     programId,
     accounts,
@@ -239,9 +313,11 @@ export function reveal(
 }
 
 /**
- * Build the permissionless `finalize_round` crank (lib.rs:1136). After the
- * reveal window elapses, anyone can advance the dispute to `RoundResolved` with
- * the plurality winner written to `round.result`. ADR-0020: credits
+ * Build the permissionless `finalize_round` crank
+ * (instructions/finalize_round.rs). After the reveal window elapses, anyone
+ * can advance the dispute to `RoundResolved` with the tally winner written
+ * to `round.result` (plurality option or median scalar, ADR-0025).
+ * ADR-0020: credits
  * `fees_earned` to each revealer — pass the panel's JurorStake PDAs as
  * `remainingAccounts` when `fee_per_juror > 0`.
  */
@@ -255,8 +331,9 @@ export function finalizeRound(
 }
 
 /**
- * Build the permissionless `finalize_dispute` crank (lib.rs:1187). After the
- * appeal window elapses, anyone can settle the final round: slash incoherent
+ * Build the permissionless `finalize_dispute` crank
+ * (instructions/finalize_dispute.rs). After the appeal window elapses,
+ * anyone can settle the final round: slash incoherent
  * jurors, redistribute the pool, decrement `active_draws`, and write
  * `final_ruling` (transition to `Final`).
  *
