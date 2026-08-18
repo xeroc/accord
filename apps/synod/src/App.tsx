@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 
 import { HomePage } from "./features/home/HomePage";
 import { NewCasePage } from "./features/case/NewCasePage";
+import { CaseDetailPage } from "./features/case/CaseDetailPage";
 
 /**
  * App shell — routes + Toaster.
@@ -34,6 +35,7 @@ function AnimatedRoutes() {
         <Routes location={location}>
           <Route path="/" element={<HomePage />} />
           <Route path="/cases/new" element={<NewCasePage />} />
+          <Route path="/cases/:address" element={<CaseDetailPage />} />
         </Routes>
       </motion.div>
     </AnimatePresence>

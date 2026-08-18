@@ -18,13 +18,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { isAddress, type Address } from "@solana/kit";
+import { isAddress, type Address, type Rpc, type SolanaRpcApi } from "@solana/kit";
 import {
   findAllSubaccords,
   fetchSubaccordMaybe,
   type Subaccord,
 } from "@useaccord/sdk";
-import { openCase } from "@useaccord/synod";
+import { fetchMaybeSynodCase, findCasePda, openCase } from "@useaccord/synod";
 
 import { useClusterRpc } from "@/shared/rpc";
 import { sendInstruction } from "@/shared/transaction";
@@ -158,7 +158,7 @@ export function NewCasePage() {
           parties,
           stake: stakeBig,
           joinDeadline: deadline,
-          nonce: Date.now(),
+          nonce: await nextCaseNonce(crpc.rpc, opener),
         },
       );
       await sendInstruction(crpc.rpc, crpc.rpcSubscriptions, signer, instruction);
@@ -447,4 +447,22 @@ function Field({
       {help && <span className="text-xs text-muted-foreground">{help}</span>}
     </label>
   );
+}
+
+/**
+ * First free case-open nonce for `opener`: probe `["case", opener, n]` PDAs
+ * from 0 until one doesn't exist on-chain. Sequential nonces keep the seed
+ * recoverable by every consumer (`recoverCaseNonce` in caseDetail.ts) —
+ * `SynodCase` stores no seed backrefs (SPEC §Instructions #3).
+ */
+async function nextCaseNonce(
+  rpc: Rpc<SolanaRpcApi>,
+  opener: Address,
+): Promise<bigint> {
+  for (let n = 0n; n < 64n; n++) {
+    const [pda] = await findCasePda({ opener, nonce: n });
+    const maybe = await fetchMaybeSynodCase(rpc, pda);
+    if (!maybe.exists) return n;
+  }
+  throw new Error("This opener already has 64 open cases — close one first.");
 }
