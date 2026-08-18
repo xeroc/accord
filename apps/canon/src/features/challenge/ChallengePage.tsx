@@ -12,10 +12,11 @@
  */
 import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { Address } from "@solana/kit";
 import { getBase64Encoder, getAddressEncoder } from "@solana/kit";
-import { getSubaccordDecoder } from "@useaccord/sdk";
+import { getSubaccordDecoder, findDisputePda } from "@useaccord/sdk";
 import { fetchCanonItem, fetchCanonList } from "../../shared/fetch";
 import { buildManifest } from "@useaccord/sdk/evidence";
 import { useSigner } from "../../shared/rpc";
@@ -23,8 +24,9 @@ import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction, TransactionSendError } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import {
-  prepareChallengeEvidence,
+  buildChallengeEvidence,
   buildChallengeInstruction,
+  publishChallengeEvidence,
   type ChallengeOnChainContext,
 } from "./challengeFlow";
 
@@ -40,32 +42,60 @@ export function ChallengePage() {
   const [description, setDescription] = useState("");
   const [entries, setEntries] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
+  const [publishFail, setPublishFail] = useState<{
+    error: string;
+    ctx: ChallengeOnChainContext;
+    dispute: Address;
+    manifest: Uint8Array;
+  } | null>(null);
 
   const validEntries = entries.filter((e) => e.trim().length > 0);
   const isValid = title.trim().length > 0 && validEntries.length >= 1;
 
-  // YAML preview (built from the same buffer that feeds the hash + encrypt).
+  // On-chain context for the preview: item → list → the dispute PDA the next
+  // challenge will use (["dispute", list, list.dispute_count]). Fetched at page
+  // load so the preview shows REAL values; submit re-fetches for freshness.
+  const { data: previewCtx } = useQuery({
+    queryKey: ["challenge-ctx", address],
+    queryFn: async () => {
+      if (!address || !clusterRpc) return null;
+      const itemData = await fetchCanonItem(clusterRpc.rpc, address as Address);
+      if (!itemData) return null;
+      const listData = await fetchCanonList(clusterRpc.rpc, itemData.list);
+      if (!listData) return null;
+      const [dispute] = await findDisputePda({
+        filer: itemData.list,
+        nonce: listData.disputeCount,
+      });
+      return { list: itemData.list, listData, dispute };
+    },
+    enabled: !!address && !!clusterRpc,
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  // YAML preview (real ctx; salt + entry sha256 zeroed — minted at submit).
   const yamlPreview = useMemo(() => {
-    if (!isValid) return "";
-    const salt = new Uint8Array(32); // placeholder for preview
+    if (!isValid || !previewCtx) return "";
     const buf = buildManifest(
       {
-        salt,
+        salt: new Uint8Array(32), // placeholder for preview
         title: title.trim(),
         description: description.trim() || undefined,
         labels: ["keep", "remove"],
         entries: validEntries.map((e) => ({ path: e.trim() })),
       },
-      // Placeholder ctx — real values filled at submit time.
       {
-        dispute: "<derived>" as Address,
-        subaccord: "<from list>" as Address,
-        filer: "<list PDA>" as Address,
+        dispute: previewCtx.dispute,
+        subaccord: previewCtx.listData.subaccord,
+        // Canon is the single filer (ADR-0004): the CanonList PDA signs the
+        // create_dispute CPI — NOT the challenger wallet (wallet is rent_payer).
+        filer: previewCtx.list,
         filedAt: new Date().toISOString(),
       },
     );
     return new TextDecoder().decode(buf);
-  }, [isValid, title, description, validEntries]);
+  }, [isValid, title, description, validEntries, previewCtx]);
 
   async function handleSubmit() {
     if (!address || !signer || !clusterRpc) return;
@@ -99,18 +129,19 @@ export function ChallengePage() {
         operatorPub,
       };
 
-      // 3. Build manifest, hash, publish to daemon.
-      const { evidenceHash } = await prepareChallengeEvidence(
+      // 3. Build the manifest + evidence_hash offline (no daemon call yet).
+      const { evidenceHash, manifest, dispute } = await buildChallengeEvidence(
         {
           title: title.trim(),
           description: description.trim(),
           entries: validEntries.map((e) => ({ path: e.trim() })),
         },
         ctx,
-        { evidenceDaemonUrl: EVIDENCE_DAEMON_URL },
       );
 
-      // 4. Build + send the challengeItem instruction.
+      // 4. Send the challengeItem transaction FIRST — it CPIs create_dispute,
+      //    and the daemon's ingest reads the dispute on-chain (404 "dispute
+      //    not found" if evidence arrives before the dispute exists).
       const ix = await buildChallengeInstruction(ctx, signer, evidenceHash);
       const sig = await sendInstruction(
         clusterRpc.rpc,
@@ -118,13 +149,48 @@ export function ChallengePage() {
         signer,
         ix,
       );
-      toast.success(`Challenge filed! Signature: ${sig.slice(0, 8)}…`);
+
+      // 5. Publish the encrypted manifest — the dispute now exists on-chain.
+      try {
+        await publishChallengeEvidence(manifest, dispute, ctx, {
+          evidenceDaemonUrl: EVIDENCE_DAEMON_URL,
+        });
+        setPublishFail(null);
+        toast.success(`Challenge filed! Signature: ${sig.slice(0, 8)}…`);
+      } catch (publishErr) {
+        // Dispute exists on-chain — hold the manifest for a POST-only retry.
+        setPublishFail({ error: describeError(publishErr), ctx, dispute, manifest });
+        toast.error(
+          `Dispute filed (${sig.slice(0, 8)}…) but evidence publish failed — retry below`,
+        );
+      }
     } catch (err) {
       const msg =
         err instanceof TransactionSendError
           ? `Transaction failed: ${describeError(JSON.parse(err.message))}`
           : describeError(err);
       toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** POST-only retry: the dispute is already on-chain; re-publish the SAME
+   * manifest bytes (the on-chain evidence_hash commits to them). */
+  async function handleRetryPublish() {
+    if (!publishFail) return;
+    setSubmitting(true);
+    try {
+      await publishChallengeEvidence(
+        publishFail.manifest,
+        publishFail.dispute,
+        publishFail.ctx,
+        { evidenceDaemonUrl: EVIDENCE_DAEMON_URL },
+      );
+      setPublishFail(null);
+      toast.success("Evidence published — challenge complete.");
+    } catch (err) {
+      setPublishFail({ ...publishFail, error: describeError(err) });
     } finally {
       setSubmitting(false);
     }
@@ -253,6 +319,26 @@ export function ChallengePage() {
             </div>
           )}
 
+
+          {/* Publish failure — dispute is on-chain; retry POSTs the same manifest */}
+          {publishFail && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+              <p className="font-mono text-destructive">
+                Dispute filed, but evidence publish failed:
+              </p>
+              <p className="mt-1 break-words font-mono text-xs text-muted-foreground">
+                {publishFail.error}
+              </p>
+              <button
+                type="button"
+                onClick={handleRetryPublish}
+                disabled={submitting}
+                className="mt-2 font-mono text-sm text-amber hover:underline disabled:opacity-50"
+              >
+                {submitting ? "Publishing…" : "Retry evidence publish"}
+              </button>
+            </div>
+          )}
           {/* Submit */}
           <button
             type="button"
