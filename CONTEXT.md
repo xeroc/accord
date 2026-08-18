@@ -115,7 +115,7 @@ _Avoid_: bond (that's an appeal bond at Accord), deposit (ambiguous with Canon i
 _Avoid_: pool (that's the juror stake pool), prize, bounty
 
 **Neutral Option**:
-The reserved highest-index option, "no party prevails." A majority neutral vote resolves normally (refunds). A tie never resolves — it redraws at Accord (bean `accord-n3vw`).
+The reserved highest-index option, "no party prevails." A majority neutral vote resolves normally (refunds). A tie must never crown an arbitrary party — the Plurality tie→redraw fix is queued at Accord (bean `accord-n3vw`; until it ships, a top-count tie resolves to the highest option index).
 _Avoid_: abstain, no-award, refuse-to-arbitrate
 
 **Filing**:

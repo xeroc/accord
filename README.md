@@ -92,7 +92,7 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 - **Randomness**: Magicblock / Solana VRF (`ephemeral-rollups-sdk 0.16.2`, scoped per-program identity via `ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity`)
 - **Token layer**: SPL Token + Associated Token (`anchor-spl 1.0.2`)
 - **SDK**: TypeScript (`@solana/web3.js`, `@anchor-lang/core`) — Codama +
-  Solana Kit codegen pipeline (ADR-0010, in progress)
+  Solana Kit codegen pipeline (ADR-0010)
 - **Docs**: MkDocs Material (`apps/docs/`)
 - **Package manager**: pnpm `9.15.0` (workspaces) + Cargo (Rust workspace)
 - **Lint/format**: `rustfmt`, `clippy`, `tsc --noEmit`, Prettier, ESLint,
@@ -197,11 +197,18 @@ See [Testing](#testing) for the two-harness philosophy.
 │   │   ├── SPEC.md             # v1 build spec (account model, state machine)
 │   │   └── security-checklist.md
 │   ├── canon/                  # Canon — curated-list registry Arbitrable (Anchor)
-│   └── synod/                  # Synod — N-party dispute-escrow Arbitrable (stub; SPEC.md)
+│   └── synod/                  # Synod — N-party dispute-escrow Arbitrable (stub; SPEC + ADRs)
 ├── packages/
-│   └── sdk/                    # @useaccord/sdk — TypeScript SDK (codegen, in progress)
-├── tests/                      # jest + Surfpool integration suite
+│   ├── sdk/                    # @useaccord/sdk — TypeScript SDK (Codama client, facades, evidence crypto)
+│   └── canon/                  # @useaccord/canon — Canon SDK facade (Codama client + PDA helpers)
+├── tests/                      # jest + Surfpool integration suite (accord + canon e2e)
 ├── apps/
+│   ├── cli/                    # useaccord — operator CLI over the SDK
+│   ├── cranker/                # Lifecycle cranker (permissionless cranks, accord + canon)
+│   ├── evidence-daemon/        # Evidence Operator daemon (ADR-0011)
+│   ├── app/                    # Accord dApp (React + Vite)
+│   ├── canon/                  # Canon Registry dApp (React + Vite)
+│   ├── landing/                # Landing page
 │   └── docs/                   # Documentation hub
 │       ├── docs/               # MkDocs site content (integration, reference, security)
 │       └── adr/                # ADRs — repo-only, per-program series (accord/, canon/, synod/)
@@ -453,9 +460,13 @@ tests are green.
 | Component                              | Status         | Notes                                                              |
 | -------------------------------------- | -------------- | ------------------------------------------------------------------ |
 | `programs/accord` (on-chain)           | ✅ Implemented | Full v1 instruction set + per-instruction LiteSVM tests            |
+| `programs/canon` (on-chain)            | ✅ Implemented | Curated-list Arbitrable (ADR `canon/0001`) + LiteSVM & e2e specs   |
+| `programs/synod` (on-chain)            | 🚧 Specced     | Stub crate — SPEC + ADRs `synod/0001`–`0002`; e2e blocked on the Accord tie fix (`accord-n3vw`) |
 | Formal verification (`accord.qedspec`) | ⚠️ Declared    | Four economic invariants modeled; pending VRF/param-bounds binding |
-| `@useaccord/sdk` (TypeScript)             | 🚧 Scaffolded  | Codama codegen pipeline in progress (ADR-0010); facade stub only   |
-| `tests/` (jest/Surfpool)               | 🚧 Scaffolded  | Harness configured; integration specs in progress                  |
+| `@useaccord/sdk` (TypeScript)          | ✅ Implemented | Codama codegen (ADR-0010) + facades, PDAs, `sdk/evidence` crypto   |
+| `@useaccord/canon` (TypeScript)        | ✅ Implemented | Canon facade over its own Codama client                            |
+| `tests/` (jest/Surfpool)               | ✅ Implemented | Per-instruction-group e2e specs (accord + canon), green via `make test` |
+| Apps (CLI, cranker, evidence-daemon, dApps, landing) | ✅ Built | Consume the SDKs; lint/build/test green in CI        |
 | `apps/docs` (MkDocs)                   | ✅ Live        | Full integration guide, protocol reference, security docs, ADRs    |
 | Security audit                         | ❌ Not started | Pre-mainnet; do not secure real value yet                          |
 

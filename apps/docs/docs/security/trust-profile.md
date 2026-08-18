@@ -49,6 +49,20 @@ mitigation. "Residual" is what remains true after the mitigation.
 > so there is no poster, no bond, and no challenge window. The trust surface
 > above describes the post-0012 state; the snapshot-poster row is intentionally
 > absent.
+>
+> **Synod (Arbitrable — specced, not yet built).** Synod moves value in-house:
+> unlike a generic integrating application (row 8 — an ignored Ruling costs only
+> off-chain honor), a Synod Case escrows party stakes (`N·S` in the Subaccord's
+> `fee_token`) and self-enforces payouts on-chain. A captured panel (row 6) or a
+> bribed majority walks away with the pot, so price the **whole escrow**, not
+> just the ruling, against the security-value ceiling. Party-economics
+> residuals ([synod/0001](https://github.com/xeroc/accord/blob/main/apps/docs/adr/synod/0001-synod-n-party-escrow-arbitrable-over-accord.md),
+> [0002](https://github.com/xeroc/accord/blob/main/apps/docs/adr/synod/0002-one-mint-fee-from-stake-winner-takes-pot.md)):
+> party==juror overlap is an accepted risk (a drawn party's one seat is cheap to
+> outvote; appeals are open to anyone), payouts are pull-only and idempotent, a
+> missed roster deadline refunds everyone in full (silence is safe for the
+> named), and the juror fee is frozen at case open so governance cannot shift
+> the deal mid-window.
 
 ## Per-Subaccord machine-readable profile
 

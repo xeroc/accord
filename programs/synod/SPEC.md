@@ -20,9 +20,9 @@ nothing about parties (ADR-0004 unchanged) — all party economics live here.
 Consumers-to-be: `PROG-ESCROW` (milestone disputes) routes through it later.
 **Name:** a synod is an assembly convened to settle a contested question and
 issue a ruling; synods issue canons — the Canon↔Synod kinship mirrors the two
-Arbitrables' actual relationship under Accord. Program ID below is the
-scaffold placeholder; generate + commit the canonical keypair before first
-build.
+Arbitrables' actual relationship under Accord. The `declare_id!` in
+`programs/synod/src/lib.rs` (mirrored in `Anchor.toml`) is the scaffold
+placeholder; generate + commit the canonical keypair before first build.
 
 ## The one Accord-Core dependency (hard blocker)
 
