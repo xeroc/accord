@@ -26,8 +26,7 @@ import {
 } from "@useaccord/sdk";
 import { fetchMaybeSynodCase, findCasePda, openCase } from "@useaccord/synod";
 
-import { useClusterRpc } from "@/shared/rpc";
-import { sendInstruction } from "@/shared/transaction";
+import { useClusterRpc, useSynod } from "@/shared/rpc";
 import { describeError } from "@/shared/errors";
 import { useSigner } from "@/shared/wallet";
 import { shortenAddress, formatAmount } from "@/shared/format";
@@ -59,6 +58,7 @@ const DEFAULT_JOIN_HOURS = "72";
 export function NewCasePage() {
   const { signer } = useSigner();
   const crpc = useClusterRpc();
+  const env = useSynod();
 
   const [selected, setSelected] = useState<Selection | null>(null);
   const [paste, setPaste] = useState("");
@@ -144,7 +144,7 @@ export function NewCasePage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!signer || !crpc || !selected || !opener || !deadline) return;
+    if (!signer || !crpc || !env || !selected || !opener || !deadline) return;
     if (stakeBig === null || stakeBig <= 0n) {
       setError("Stake: whole number of base units, greater than zero.");
       return;
@@ -161,7 +161,7 @@ export function NewCasePage() {
           nonce: await nextCaseNonce(crpc.rpc, opener),
         },
       );
-      await sendInstruction(crpc.rpc, crpc.rpcSubscriptions, signer, instruction);
+      await env.sendIx(instruction);
       toast.success(`Case opened: ${casePda}`);
       // Case detail + home inbox land with accord-hvf9/accord-o6nn; reset.
       setNamed([""]);

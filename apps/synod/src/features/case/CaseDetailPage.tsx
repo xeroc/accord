@@ -40,8 +40,7 @@ import {
   type SynodCase,
 } from "@useaccord/synod";
 
-import { useClusterRpc } from "@/shared/rpc";
-import { sendInstruction } from "@/shared/transaction";
+import { useClusterRpc, useSynod } from "@/shared/rpc";
 import { describeError } from "@/shared/errors";
 import { useSigner, ZERO_ADDRESS } from "@/shared/wallet";
 import { shortenAddress, formatAmount, formatTimestamp } from "@/shared/format";
@@ -60,6 +59,7 @@ export function CaseDetailPage() {
   const { signer } = useSigner();
   const crpc = useClusterRpc();
   const queryClient = useQueryClient();
+  const env = useSynod();
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState<"file" | "claim" | "refund" | null>(
     null,
@@ -152,7 +152,8 @@ export function CaseDetailPage() {
 
   async function run(action: "file" | "claim" | "refund") {
     setError(null);
-    if (!signer || !crpc || !c || !subQuery.data || nonce === null) return;
+    if (!signer || !crpc || !env || !c || !subQuery.data || nonce === null)
+      return;
     setSending(action);
     try {
       const opener = c.parties[0]!;
@@ -212,7 +213,7 @@ export function CaseDetailPage() {
                 { nonce },
               );
       }
-      await sendInstruction(crpc.rpc, crpc.rpcSubscriptions, signer, instruction);
+      await env.sendIx(instruction);
       toast.success(
         action === "file"
           ? "Dispute filed — the court is live."
