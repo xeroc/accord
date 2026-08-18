@@ -43,7 +43,12 @@ import {
 import { useClusterRpc, useSynod } from "@/shared/rpc";
 import { describeError } from "@/shared/errors";
 import { useSigner, ZERO_ADDRESS } from "@/shared/wallet";
-import { shortenAddress, formatAmount, formatTimestamp } from "@/shared/format";
+import {
+  shortenAddress,
+  formatAmount,
+  formatTimestamp,
+  timeRemaining,
+} from "@/shared/format";
 import {
   CASE_STATE_LABELS,
   bitSet,
@@ -52,6 +57,7 @@ import {
   recoverCaseNonce,
 } from "./caseDetail";
 import { DisputeStatusCard } from "./DisputeStatusCard";
+import { JoinCard } from "./JoinCard";
 
 export function CaseDetailPage() {
   const { address: caseAddrRaw } = useParams();
@@ -143,6 +149,12 @@ export function CaseDetailPage() {
   const canClaim = actions.claim && myIndex >= 0 && !myPaid;
   const canRefund = actions.refund && myJoined && !myPaid;
   const canFile = actions.file;
+  const canJoin =
+    !!signer &&
+    myIndex >= 0 &&
+    !myJoined &&
+    c.state === CaseState.Opening &&
+    nowSec <= c.joinDeadline;
   const hatchReady = !!signer && !!subQuery.data && nonce !== null;
 
   const optionLabels = c.parties
@@ -240,7 +252,8 @@ export function CaseDetailPage() {
           {formatAmount(c.stake)} · frozen fee {formatAmount(c.fee)}
         </p>
         <p className="text-xs text-muted-foreground">
-          Join deadline {formatTimestamp(c.joinDeadline)}
+          Join deadline {formatTimestamp(c.joinDeadline)} ·{" "}
+          {timeRemaining(Number(c.joinDeadline), Number(nowSec))}
         </p>
       </header>
 
@@ -280,6 +293,16 @@ export function CaseDetailPage() {
           </section>
         )}
       </div>
+
+      {canJoin && subQuery.data && signer && (
+        <JoinCard
+          casePda={caseAddr}
+          caseData={c}
+          subData={subQuery.data}
+          party={signer}
+          slot={myIndex}
+        />
+      )}
 
       {(canFile || canClaim || canRefund) && (
         <section className="mt-6 rounded-lg border border-border p-5">
