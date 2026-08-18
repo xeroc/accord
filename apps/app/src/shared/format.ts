@@ -36,14 +36,19 @@ export const DISPUTE_STATE_LABELS: Record<DS, string> = {
  * a plain decimal for Median (scalar). Mint decimals aren't fetched in these
  * views, so scalars render at the SDK's canonical 6 decimals — the same
  * default `encodeScalarVote` uses at commit time, so values round-trip.
+ *
+ * `labels` (plaintext option labels from a decoded evidence manifest) takes
+ * precedence for Plurality: the winning index resolves to its label, falling
+ * back to `Option N` when the manifest is absent or lacks that index.
  */
 export function formatRuling(
   ruling: bigint,
   aggregation: Aggregation = Aggregation.Plurality,
+  labels?: string[],
 ): string {
   if (ruling === NO_RULING) return "—";
   if (aggregation === Aggregation.Median) return decodeScalarVote(ruling);
-  return `Option ${ruling}`;
+  return labels?.[Number(ruling)]?.trim() || `Option ${ruling}`;
 }
 
 // --- Address formatting ---
