@@ -14,9 +14,9 @@ import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { toast } from "sonner";
 import type { Address } from "@solana/kit";
-import { getAddressEncoder } from "@solana/kit";
-import { getCanonItemDecoder, getCanonListDecoder } from "@useaccord/canon";
+import { getBase64Encoder, getAddressEncoder } from "@solana/kit";
 import { getSubaccordDecoder } from "@useaccord/sdk";
+import { fetchCanonItem, fetchCanonList } from "../../shared/fetch";
 import { buildManifest } from "@useaccord/sdk/evidence";
 import { useSigner } from "../../shared/rpc";
 import { useClusterRpc } from "../../shared/rpc";
@@ -71,23 +71,13 @@ export function ChallengePage() {
     if (!address || !signer || !clusterRpc) return;
     setSubmitting(true);
     try {
-      // 1. Fetch on-chain data (raw RPC + decoders — no facade needed).
-      const itemRes = await clusterRpc.rpc
-        .getAccountInfo(address as Address, { encoding: "base64" })
-        .send();
-      if (!itemRes.value) throw new Error("CanonItem account not found");
-      const itemData = getCanonItemDecoder().decode(
-        new Uint8Array(Buffer.from(itemRes.value.data[0]!, "base64")),
-      );
+      // 1. Fetch on-chain data (shared fetchers: raw RPC + decoders).
+      const itemData = await fetchCanonItem(clusterRpc.rpc, address as Address);
+      if (!itemData) throw new Error("CanonItem account not found");
 
       const listAddress = itemData.list;
-      const listRes = await clusterRpc.rpc
-        .getAccountInfo(listAddress, { encoding: "base64" })
-        .send();
-      if (!listRes.value) throw new Error("CanonList account not found");
-      const listData = getCanonListDecoder().decode(
-        new Uint8Array(Buffer.from(listRes.value.data[0]!, "base64")),
-      );
+      const listData = await fetchCanonList(clusterRpc.rpc, listAddress);
+      if (!listData) throw new Error("CanonList account not found");
 
       // 2. Fetch the Subaccord to get evidence_operator.
       const subRes = await clusterRpc.rpc
@@ -95,7 +85,7 @@ export function ChallengePage() {
         .send();
       if (!subRes.value) throw new Error("Subaccord account not found");
       const subData = getSubaccordDecoder().decode(
-        new Uint8Array(Buffer.from(subRes.value.data[0]!, "base64")),
+        getBase64Encoder().encode(subRes.value.data[0]!),
       );
       const operatorPub = new Uint8Array(
         getAddressEncoder().encode(subData.evidenceOperator),
