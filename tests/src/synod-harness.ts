@@ -37,7 +37,11 @@ import { readClock, setAccountRaw } from "./setup/cheats.js";
 import { fundSigner, type TestEnv } from "./setup/env.js";
 import { ataOf, setTokenBalance } from "./setup/tokens.js";
 import { randomBytes32 } from "./setup/fixtures.js";
-import { armSubaccordAndJurors } from "./draw-harness.js";
+import {
+  armSubaccordAndJurors,
+  type JurorCtx,
+  type TreeTracker,
+} from "./draw-harness.js";
 
 /** Canonical test economics: 5 tokens/juror × 3 jurors frozen = 15. */
 export const SY_FEE_PER_JUROR = 5n;
@@ -54,6 +58,10 @@ export interface SynodArm {
   accordState: Address;
   /** `min_jury_size · fee_per_juror`, frozen at open. */
   frozenFee: bigint;
+  /** The staked jury pool (DrawFixture panel) — real draw/vote chains. */
+  jurors: JurorCtx[];
+  tree: TreeTracker;
+  jurorPdaByHex: Map<string, Address>;
 }
 
 /** A case opened on an armed court, with its roster funded. */
@@ -93,6 +101,9 @@ export async function armSynodCourt(env: TestEnv): Promise<SynodArm> {
     feeVault: armed.vault,
     accordState: pause.accordState,
     frozenFee: requiredFee(SY_FEE_PER_JUROR)!,
+    jurors: armed.jurors,
+    tree: armed.tree,
+    jurorPdaByHex: armed.jurorPdaByHex,
   };
 }
 

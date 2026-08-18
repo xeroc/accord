@@ -112,7 +112,7 @@ export function roleAccord(env: TestEnv, signer: KeyPairSigner): Accord {
 // Off-chain accumulator tree tracker
 // ---------------------------------------------------------------------------
 
-class TreeTracker {
+export class TreeTracker {
   tree!: MerkleAccumulator;
   depth: number;
 
