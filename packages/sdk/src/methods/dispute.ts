@@ -75,8 +75,14 @@ export interface CreateDisputeArgs {
 
 /** Signer + token accounts the filer brings to `create_dispute`. */
 export interface CreateDisputeAccounts {
-  /** The Arbitrable (a program signer via CPI) or any wallet. Fee + rent payer. */
+  /** The Arbitrable (a program signer via CPI) or any wallet. Fee source + signer. */
   filer: Address;
+  /**
+   * Data-free rent payer for the dispute `init` + fee_vault `init_if_needed`
+   * (the system program rejects lamport transfers from data-carrying accounts,
+   * so a PDA filer must not pay rent). Wallet filers pass themselves.
+   */
+  rentPayer: Address;
   /** The Subaccord this dispute is filed against (fee/panel source). */
   subaccord: Address;
   /** The Subaccord's staking_token mint (fee currency). */

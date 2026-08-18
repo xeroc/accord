@@ -484,6 +484,9 @@ importers:
       '@useaccord/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
+      '@useaccord/synod':
+        specifier: workspace:*
+        version: link:../packages/synod
       bn.js:
         specifier: ^5.2.1
         version: 5.2.5

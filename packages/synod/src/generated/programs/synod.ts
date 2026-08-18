@@ -6,7 +6,311 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { type Address } from "@solana/kit";
+import {
+  assertIsInstructionWithAccounts,
+  containsBytes,
+  extendClient,
+  fixEncoderSize,
+  getBytesEncoder,
+  SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT,
+  SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION,
+  SOLANA_ERROR__PROGRAM_CLIENTS__UNRECOGNIZED_INSTRUCTION_TYPE,
+  SolanaError,
+  type Address,
+  type ClientWithRpc,
+  type ClientWithTransactionPlanning,
+  type ClientWithTransactionSending,
+  type ExtendedClient,
+  type GetAccountInfoApi,
+  type GetMultipleAccountsApi,
+  type Instruction,
+  type InstructionWithData,
+  type ReadonlyUint8Array,
+} from "@solana/kit";
+import {
+  addSelfFetchFunctions,
+  addSelfPlanAndSendFunctions,
+  type SelfFetchFunctions,
+  type SelfPlanAndSendFunctions,
+} from "@solana/kit/program-client-core";
+import {
+  getSynodCaseCodec,
+  type SynodCase,
+  type SynodCaseArgs,
+} from "../accounts";
+import {
+  getClaimInstructionAsync,
+  getFileDisputeInstructionAsync,
+  getJoinInstructionAsync,
+  getOpenCaseInstructionAsync,
+  getRefundRosterMissInstructionAsync,
+  parseClaimInstruction,
+  parseFileDisputeInstruction,
+  parseJoinInstruction,
+  parseOpenCaseInstruction,
+  parseRefundRosterMissInstruction,
+  type ClaimAsyncInput,
+  type FileDisputeAsyncInput,
+  type JoinAsyncInput,
+  type OpenCaseAsyncInput,
+  type ParsedClaimInstruction,
+  type ParsedFileDisputeInstruction,
+  type ParsedJoinInstruction,
+  type ParsedOpenCaseInstruction,
+  type ParsedRefundRosterMissInstruction,
+  type RefundRosterMissAsyncInput,
+} from "../instructions";
+import { findCasePda } from "../pdas";
 
 export const SYNOD_PROGRAM_ADDRESS =
-  "5o5VDoAZJFTJaBKJjhPMLMMPa8nmqgZdSkUFubNdAxZx" as Address<"5o5VDoAZJFTJaBKJjhPMLMMPa8nmqgZdSkUFubNdAxZx">;
+  "GdV5rbRd579LUs3zB2PkbBsJNCMSj55rwWdikGuobHeC" as Address<"GdV5rbRd579LUs3zB2PkbBsJNCMSj55rwWdikGuobHeC">;
+
+export enum SynodAccount {
+  SynodCase,
+}
+
+export function identifySynodAccount(
+  account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
+): SynodAccount {
+  const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([70, 137, 118, 159, 197, 200, 16, 211]),
+      ),
+      0,
+    )
+  ) {
+    return SynodAccount.SynodCase;
+  }
+  throw new SolanaError(
+    SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_ACCOUNT,
+    { accountData: data, programName: "synod" },
+  );
+}
+
+export enum SynodInstruction {
+  Claim,
+  FileDispute,
+  Join,
+  OpenCase,
+  RefundRosterMiss,
+}
+
+export function identifySynodInstruction(
+  instruction: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
+): SynodInstruction {
+  const data = "data" in instruction ? instruction.data : instruction;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([62, 198, 214, 193, 213, 159, 108, 210]),
+      ),
+      0,
+    )
+  ) {
+    return SynodInstruction.Claim;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([210, 63, 221, 114, 212, 97, 195, 156]),
+      ),
+      0,
+    )
+  ) {
+    return SynodInstruction.FileDispute;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([206, 55, 2, 106, 113, 220, 17, 163]),
+      ),
+      0,
+    )
+  ) {
+    return SynodInstruction.Join;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([249, 236, 95, 19, 245, 178, 92, 13]),
+      ),
+      0,
+    )
+  ) {
+    return SynodInstruction.OpenCase;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([16, 117, 148, 250, 29, 31, 29, 148]),
+      ),
+      0,
+    )
+  ) {
+    return SynodInstruction.RefundRosterMiss;
+  }
+  throw new SolanaError(
+    SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION,
+    { instructionData: data, programName: "synod" },
+  );
+}
+
+export type ParsedSynodInstruction<
+  TProgram extends string = "GdV5rbRd579LUs3zB2PkbBsJNCMSj55rwWdikGuobHeC",
+> =
+  | ({
+      instructionType: SynodInstruction.Claim;
+    } & ParsedClaimInstruction<TProgram>)
+  | ({
+      instructionType: SynodInstruction.FileDispute;
+    } & ParsedFileDisputeInstruction<TProgram>)
+  | ({
+      instructionType: SynodInstruction.Join;
+    } & ParsedJoinInstruction<TProgram>)
+  | ({
+      instructionType: SynodInstruction.OpenCase;
+    } & ParsedOpenCaseInstruction<TProgram>)
+  | ({
+      instructionType: SynodInstruction.RefundRosterMiss;
+    } & ParsedRefundRosterMissInstruction<TProgram>);
+
+export function parseSynodInstruction<TProgram extends string>(
+  instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
+): ParsedSynodInstruction<TProgram> {
+  const instructionType = identifySynodInstruction(instruction);
+  switch (instructionType) {
+    case SynodInstruction.Claim: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SynodInstruction.Claim,
+        ...parseClaimInstruction(instruction),
+      };
+    }
+    case SynodInstruction.FileDispute: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SynodInstruction.FileDispute,
+        ...parseFileDisputeInstruction(instruction),
+      };
+    }
+    case SynodInstruction.Join: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SynodInstruction.Join,
+        ...parseJoinInstruction(instruction),
+      };
+    }
+    case SynodInstruction.OpenCase: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SynodInstruction.OpenCase,
+        ...parseOpenCaseInstruction(instruction),
+      };
+    }
+    case SynodInstruction.RefundRosterMiss: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: SynodInstruction.RefundRosterMiss,
+        ...parseRefundRosterMissInstruction(instruction),
+      };
+    }
+    default:
+      throw new SolanaError(
+        SOLANA_ERROR__PROGRAM_CLIENTS__UNRECOGNIZED_INSTRUCTION_TYPE,
+        { instructionType: instructionType as string, programName: "synod" },
+      );
+  }
+}
+
+export type SynodPlugin = {
+  accounts: SynodPluginAccounts;
+  instructions: SynodPluginInstructions;
+  pdas: SynodPluginPdas;
+  identifyAccount: typeof identifySynodAccount;
+  identifyInstruction: typeof identifySynodInstruction;
+  parseInstruction: typeof parseSynodInstruction;
+};
+
+export type SynodPluginAccounts = {
+  synodCase: ReturnType<typeof getSynodCaseCodec> &
+    SelfFetchFunctions<SynodCaseArgs, SynodCase>;
+};
+
+export type SynodPluginInstructions = {
+  claim: (
+    input: ClaimAsyncInput,
+  ) => ReturnType<typeof getClaimInstructionAsync> & SelfPlanAndSendFunctions;
+  fileDispute: (
+    input: FileDisputeAsyncInput,
+  ) => ReturnType<typeof getFileDisputeInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  join: (
+    input: JoinAsyncInput,
+  ) => ReturnType<typeof getJoinInstructionAsync> & SelfPlanAndSendFunctions;
+  openCase: (
+    input: OpenCaseAsyncInput,
+  ) => ReturnType<typeof getOpenCaseInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  refundRosterMiss: (
+    input: RefundRosterMissAsyncInput,
+  ) => ReturnType<typeof getRefundRosterMissInstructionAsync> &
+    SelfPlanAndSendFunctions;
+};
+
+export type SynodPluginPdas = { case: typeof findCasePda };
+
+export type SynodPluginRequirements = ClientWithRpc<
+  GetAccountInfoApi & GetMultipleAccountsApi
+> &
+  ClientWithTransactionPlanning &
+  ClientWithTransactionSending;
+
+export function synodProgram() {
+  return <T extends SynodPluginRequirements>(
+    client: T,
+  ): ExtendedClient<T, { synod: SynodPlugin }> => {
+    return extendClient(client, {
+      synod: <SynodPlugin>{
+        accounts: {
+          synodCase: addSelfFetchFunctions(client, getSynodCaseCodec()),
+        },
+        instructions: {
+          claim: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getClaimInstructionAsync(input),
+            ),
+          fileDispute: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFileDisputeInstructionAsync(input),
+            ),
+          join: (input) =>
+            addSelfPlanAndSendFunctions(client, getJoinInstructionAsync(input)),
+          openCase: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getOpenCaseInstructionAsync(input),
+            ),
+          refundRosterMiss: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getRefundRosterMissInstructionAsync(input),
+            ),
+        },
+        pdas: { case: findCasePda },
+        identifyAccount: identifySynodAccount,
+        identifyInstruction: identifySynodInstruction,
+        parseInstruction: parseSynodInstruction,
+      },
+    });
+  };
+}

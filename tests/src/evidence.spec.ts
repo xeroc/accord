@@ -277,6 +277,7 @@ describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
     };
     const accounts: CreateDisputeAccounts = {
       filer: env.payer.address,
+      rentPayer: env.payer.address,
       subaccord: mainSub,
       feeToken: mint,
       filerTokenAccount: filerAta,
@@ -342,6 +343,7 @@ describe("e2e: evidence format-mode submit (requires Surfpool)", () => {
       env.accord.adapter,
       {
         filer: env.payer.address,
+        rentPayer: env.payer.address,
         subaccord: mainSub,
         feeToken: mint,
         filerTokenAccount: filerAta,

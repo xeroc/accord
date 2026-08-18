@@ -1,12 +1,13 @@
-// synod.fixtures.spec.ts — pure pins for the Synod e2e-side fixture derivations
-// (no validator, runs in every lane incl. offline CI).
+// synod.fixtures.spec.ts — pure pins for the Synod e2e-side fixture
+// derivations (no validator, runs in every lane incl. offline CI).
 //
-// These fixtures pin the byte-level choices the synod program MUST match
-// (SPEC §Account/PDA model + §Instructions #3): u64-LE nonce seeds, sha256
-// over ("synod-opt" ‖ case_pda ‖ i_u8) option labels, sha256 over
-// (case_pda ‖ per-party hashes) evidence commitment, and the frozen-fee payout
-// math (§Economics). Known-answer vectors freeze them against drift; the
-// on-chain program (bean accord-l2ad) is checked against them in the e2e specs.
+// These fixtures mirror `programs/synod/src/instructions/file_dispute.rs`
+// (`option_label`, `evidence_root`) and `claim.rs` byte-for-byte: u64-LE
+// option index, sha256 over ("synod-opt" ‖ case_pda ‖ i_le64), sha256 over
+// (case_pda ‖ per-party hashes), and the floor(pot/N) neutral split with the
+// last claimant draining the remainder. Known-answer vectors freeze them
+// against drift; the e2e specs cross-check the on-chain artifacts against
+// these same helpers.
 
 import { address, type Address } from "@solana/kit";
 import {
@@ -31,13 +32,13 @@ describe("synod fixtures (pure)", () => {
     expect(a).not.toBe(await synodCasePda(SYNOD_PROGRAM_ID, 0n));
   });
 
-  // Known-answer: sha256("synod-opt" ‖ pda32 ‖ i_u8).
+  // Known-answer: sha256("synod-opt" ‖ pda32 ‖ i_le64) — u64 LE index.
   it("derives option labels to the pinned vectors", () => {
     expect(hex(synodOptionLabel(KAT_CASE, 0))).toBe(
-      "37cd8636bf815f6eb222f5a6caa1ebf31fc192715a526fd19dd67da1d78fe117",
+      "ef0d707b38597c074075293c294a9d23ad1aa85d061162bb0c6a8b58861a401f",
     );
     expect(hex(synodOptionLabel(KAT_CASE, 3))).toBe(
-      "20ef9c423c5d66118660e5e1907fb7900c9e70c21d64c7d94b81b4cea04c583b",
+      "6a65210585ce7b44bb0ae76cab7101ff20381d800fcdb96196cc080f2ec43af6",
     );
     expect(synodOptionLabel(KAT_CASE, 0)).not.toEqual(
       synodOptionLabel(KAT_CASE, 1),
@@ -56,29 +57,29 @@ describe("synod fixtures (pure)", () => {
     ).not.toBe(hex(synodEvidenceHash(KAT_CASE, [e(1), e(2), e(3)])));
   });
 
-  it("computes payout math with fee indivisibility on the last claimant", () => {
-    // Divisible fee: N=3, S=1000, fee=3·7=21 → everyone 993.
+  it("computes payout math with the last claimant draining the vault", () => {
+    // Divisible pot: N=3, S=1000, fee=3·7=21 → pot 2979, everyone 993.
     const even = synodEconomics({
       partyCount: 3,
       stake: 1000n,
       feePerJuror: 7n,
-      initialNumJurors: 3,
+      minJurySize: 3,
     });
     expect(even.frozenFee).toBe(21n);
     expect(even.pot).toBe(2979n);
     expect(even.neutralShare).toBe(993n);
     expect(even.lastNeutralShare).toBe(993n);
 
-    // Indivisible fee: N=2, fee=21 → floor share 990, last claimant eats the
-    // 1-token remainder (989).
+    // Indivisible pot: N=2, fee=21 → pot 1979; floor share 989, last
+    // claimant drains the 1-token remainder (990).
     const odd = synodEconomics({
       partyCount: 2,
       stake: 1000n,
       feePerJuror: 7n,
-      initialNumJurors: 3,
+      minJurySize: 3,
     });
-    expect(odd.neutralShare).toBe(990n);
-    expect(odd.lastNeutralShare).toBe(989n);
+    expect(odd.neutralShare).toBe(989n);
+    expect(odd.lastNeutralShare).toBe(990n);
 
     // Conservation + pot-positive gate (SPEC §Open-time validations) across N.
     for (const n of [2, 3, 4, 5, 6, 7]) {
@@ -86,7 +87,7 @@ describe("synod fixtures (pure)", () => {
         partyCount: n,
         stake: 500n,
         feePerJuror: 7n,
-        initialNumJurors: 3,
+        minJurySize: 3,
       });
       expect(
         BigInt(n - 1) * eco.neutralShare + eco.lastNeutralShare,

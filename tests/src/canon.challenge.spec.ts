@@ -65,18 +65,13 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     env = await createTestEnv();
   }, 60_000);
 
-  // BLOCKER (canon × accord integration): this test drives create_list → stake
-  // → submit → challenge_item (CPI create_dispute) → … → settle. The first three
-  // steps pass on Surfpool; `challenge_item`'s `create_dispute` CPI FAILS because
-  // Accord's `CreateDispute` uses the filer (`payer = filer`) as the rent-payer
-  // for the dispute `init`, and canon's filer is the data-carrying CanonList PDA.
-  // Anchor's init emits `system::transfer` (or allocate+assign+transfer), which
-  // the system program rejects with "Transfer: `from` must not carry data" /
-  // "Invalid program argument" for a data-carrying payer. Accord's own e2e uses a
-  // data-free wallet filer, so it never hit this. FIX: Accord's `create_dispute`
-  // must decouple the rent-payer from the filer (add a data-free `fee_payer`
-  // account; keep `filer` as the signing/fee-source). Until then this is skipped.
-  it.skip("files a dispute via Canon's CPI and settles a keep ruling", async () => {
+  // Un-skipped: Accord's create_dispute gained a data-free `rent_payer`
+  // signer (dispute-init + fee_vault rent), so the CanonList PDA can file via
+  // CPI — the challenger wallet pays rent. The old blocker (system program
+  // rejects rent transfers from the data-carrying PDA filer) is gone; the
+  // same fix unblocked Synod's file_dispute e2e.
+  //
+  it("files a dispute via Canon's CPI and settles a keep ruling", async () => {
     if (!env.up) return; // offline CI lane
 
     // --- create_list: CPIs Accord create_subaccord (depth 20, fee_per_juror 10) ---
@@ -257,7 +252,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       ),
     );
     expect(await readDisputeState(env, dispute)).toBe(FINAL);
-    expect(await readDisputeFinalRuling(env, dispute)).toBe(0); // keep
+    expect(await readDisputeFinalRuling(env, dispute)).toBe(0n); // keep
 
     // --- settle_item: keep ⇒ progressive protection (challenge_stake → accumulated) ---
     const before = (await fetchDecoded(env, item, getCanonItemDecoder()))!;

@@ -6,17 +6,51 @@
  * from a named 2–7 party roster, files one dispute via CPI when the roster is
  * full, and pays the pot to the prevailing party from the Accord ruling.
  *
- * Current state: the on-chain program is a stub, and this index re-exports
- * only the raw Codama client generated from the Synod IDL
- * (`packages/synod/src/generated` — never hand-edited). The hand-written
- * facade (pda helpers, per-instruction methods, fetchers — mirroring
- * `@useaccord/canon` exactly) lands with the facade bean; until then there
- * are no instructions or accounts to wrap.
+ * Public surface (mirrors @useaccord/canon):
+ *   - `pda`              — canonical PDA derivations (SynodCase + bound dispute)
+ *   - `methods`          — per-instruction facades (openCase, join, fileDispute,
+ *                          refundRosterMiss, claim)
+ *   - `fetch`            — typed account fetchers (SynodCase)
+ *   - `generated`        — raw Codama output (codecs, Ix builders, accounts)
  *
  * @see ADR-0010
  */
 
-export * from "./generated/index.js";
+export {
+  SYNOD_PROGRAM_ADDRESS,
+  SYNOD_PROGRAM_ID,
+  ACCORD_PROGRAM_ID,
+  findCasePda,
+  findBoundDisputePda,
+  type CaseSeeds,
+} from "./pda.js";
+export {
+  fetchSynodCase,
+  fetchMaybeSynodCase,
+  type SynodCase,
+} from "./fetch.js";
+// Raw codecs/decoders for `getAccountInfo`-based decoding (e2e harness rule).
+export {
+  getSynodCaseEncoder,
+  getSynodCaseCodec,
+  getSynodCaseDecoder,
+  SYNOD_CASE_DISCRIMINATOR,
+} from "./generated/accounts/index.js";
+export {
+  openCase,
+  join,
+  fileDispute,
+  refundRosterMiss,
+  claim,
+  type OpenCaseAccounts,
+  type OpenCaseArgs,
+  type JoinAccounts,
+  type FileDisputeAccounts,
+  type FileDisputeExtras,
+  type RefundRosterMissAccounts,
+  type ClaimAccounts,
+} from "./methods.js";
+export { CaseState } from "./generated/types/index.js";
 
 export const SDK_NAME = "@useaccord/synod";
 export const SDK_VERSION = "0.1.0";

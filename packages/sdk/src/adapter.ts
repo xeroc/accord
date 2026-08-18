@@ -119,6 +119,10 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       return getCreateDisputeInstruction(
         {
           filer: accord.signer,
+          // Data-free rent payer (create_dispute.rs): the facade pins it to
+          // its wallet signer, same as filer — wallet filers pay their own
+          // rent; PDA filers CPI from their program with a crank caller.
+          rentPayer: accord.signer,
           subaccord: accounts.subaccord,
           accordState: accounts.accordState,
           dispute: input.disputePda,

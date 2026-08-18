@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 import { ACCORD_PROGRAM_ID, Accord } from "@useaccord/sdk";
-import { SYNOD_PROGRAM_ID } from "./fixtures.js";
+import { SYNOD_PROGRAM_ID } from "@useaccord/synod";
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,

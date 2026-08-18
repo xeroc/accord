@@ -5,7 +5,6 @@ import {
   address,
   generateKeyPairSigner,
   getAddressEncoder,
-  getProgramDerivedAddress,
   getU64Encoder,
   type Address,
   type KeyPairSigner,
@@ -17,6 +16,7 @@ import {
   ShortfallPolicy,
   type CreateSubaccordArgs,
 } from "@useaccord/sdk";
+import { SYNOD_PROGRAM_ID, findCasePda } from "@useaccord/synod";
 
 /** Solana `Pubkey::default()` (all-ones). Used as `authority` ⇒ immutable Subaccord. */
 export const DEFAULT_PUBKEY: Address = address(
@@ -66,34 +66,22 @@ export function defaultSubaccordArgs(
   };
 }
 
-// --- Synod (N-party dispute-escrow Arbitrable) — e2e-side pins --------------
+// --- Synod (N-party dispute-escrow Arbitrable) -------------------------------
 //
-// Interim harness pins for `programs/synod` (SPEC: PDA ["case", opener, nonce],
-// options/evidence derivations, frozen-fee economics). When `@useaccord/synod`
-// ships (bean accord-nsxa), its `SYNOD_PROGRAM_ID` + `findCasePda` + codecs
-// supersede these — a one-line swap per helper, kept central for exactly that.
+// PDA + program id come from `@useaccord/synod` (single source, ADR-0010).
+// The hash derivations + payout math below are the e2e-side mirrors of
+// `programs/synod/src/instructions/file_dispute.rs` (`option_label`,
+// `evidence_root`) and `claim.rs` — pinned byte-for-byte by
+// `synod.fixtures.spec.ts` known-answer vectors.
 
-/** Synod program id — scaffold canonical keypair (Anchor.toml [programs.localnet]). */
-export const SYNOD_PROGRAM_ID: Address = address(
-  "5o5VDoAZJFTJaBKJjhPMLMMPa8nmqgZdSkUFubNdAxZx",
-);
-
-/** `SynodCase` seed: `["case", opener, nonce]` (nonce u64 LE, codama convention). */
-export const CASE_SEED = new Uint8Array([99, 97, 115, 101]); // "case"
+export { SYNOD_PROGRAM_ID };
 
 /** SynodCase PDA: seeds `["case", opener, nonce]` (u64 LE nonce). */
 export async function synodCasePda(
   opener: Address,
   nonce: number | bigint,
 ): Promise<Address> {
-  const [pda] = await getProgramDerivedAddress({
-    programAddress: SYNOD_PROGRAM_ID,
-    seeds: [
-      CASE_SEED,
-      new Uint8Array(getAddressEncoder().encode(opener)),
-      new Uint8Array(getU64Encoder().encode(nonce)),
-    ],
-  });
+  const [pda] = await findCasePda({ opener, nonce });
   return pda;
 }
 
@@ -110,24 +98,24 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 const SYNOD_OPT_PREFIX = new TextEncoder().encode("synod-opt");
 
 /**
- * Option label `i` for a case: `sha256("synod-opt" ‖ case_pda ‖ i)` with the
- * party index as a single u8 (on-chain `party_count`/`paid_out` are u8-bitmask
- * slots). Neutral is `i === partyCount` (highest index). SPEC §Instructions #3.
+ * Option label `i` for a case: `sha256("synod-opt" ‖ case_pda ‖ i_le64)` — the
+ * index encodes as u64 LE exactly like `option_label` on-chain. Neutral is
+ * `i === partyCount` (highest index). SPEC §Instructions #3.
  */
 export function synodOptionLabel(casePda: Address, i: number): Uint8Array {
   return sha256(
     concat(
       SYNOD_OPT_PREFIX,
       new Uint8Array(getAddressEncoder().encode(casePda)),
-      new Uint8Array([i]),
+      new Uint8Array(getU64Encoder().encode(i)),
     ),
   );
 }
 
 /**
  * Dispute evidence hash: `sha256(case_pda ‖ e_0 ‖ … ‖ e_{N-1})` over the
- * per-party 32-byte hashes in naming order (join order is irrelevant — slots
- * are positional). SPEC §Instructions #3.
+ * per-party 32-byte hashes in naming order (slots are positional).
+ * SPEC §Instructions #3.
  */
 export function synodEvidenceHash(
   casePda: Address,
@@ -139,32 +127,32 @@ export function synodEvidenceHash(
 }
 
 export interface SynodEconomics {
-  /** Frozen at open: `initial_num_jurors · fee_per_juror` from the Subaccord. */
+  /** Frozen at open: `min_jury_size · fee_per_juror` from the Subaccord. */
   frozenFee: bigint;
   /** Prevailing-party pot: `N·S − fee`. */
   pot: bigint;
-  /** Neutral-ruling share per party: `S − floor(fee/N)`. */
+  /** Neutral-ruling share per party: `⌊pot/N⌋` (claim.rs). */
   neutralShare: bigint;
-  /** Last neutral claimant's share — absorbs the indivisibility remainder. */
+  /** Last neutral claimant drains the vault: `pot − (N−1)·neutralShare`. */
   lastNeutralShare: bigint;
   /** Failed-dispute share per party: `S` in full (fee un-consumed). */
   failedShare: bigint;
 }
 
 /**
- * Pure payout math per SPEC §Instructions #5 / §Economics. Conservation
- * invariant: `(N−1)·neutralShare + lastNeutralShare === pot`.
+ * Pure payout math mirroring `claim.rs`. Conservation invariant:
+ * `(N−1)·neutralShare + lastNeutralShare === pot`.
  */
 export function synodEconomics(params: {
   partyCount: number;
   stake: bigint;
   feePerJuror: bigint;
-  initialNumJurors: number | bigint;
+  minJurySize: number | bigint;
 }): SynodEconomics {
   const n = BigInt(params.partyCount);
-  const frozenFee = BigInt(params.initialNumJurors) * params.feePerJuror;
+  const frozenFee = BigInt(params.minJurySize) * params.feePerJuror;
   const pot = n * params.stake - frozenFee;
-  const neutralShare = params.stake - frozenFee / n;
+  const neutralShare = pot / n;
   const lastNeutralShare = pot - (n - 1n) * neutralShare;
   return {
     frozenFee,

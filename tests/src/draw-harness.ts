@@ -367,6 +367,7 @@ export async function armDispute(
     env.accord.adapter,
     {
       filer: env.payer.address,
+      rentPayer: env.payer.address,
       subaccord,
       feeToken: mint,
       filerTokenAccount: filerAta,

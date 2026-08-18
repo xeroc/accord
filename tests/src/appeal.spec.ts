@@ -418,6 +418,7 @@ async function buildWorldResolved0(
     env.accord.adapter,
     {
       filer: env.payer.address,
+      rentPayer: env.payer.address,
       subaccord,
       feeToken: mint,
       filerTokenAccount: payerAta,
