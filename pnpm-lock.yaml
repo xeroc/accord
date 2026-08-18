@@ -274,6 +274,9 @@ importers:
       '@useaccord/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@useaccord/synod':
+        specifier: workspace:*
+        version: link:../../packages/synod
     devDependencies:
       '@eslint/js':
         specifier: ^9.35.0
