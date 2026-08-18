@@ -1,11 +1,11 @@
 ---
 # accord-daq8
 title: Synod product surface — dApp + cranker + evidence grouping
-status: todo
+status: completed
 type: milestone
 priority: normal
 created_at: 2026-08-18T19:12:55Z
-updated_at: 2026-08-18T19:13:19Z
+updated_at: 2026-08-18T22:25:11Z
 ---
 
 Ship the user-facing surface for Synod v1: the @useaccord/synod-app dApp (apps/synod), the cranker synod module, and the evidence-daemon pre-dispute grouping. Program + SDK are DONE (accord-oylq); this milestone is everything downstream. Grilling session 2026-08-18 resolved all decisions.

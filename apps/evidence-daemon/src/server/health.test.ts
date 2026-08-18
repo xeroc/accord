@@ -15,6 +15,8 @@ const STUB_PUBLIC_KEYS: KeyringPublicKeys = { operators: [] };
 function okDeps(health: ServerDeps["health"]): ServerDeps {
   return {
     ingest: async () => ({ ok: true, status: 201, location: "/evidence/x/y" }),
+    synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/x/0" }),
+    synodManifest: async () => ({ ok: true, status: 200, body: {} }),
     deliver: async () => ({
       ok: true,
       status: 200,

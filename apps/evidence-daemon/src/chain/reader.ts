@@ -31,6 +31,7 @@ import {
   findRoundPda,
   type Accord,
 } from "@useaccord/sdk";
+import { fetchMaybeSynodCase } from "@useaccord/synod";
 
 /** Per-Subaccord fields the daemon consumes to resolve its key + scheme. */
 export interface SubaccordView {
@@ -40,10 +41,11 @@ export interface SubaccordView {
   readonly evidenceSpec: ReadonlyUint8Array;
 }
 
-/** Per-Dispute fields the daemon consumes for key lookup + delivery gating. */
 export interface DisputeView {
   /** Parent Subaccord — lookup key for the operator. */
   readonly subaccord: Address;
+  /** Dispute filer — a SynodCase PDA when the dispute is synod-backed. */
+  readonly filer: Address;
   /**
    * Per-round evidence commitments (ADR-0023): index 0 = filer, 1..MAX_APPEALS
    * = appeal rounds; `[0u8;32]` = sentinel ("no new evidence this round"). The
@@ -95,6 +97,7 @@ export async function readDispute(accord: Accord, dispute: Address): Promise<Dis
   if (!m.exists) return null;
   return {
     subaccord: m.data.subaccord,
+    filer: m.data.filer,
     evidenceHashes: m.data.evidenceHashes,
     state: m.data.state,
     currentRound: m.data.currentRound,
@@ -143,4 +146,41 @@ export function isDrawn(round: RoundView, juror: Address): boolean {
  */
 export function isDeliverable(dispute: DisputeView): boolean {
   return dispute.state >= DisputeState.Drawn;
+}
+
+/** Per-SynodCase fields the daemon consumes for pre-dispute grouping (accord-1viq). */
+export interface SynodCaseView {
+  /** Hosting Subaccord — store-key prefix + operator-key selector. */
+  readonly subaccord: Address;
+  /** Live roster size (2..7); valid evidence slots are `0..partyCount-1`. */
+  readonly partyCount: number;
+  /**
+   * The bound Accord Dispute PDA; the System-program id (all-zero pubkey) is
+   * the sentinel while the case is pre-file. Non-sentinel ⇒ pushes are 409.
+   */
+  readonly dispute: Address;
+}
+
+/**
+ * Read a SynodCase's evidence-relevant fields, or `null` if the address does
+ * not hold one. Backs the pre-dispute grouping gate (`POST
+ * /evidence/synod/:case/:party`) and the deliver bridge — where the filer is
+ * an ARBITRARY pubkey, usually not a case, so a decode/discriminator mismatch
+ * maps to `null` ("not a SynodCase") instead of throwing.
+ */
+export async function readSynodCase(
+  accord: Accord,
+  casePda: Address,
+): Promise<SynodCaseView | null> {
+  try {
+    const m = await fetchMaybeSynodCase(accord.rpc, casePda);
+    if (!m.exists) return null;
+    return {
+      subaccord: m.data.subaccord,
+      partyCount: m.data.partyCount,
+      dispute: m.data.dispute,
+    };
+  } catch {
+    return null; // wrong program / not a SynodCase — the common case at a filer
+  }
 }

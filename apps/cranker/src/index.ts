@@ -44,10 +44,13 @@ import { register as registerAccordSettleRound } from "./cranks/accord/settle-ro
 import { register as registerCanonAdvancePending } from "./cranks/canon/advance-pending.js";
 import { register as registerCanonAdvanceWithdrawal } from "./cranks/canon/advance-withdrawal.js";
 import { register as registerCanonSettleItem } from "./cranks/canon/settle-item.js";
+import { register as registerSynodFileDispute } from "./cranks/synod/file-dispute.js";
+import { register as registerSynodRefundRosterMiss } from "./cranks/synod/refund-roster-miss.js";
+import { register as registerSynodClaim } from "./cranks/synod/claim.js";
 import { loadCrankerWallet } from "./wallet.js";
 import { log } from "./log.js";
 
-/** Build a dispatch with every crank registered (11 Accord + 3 Canon). */
+/** Build a dispatch with every crank registered (11 Accord + 3 Canon + 3 Synod). */
 function fullDispatch() {
   const d = createCrankDispatch();
   // Accord — the host program (dispute lifecycle, timelocks, refunds).
@@ -66,6 +69,11 @@ function fullDispatch() {
   registerCanonAdvancePending(d);
   registerCanonSettleItem(d);
   registerCanonAdvanceWithdrawal(d);
+  // Synod — the Arbitrable guest program (N-party escrow): file, refund,
+  // and the claim sweep.
+  registerSynodFileDispute(d);
+  registerSynodRefundRosterMiss(d);
+  registerSynodClaim(d);
   return d;
 }
 
