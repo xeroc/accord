@@ -1,11 +1,11 @@
 ---
 # accord-ndl9
 title: Synod e2e — Surfpool specs + green rule
-status: todo
+status: completed
 type: epic
 priority: normal
 created_at: 2026-08-18T05:27:58Z
-updated_at: 2026-08-18T05:27:58Z
+updated_at: 2026-08-18T17:23:07Z
 parent: accord-oylq
 blocked_by:
     - accord-e4up
