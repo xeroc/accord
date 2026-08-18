@@ -2,8 +2,8 @@
  * Dispatch completeness self-check — every CrankKind must register a handler
  * on the factory map, and registration is idempotent-rejecting (duplicate
  * throws). Catches "wrote the crank, forgot to register it" at the same
- * granularity the beans deliver (11 Accord + 3 Canon + 2 Synod cranks — the
- * synod_claim sweep lands with bean accord-y608). Runnable
+ * granularity the beans deliver (11 Accord + 3 Canon + 3 Synod cranks).
+ * Runnable
  * via `node --test` or `bun test`. (ponytail: one check for the one piece of
  * real logic here.)
  */
@@ -26,6 +26,7 @@ import { register as registerCanonAdvancePending } from "./cranks/canon/advance-
 import { register as registerCanonSettleItem } from "./cranks/canon/settle-item.js";
 import { register as registerCanonAdvanceWithdrawal } from "./cranks/canon/advance-withdrawal.js";
 import { register as registerSynodFileDispute } from "./cranks/synod/file-dispute.js";
+import { register as registerSynodClaim } from "./cranks/synod/claim.js";
 import { register as registerSynodRefundRosterMiss } from "./cranks/synod/refund-roster-miss.js";
 
 const ALL_KINDS: CrankKind[] = [
@@ -45,6 +46,7 @@ const ALL_KINDS: CrankKind[] = [
   "canon_advance_withdrawal",
   "synod_file_dispute",
   "synod_refund_roster_miss",
+  "synod_claim",
 ];
 
 /** Build a dispatch with every crank registered — the production wiring. */
@@ -66,6 +68,7 @@ function fullDispatch() {
   registerCanonAdvanceWithdrawal(d);
   registerSynodFileDispute(d);
   registerSynodRefundRosterMiss(d);
+  registerSynodClaim(d);
   return d;
 }
 
