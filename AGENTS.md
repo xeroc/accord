@@ -27,7 +27,7 @@ packages/
   sdk/              @useaccord/sdk — TypeScript SDK (IDL clients, PDA helpers, CPI wrappers); @useaccord/sdk/evidence — shared evidence crypto protocol (ADR-0015)
   canon/            @useaccord/canon — Canon SDK facade (Codama client + PDA helpers)
 tests/              @useaccord/tests — jest integration suite (runs vs test-validator / Surfpool)
-apps/               User-facing applications (web/landing/docs) — land per build phase
+apps/               User-facing applications (cli, cranker, evidence-daemon, app, canon, landing, docs)
 apps/docs/          MkDocs documentation site (developer-facing)
 apps/docs/adr/ Architecture Decision Records (numbered, immutable-once-deployed)
 CONTEXT.md          Accord domain language (glossary)

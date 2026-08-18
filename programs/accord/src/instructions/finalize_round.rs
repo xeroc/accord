@@ -74,9 +74,23 @@ impl<'info> FinalizeRound<'info> {
                         counts[v as usize] += 1;
                     }
                 }
-                (0..dispute.num_options as usize)
-                    .max_by_key(|&i| counts[i])
-                    .unwrap_or(0) as u64
+                let live = &counts[..dispute.num_options as usize];
+                // ADR-0026: a top-count tie (≥2 options sharing the max) is a
+                // NON-DECISIVE round — identical in kind to the ADR-0021
+                // reveal-quorum shortfall. No credits, no result; `redraw`
+                // reconvenes the panel (or the dispute fails on
+                // `max_draw_attempts` exhaustion). Odd panels only prevent
+                // ties for binary full-reveal rounds — ≥3 options (2-2-1)
+                // and non-reveals (2-2 of 5) still deadlock, and the old
+                // `.max_by_key` crowned the highest tied index arbitrarily.
+                // This also covers the degenerate zero-reveal round (all
+                // options tied at 0): redraw instead of a fabricated winner.
+                let max = *live.iter().max().unwrap_or(&0);
+                if live.iter().filter(|&&c| c == max).count() > 1 {
+                    dispute.state = DisputeState::RedrawEligible;
+                    return Ok(());
+                }
+                live.iter().position(|&c| c == max).unwrap_or(0) as u64
             }
             // Scalar tally (ADR-0025): median of the revealed values. Panels
             // are odd by construction (`(J+1)·2^k − 1`), but non-revealers can

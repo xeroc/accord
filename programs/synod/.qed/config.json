@@ -1,0 +1,6 @@
+{
+  "name": "synod",
+  "spec": "synod.qedspec",
+  "interfaces_dir": ".qed/interfaces",
+  "created_at": "1787036523s-since-epoch"
+}

@@ -139,17 +139,17 @@ useaccord lifecycle:init-pause
 useaccord lifecycle:init-pause --skip-if-exists   # exit 0 if already set
 
 # Instant emergency freeze (authority-gated)
-useaccord lifecycle:pause --pause-state <addr|auto>
+useaccord lifecycle:pause
 
 # Arm unpause after UNPAUSE_TIMELOCK_SLOTS (216_000 slots ≈ 24h)
-useaccord lifecycle:propose-unpause --pause-state <addr|auto>
+useaccord lifecycle:propose-unpause
 
 # Land the unpause once the 24h notice elapses (permissionless)
-useaccord lifecycle:execute-unpause --pause-state <addr|auto>
+useaccord lifecycle:execute-unpause
 ```
 
-`--pause-state` defaults to `auto` (derives the singleton). A fresh `pause`
-cancels any in-flight unpause.
+The `AccordState` PDA is auto-derived from the program id (singleton). A fresh
+`pause` cancels any in-flight unpause.
 
 SDK: `initializePause`, `pause`, `proposeUnpause`, `executeUnpause`.
 

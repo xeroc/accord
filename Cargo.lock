@@ -5780,6 +5780,7 @@ dependencies = [
 name = "synod"
 version = "0.1.0"
 dependencies = [
+ "accord",
  "anchor-lang",
  "anchor-litesvm",
  "anchor-spl",

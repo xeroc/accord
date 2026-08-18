@@ -238,28 +238,37 @@ struct AccEnv {
 const TEST_DEPTH: u8 = 4;
 
 fn setup_accumulator() -> AccEnv {
-    setup_accumulator_with(6_666, 3)
+    setup_accumulator_with(6_666, 3, 3)
 }
 
 /// Parameterized setup for ADR-0021 tests: same shape as `setup_accumulator`
-/// but with a configurable reveal-quorum threshold and redraw cap.
-fn setup_accumulator_with(reveal_threshold_bps: u16, max_draw_attempts: u8) -> AccEnv {
+/// but with configurable reveal-quorum threshold, redraw cap, and round-1
+/// panel size (the ADR-0026 tie tests use 5-seat panels).
+fn setup_accumulator_with(
+    reveal_threshold_bps: u16,
+    max_draw_attempts: u8,
+    min_jury_size: u32,
+) -> AccEnv {
     setup_accumulator_kind(
         reveal_threshold_bps,
         max_draw_attempts,
         Aggregation::Plurality,
         0,
+        min_jury_size,
     )
 }
 
 /// Full parameterization (scalar voting, ADR-0025): aggregation rule +
 /// coherence tolerance band in bps. `coherence_tol_bps` is only read on the
-/// `Median` path (Plurality coherence stays exact-match).
+/// `Median` path (Plurality coherence stays exact-match). `min_jury_size`
+/// sets the round-1 panel; `max_appeals` auto-fits the largest ladder that
+/// keeps its top round inside `MAX_JURORS` (a 5-seat base tops out at 2).
 fn setup_accumulator_kind(
     reveal_threshold_bps: u16,
     max_draw_attempts: u8,
     aggregation: Aggregation,
     coherence_tol_bps: u16,
+    min_jury_size: u32,
 ) -> AccEnv {
     let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
 
@@ -314,8 +323,19 @@ fn setup_accumulator_kind(
                 commit_window: 60,
                 reveal_window: 60,
                 appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
-                max_appeals: 3,
-                min_jury_size: 3,
+                max_appeals: {
+                    // Largest ladder with `(J+1)·2^k − 1 ≤ MAX_JURORS`,
+                    // capped at MAX_APPEALS (J=3 → 3, J=5 → 2).
+                    let mut k: u8 = 0;
+                    while k < accord::constants::MAX_APPEALS as u8
+                        && ((min_jury_size as u64 + 1) << (k as u32 + 1))
+                            <= accord::constants::MAX_JURORS as u64 + 1
+                    {
+                        k += 1;
+                    }
+                    k
+                },
+                min_jury_size,
                 aggregation,
                 coherence_tol_bps,
                 fee_per_juror: 1_000_000,
@@ -4347,18 +4367,38 @@ struct DrawnDispute {
     leaves: Vec<(Pubkey, u64)>,
     /// `(seat, leaf_idx)` per drawn seat (draw_attempt 0).
     drawn: Vec<(u32, usize)>,
+    /// Staked juror keypairs (index = leaf index) — for re-draw commit/reveal.
+    jurors: Vec<Keypair>,
     filer: Keypair,
     vrf: [u8; 32],
 }
 
 /// Build a Subaccord (custom `threshold_bps`/`max_draw_attempts`) + 3 staked
 /// jurors + a drawn dispute, commit+reveal the first `n_reveal` jurors (vote 0),
-/// then run `finalize_round`. Returns the post-finalize state. The VRF is
-/// brute-forced to yield 3 distinct jurors at draw_attempt 0.
+/// then run `finalize_round`. Returns the post-finalize state.
 fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize) -> DrawnDispute {
-    let mut env = setup_accumulator_with(threshold_bps, max_draw_attempts);
+    let votes: Vec<Option<u64>> = (0..3)
+        .map(|i| if i < n_reveal { Some(0) } else { None })
+        .collect();
+    setup_and_finalize_cfg(threshold_bps, max_draw_attempts, 2, 3, votes)
+}
 
-    let stakes = [5_000u64, 3_000, 2_000];
+/// Generalized ADR-0021/0026 setup: `panel` staked jurors, a `num_options`
+/// Plurality dispute, per-seat `votes` (`None` = the seat stays silent), then
+/// `finalize_round`. The VRF is the dispute PDA (any 32 bytes work —
+/// `submit_draw_panel` resolves sortition collisions faithfully).
+fn setup_and_finalize_cfg(
+    threshold_bps: u16,
+    max_draw_attempts: u8,
+    num_options: usize,
+    panel_size: usize,
+    votes: Vec<Option<u64>>,
+) -> DrawnDispute {
+    assert_eq!(votes.len(), panel_size, "one vote (or None) per seat");
+    let mut env = setup_accumulator_with(threshold_bps, max_draw_attempts, panel_size as u32);
+
+    const STAKES: [u64; 5] = [5_000, 3_000, 2_000, 4_000, 6_000];
+    let stakes = &STAKES[..panel_size];
     let mut jurors: Vec<Keypair> = Vec::new();
     let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
     for (i, &stake) in stakes.iter().enumerate() {
@@ -4380,7 +4420,7 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let filer_fee = 3 * 1_000_000u64;
+    let filer_fee = (panel_size as u64) * 1_000_000u64;
     let ix = env
         .ctx
         .program()
@@ -4397,7 +4437,7 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
             system_program: system_program::ID,
         })
         .args(instruction::CreateDispute {
-            options: vec![[0u8; 32], [1u8; 32]],
+            options: (0..num_options).map(|i| [i as u8; 32]).collect(),
             evidence_hash: [0u8; 32],
             nonce,
             fee: filer_fee,
@@ -4423,76 +4463,120 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
     };
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
 
-    // Resolve + submit the 3 seats (draw_attempt 0), walking retries on collisions.
+    // Resolve + submit the seats (draw_attempt 0), walking retries on collisions.
     let rnd = round_pda(&dispute, round_idx);
-    let panel = submit_draw_panel(&mut env, dispute, rnd, &vrf, round_idx, 0, 3, &leaves);
+    let panel = submit_draw_panel(
+        &mut env,
+        dispute,
+        rnd,
+        &vrf,
+        round_idx,
+        0,
+        panel_size as u32,
+        &leaves,
+    );
     let drawn: Vec<(u32, usize)> = panel.iter().map(|&(s, l, _)| (s, l)).collect();
 
-    // Commit + reveal the first `n_reveal` drawn jurors (vote 0).
+    // Commit + reveal per the vote plan, then finalize.
+    commit_reveal_votes(&mut env, dispute, rnd, &jurors, &panel, &votes);
+    finalize_round_for(&mut env, dispute, rnd, &drawn, &jurors);
+
+    DrawnDispute {
+        env,
+        dispute,
+        rnd,
+        leaves,
+        drawn,
+        jurors,
+        filer,
+        vrf,
+    }
+}
+
+/// Commit + reveal per-seat votes in seat order (`None` = the seat stays
+/// silent). Warps into the review window to commit, then into reveal.
+fn commit_reveal_votes(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    jurors: &[Keypair],
+    panel: &[(u32, usize, u32)],
+    votes: &[Option<u64>],
+) {
     let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
     let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
-    let (review_end, commit_end, reveal_end) =
-        (round.review_end, round.commit_end, round.reveal_end);
+    let (review_end, commit_end) = (round.review_end, round.commit_end);
     drop(round_acc);
 
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(&mut env, review_end - now + 1);
-    let vote: u64 = 0;
-    let mut salts: Vec<[u8; 32]> = Vec::new();
-    for i in 0..n_reveal {
+    warp_seconds(env, review_end - now + 1);
+    let mut salts: Vec<Option<[u8; 32]>> = Vec::with_capacity(votes.len());
+    for (i, vote) in votes.iter().enumerate() {
+        let juror = &jurors[panel[i].1];
         let salt = [(i as u8) + 7; 32];
-        let comm = hashv(&[
-            &vote.to_le_bytes(),
-            &salt,
-            jurors[drawn[i].1].pubkey().as_ref(),
-        ])
-        .to_bytes();
-        let ix = env
-            .ctx
-            .program()
-            .accounts(accounts::Commit {
-                juror: jurors[drawn[i].1].pubkey(),
-                subaccord: env.subaccord,
-                dispute,
-                round: rnd,
-            })
-            .args(instruction::Commit { commitment: comm })
-            .instruction()
-            .unwrap();
-        env.ctx
-            .execute_instruction(ix, &[&jurors[drawn[i].1]])
-            .unwrap()
-            .assert_success();
-        salts.push(salt);
+        if let Some(vote) = vote {
+            let comm = hashv(&[&vote.to_le_bytes(), &salt, juror.pubkey().as_ref()]).to_bytes();
+            let ix = env
+                .ctx
+                .program()
+                .accounts(accounts::Commit {
+                    juror: juror.pubkey(),
+                    subaccord: env.subaccord,
+                    dispute,
+                    round: rnd,
+                })
+                .args(instruction::Commit { commitment: comm })
+                .instruction()
+                .unwrap();
+            env.ctx
+                .execute_instruction(ix, &[juror])
+                .unwrap()
+                .assert_success();
+            salts.push(Some(salt));
+        } else {
+            salts.push(None);
+        }
     }
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(&mut env, commit_end - now + 1);
-    for i in 0..n_reveal {
-        let ix = env
-            .ctx
-            .program()
-            .accounts(accounts::Reveal {
-                juror: jurors[drawn[i].1].pubkey(),
-                subaccord: env.subaccord,
-                dispute,
-                round: rnd,
-            })
-            .args(instruction::Reveal {
-                vote,
-                salt: salts[i],
-            })
-            .instruction()
-            .unwrap();
-        env.ctx
-            .execute_instruction(ix, &[&jurors[drawn[i].1]])
-            .unwrap()
-            .assert_success();
+    warp_seconds(env, commit_end - now + 1);
+    for (i, vote) in votes.iter().enumerate() {
+        if let (Some(vote), Some(salt)) = (vote, salts[i]) {
+            let juror = &jurors[panel[i].1];
+            let ix = env
+                .ctx
+                .program()
+                .accounts(accounts::Reveal {
+                    juror: juror.pubkey(),
+                    subaccord: env.subaccord,
+                    dispute,
+                    round: rnd,
+                })
+                .args(instruction::Reveal { vote: *vote, salt })
+                .instruction()
+                .unwrap();
+            env.ctx
+                .execute_instruction(ix, &[juror])
+                .unwrap()
+                .assert_success();
+        }
     }
+}
 
-    // Finalize round (pass panel juror-stake PDAs as remaining_accounts).
+/// Warp past `reveal_end` and run `finalize_round` with the panel's
+/// JurorStake PDAs as remaining accounts.
+fn finalize_round_for(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    drawn: &[(u32, usize)],
+    jurors: &[Keypair],
+) {
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let reveal_end = round.reveal_end;
+    drop(round_acc);
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(&mut env, reveal_end - now + 1);
-    let _ = commit_end; // already consumed
+    warp_seconds(env, reveal_end - now + 1);
     let ix = env
         .ctx
         .program()
@@ -4507,7 +4591,7 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         .unwrap();
     let ix = {
         let mut accts = ix.accounts.clone();
-        for &(_, leaf_idx) in &drawn {
+        for &(_, leaf_idx) in drawn {
             accts.push(solana_program::instruction::AccountMeta {
                 pubkey: juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey()),
                 is_signer: false,
@@ -4524,16 +4608,6 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
         .assert_success();
-
-    DrawnDispute {
-        env,
-        dispute,
-        rnd,
-        leaves,
-        drawn,
-        filer,
-        vrf,
-    }
 }
 
 /// Drive `redraw` for round 0 (no appeals ⇒ remaining_accounts = panel juror
@@ -4582,6 +4656,11 @@ fn dispute_state(dd: &DrawnDispute) -> DisputeState {
     Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
         .unwrap()
         .state
+}
+fn round_result(dd: &DrawnDispute) -> u64 {
+    let acc = dd.env.ctx.svm.get_account(&dd.rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
+    round.result
 }
 
 fn round_draw_attempt(dd: &DrawnDispute) -> u32 {
@@ -4769,12 +4848,105 @@ fn redraw_seed_advances_with_draw_attempt() {
     assert_eq!(round.draw_attempt, 1, "draw_attempt still 1");
 }
 
+// ─── ADR-0026: Plurality top-count tie ⇒ non-decisive round (TDD) ──────────
+
+#[test]
+fn plurality_tie_binary_nonreveal_goes_redraw_eligible() {
+    // 5-seat panel, 2/3 threshold ⇒ needed = ceil(5 × 6666/10_000) = 4. Four
+    // reveal split 2-2 over the binary options; one seat stays silent. The
+    // quorum is MET — the tally itself deadlocks. A tie is a non-decisive
+    // round, identical in kind to the ADR-0021 shortfall: no credits, no
+    // result, `redraw` reconvenes the panel.
+    let dd = setup_and_finalize_cfg(
+        6_666,
+        3,
+        2,
+        5,
+        vec![Some(0), Some(1), Some(0), Some(1), None],
+    );
+    assert_eq!(dispute_state(&dd), DisputeState::RedrawEligible);
+    assert_eq!(round_result(&dd), u64::MAX, "no result written on a tie");
+
+    // No fees credited to anyone; the filer's fee_paid pool is intact (the
+    // redraw ladder and the Failed refund stay whole).
+    for &(_, leaf_idx) in &dd.drawn {
+        let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[leaf_idx].0);
+        assert_eq!(js.fees_earned, 0, "no credits on a tie");
+    }
+    let d =
+        Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
+            .unwrap();
+    assert_eq!(d.fee_paid, 5 * 1_000_000, "fee_paid intact on a tie");
+}
+
+#[test]
+fn plurality_tie_three_option_full_reveal_goes_redraw_eligible() {
+    // 5-seat panel, FULL reveal, votes 2-2-1 across 3 options: the odd panel
+    // does not save a multi-option round — the top count (2) is shared by two
+    // options. The old `.max_by_key` crowned the highest tied index (option 1)
+    // arbitrarily out of a dead heat.
+    let dd = setup_and_finalize_cfg(
+        6_666,
+        3,
+        3,
+        5,
+        vec![Some(0), Some(1), Some(0), Some(1), Some(2)],
+    );
+    assert_eq!(dispute_state(&dd), DisputeState::RedrawEligible);
+    assert_eq!(round_result(&dd), u64::MAX, "no result written on a tie");
+}
+
+#[test]
+fn plurality_decisive_multioption_still_resolves() {
+    // 3-0-2 across 3 options: unique top count ⇒ resolves normally.
+    // Regression guard — the tie gate must not fire on a decisive tally.
+    let dd = setup_and_finalize_cfg(
+        6_666,
+        3,
+        3,
+        5,
+        vec![Some(0), Some(2), Some(0), Some(0), Some(2)],
+    );
+    assert_eq!(dispute_state(&dd), DisputeState::RoundResolved);
+    assert_eq!(round_result(&dd), 0, "unique modal option wins");
+}
+
+#[test]
+fn tie_redraw_cycle_reseats_then_decisive_round_resolves() {
+    // 3-seat panel, 2 reveal 1-1 (quorum met at 2/3 ⇒ 2), silent third ⇒
+    // tie → redraw re-seats at draw_attempt 1 → unanimous re-vote resolves.
+    let mut dd = setup_and_finalize_cfg(6_666, 3, 2, 3, vec![Some(0), Some(1), None]);
+    assert_eq!(dispute_state(&dd), DisputeState::RedrawEligible);
+
+    do_redraw(&mut dd).assert_success();
+    assert_eq!(dispute_state(&dd), DisputeState::Created);
+    assert_eq!(round_draw_attempt(&dd), 1, "draw_attempt bumped");
+
+    let panel1 = submit_draw_panel(
+        &mut dd.env,
+        dd.dispute,
+        dd.rnd,
+        &dd.vrf,
+        0,
+        1,
+        3,
+        &dd.leaves,
+    );
+    let votes: Vec<Option<u64>> = vec![Some(0); 3];
+    commit_reveal_votes(&mut dd.env, dd.dispute, dd.rnd, &dd.jurors, &panel1, &votes);
+    let drawn1: Vec<(u32, usize)> = panel1.iter().map(|&(s, l, _)| (s, l)).collect();
+    finalize_round_for(&mut dd.env, dd.dispute, dd.rnd, &drawn1, &dd.jurors);
+
+    assert_eq!(dispute_state(&dd), DisputeState::RoundResolved);
+    assert_eq!(round_result(&dd), 0, "unanimous re-vote resolves");
+}
+
 #[test]
 fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
     // A minimal-stake juror (stake = min_stake + slash_per_juror = 1_100) passes
     // the initial draw gate, but ONE redraw slash folded in by reconcile drops
     // its free stake below the gate → a subsequent draw excludes it.
-    let mut env = setup_accumulator_with(10_000, 3);
+    let mut env = setup_accumulator_with(10_000, 3, 3);
 
     // 3 jurors so create_dispute's staker_count gate passes; juror 0 is minimal.
     let stakes = [1_100u64, 5_000, 3_000];
@@ -5971,7 +6143,7 @@ fn scalar_median_full_lifecycle() {
         reveal_end,
         ..
     } = drawn_panel_with(
-        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100, 3),
         vec![],
     );
 
@@ -6028,7 +6200,7 @@ fn scalar_median_slashes_outlier() {
         reveal_end,
         ..
     } = drawn_panel_with(
-        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100, 3),
         vec![],
     );
 
@@ -6079,7 +6251,7 @@ fn scalar_median_even_reveal_count_takes_upper_middle() {
         reveal_end,
         ..
     } = drawn_panel_with(
-        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100, 3),
         vec![],
     );
     let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
@@ -6163,7 +6335,7 @@ fn scalar_vote_sentinel_and_plurality_range_rejected() {
         drawn,
         ..
     } = drawn_panel_with(
-        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100),
+        setup_accumulator_kind(6_666, 3, Aggregation::Median, 100, 3),
         vec![],
     );
     let round_acc = env.ctx.svm.get_account(&rnd).unwrap();

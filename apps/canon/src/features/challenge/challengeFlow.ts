@@ -132,7 +132,7 @@ export async function buildChallengeInstruction(
     filer: ctx.list,
     nonce,
   });
-  const [pauseState] = await findAccordStatePda();
+  const [accordState] = await findAccordStatePda();
 
   // Derive ATAs (Kit-native, no web3.js v1).
   const challengerTokenAccount = await ataAddress(challenger.address, feeMint);
@@ -151,7 +151,7 @@ export async function buildChallengeInstruction(
 
   const extras: ChallengeItemExtras = {
     accordDispute: disputeAddress,
-    accordState: pauseState,
+    accordState,
     accordFeeVault,
     accordProgram: ACCORD_PROGRAM_ID,
   };
