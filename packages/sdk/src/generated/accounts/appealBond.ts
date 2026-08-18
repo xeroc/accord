@@ -61,6 +61,12 @@ export type AppealBond = {
    */
   priorResult: bigint;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 export type AppealBondArgs = {
@@ -74,6 +80,12 @@ export type AppealBondArgs = {
    */
   priorResult: number | bigint;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link AppealBondArgs} account data. */
@@ -87,6 +99,7 @@ export function getAppealBondEncoder(): FixedSizeEncoder<AppealBondArgs> {
       ["amount", getU64Encoder()],
       ["priorResult", getU64Encoder()],
       ["bump", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
     ]),
     (value) => ({ ...value, discriminator: APPEAL_BOND_DISCRIMINATOR }),
   );
@@ -102,6 +115,7 @@ export function getAppealBondDecoder(): FixedSizeDecoder<AppealBond> {
     ["amount", getU64Decoder()],
     ["priorResult", getU64Decoder()],
     ["bump", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
   ]);
 }
 
@@ -167,5 +181,5 @@ export async function fetchAllMaybeAppealBond(
 }
 
 export function getAppealBondSize(): number {
-  return 93;
+  return 157;
 }

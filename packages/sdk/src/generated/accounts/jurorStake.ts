@@ -101,6 +101,12 @@ export type JurorStake = {
    * `stake`.
    */
   nextFree: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 export type JurorStakeArgs = {
@@ -152,6 +158,12 @@ export type JurorStakeArgs = {
    * `stake`.
    */
   nextFree: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link JurorStakeArgs} account data. */
@@ -171,6 +183,7 @@ export function getJurorStakeEncoder(): FixedSizeEncoder<JurorStakeArgs> {
       ["pendingWithdrawal", getU64Encoder()],
       ["feesEarned", getU64Encoder()],
       ["nextFree", getU32Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
     ]),
     (value) => ({ ...value, discriminator: JUROR_STAKE_DISCRIMINATOR }),
   );
@@ -192,6 +205,7 @@ export function getJurorStakeDecoder(): FixedSizeDecoder<JurorStake> {
     ["pendingWithdrawal", getU64Decoder()],
     ["feesEarned", getU64Decoder()],
     ["nextFree", getU32Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
   ]);
 }
 
@@ -257,5 +271,5 @@ export async function fetchAllMaybeJurorStake(
 }
 
 export function getJurorStakeSize(): number {
-  return 133;
+  return 197;
 }

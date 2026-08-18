@@ -63,6 +63,7 @@ function dispute(over: Partial<Dispute> & Pick<Dispute, "state"> = {} as never):
     frozenTotalStake: 0n,
     filedAt: 0n,
     bump: 0,
+    padding: new Uint8Array(64),
     ...over,
   };
 }

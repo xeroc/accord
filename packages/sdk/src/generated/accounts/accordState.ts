@@ -66,6 +66,12 @@ export type AccordState = {
    */
   pendingUnpauseAfter: Option<bigint>;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 export type AccordStateArgs = {
@@ -78,6 +84,12 @@ export type AccordStateArgs = {
    */
   pendingUnpauseAfter: OptionOrNullable<number | bigint>;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link AccordStateArgs} account data. */
@@ -89,6 +101,7 @@ export function getAccordStateEncoder(): Encoder<AccordStateArgs> {
       ["paused", getBooleanEncoder()],
       ["pendingUnpauseAfter", getOptionEncoder(getU64Encoder())],
       ["bump", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
     ]),
     (value) => ({ ...value, discriminator: ACCORD_STATE_DISCRIMINATOR }),
   );
@@ -102,6 +115,7 @@ export function getAccordStateDecoder(): Decoder<AccordState> {
     ["paused", getBooleanDecoder()],
     ["pendingUnpauseAfter", getOptionDecoder(getU64Decoder())],
     ["bump", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
   ]);
 }
 

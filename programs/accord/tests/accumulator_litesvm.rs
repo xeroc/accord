@@ -1812,8 +1812,8 @@ fn fabricate_appeal_bond(
     );
     let disc = solana_program::hash::hash(b"account:AppealBond").to_bytes();
     // disc(8) + dispute(32) + round_idx(4) + appellant(32) + amount(8)
-    // + prior_result(8, u64 — ADR-0025) + bump(1) = 93
-    let mut data = vec![0u8; 93];
+    // + prior_result(8, u64 — ADR-0025) + bump(1) + padding(64) = 157
+    let mut data = vec![0u8; 157];
     data[..8].copy_from_slice(&disc[..8]);
     data[8..40].copy_from_slice(dispute.as_ref());
     data[40..44].copy_from_slice(&round_idx.to_le_bytes());

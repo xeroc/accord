@@ -146,6 +146,10 @@ pub struct Subaccord {
     /// and `stake` (pop).
     pub free_head: u32,
     pub bump: u8,
+    /// Reserved tail space for future field extensions. Zeroed at `init`;
+    /// must stay the last field — new fields are carved out of it without
+    /// moving existing offsets or resizing the account.
+    pub padding: [u8; 64],
 }
 
 impl Subaccord {
@@ -208,6 +212,10 @@ pub struct JurorStake {
     /// the next free index after this one. Set by `reclaim_slot`, consumed by
     /// `stake`.
     pub next_free: u32,
+    /// Reserved tail space for future field extensions. Zeroed at `init`;
+    /// must stay the last field — new fields are carved out of it without
+    /// moving existing offsets or resizing the account.
+    pub padding: [u8; 64],
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -309,6 +317,10 @@ pub struct Dispute {
     /// `PRE_DRAW_CANCEL_TIMEOUT_SECS`, any cranker may cancel + refund the filer.
     pub filed_at: i64,
     pub bump: u8,
+    /// Reserved tail space for future field extensions. Zeroed at `init`;
+    /// must stay the last field — new fields are carved out of it without
+    /// moving existing offsets or resizing the account.
+    pub padding: [u8; 64],
 }
 
 impl Dispute {
@@ -421,6 +433,10 @@ pub struct AppealBond {
     /// Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
     pub prior_result: u64,
     pub bump: u8,
+    /// Reserved tail space for future field extensions. Zeroed at `init`;
+    /// must stay the last field — new fields are carved out of it without
+    /// moving existing offsets or resizing the account.
+    pub padding: [u8; 64],
 }
 
 /// A proposed Subaccord parameter update, executable only after the 48h on-chain
@@ -455,6 +471,10 @@ pub struct AccordState {
     /// `execute_unpause` (or on a fresh `pause`).
     pub pending_unpause_after: Option<u64>,
     pub bump: u8,
+    /// Reserved tail space for future field extensions. Zeroed at `init`;
+    /// must stay the last field — new fields are carved out of it without
+    /// moving existing offsets or resizing the account.
+    pub padding: [u8; 64],
 }
 
 /// Dispute lifecycle (SPEC state machine). A permissionless crank advances
@@ -612,6 +632,7 @@ mod dispute_ruling_tests {
             frozen_total_stake: 0,
             filed_at: 0,
             bump: 0,
+            padding: [0; 64],
         }
     }
 

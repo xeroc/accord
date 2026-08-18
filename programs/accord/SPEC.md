@@ -38,6 +38,11 @@ challenge, or finalize.
 `MAX` option count and `MAX_JURORS` (= 31, the 3rd-appeal panel) are compile-time
 constants bounding account size.
 
+`Subaccord`, `JurorStake`, `Dispute`, `AppealBond`, and `AccordState` each carry a
+trailing `padding: [u8; 64]` — zeroed reserved tail space (always the last field) so
+future fields can be carved out without moving existing offsets or resizing live
+accounts. `Round` (zero-copy, byte-exact `Pod` layout) and `PendingUpdate` carry none.
+
 ## Instructions
 
 | #   | Instruction                                               | Semantics                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

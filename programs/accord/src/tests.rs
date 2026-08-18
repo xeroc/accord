@@ -29,6 +29,7 @@ mod layout_tests {
             pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
             fees_earned: 0x3233_3435_3637_3839,
             next_free: 0x3A3B_3C3D,
+            padding: [0u8; 64],
         };
         let mut buf = Vec::new();
         js.try_serialize(&mut buf).unwrap();
@@ -61,6 +62,7 @@ mod layout_tests {
             amount: 0x0506_0708_090A_0B0C,
             prior_result: 0x0D0E_0F10_1112_1314,
             bump: 0x0E,
+            padding: [0u8; 64],
         };
         let mut buf = Vec::new();
         ab.try_serialize(&mut buf).unwrap();
