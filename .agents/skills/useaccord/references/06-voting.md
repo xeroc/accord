@@ -127,13 +127,14 @@ useaccord vote:commit-hash --vote 123.45 --decimals 6 --salt 0xa1b2…fe --juror
 
 After `reveal_end` **or once every juror has revealed**, anyone tallies the round (ADR-0019 aggregation). **ADR-0021**
 gates the tally on a reveal quorum
-`reveal_count >= ceil(panel × reveal_threshold_bps / 10_000)`:
+`reveal_count >= ceil(panel × reveal_threshold_bps / 10_000)`; **ADR-0026** additionally routes Plurality top-count ties to the redraw path:
 
-- **Quorum met** → the aggregation's `result` written (winning option index
-  for `Plurality`; the median of revealed scalars for `Median` — ADR-0025),
-  each revealer credited `fees_earned += fee_per_juror` (ADR-0020), state →
-  `RoundResolved`.
-- **Shortfall** → no result, no fee credits, state → `RedrawEligible` (hand to
+- **Quorum met + decisive tally** → the aggregation's `result` written (winning
+  option index for `Plurality`; the median of revealed scalars for `Median` —
+  ADR-0025), each revealer credited `fees_earned += fee_per_juror` (ADR-0020),
+  state → `RoundResolved`.
+- **Shortfall or Plurality top-count tie** (≥2 options share the max count,
+  ADR-0026) → no result, no fee credits, state → `RedrawEligible` (hand to
   `vote:redraw`). This kills zero-mandate tie-break rulings (CONCEPT-REVIEW §4.9).
 
 `--remaining-accounts <auto|list>`: the panel's `JurorStake` PDAs (needed only
@@ -144,11 +145,8 @@ useaccord vote:finalize-round \
   --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
   --remaining-accounts auto --json
 # {"signature":"…","round":"<round-pda>","remainingCount":3}
-# quorum met → RoundResolved; round.result = option index / median (ADR-0025)
-# shortfall  → RedrawEligible, no result (inspect via read:round)
-```
-
-## `vote:finalize-dispute` — write ruling + settle final round (cranker)
+# quorum met + decisive → RoundResolved; round.result = option index / median (ADR-0025)
+# shortfall OR plurality tie → RedrawEligible, no result (inspect via read:round; ADR-0026)
 
 After `reveal_end + appeal_window` with no appeal, settles the **final round**:
 slash incoherent/non-revealing jurors into `stake_delta`, redistribute the

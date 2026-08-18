@@ -1,0 +1,299 @@
+// Synod — formal specification (v1 seed).
+//
+// Scope: the four guarantee families the bean (accord-34zj) names — roster
+// gates, vault conservation, idempotent payouts, and single-dispute binding.
+// Like the accord .qedspec this is a *focused* spec over the case lifecycle
+// (open → join → file → refund/claim), not a handler-by-handler model of the
+// full instruction set. The accompanying security checklist
+// (security-checklist.md) is the audit authority; this .qedspec is the
+// regression-guard authority for the invariants the checklist marks
+// satisfied.
+//
+// Modeling notes:
+//   - State is a FLAT record (qedgen's Map recognition is wired for top-level
+//     Map fields on State — skill: "flat single-account State shape"); the
+//     on-chain SynodCase bitmasks (`joined`/`paid_out` u8) are modelled as
+//     per-slot 0/1 Maps plus O(1) counters the handlers maintain.
+//   - `case_state` is flattened to U8 (0 = Opening, 1 = Live, 2 = Closed);
+//     the ADT machinery expects a different State shape, and the payout
+//     invariants only need the phase discriminator.
+//   - Clock-deadline gates are abstracted away: the `join_deadline` /
+//     `now >= join_deadline` conditions are environment facts, not ledger
+//     invariants, so the models omit them (the on-chain gates exist; they
+//     don't interact with conservation).
+//   - The claim paths are modelled per-outcome (winner / neutral share /
+//     failed) mirroring the on-chain match; the neutral remainder-to-last
+//     case drains the vault exactly, which the conservation property pins.
+//
+// Verification status: properties are DECLARED and handler-scoped; qedgen
+// v2.47 lowers the single-binder binary properties to non-vacuous harnesses.
+// The pairwise `paid_bits_monotonic` (nested quantifier) lowers to a `true`
+// placeholder (skill: "unsupported_quantifier_shape") — same accepted state
+// as accord's `distinct_panel`: the declaration is the regression guard, the
+// on-chain paid-bit requires is the runtime guarantee.
+// Not yet bound to the deployed handlers (`qedgen stamp`) — that gate lands
+// with the first security-audit pass (security-checklist.md).
+//
+// Authoritative source: programs/synod/src/{lib,state,constants,error}.rs,
+//   programs/synod/src/instructions/*.rs
+// Rationale: programs/synod/SPEC.md, apps/docs/adr/synod/0001-0002
+
+spec Synod
+
+const MAX_PARTIES = 7
+
+// Bounded index over the roster (qedgen quantifier idiom: a Fin[N] alias).
+type Party = Fin[MAX_PARTIES]
+
+// --- State (flattened SynodCase) --------------------------------------------
+
+type State = {
+  n           : U8,              // party_count, 2..=MAX_PARTIES
+  joined      : Map[MAX_PARTIES] U8,   // 0/1 per roster slot
+  paid        : Map[MAX_PARTIES] U8,   // 0/1 payout idempotency bits
+  joined_cnt  : U8,              // O(1) maintained by join
+  paid_cnt    : U8,              // O(1) maintained by every payout
+  stake       : U64,             // S (frozen at open)
+  fee         : U64,             // frozen at open: N_jurors · fee_per_juror
+  vault       : U64,             // case vault balance (fee_token)
+  dispute     : Pubkey,          // sentinel until file_dispute binds it
+  bound       : U8,              // 0/1: dispute PDA bound (immutable after)
+  case_state  : U8,              // 0 = Opening, 1 = Live, 2 = Closed
+}
+
+type Error
+  | InvalidPartyCount
+  | PotNotPositive
+  | NotOpening
+  | RosterIncomplete
+  | RosterComplete
+  | AlreadyJoined
+  | PartyNotJoined
+  | NotNamedParty
+  | CaseNotLive
+  | DisputeNotFinal
+  | InvalidRuling
+  | DisputePdaMismatch
+  | ArithmeticOverflow
+  // Checked-arithmetic aborts the generated harness references (P2 fix):
+  | MathOverflow
+  | MathUnderflow
+
+// --- Handlers (slot-parameterized where the on-chain code is per-party) ----
+
+// `open_case` (instructions/open_case.rs): permissionless; freezes S + fee,
+// requires the pot to be positive. Establishes the roster bound.
+handler open_case (party_count : U8) (s : U64) (f : U64) : State -> State {
+  permissionless
+  requires party_count >= 2 and party_count <= MAX_PARTIES else InvalidPartyCount
+  requires mul(party_count, s) > f else PotNotPositive
+
+  effect {
+    n := party_count
+    stake := s
+    fee := f
+    vault := 0
+    joined_cnt := 0
+    paid_cnt := 0
+    bound := 0
+    case_state := 0
+  }
+}
+
+// `join` (instructions/join.rs): named party i locks S into the vault. Only
+// Opening + unjoined slots; the vault grows by exactly S per join.
+handler join (i : Party) : State -> State {
+  permissionless
+  requires case_state == 0 else NotOpening
+  requires i < n else NotNamedParty
+  requires joined[i] == 0 else AlreadyJoined
+  requires joined_cnt + 1 <= n
+
+  effect {
+    joined[i] := 1
+    joined_cnt += 1
+    vault += stake
+  }
+}
+
+// `file_dispute` (instructions/file_dispute.rs): requires the FULL roster
+// (early lock) while still Opening; binds the dispute PDA (once), consumes
+// the frozen fee from the vault, goes Live.
+handler file_dispute (d : Pubkey) : State -> State {
+  permissionless
+  requires case_state == 0 else NotOpening
+  requires joined_cnt == n else RosterIncomplete
+  requires bound == 0 else DisputePdaMismatch
+
+  effect {
+    dispute := d
+    bound := 1
+    vault -= fee
+    case_state := 1
+  }
+}
+
+// `refund_roster_miss` (instructions/refund_roster_miss.rs): after the join
+// deadline with an INCOMPLETE roster, a joined-but-unpaid party pulls S back.
+// Per-party pull: only touches slot i. (A replay against a set paid bit is a
+// no-op on-chain — paid_bits_monotonic is the structural guarantee.)
+handler refund_slot (i : Party) : State -> State {
+  permissionless
+  requires i < n else NotNamedParty
+  requires joined[i] == 1 else PartyNotJoined
+  requires paid[i] == 0
+  requires paid_cnt + 1 <= n
+  requires case_state == 0 else NotOpening
+  requires joined_cnt != n else RosterComplete
+
+  effect {
+    vault -= stake
+    paid[i] := 1
+    paid_cnt += 1
+  }
+}
+
+// `claim` — Final, ruling r < n (instructions/claim.rs): the prevailing party
+// pulls the whole pot N·S − fee, one-shot; the case closes on that payout.
+handler claim_winner (i : Party) (r : U8) : State -> State {
+  permissionless
+  requires case_state == 1 else CaseNotLive
+  requires bound == 1 else DisputePdaMismatch
+  requires r < n else InvalidRuling
+  requires i == r else NotNamedParty
+  requires paid[i] == 0
+  requires paid_cnt + 1 <= n
+
+  effect {
+    vault -= (mul(n, stake) - fee)
+    paid[i] := 1
+    paid_cnt += 1
+    case_state := 2
+  }
+}
+
+// `claim` — Final, ruling == n (neutral): each unpaid joined party pulls the
+// floor share ⌊(N·S − fee)/N⌋ while other joined parties remain unpaid.
+handler claim_share (i : Party) : State -> State {
+  permissionless
+  requires case_state == 1 else CaseNotLive
+  requires bound == 1 else DisputePdaMismatch
+  requires i < n else NotNamedParty
+  requires joined[i] == 1 else PartyNotJoined
+  requires paid[i] == 0
+  requires paid_cnt + 1 <= n
+  requires (paid_cnt + 1) != joined_cnt
+
+  let share = div((mul(n, stake) - fee), n)
+
+  effect {
+    vault -= share
+    paid[i] := 1
+    paid_cnt += 1
+  }
+}
+
+// `claim` — neutral, LAST claimant: drains the vault remainder (floor
+// remainder + any dust) and closes the case. The vault empties exactly.
+handler claim_share_last (i : Party) : State -> State {
+  permissionless
+  requires case_state == 1 else CaseNotLive
+  requires bound == 1 else DisputePdaMismatch
+  requires i < n else NotNamedParty
+  requires joined[i] == 1 else PartyNotJoined
+  requires paid[i] == 0
+  requires paid_cnt + 1 <= n
+  requires (paid_cnt + 1) == joined_cnt
+
+  effect {
+    vault := 0
+    paid[i] := 1
+    paid_cnt += 1
+    case_state := 2
+  }
+}
+
+// `claim` — Failed: cancel_dispute already returned the fee; each unpaid
+// joined party pulls S in full.
+handler claim_failed (i : Party) : State -> State {
+  permissionless
+  requires case_state == 1 else CaseNotLive
+  requires bound == 1 else DisputePdaMismatch
+  requires i < n else NotNamedParty
+  requires joined[i] == 1 else PartyNotJoined
+  requires paid[i] == 0
+  requires paid_cnt + 1 <= n
+
+  effect {
+    vault -= stake
+    paid[i] := 1
+    paid_cnt += 1
+  }
+}
+
+// The close transition every payout path takes when the last due bit lands
+// (refund / neutral / failed all close on `paid_cnt == joined_cnt`; the
+// winner path closes one-shot via claim_winner).
+handler close_case : State -> State {
+  permissionless
+  requires case_state != 2
+  requires paid_cnt == joined_cnt
+
+  effect {
+    case_state := 2
+  }
+}
+
+// --- The four guarantee families --------------------------------------------
+
+/// (1) ROSTER GATES — the joined roster never exceeds the declared
+/// party_count, and every counted join is a distinct slot. join is the only
+/// writer of `joined`/`joined_cnt`; the bound is established at open_case.
+property joined_cnt_bounded :
+  joined_cnt <= n
+  preserved_by [open_case, join, file_dispute, refund_slot, claim_winner, claim_share, claim_share_last, claim_failed, close_case]
+
+/// join moves the vault by exactly +S (stake_in gate): no join can inflate or
+/// short the escrow.
+property join_vault_exact :
+  vault == old(vault) + stake
+  preserved_by [join]
+
+/// (2) VAULT CONSERVATION — every payout subtracts exactly its ledger amount
+/// and never more than the vault holds (saturating sub keeps the vault ≥ 0;
+/// the requires + exact-delta pin keeps the ledger honest). Stated per
+/// payout family:
+property refund_vault_exact :
+  vault + stake == old(vault)
+  preserved_by [refund_slot]
+
+property winner_vault_exact :
+  vault + (mul(n, stake) - fee) == old(vault)
+  preserved_by [claim_winner]
+
+property failed_vault_exact :
+  vault + stake == old(vault)
+  preserved_by [claim_failed]
+
+/// (3) IDEMPOTENT PAYOUTS — `paid` bits are monotonic (0 → 1, never reset)
+/// and every payout handler requires the target bit clear. No party can be
+/// paid twice, structurally, regardless of caller.
+property paid_bits_monotonic :
+  forall i : Party,
+    i < n implies paid[i] >= old(paid[i])
+  preserved_by [refund_slot, claim_winner, claim_share, claim_share_last, claim_failed]
+
+/// (4) SINGLE-DISPUTE BINDING — once bound, the dispute PDA never changes:
+/// file_dispute is the only writer and requires `bound == 0`; every other
+/// handler preserves the binding (one Accord dispute per case, SPEC
+/// §Invariants 2).
+property dispute_immutable_once_bound :
+  bound == 1 implies dispute == old(dispute)
+  preserved_by [join, refund_slot, claim_winner, claim_share, claim_share_last, claim_failed, close_case]
+
+/// The vault can only leave the Opening phase through file_dispute (which
+/// consumes the fee) — refund cannot fire on a filed case, claim cannot fire
+/// on an unfiled one (the case-state check-and-set, HANDOFF §3).
+property state_gates_filed :
+  (case_state == 1 or case_state == 2) implies old(case_state) == 1 or old(bound) == 1
+  preserved_by [file_dispute, refund_slot, claim_winner, claim_share, claim_share_last, claim_failed, close_case]
