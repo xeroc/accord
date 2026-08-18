@@ -41,6 +41,7 @@ status banner is annotated.
 | [0023](0023-per-round-evidence-hashes.md)                                     | Per-round evidence hashes — evidence-on-appeal                                                      | Accepted             |
 | [0024](0024-attestation-gated-subaccords.md)                                     | Attestation-gated Subaccords — optional SAS credential gate, `prune_juror` crank                      | Accepted             |
 | [0025](0025-scalar-voting.md)                                               | Scalar voting — u64 votes, Median aggregation, bps coherence band                                  | Accepted             |
+| [0026](0026-plurality-tie-non-decisive-redraw.md)                            | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner         | Accepted             |
 
 ### Supersession map
 
@@ -81,7 +82,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0026**).
+1. Number = next sequential (currently **0027**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

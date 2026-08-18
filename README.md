@@ -239,9 +239,12 @@ stateDiagram-v2
 ```
 
 Odd Juror counts (3 / 7 / 15 / 31) make full-reveal ties impossible in binary
-disputes; ties in multi-option rounds (or from non-reveals) currently resolve
-to the highest option index — treating a tie as a non-decisive round is queued
-(bean `accord-n3vw`).
+disputes. A Plurality top-count tie — possible in multi-option rounds (2-2-1
+on a full-reveal 5-panel) or from non-reveal splits (2-2 of 4 revealed) — is a
+**non-decisive round**: `finalize_round` writes no result and hands the round
+to the ADR-0021 redraw ladder (`RedrawEligible` → fresh same-size panel, or
+`Failed` with the filer refund on `max_draw_attempts` exhaustion) — never an
+arbitrary winner (ADR-0026).
 
 ### Account & PDA Model
 

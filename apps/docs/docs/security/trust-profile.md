@@ -138,14 +138,18 @@ These are deferred to v2+ and documented to avoid over-claiming:
   liveness assumption by proving root correctness. The trustless destination.
 - **Epoch machinery** — anchor-slot liveness without a freeze (Bad 2). v2.
 - **Participation quorum / inconclusive-outcome handling** — resolved in v1 by
-  [ADR-0021](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md):
+  [ADR-0021](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md)
+  and [ADR-0026](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0026-plurality-tie-non-decisive-redraw.md):
   `finalize_round` requires a reveal-fraction quorum (`reveal_threshold_bps`,
-  default 2/3); a shortfall redraws the same-size panel (slashing no-shows into
-  `stake_delta`) up to `max_draw_attempts`, then fails. Veto-by-abstention is
-  reintroduced but **priced** (`α · min_stake × seats × attempts`) and **bounded**
-  — a `> (1 − threshold)` holder can force `Failed` (fees + bonds refunded) but
-  cannot force a wrong ruling. The prior no-quorum liveness hedge (zero-mandate
-  rulings by tie-break) is intentionally traded for no-mandate safety.
+  default 2/3) **and a decisive tally** (a Plurality top-count tie is a
+  non-decisive round); a shortfall or tie redraws the same-size panel (slashing
+  no-shows into `stake_delta`) up to `max_draw_attempts`, then fails.
+  Veto-by-abstention is reintroduced but **priced** (`α · min_stake × seats ×
+  attempts`) and **bounded** — a `> (1 − threshold)` holder can force `Failed`
+  (fees + bonds refunded) but cannot force a wrong ruling. The prior no-quorum
+  liveness hedge (zero-mandate rulings by tie-break, including `.max_by_key`
+  crowning the highest tied option) is intentionally traded for no-mandate
+  safety.
 - **Evidence cryptography** — threshold PRE / TEE to remove the trusted Evidence
   Operator ([0011](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0011-evidence-operator-daemon-offchain-service.md)).
 

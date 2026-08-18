@@ -9,7 +9,7 @@ The crank sequence from `Created` to `RoundResolved`. Every step after `commit_v
 | 3    | `draw_seat` × N       | crank      | MST proof + sortition vs `frozen_root` (one tx per seat)     | `Drawn` (on last seat)                                  |
 | 4    | `commit`              | Juror      | `review_end ≤ now < commit_end`                              | `Commit` (on first)                                     |
 | 5    | `reveal`              | Juror      | `commit_end ≤ now < reveal_end` ∨ all committed              | `Reveal` (first / panel-full)                           |
-| 6    | `finalize_round`      | crank      | `now ≥ reveal_end` ∨ all revealed                            | `RoundResolved` (quorum) / `RedrawEligible` (shortfall) |
+| 6    | `finalize_round`      | crank      | `now ≥ reveal_end` ∨ all revealed                            | `RoundResolved` (quorum + decisive tally) / `RedrawEligible` (shortfall ∨ Plurality tie, ADR-0026) |
 | 7    | `redraw`              | crank      | `state == RedrawEligible` (ADR-0021)                         | `Created` (re-draw) / `Failed` (exhausted)              |
 
 ## Commit hash
@@ -57,9 +57,9 @@ VRF seed selects the seat, and the submitted leaf must cover it.
 `finalize_round` is gated on a reveal-fraction threshold (`Subaccord.reveal_threshold_bps`,
 default 6_666 = 2/3, frozen into `CaseTerms` at filing):
 
-- **Quorum met** (`reveal_count ≥ ceil(panel × bps / 10_000)`): tally per `terms.aggregation` — Plurality: modal option index; Median: median of revealed scalars (see below) — each revealer credited `fees_earned += fee_per_juror`, `fee_paid` decremented →
+- **Quorum met** (`reveal_count ≥ ceil(panel × bps / 10_000)`): tally per `terms.aggregation` — Plurality: modal option index, **unless the top count is tied** (ADR-0026: ≥2 options share the max → non-decisive round, treated exactly like a shortfall); Median: median of revealed scalars (see below) — each revealer credited `fees_earned += fee_per_juror`, `fee_paid` decremented →
   `RoundResolved` (appeal window / finalization).
-- **Shortfall**: no credits, no result → `RedrawEligible`. The permissionless
+- **Shortfall or Plurality tie**: no credits, no result → `RedrawEligible`. The permissionless
   `redraw` crank then slashes the no-shows into `stake_delta` (pending, not
   `staked` — the frozen-root inflation guard still holds), releases the round's
   `active_draws` + `slash_reserve`, bumps `round.draw_attempt`, clears the round,
