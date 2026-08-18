@@ -65,7 +65,7 @@ loaded wallet.
 
 ### `lifecycle:init-pause [--skip-if-exists] [--dry-run]`
 
-One-time init of the PauseState singleton PDA (`methods.initializePause`); the
+One-time init of the AccordState singleton PDA (`methods.initializePause`); the
 wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 
 ```bash
@@ -75,7 +75,7 @@ useaccord lifecycle:init-pause
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
-  pauseState: AaNWS…XVG9
+  accordState: AaNWS…XVG9
 ```
 
 ### `lifecycle:create-subaccord [flags] [--random-domain-id] [--dry-run]`
@@ -108,7 +108,7 @@ Permissionless crank that lands a pending update once the timelock elapses.
 
 ### `lifecycle:pause [--dry-run]`
 
-Instant emergency freeze (pause authority only). The PauseState PDA is derived
+Instant emergency freeze (pause authority only). The AccordState PDA is derived
 from the canonical program id.
 
 ### `lifecycle:propose-unpause [--dry-run]`
@@ -333,7 +333,7 @@ JSON payload for piping.
 | `read:dispute <addr>`                             | One Dispute                    |
 | `read:round <addr>`                               | One Round                      |
 | `read:juror-stake <addr>`                         | One JurorStake                 |
-| `read:pause-state`                                | PauseState singleton (no arg)  |
+| `read:pause-state`                                | AccordState singleton (no arg) |
 | `read:pending-update <addr>`                      | One PendingUpdate              |
 | `read:appeal-bond --dispute <a> --round-idx <n>`  | AppealBond PDA (derived)       |
 | `read:disputes --by-subaccord\|--by-filer\|--all` | Bulk Dispute query             |

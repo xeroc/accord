@@ -49,6 +49,20 @@ mitigation. "Residual" is what remains true after the mitigation.
 > so there is no poster, no bond, and no challenge window. The trust surface
 > above describes the post-0012 state; the snapshot-poster row is intentionally
 > absent.
+>
+> **Synod (Arbitrable — specced, not yet built).** Synod moves value in-house:
+> unlike a generic integrating application (row 8 — an ignored Ruling costs only
+> off-chain honor), a Synod Case escrows party stakes (`N·S` in the Subaccord's
+> `fee_token`) and self-enforces payouts on-chain. A captured panel (row 6) or a
+> bribed majority walks away with the pot, so price the **whole escrow**, not
+> just the ruling, against the security-value ceiling. Party-economics
+> residuals ([synod/0001](https://github.com/xeroc/accord/blob/main/apps/docs/adr/synod/0001-synod-n-party-escrow-arbitrable-over-accord.md),
+> [0002](https://github.com/xeroc/accord/blob/main/apps/docs/adr/synod/0002-one-mint-fee-from-stake-winner-takes-pot.md)):
+> party==juror overlap is an accepted risk (a drawn party's one seat is cheap to
+> outvote; appeals are open to anyone), payouts are pull-only and idempotent, a
+> missed roster deadline refunds everyone in full (silence is safe for the
+> named), and the juror fee is frozen at case open so governance cannot shift
+> the deal mid-window.
 
 ## Per-Subaccord machine-readable profile
 
@@ -138,14 +152,18 @@ These are deferred to v2+ and documented to avoid over-claiming:
   liveness assumption by proving root correctness. The trustless destination.
 - **Epoch machinery** — anchor-slot liveness without a freeze (Bad 2). v2.
 - **Participation quorum / inconclusive-outcome handling** — resolved in v1 by
-  [ADR-0021](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md):
+  [ADR-0021](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0021-reveal-quorum-shortfall-redraw-draw-attempt.md)
+  and [ADR-0026](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0026-plurality-tie-non-decisive-redraw.md):
   `finalize_round` requires a reveal-fraction quorum (`reveal_threshold_bps`,
-  default 2/3); a shortfall redraws the same-size panel (slashing no-shows into
-  `stake_delta`) up to `max_draw_attempts`, then fails. Veto-by-abstention is
-  reintroduced but **priced** (`α · min_stake × seats × attempts`) and **bounded**
-  — a `> (1 − threshold)` holder can force `Failed` (fees + bonds refunded) but
-  cannot force a wrong ruling. The prior no-quorum liveness hedge (zero-mandate
-  rulings by tie-break) is intentionally traded for no-mandate safety.
+  default 2/3) **and a decisive tally** (a Plurality top-count tie is a
+  non-decisive round); a shortfall or tie redraws the same-size panel (slashing
+  no-shows into `stake_delta`) up to `max_draw_attempts`, then fails.
+  Veto-by-abstention is reintroduced but **priced** (`α · min_stake × seats ×
+  attempts`) and **bounded** — a `> (1 − threshold)` holder can force `Failed`
+  (fees + bonds refunded) but cannot force a wrong ruling. The prior no-quorum
+  liveness hedge (zero-mandate rulings by tie-break, including `.max_by_key`
+  crowning the highest tied option) is intentionally traded for no-mandate
+  safety.
 - **Evidence cryptography** — threshold PRE / TEE to remove the trusted Evidence
   Operator ([0011](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0011-evidence-operator-daemon-offchain-service.md)).
 

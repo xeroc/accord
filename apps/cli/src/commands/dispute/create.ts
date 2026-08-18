@@ -162,6 +162,7 @@ export default class DisputeCreate extends ChainCommand {
     const { instruction, dispute, bump } = await ctx.accord.methods.createDispute(
       {
         filer,
+        rentPayer: filer,
         subaccord: flags.subaccord as Address,
         feeToken,
         filerTokenAccount,

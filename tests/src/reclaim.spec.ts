@@ -361,6 +361,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       env.accord.adapter,
       {
         filer: env.payer.address,
+        rentPayer: env.payer.address,
         subaccord,
         accordState,
         feeToken: mint,

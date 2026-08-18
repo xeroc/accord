@@ -5,8 +5,9 @@ pure unstake guard. All commands are thin wrappers over
 `@useaccord/sdk` `methods/staking.ts` (+ `stakeFlow.ts`). On-chain handlers live
 in `programs/accord/src/lib.rs`; constants in `constants.rs`.
 
-**Common flags:** `--subaccord <addr>`, `--amount <lamports>`,
-`--pause-state <addr|auto>` (auto-derives the AccordState singleton). Global
+**Common flags:** `--subaccord <addr>`, `--amount <lamports>`. `staking:stake`
+additionally takes `--pause-state <addr>` (auto-derives the AccordState
+singleton if omitted). Global
 flags (`--rpc`, `--keypair`, `--commitment`, `--dry-run`, `--json`, `--quiet`)
 apply to every command. The loaded `--keypair` wallet is fee payer **and**
 signing juror for the staking commands (`staking:prune-juror` excepted: there

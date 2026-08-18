@@ -112,7 +112,7 @@ export function roleAccord(env: TestEnv, signer: KeyPairSigner): Accord {
 // Off-chain accumulator tree tracker
 // ---------------------------------------------------------------------------
 
-class TreeTracker {
+export class TreeTracker {
   tree!: MerkleAccumulator;
   depth: number;
 
@@ -367,6 +367,7 @@ export async function armDispute(
     env.accord.adapter,
     {
       filer: env.payer.address,
+      rentPayer: env.payer.address,
       subaccord,
       feeToken: mint,
       filerTokenAccount: filerAta,

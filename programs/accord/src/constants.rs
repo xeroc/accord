@@ -2,7 +2,8 @@
 //! canonical PDA seed prefixes (SPEC account/seed table).
 
 /// Maximum Jurors per dispute panel. v1 appeal ladder is 3 -> 7 -> 15 -> **31**
-/// (3rd appeal, `max_appeals = 3`); odd counts make ties impossible.
+/// (3rd appeal, `max_appeals = 3`); odd counts make full-reveal **binary** ties
+/// impossible (≥3-option / non-reveal ties route to `RedrawEligible`, ADR-0026).
 pub const MAX_JURORS: usize = 31;
 
 /// Program-level ceiling on appeals per dispute. v1 appeal ladder (3 -> 7 -> 15

@@ -217,6 +217,7 @@ describe("e2e: dispute (requires Surfpool)", () => {
   ): CreateDisputeAccounts {
     return {
       filer: env.payer.address,
+      rentPayer: env.payer.address,
       subaccord,
       feeToken: mint,
       filerTokenAccount: filerAta,

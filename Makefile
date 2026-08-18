@@ -30,8 +30,9 @@ build: ## Build programs + packages + docs
 	$(MAKE) -C apps/docs build
 	$(MAKE) codegen
 
-codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anchor build`)
+codegen: ## Regenerate the Codama Kit clients from the program IDLs (run after `anchor build`)
 	cd packages/sdk && pnpm exec codama run js
+	cd packages/synod && pnpm exec codama run js
 
 sdk: ## Build the SDK package only
 	cd packages/sdk && pnpm run build
