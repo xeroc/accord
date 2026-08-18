@@ -3,9 +3,9 @@
  *
  * Controlled form at `/subaccords/new`. Two-tier layout (simplify-accord-ux):
  * essentials (staking/fee token, min stake, fee per juror, aggregation,
- * authority pre-filled with the wallet) are always visible; everything else
- * (identity, windows, panel, slashing, immutability) hides behind an
- * "Advanced settings" collapsible. The domain ref defaults to a fresh random
+ * authority — pre-filled with the wallet, with the immutable toggle inline;
+ * checking it disables the field and shows `Pubkey::default()`) are always
+ * visible; everything else (identity, windows, panel, slashing) hides behind an
  * 32-byte value and can be reshuffled in advanced. The evidence operator is
  * NOT a form input — it is the deployment constant `VITE_EVIDENCE_OPERATOR`
  * (createForm.ts).
@@ -50,6 +50,7 @@ import {
   buildArgs,
   defaultFormState,
   randomHex32,
+  ZERO_ADDRESS,
   type FormState,
 } from "./createForm";
 
@@ -190,15 +191,28 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
                 mono
               />
             )}
-            {!form.immutable && (
-              <Field
-                label="Authority"
-                help="Address that signs propose/execute updates. Pre-filled with your wallet."
-                value={form.authority}
-                onChange={(v) => set("authority", v.trim())}
-                mono
-              />
-            )}
+            <Field
+              label="Authority"
+              help={
+                form.immutable
+                  ? "Pubkey::default() — immutable: no authority can update terms."
+                  : "Address that signs propose/execute updates. Pre-filled with your wallet."
+              }
+              value={form.immutable ? ZERO_ADDRESS : form.authority}
+              onChange={(v) => set("authority", v.trim())}
+              mono
+              disabled={form.immutable}
+              action={
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={form.immutable}
+                    onChange={(e) => set("immutable", e.target.checked)}
+                  />{" "}
+                  Immutable
+                </label>
+              }
+            />
           </fieldset>
 
           <CollapsiblePrimitive.Root open={advanced} onOpenChange={setAdvanced}>
@@ -209,7 +223,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
               />
               Advanced settings
               <span className="text-xs font-normal text-muted-foreground/70">
-                identity · windows · panel · slashing · immutability
+                identity · windows · panel · slashing
               </span>
             </CollapsiblePrimitive.Trigger>
             <CollapsiblePrimitive.Content className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[state=open]:grid-rows-[1fr]">
@@ -318,17 +332,6 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
                     <DepthPicker value={form.depth} onChange={(v) => set("depth", v)} />
                   </fieldset>
 
-                  <fieldset className="gap-4 grid rounded-lg border border-border p-5">
-                    <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Authority.</legend>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={form.immutable}
-                        onChange={(e) => set("immutable", e.target.checked)}
-                      />{" "}
-                      Immutable — no authority can update terms.
-                    </label>
-                  </fieldset>
                 </div>
               </div>
             </CollapsiblePrimitive.Content>
@@ -402,6 +405,7 @@ function Field({
   required,
   mono,
   action,
+  disabled,
 }: {
   label: string;
   help?: string;
@@ -411,6 +415,7 @@ function Field({
   required?: boolean;
   mono?: boolean;
   action?: ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -419,12 +424,13 @@ function Field({
         {action}
       </span>
       <input
-        className={`rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none ${mono ? "font-mono text-sm text-foreground" : ""}`}
+        className={`rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${mono ? "font-mono text-sm text-foreground" : ""}`}
         type="text"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         required={required}
+        disabled={disabled}
       />
       {help && <span className="text-xs text-muted-foreground">{help}</span>}
     </label>
