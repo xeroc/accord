@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 //! Instruction handlers for Synod.
 //!
 //! Each instruction's `Accounts` struct + handler lives in its own submodule.
@@ -6,11 +7,10 @@
 //! required by Anchor's `#[program]` CPI-client codegen; the `handler` names
 //! collide under the glob but are never used unqualified, so the
 //! `ambiguous_glob_reexports` lint is silenced.
-
-#![allow(ambiguous_glob_reexports)]
-
+pub mod file_dispute;
 pub mod join;
 pub mod open_case;
 
+pub use file_dispute::*;
 pub use join::*;
 pub use open_case::*;

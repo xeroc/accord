@@ -43,4 +43,13 @@ pub mod synod {
     pub fn join(ctx: Context<Join>, evidence_hash: [u8; 32]) -> Result<()> {
         instructions::join::handler(ctx, evidence_hash)
     }
+
+    /// Permissionless dispute filing (SPEC §Instructions #3): full roster
+    /// gate, deterministic options + evidence hash, CPI Accord
+    /// `create_dispute` with the case PDA as filer, bind the dispute PDA,
+    /// state → Live. `nonce` is the case-open nonce (case seed component —
+    /// re-derives the case PDA and provides the `invoke_signed` seeds).
+    pub fn file_dispute<'a>(ctx: Context<'a, FileDispute<'a>>, nonce: u64) -> Result<()> {
+        instructions::file_dispute::handler(ctx, nonce)
+    }
 }

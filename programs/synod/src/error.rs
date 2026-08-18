@@ -28,6 +28,12 @@ pub enum SynodError {
     PotNotPositive,
     #[msg("The Subaccord aggregation must be Plurality (Median scalars have no option mapping).")]
     AggregationNotPlurality,
+    #[msg("Missing remaining_accounts for the Accord CPI.")]
+    MissingRemainingAccounts,
+    #[msg("Wrong Accord program account.")]
+    WrongAccordProgram,
+    #[msg("Dispute PDA does not match the expected derivation.")]
+    DisputePdaMismatch,
     #[msg("Arithmetic overflow.")]
     ArithmeticOverflow,
     #[msg("Vault received less than the stake (fee-on-transfer mint?).")]

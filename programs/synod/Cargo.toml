@@ -31,6 +31,7 @@ anchor-spl.workspace = true
 # `accord` is used at runtime (instructions: `accord::state::Subaccord` reads,
 # `create_dispute` CPI at file_dispute), not just in tests — normal dep.
 accord = { path = "../accord", features = ["cpi"] }
+solana-program.workspace = true
 
 [profile.release]
 overflow-checks = true
