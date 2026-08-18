@@ -23,6 +23,16 @@ export const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Disputed]: "Disputed",
 };
 
+/** Whether `challenge_item` may be filed from this state (SPEC §Instructions
+ * #4: Pending, Listed, or WithdrawPending; never from Disputed/Removed). */
+export const CHALLENGEABLE_STATES: Record<ItemState, boolean> = {
+  [ItemState.Pending]: true,
+  [ItemState.Listed]: true,
+  [ItemState.WithdrawPending]: true,
+  [ItemState.Removed]: false,
+  [ItemState.Disputed]: false,
+};
+
 // --- Dispute state labels + ruling formatting (mirrors apps/app) ---
 
 export const DISPUTE_STATE_LABELS: Record<DisputeState, string> = {
@@ -178,6 +188,32 @@ export function timeRemaining(
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+/**
+ * Human-readable elapsed time since a past unix timestamp (the mirror of
+ * timeRemaining — for "challenged 5h ago" style rows).
+ *
+ * @param unixSec - past unix time in SECONDS (Solana Clock unix_timestamp)
+ * @param nowSec - current unix time in seconds (default: Date.now()/1000)
+ * @returns e.g. "3d ago", "5h ago", "12m ago", "just now", or "" if null
+ */
+export function timeAgo(
+  unixSec: bigint | number | null | undefined,
+  nowSec?: number,
+): string {
+  if (unixSec === null || unixSec === undefined) return "";
+  const now = nowSec ?? Math.floor(Date.now() / 1000);
+  const elapsed = now - Number(unixSec);
+  if (elapsed < 60) return "just now";
+
+  const days = Math.floor(elapsed / 86400);
+  const hours = Math.floor((elapsed % 86400) / 3600);
+  const minutes = Math.floor((elapsed % 3600) / 60);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  return `${minutes}m ago`;
 }
 
 // --- Bps formatting ---

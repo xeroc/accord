@@ -26,6 +26,7 @@ import { useDispute } from "./useDispute";
 import { WithdrawalCard } from "./WithdrawalCard";
 import { DisputeStatusCard } from "./DisputeStatusCard";
 import {
+  CHALLENGEABLE_STATES,
   ITEM_STATE_LABELS,
   formatTimestamp,
   formatTokenAmount,
@@ -129,6 +130,15 @@ export function ItemDetailPage() {
         <p className="italic text-muted-foreground" style={{ margin: "0.35rem 0 0", fontSize: "0.85rem" }}>
           {STATE_HINT[state]}
         </p>
+        {CHALLENGEABLE_STATES[state] && (
+          <Link
+            to={`/items/${item.data.address}/challenge`}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+            style={{ marginTop: "1rem" }}
+          >
+            Challenge this item.
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]" style={{ marginBottom: "1.5rem" }}>

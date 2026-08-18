@@ -1,10 +1,12 @@
 /**
- * List detail page (accord-hhyy).
- *
  * `/lists/:address` — renders CanonList on-chain params + enumerates CanonItems
  * via `findAllCanonItemsByList` (memcmp on `list` at byte 40). A client-side
  * filter narrows items by ItemState. Items link to `/items/:address` (item
- * detail — sibling task). Cranks are NOT wired (cranker-owned).
+ * detail). The "Propose item." CTA links to the submit form
+ * (`/lists/:address/submit`); item cards in a challengeable state
+ * (Pending/Listed/WithdrawPending — SPEC §Instructions #4) link to the
+ * challenge form (`/items/:address/challenge`). Cranks are NOT wired
+ * (cranker-owned).
  *
  * see SPEC §Item state machine, milestone §1(d), §2.
  */
@@ -19,9 +21,16 @@ import {
   fetchCanonListRaw,
   findAllCanonItemsByList,
 } from "@/shared/rpc";
-import { Copyable } from "@/components/Copyable";
+import {
+  CHALLENGEABLE_STATES,
+  formatHash,
+  formatTokenAmount,
+  formatWindow,
+  timeAgo,
+  timeRemaining,
+} from "@/shared/format";
 import { Skeleton } from "@/components/Skeleton";
-import { formatHash, formatTokenAmount, formatWindow } from "@/shared/format";
+import { Copyable } from "@/components/Copyable";
 
 const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
@@ -117,13 +126,19 @@ export function ListDetailPage() {
       {/* --- Items --- */}
       {list && (
         <section style={{ marginTop: "2.5rem" }}>
-          <div className="mb-8" style={{ marginBottom: "1rem" }}>
+          <div className="flex items-center justify-between gap-4" style={{ marginBottom: "1rem" }}>
             <h2 className="text-[1.6rem] font-semibold tracking-[-0.01em]" style={{ fontSize: "1.2rem" }}>
               Items.{" "}
               <span className="italic text-muted-foreground">
                 ({itemsQuery.data?.length ?? "…"})
               </span>
             </h2>
+            <Link
+              to={`/lists/${address}/submit`}
+              className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+            >
+              Propose item.
+            </Link>
           </div>
 
           <FilterBar
@@ -149,6 +164,7 @@ export function ListDetailPage() {
             <ItemGrid
               items={itemsQuery.data ?? []}
               filter={filter}
+              listData={list.data}
             />
           )}
         </section>
@@ -263,9 +279,11 @@ function FilterBar({
 function ItemGrid({
   items,
   filter,
+  listData,
 }: {
   items: Account<CanonItem>[];
   filter: FilterKey;
+  listData: CanonList;
 }) {
   const filtered =
     filter === "all" ? items : items.filter((i) => i.data.state === filter);
@@ -286,22 +304,31 @@ function ItemGrid({
   return (
     <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Items">
       {filtered.map((item) => (
-        <ItemCard key={item.address} item={item} />
+        <ItemCard key={item.address} item={item} listData={listData} />
       ))}
     </ul>
   );
 }
 
-function ItemCard({ item }: { item: Account<CanonItem> }) {
+
+function ItemCard({
+  item,
+  listData,
+}: {
+  item: Account<CanonItem>;
+  listData: CanonList;
+}) {
   const d = item.data;
+  const challengeable = CHALLENGEABLE_STATES[d.state];
   return (
-    <li>
-      <Link to={`/items/${item.address}`} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
+    <li className="flex flex-col rounded-lg bg-card ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
+      <Link to={`/items/${item.address}`} className="block p-4">
         <span className="mb-3.5 block">
           <Copyable value={d.account} />
         </span>
         <dl className="grid gap-1.5">
           <Stat label="State" value={ITEM_STATE_LABELS[d.state] ?? "Unknown"} />
+          <ItemTimeStat item={d} listData={listData} />
           <Stat
             label="Stake"
             value={formatTokenAmount(d.accumulatedStake)}
@@ -310,8 +337,67 @@ function ItemCard({ item }: { item: Account<CanonItem> }) {
           <Stat label="Challenges" value={d.challengeCount.toString()} />
         </dl>
       </Link>
+      {challengeable && (
+        <div className="mt-auto border-t border-border px-4 py-2.5">
+          <Link
+            to={`/items/${item.address}/challenge`}
+            className="inline-flex items-center justify-center rounded-md bg-transparent px-3 py-1.5 text-xs font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
+          >
+            Challenge.
+          </Link>
+        </div>
+      )}
     </li>
   );
+}
+
+/** Per-state humanised time row. Pending counts down to auto-listing and
+ * WithdrawPending to the timelock elapsing; Disputed shows time since the
+ * challenge. There is no on-chain `listed_at`/`removed_at` (the crank flips
+ * state without stamping), so Listed/Removed fall back to submitted-at age. */
+function ItemTimeStat({
+  item,
+  listData,
+}: {
+  item: CanonItem;
+  listData: CanonList;
+}) {
+  let label = "";
+  let value = "";
+  switch (item.state) {
+    case ItemState.Pending: {
+      const r = timeRemaining(
+        Number(item.submittedAt) + Number(listData.listingWindow),
+      );
+      label = "Lists in";
+      value = r === "expired" ? "window elapsed" : r;
+      break;
+    }
+    case ItemState.Disputed:
+      label = "Challenged";
+      value = timeAgo(item.challengedAt);
+      break;
+    case ItemState.WithdrawPending: {
+      const at =
+        item.withdrawalRequestedAt.__option === "Some"
+          ? Number(item.withdrawalRequestedAt.value)
+          : null;
+      const r =
+        at !== null
+          ? timeRemaining(at + Number(listData.withdrawalTimelock))
+          : "";
+      label = "Unlocks in";
+      value = r === "expired" ? "timelock elapsed" : r;
+      break;
+    }
+    case ItemState.Listed:
+    case ItemState.Removed:
+      label = "Submitted";
+      value = timeAgo(item.submittedAt);
+      break;
+  }
+  if (!label) return null;
+  return <Stat label={label} value={value || "—"} />;
 }
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {

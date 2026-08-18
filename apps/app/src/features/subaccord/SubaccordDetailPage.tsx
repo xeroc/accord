@@ -218,7 +218,7 @@ function SubaccordDetail({
             value={<Authority value={d.evidenceOperator} />}
           />
           <Row
-            label="Risk type"
+            label="Domain Ref"
             value={<Copyable value={fullHex(d.domainRef)} />}
           />
           <Row
