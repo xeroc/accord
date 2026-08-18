@@ -41,10 +41,11 @@ export interface SubaccordView {
   readonly evidenceSpec: ReadonlyUint8Array;
 }
 
-/** Per-Dispute fields the daemon consumes for key lookup + delivery gating. */
 export interface DisputeView {
   /** Parent Subaccord — lookup key for the operator. */
   readonly subaccord: Address;
+  /** Dispute filer — a SynodCase PDA when the dispute is synod-backed. */
+  readonly filer: Address;
   /**
    * Per-round evidence commitments (ADR-0023): index 0 = filer, 1..MAX_APPEALS
    * = appeal rounds; `[0u8;32]` = sentinel ("no new evidence this round"). The
@@ -96,6 +97,7 @@ export async function readDispute(accord: Accord, dispute: Address): Promise<Dis
   if (!m.exists) return null;
   return {
     subaccord: m.data.subaccord,
+    filer: m.data.filer,
     evidenceHashes: m.data.evidenceHashes,
     state: m.data.state,
     currentRound: m.data.currentRound,
@@ -160,19 +162,25 @@ export interface SynodCaseView {
 }
 
 /**
- * Read a SynodCase's evidence-relevant fields, or `null` if the account does
- * not exist. Backs `POST /evidence/synod/:case/:party` — the pre-dispute
- * grouping gate (case exists, slot live, dispute not yet bound).
+ * Read a SynodCase's evidence-relevant fields, or `null` if the address does
+ * not hold one. Backs the pre-dispute grouping gate (`POST
+ * /evidence/synod/:case/:party`) and the deliver bridge — where the filer is
+ * an ARBITRARY pubkey, usually not a case, so a decode/discriminator mismatch
+ * maps to `null` ("not a SynodCase") instead of throwing.
  */
 export async function readSynodCase(
   accord: Accord,
   casePda: Address,
 ): Promise<SynodCaseView | null> {
-  const m = await fetchMaybeSynodCase(accord.rpc, casePda);
-  if (!m.exists) return null;
-  return {
-    subaccord: m.data.subaccord,
-    partyCount: m.data.partyCount,
-    dispute: m.data.dispute,
-  };
+  try {
+    const m = await fetchMaybeSynodCase(accord.rpc, casePda);
+    if (!m.exists) return null;
+    return {
+      subaccord: m.data.subaccord,
+      partyCount: m.data.partyCount,
+      dispute: m.data.dispute,
+    };
+  } catch {
+    return null; // wrong program / not a SynodCase — the common case at a filer
+  }
 }

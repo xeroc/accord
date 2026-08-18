@@ -231,6 +231,8 @@ const D_SUB = new Uint8Array(32).fill(0x01);
 const D_OPERATOR = new Uint8Array(32).fill(0x03);
 const D_JUROR = new Uint8Array(32).fill(0x04);
 const D_OTHER_JUROR = new Uint8Array(32).fill(0x05);
+/** Filer that resolves to no SynodCase — keeps deliver on the generic path. */
+const D_NON_CASE = new Uint8Array(32).fill(0x06);
 const D_OP_SK = new Uint8Array(64).fill(0x77);
 const D_PLAINTEXT = new Uint8Array([10, 20, 30, 40]);
 const D_HASH = new Uint8Array(32).fill(0xee);
@@ -250,21 +252,29 @@ function dBundle(): EvidenceBundle {
 }
 
 function dChain(opts: {
-  dispute?: { subaccord: Uint8Array; evidence_hashes: Uint8Array[]; current_round: number } | null;
+  dispute?: {
+    subaccord: Uint8Array;
+    filer?: Uint8Array;
+    evidence_hashes: Uint8Array[];
+    current_round: number;
+  } | null;
   subaccord?: { evidence_operator: Uint8Array } | null;
   round?: { jurors: Uint8Array[] } | null;
 }): DeliverChainReader {
   return {
     async readDispute() {
       return opts.dispute === undefined
-        ? { subaccord: D_SUB, evidence_hashes: [D_HASH], current_round: 0 }
-        : opts.dispute;
+        ? { subaccord: D_SUB, filer: D_NON_CASE, evidence_hashes: [D_HASH], current_round: 0 }
+        : opts.dispute && { filer: D_NON_CASE, ...opts.dispute };
     },
     async readSubaccord() {
       return opts.subaccord === undefined ? { evidence_operator: D_OPERATOR } : opts.subaccord;
     },
     async readRound() {
       return opts.round === undefined ? { jurors: [D_JUROR, D_OTHER_JUROR] } : opts.round;
+    },
+    async readSynodCase() {
+      return null;
     },
   };
 }

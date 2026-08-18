@@ -27,6 +27,10 @@
  *
  * Sentinel: `[0u8;32]` at a slot means "no new evidence this round" (ADR-0023) —
  * the slot is skipped and no bundle is fetched for it.
+ * Synod bridge (accord-g1dy): when `Dispute.filer` is a SynodCase PDA bound to
+ * this dispute, the evidence source is the pre-dispute GROUP instead of the
+ * per-round bundles — see `deliverSynodGroup` below. `round` in a group
+ * package carries the party slot.
  *
  * Pull + no-auth is safe (ADR-0006): each round's `reencryptToJuror` targets the
  * juror pubkey, so every returned `out` is decryptable only by the juror key.
@@ -34,6 +38,8 @@
  */
 import { NoOpWatermark, type Watermark } from "./watermark";
 import type { EvidenceBundle } from "./ingest";
+import type { SynodCaseView } from "./synod-ingest";
+import { synodEvidenceRoot } from "./synod-group";
 
 export interface SubaccordView {
   evidence_operator: Uint8Array;
@@ -50,6 +56,8 @@ export interface RoundView {
  */
 export interface DisputeView {
   subaccord: Uint8Array;
+  /** Dispute filer — a SynodCase PDA when the dispute is synod-backed. */
+  filer: Uint8Array;
   evidence_hashes: Uint8Array[];
   current_round: number;
 }
@@ -58,6 +66,8 @@ export interface DeliverChainReader {
   readDispute(dispute: Uint8Array): Promise<DisputeView | null>;
   readSubaccord(subaccord: Uint8Array): Promise<SubaccordView | null>;
   readRound(dispute: Uint8Array): Promise<RoundView | null>;
+  /** Synod bridge: resolve the filer-addressed SynodCase, or null if not one. */
+  readSynodCase(filer: Uint8Array): Promise<SynodCaseView | null>;
 }
 
 export interface DeliverStore {
@@ -137,6 +147,16 @@ export async function deliver(
     return { status: 404, reason: "juror not drawn for this dispute" };
   }
 
+  // Synod deliver bridge (accord-g1dy): when the filer is a SynodCase PDA
+  // bound to THIS dispute, the evidence source is the pre-dispute group
+  // (keyed `{case.subaccord}/{case_pda}/{slot}`), not the per-round bundle —
+  // `evidence_hashes[0]` is the file-time ROOT, so the generic loop below
+  // could never gate it. An unbound case at the filer (or a different
+  // program's PDA) falls through to the dispute-keyed path unchanged.
+  const synodCase = await deps.chain.readSynodCase(dv.filer);
+  if (synodCase !== null && bytesEqual(synodCase.dispute, dispute)) {
+    return deliverSynodGroup(dv, synodCase, juror, operatorSk, wm, deps);
+  }
   // Per-round delivery loop (ADR-0023): iterate evidence_hashes[0..=current_round],
   // skip the [0u8;32] sentinel, integrity-gate each round's plaintext against its
   // own hash, and re-encrypt each as a separate package. A gate failure is
@@ -174,5 +194,71 @@ export async function deliver(
     return { status: 404, reason: "no evidence ingested for dispute" };
   }
 
+  return { status: 200, rounds: delivered };
+}
+
+/**
+ * Synod group delivery (accord-g1dy): one re-encrypted package per party
+ * slot, `round` carrying the slot index. Gates, in order:
+ *
+ *  1. every slot `0..party_count-1` has a stored bundle — else `404` (the
+ *     group is incomplete; nothing is assembled);
+ *  2. file-time root: `H(case ‖ h_0 … h_{N-1})` recomputed from the STORED
+ *     bundles' `plaintext_hash` must equal `evidence_hashes[0]` — else `409`,
+ *     juror assembly refused (daemon-side bundle swap detected; the on-chain
+ *     root was built from the join-committed per-party hashes);
+ *  3. per-slot tamper gate: `sha256(plaintext) == bundle.plaintext_hash`.
+ *
+ * ponytail: appeal-round evidence (ADR-0023) is NOT mixed in here — the
+ * bridge serves the round-0 group only; if a synod dispute ever carries
+ * per-round appeal bundles, extend the response with the generic loop over
+ * `evidence_hashes[1..=current_round]` under distinct round tags.
+ */
+async function deliverSynodGroup(
+  dv: DisputeView,
+  synodCase: SynodCaseView,
+  juror: Uint8Array,
+  operatorSk: Uint8Array,
+  wm: Watermark,
+  deps: DeliverDeps,
+): Promise<DeliverOutcome> {
+  const bundles: EvidenceBundle[] = [];
+  for (let slot = 0; slot < synodCase.party_count; slot++) {
+    const b = await deps.store.get(synodCase.subaccord, dv.filer, slot);
+    if (b === null) {
+      return { status: 404, reason: `no evidence ingested for party slot ${slot}` };
+    }
+    bundles.push(b);
+  }
+
+  const root = await synodEvidenceRoot(
+    dv.filer,
+    bundles.map((b) => b.plaintext_hash),
+    deps.crypto.sha256,
+  );
+  if (!bytesEqual(root, dv.evidence_hashes[0] ?? new Uint8Array(0))) {
+    return { status: 409, reason: "synod evidence root mismatch — assembly refused" };
+  }
+
+  const delivered: DeliveredRound[] = [];
+  for (let slot = 0; slot < bundles.length; slot++) {
+    const b = bundles[slot]!;
+    const unwrapped = await deps.crypto.unwrap(b, operatorSk);
+    if (unwrapped === null) {
+      return {
+        status: 409,
+        reason: `party slot ${slot}: ciphertext undecryptable (tampered bundle)`,
+      };
+    }
+    if (!bytesEqual(await deps.crypto.sha256(unwrapped.plaintext), b.plaintext_hash)) {
+      return {
+        status: 409,
+        reason: `party slot ${slot}: integrity gate failed (sha256 != committed hash)`,
+      };
+    }
+    const watermarked = wm.apply(unwrapped.plaintext, juror);
+    const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
+    delivered.push({ round: slot, out, operator_ephem_pub });
+  }
   return { status: 200, rounds: delivered };
 }

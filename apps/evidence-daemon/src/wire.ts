@@ -149,13 +149,24 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     if (v === null) return null;
     return {
       subaccord: b58ToBytes(v.subaccord),
+      filer: b58ToBytes(v.filer),
       evidence_hashes: v.evidenceHashes.map((h) => new Uint8Array(h)),
       current_round: v.currentRound,
+    };
+  };
+  const readSynodCaseBytes = async (f: Uint8Array) => {
+    const v = await readSynodCase(accord, bytesToAddr(f));
+    if (v === null) return null;
+    return {
+      subaccord: b58ToBytes(v.subaccord),
+      party_count: v.partyCount,
+      dispute: b58ToBytes(v.dispute),
     };
   };
   const ingestChain: IngestChainReader = { readDispute: readDisputeIngest };
   const deliverChain = {
     readDispute: readDisputeDeliver,
+    readSynodCase: readSynodCaseBytes,
     async readSubaccord(sa: Uint8Array) {
       const v = await readSubaccord(accord, bytesToAddr(sa));
       if (v === null) return null;
@@ -275,17 +286,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     };
     const out = await synodIngestPipeline(c, party, bundle, {
       store: ingestStore,
-      chain: {
-        async readSynodCase(casePda) {
-          const v = await readSynodCase(accord, bytesToAddr(casePda));
-          if (v === null) return null;
-          return {
-            subaccord: b58ToBytes(v.subaccord),
-            party_count: v.partyCount,
-            dispute: b58ToBytes(v.dispute),
-          };
-        },
-      },
+      chain: { readSynodCase: readSynodCaseBytes },
     });
     if (out.status === 201) {
       return {

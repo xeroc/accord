@@ -275,7 +275,7 @@ Unauthenticated **by design**: the per-party hash committed on-chain at `join` (
 
 ### `GET /evidence/{dispute}/for/{juror}`
 
-Pull all deliverable evidence packages for a drawn juror.
+Pull all deliverable evidence packages for a drawn juror. **Synod bridge (accord-g1dy):** when `Dispute.filer` is a SynodCase PDA bound to that dispute, the response is the assembled pre-dispute group instead — one package per party slot, the `round` field carrying the slot index. Assembly is gated by the file-time root: `H(case_pda ‖ h_0 ‖ … ‖ h_{N-1})` recomputed from the stored bundles must equal `evidence_hashes[0]`; a mismatch (daemon-side bundle swap) ⇒ `409`, assembly refused.
 
 **Responses:**
 
