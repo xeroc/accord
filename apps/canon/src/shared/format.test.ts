@@ -13,8 +13,10 @@ import {
   formatBigInt,
   formatWindow,
   timeRemaining,
+  timeAgo,
   formatBps,
   formatHash,
+  CHALLENGEABLE_STATES,
   ITEM_STATE_LABELS,
 } from "./format.js";
 import { ItemState } from "@useaccord/canon";
@@ -121,6 +123,36 @@ test("timeRemaining: null/undefined/zero returns empty", () => {
   assert.equal(timeRemaining(0), "");
 });
 
+// --- timeAgo ---
+
+test("timeAgo: days ago", () => {
+  const past = Math.floor(Date.now() / 1000) - 3 * 86400 - 2 * 3600;
+  assert.match(timeAgo(past), /^3d ago$/);
+});
+
+test("timeAgo: hours + minutes ago", () => {
+  const past = Math.floor(Date.now() / 1000) - 5 * 3600 - 42 * 60;
+  assert.match(timeAgo(past), /^5h ago$/);
+});
+
+test("timeAgo: minutes ago", () => {
+  const past = Math.floor(Date.now() / 1000) - 12 * 60;
+  assert.match(timeAgo(past), /^12m ago$/);
+});
+
+test("timeAgo: just now (and future timestamps clamp)", () => {
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal(timeAgo(now - 10), "just now");
+  assert.equal(timeAgo(now + 500), "just now");
+});
+
+test("timeAgo: null/undefined returns empty; accepts bigint", () => {
+  assert.equal(timeAgo(null), "");
+  assert.equal(timeAgo(undefined), "");
+  const past = BigInt(Math.floor(Date.now() / 1000) - 7 * 3600);
+  assert.match(timeAgo(past), /^7h ago$/);
+});
+
 // --- formatBps ---
 
 test("formatBps: standard values", () => {
@@ -159,6 +191,16 @@ test("ITEM_STATE_LABELS: covers all ItemState variants", () => {
   assert.equal(ITEM_STATE_LABELS[ItemState.Removed], "Removed");
   assert.equal(ITEM_STATE_LABELS[ItemState.WithdrawPending], "Withdraw pending");
   assert.equal(ITEM_STATE_LABELS[ItemState.Disputed], "Disputed");
+});
+
+// --- CHALLENGEABLE_STATES ---
+
+test("CHALLENGEABLE_STATES: challengeable exactly in Pending/Listed/WithdrawPending", () => {
+  assert.equal(CHALLENGEABLE_STATES[ItemState.Pending], true);
+  assert.equal(CHALLENGEABLE_STATES[ItemState.Listed], true);
+  assert.equal(CHALLENGEABLE_STATES[ItemState.WithdrawPending], true);
+  assert.equal(CHALLENGEABLE_STATES[ItemState.Removed], false);
+  assert.equal(CHALLENGEABLE_STATES[ItemState.Disputed], false);
 });
 
 // --- CANON_ITEM_LIST_OFFSET ---
