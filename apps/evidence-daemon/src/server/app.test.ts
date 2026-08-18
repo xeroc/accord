@@ -30,6 +30,7 @@ const STUB_PUBLIC_KEYS: KeyringPublicKeys = {
 function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
     ingest: async () => ({ ok: true, status: 201, location: `/evidence/s/d` }),
+    synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/c/0" }),
     deliver: async () => ({
       ok: true,
       status: 200,

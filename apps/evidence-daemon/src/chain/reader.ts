@@ -31,6 +31,7 @@ import {
   findRoundPda,
   type Accord,
 } from "@useaccord/sdk";
+import { fetchMaybeSynodCase } from "@useaccord/synod";
 
 /** Per-Subaccord fields the daemon consumes to resolve its key + scheme. */
 export interface SubaccordView {
@@ -143,4 +144,35 @@ export function isDrawn(round: RoundView, juror: Address): boolean {
  */
 export function isDeliverable(dispute: DisputeView): boolean {
   return dispute.state >= DisputeState.Drawn;
+}
+
+/** Per-SynodCase fields the daemon consumes for pre-dispute grouping (accord-1viq). */
+export interface SynodCaseView {
+  /** Hosting Subaccord — store-key prefix + operator-key selector. */
+  readonly subaccord: Address;
+  /** Live roster size (2..7); valid evidence slots are `0..partyCount-1`. */
+  readonly partyCount: number;
+  /**
+   * The bound Accord Dispute PDA; the System-program id (all-zero pubkey) is
+   * the sentinel while the case is pre-file. Non-sentinel ⇒ pushes are 409.
+   */
+  readonly dispute: Address;
+}
+
+/**
+ * Read a SynodCase's evidence-relevant fields, or `null` if the account does
+ * not exist. Backs `POST /evidence/synod/:case/:party` — the pre-dispute
+ * grouping gate (case exists, slot live, dispute not yet bound).
+ */
+export async function readSynodCase(
+  accord: Accord,
+  casePda: Address,
+): Promise<SynodCaseView | null> {
+  const m = await fetchMaybeSynodCase(accord.rpc, casePda);
+  if (!m.exists) return null;
+  return {
+    subaccord: m.data.subaccord,
+    partyCount: m.data.partyCount,
+    dispute: m.data.dispute,
+  };
 }

@@ -258,6 +258,21 @@ Upload an encrypted `EvidenceBundle`. `round` defaults to `0` (filer evidence); 
 | `400`  | Malformed bundle or invalid base58 address                              |
 | `409`  | A different `plaintext_hash` already exists for this `(dispute, round)` |
 
+### `POST /evidence/synod/{case}/{party}`
+
+Synod **pre-dispute grouping** (milestone accord-daq8): a party pushes its encrypted `EvidenceBundle` for a SynodCase **before** any Accord dispute exists. Same wire body as the dispute-keyed ingest. Storage is grouped by case PDA + party slot (`party` = roster index `0..6`).
+
+Unauthenticated **by design**: the per-party hash committed on-chain at `join` (`SynodCase.evidence[party]`) is the commitment — junk bundles simply fail the post-file root verification. Keying fields are chain-derived: the daemon reads the case's Subaccord and never trusts client-supplied `subaccord`/`dispute`/`round`.
+
+**Responses:**
+
+| Status | Meaning                                                                        |
+| ------ | ------------------------------------------------------------------------------ |
+| `201`  | Stored. `Location: /evidence/synod/{case}/{party}`                             |
+| `400`  | Malformed bundle, invalid case address, or `party` ≥ on-chain `party_count`    |
+| `404`  | SynodCase not found on-chain                                                    |
+| `409`  | Dispute already filed for this case (`SynodCase.dispute` bound), or a different `plaintext_hash` already exists for this slot |
+
 ### `GET /evidence/{dispute}/for/{juror}`
 
 Pull all deliverable evidence packages for a drawn juror.
