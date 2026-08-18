@@ -57,6 +57,9 @@ const { instruction, case } = await openCase(
 - `fetchSynodCase(synod, address)` / `fetchSynodCaseMaybe(synod, address)`
 - `fetchMaybeSynodCase(rpc, address)` — standalone generated fetcher over a
   bare Kit RPC (no client/signer) — the path the jest e2e harness uses
+- `findAllSynodCases(rpc)` — decoded `getProgramAccounts` scan
+  (discriminator-filtered) over a bare RPC; the cranker reconciler's
+  SynodCase discovery path
 
 ## Build
 
