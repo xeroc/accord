@@ -1,10 +1,11 @@
 ---
 # accord-l2ad
 title: Synod program v1 — instructions TDD (LiteSVM)
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-18T05:27:57Z
-updated_at: 2026-08-18T05:27:57Z
+updated_at: 2026-08-18T07:10:46Z
 parent: accord-oylq
 ---
 
