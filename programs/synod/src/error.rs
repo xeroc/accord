@@ -28,4 +28,8 @@ pub enum SynodError {
     PotNotPositive,
     #[msg("The Subaccord aggregation must be Plurality (Median scalars have no option mapping).")]
     AggregationNotPlurality,
+    #[msg("Arithmetic overflow.")]
+    ArithmeticOverflow,
+    #[msg("Vault received less than the stake (fee-on-transfer mint?).")]
+    StakeTransferShortfall,
 }

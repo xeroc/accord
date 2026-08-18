@@ -2,7 +2,7 @@
 name = "synod"
 version.workspace = true
 edition.workspace = true
-description = "Syncod — N-party dispute resolution"
+description = "Accord Synod — N-party dispute-escrow Arbitrable that files disputes via the Accord"
 
 [lints]
 workspace = true
@@ -10,6 +10,11 @@ workspace = true
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "synod"
+# Same rationale as canon: zero doctests, and the `--doc` wrapper is the
+# surface where feature-unification with the `accord` path dep intermittently
+# fails (E0463) after stale build states. Coverage lives in tests/*_litesvm.rs
+# + e2e.
+doctest = false
 
 [features]
 no-entrypoint = []
@@ -23,6 +28,9 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 [dependencies]
 anchor-lang.workspace = true
 anchor-spl.workspace = true
+# `accord` is used at runtime (instructions: `accord::state::Subaccord` reads,
+# `create_dispute` CPI at file_dispute), not just in tests — normal dep.
+accord = { path = "../accord", features = ["cpi"] }
 
 [profile.release]
 overflow-checks = true

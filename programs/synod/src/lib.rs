@@ -16,13 +16,31 @@ use anchor_lang::prelude::*;
 
 pub use constants::*;
 pub use error::SynodError;
+pub use instructions::*;
 pub use state::*;
-// `pub use instructions::*;` returns with the first instruction (canon shape).
 
 declare_id!("GdV5rbRd579LUs3zB2PkbBsJNCMSj55rwWdikGuobHeC");
 
-// Stub crate — no instructions yet. The first instruction lands TDD-first
-// (LiteSVM RED→GREEN) with the Synod v1 build; `programs/synod/SPEC.md` is
-// the authority on what ships.
 #[program]
-pub mod synod {}
+pub mod synod {
+    use super::*;
+
+    /// Permissionless case opening (SPEC §Instructions #1): validates the
+    /// roster + economics, freezes the fee, inits the `SynodCase` PDA in
+    /// `Opening`. The opener does NOT stake here.
+    pub fn open_case(
+        ctx: Context<OpenCase>,
+        parties: Vec<Pubkey>,
+        stake: u64,
+        join_deadline: i64,
+        nonce: u64,
+    ) -> Result<()> {
+        instructions::open_case::handler(ctx, parties, stake, join_deadline, nonce)
+    }
+
+    /// Named-party join (SPEC §Instructions #2): locks the stake `S` into
+    /// the case vault and freezes the party's evidence-hash slot.
+    pub fn join(ctx: Context<Join>, evidence_hash: [u8; 32]) -> Result<()> {
+        instructions::join::handler(ctx, evidence_hash)
+    }
+}
