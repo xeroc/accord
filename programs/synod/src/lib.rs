@@ -1,12 +1,12 @@
 pub mod constants;
-pub mod error;
+pub mod errors;
 pub mod instructions;
 pub mod state;
 
 use anchor_lang::prelude::*;
 
 pub use constants::*;
-pub use instructions::*;
+pub use errors::*;
 pub use state::*;
 
 // ponytail: placeholder keypair from `anchor new` — generate + commit the
