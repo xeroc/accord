@@ -52,4 +52,22 @@ pub mod synod {
     pub fn file_dispute<'a>(ctx: Context<'a, FileDispute<'a>>, nonce: u64) -> Result<()> {
         instructions::file_dispute::handler(ctx, nonce)
     }
+
+    /// Permissionless refund crank (SPEC §Instructions #4): after the join
+    /// deadline with an incomplete roster, each joined party pulls `S` back.
+    /// `opener` + `nonce` re-derive the case PDA (invoke_signed seeds).
+    pub fn refund_roster_miss<'a>(
+        ctx: Context<'a, RefundRosterMiss<'a>>,
+        nonce: u64,
+    ) -> Result<()> {
+        instructions::refund_roster_miss::handler(ctx, nonce)
+    }
+
+    /// Permissionless payout pull (SPEC §Instructions #5): reads the bound
+    /// dispute (Final/Failed only) and pays the party identified by the
+    /// destination ATA — winner pot, neutral split with remainder to last,
+    /// or full `S` on Failed. `opener` + `nonce` re-derive the case PDA.
+    pub fn claim<'a>(ctx: Context<'a, Claim<'a>>, nonce: u64) -> Result<()> {
+        instructions::claim::handler(ctx, nonce)
+    }
 }

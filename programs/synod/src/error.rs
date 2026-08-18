@@ -38,4 +38,16 @@ pub enum SynodError {
     ArithmeticOverflow,
     #[msg("Vault received less than the stake (fee-on-transfer mint?).")]
     StakeTransferShortfall,
+    #[msg("Accord dispute has not reached Final or Failed.")]
+    DisputeNotFinal,
+    #[msg("Dispute final_ruling is not a valid option index for this case.")]
+    InvalidRuling,
+    #[msg("Case is not in the Live state.")]
+    CaseNotLive,
+    #[msg("Roster is full — file_dispute, don't refund.")]
+    RosterComplete,
+    #[msg("This party never joined the case.")]
+    PartyNotJoined,
+    #[msg("Token account belongs to a different mint than the case escrow.")]
+    WrongMint,
 }
