@@ -1,10 +1,11 @@
 ---
 # accord-lqw4
 title: Synod core dependency — Accord tie→RedrawEligible (accord-n3vw)
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-18T05:27:57Z
-updated_at: 2026-08-18T05:27:57Z
+updated_at: 2026-08-18T06:35:16Z
 parent: accord-oylq
 ---
 

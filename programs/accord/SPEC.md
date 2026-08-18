@@ -51,7 +51,7 @@ constants bounding account size.
 | 7   | `commit(dispute, h)`                                      | `h = hash(vote_le8 ‖ salt ‖ juror_pubkey)` — the vote hashed as an **8-byte little-endian u64** (ADR-0025). One per drawn Juror. |
 | 8   | `reveal(dispute, vote: u64, salt)`                        | verifies `h`; records vote into `round.reveals[idx]`. **Vote gate by aggregation (ADR-0025):** `Plurality` requires `vote < num_options`; `Median` requires `vote != u64::MAX` (the no-reveal sentinel) — any other u64 fixed-point scalar passes. Vote-recording only — no fee, no ATA, no SPL transfer (ADR-0020). Participation fee credited at `finalize_round`. |
 | 9   | `appeal(dispute, new_evidence_hash)`                      | **permissionless**; pays `N_new · fee_per_juror` + bond (in `fee_token`); opens a new round at `2N+1`. Max 3 appeals. Draws from the same `frozen_root`. `new_evidence_hash: [u8;32]` stashes per-round evidence at `evidence_hashes[current_round+1]`; `[0u8;32]` sentinel = no new evidence (milestone accord-qp7c).                                                                                                                                                                           |
-| 10  | `finalize_round` / `finalize_dispute`                     | permissionless crank. `finalize_round`: **reveal-quorum gate** (ADR-0021) — if `reveal_count ≥ ceil(panel × reveal_threshold_bps / 10_000)` tallies per `terms.aggregation` (Plurality: modal option index; Median: median of revealed scalars, even reveal-count → **upper middle** (`sorted[n/2]`), ADR-0025), credits `fees_earned += fee_per_juror` per revealer, decrements `fee_paid`, → `RoundResolved`; else → `RedrawEligible` (no credits). `finalize_dispute`: redistributes slash pool (`stake_delta`, stake_token) + fee pool (`fees_earned`, fee_token) to coherent jurors (coherence per aggregation — see below); decrements `active_draws`. |
+| 10  | `finalize_round` / `finalize_dispute`                     | permissionless crank. `finalize_round`: **reveal-quorum gate** (ADR-0021) — if `reveal_count ≥ ceil(panel × reveal_threshold_bps / 10_000)` tallies per `terms.aggregation` (Plurality: modal option index — **a top-count tie (≥2 options share the max) is a non-decisive round → `RedrawEligible`** (ADR-0026; odd panels only prevent ties for binary full-reveal — ≥3 options and non-reveal splits still deadlock); Median: median of revealed scalars, even reveal-count → **upper middle** (`sorted[n/2]`), ADR-0025), credits `fees_earned += fee_per_juror` per revealer, decrements `fee_paid`, → `RoundResolved`; shortfall or tie → `RedrawEligible` (no credits, no result). `finalize_dispute`: redistributes slash pool (`stake_delta`, stake_token) + fee pool (`fees_earned`, fee_token) to coherent jurors (coherence per aggregation — see below); decrements `active_draws`. |
 | 11  | `withdraw_fees`                                           | per-juror: pulls aggregate `fees_earned` from `fee_vault` → juror `fee_token` ATA. No `active_draws` gate, no timelock (ADR-0020).                                                                                                                                                                                                                                                                                                                                                               |
 | 12  | `redraw(dispute)`                                         | **permissionless** (ADR-0021); only from `RedrawEligible`. Slashes no-shows into `stake_delta` (pending, not `staked`), releases the round's `active_draws` + `slash_reserve`, bumps `round.draw_attempt` (orthogonal to `round_idx` — same panel size, no appeal consumed), clears the round → `Created`. On `draw_attempt + 1 ≥ max_draw_attempts` → `Failed`: refunds filer `fee_paid`, releases prior rounds' `active_draws`; slashes stand, bonds stay claimable via `claim_appeal_refund`. |
 | 12a | `reclaim_slot(juror_stake, leaf_path)`                   | **permissionless** (RECLAIM-LEAF); pushes a fully-drained JurorStake's `tree_index` onto the Subaccord's free-list, blanking the leaf identity to `(default, 0)`. Closes the permanent-DoS hole where `next_index` only grows. Preconditions: `staked == 0`, `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`. A new staker then pops from the free list in `stake`, closing the freed account (rent → caller). |
@@ -93,8 +93,8 @@ scalar vote and an index vote commit identically.
 ```
 Created →(VRF committed, root frozen)→ Drawn → Review
    → Commit → Reveal → finalize_round
-        ├─(quorum met)─→ RoundResolved →(appeal window, per-Subaccord terms.appeal_window)→ [Appeal: new round…] → Final → Closed
-        └─(shortfall)──→ RedrawEligible → redraw
+        ├─(quorum met + decisive tally)─→ RoundResolved →(appeal window, per-Subaccord terms.appeal_window)→ [Appeal: new round…] → Final → Closed
+        └─(shortfall ─or─ Plurality top-count tie, ADR-0026)──→ RedrawEligible → redraw
                              ├─(draw_attempt+1 < max_draw_attempts)─→ Created (fresh seats, draw_attempt++)
                              └─(exhausted)─────────────────────────→ Failed (filer fee refunded; slashes stand)
 ```
@@ -111,14 +111,15 @@ reveal window's `reveal_end` upper bound is unchanged. `finalize_round`
 (reveal→resolved) likewise resolves early once every juror has revealed
 (`reveal_count == juror_count`) — no need to wait out the reveal window. Odd
 `min_jury_size` (default 3) keeps every appeal round odd
-(3 / 7 / 15 / 31 at default; accord-9q3e generalizes the base), making ties
-impossible.
+(3 / 7 / 15 / 31 at default; accord-9q3e generalizes the base), making
+full-reveal **binary** ties impossible; ≥3-option tallies and non-reveal
+splits can still tie, and ADR-0026 routes those to `RedrawEligible`.
 
 ## Economics (Kleros-inherited; ADR-0020 two-mint split)
 
 - **Two mints:** `staking_token` (collateral — sortition weight + slash exposure) and `fee_token` (compensation — fees + appeal bonds, USDC by convention).
 - **Fee:** filer pays `min_jury_size · fee_per_juror` (round 1, in `fee_token`; accord-9q3e); appellant pays `N_new · fee_per_juror` + bond (in `fee_token`). Fees flow into the per-Subaccord `fee_vault`. `dispute.fee_paid` tracks ONLY the round-0 filing fee; the appeal fee + bond live in `AppealBond.amount` (bean accord-xftx — non-overlapping ownership).
-- **Fee credit:** `finalize_round` credits each revealer `fees_earned += fee_per_juror` (every round) but decrements `dispute.fee_paid` ONLY for round 0, and ONLY if the reveal-quorum threshold is met (`reveal_count ≥ ceil(panel × reveal_threshold_bps / 10_000)`, ADR-0021). A shortfall credits nothing → the filer's single deposit suffices across the whole redraw ladder.
+- **Fee credit:** `finalize_round` credits each revealer `fees_earned += fee_per_juror` (every round) but decrements `dispute.fee_paid` ONLY for round 0, and ONLY if the reveal-quorum threshold is met (`reveal_count ≥ ceil(panel × reveal_threshold_bps / 10_000)`, ADR-0021) AND the tally is decisive — a Plurality top-count tie credits nothing (ADR-0026). A shortfall or tie credits nothing → the filer's single deposit suffices across the whole redraw ladder.
 - **Slash:** each Incoherent Juror loses **`α · min_stake`** (flat, in `staking_token`) → written to `stake_delta`. _Incoherent_ is judged per aggregation against the **final** ruling (ADR-0025): `Plurality` = exact option match; `Median` = outside the `coherence_tol_bps` band (see [Aggregation & coherence](#aggregation--coherence-adr-00190025)).
 - **Redistribution (two pools):** slash pool (`stake_token`) → coherent `stake_delta`; fee pool = non-revealer fees + forfeited bonds (`fee_token`) → coherent `fees_earned`. When no juror is coherent but some revealed, pools fall back to revealers (those who at least participated); zero reveals → surplus trapped in vault as protocol revenue (bean accord-aqmw). Equal split (integer div; remainder is protocol surplus).
 - **`withdraw_fees`:** per-juror, pulls aggregate `fees_earned` from `fee_vault`. No `active_draws` gate, no timelock.
@@ -155,7 +156,7 @@ Juror decrypts, verifies cleartext vs on-chain evidence_hash
 ## Edge cases & defaults
 
 - **Insufficient Jurors:** `create_dispute` / `appeal` **reverts** if the Subaccord's active distinct stakers < `min_jury_size`. (Alt — under-fill — rejected: breaks the Schelling jury.)
-- **Ties:** impossible (odd Juror counts).
+- **Ties:** a Plurality top-count tie is a **non-decisive round** → `RedrawEligible` → redraw / `Failed` on exhaustion (ADR-0026). Odd Juror counts make only full-reveal **binary** ties impossible.
 - **No Coherent Jurors in a round:** the round's pool defaults to the winning option's favour (Kleros §4.6 fn.10). _Flag for revisit._
 - **VRF availability:** `request_vrf` retries with backoff if the VRF result isn't yet available.
 - **Stale/fabricated Merkle path** (stake/unstake/draw_seat): reverts — the path is verified against the stored/frozen root; the root cannot be corrupted by a bad path. Indexer liveness dependency only (recompute + retry), not a correctness risk.
@@ -167,6 +168,6 @@ Accord token · dynamic params · further aggregation rules beyond `Plurality`/`
 
 ## References
 
-- `apps/docs/docs/adr/0012` on-chain stake accumulator · `0004` party-agnostic · `0005` Subaccord authority · `0006` evidence · `0007` upgrade · `0020` two-mint/two-vault economics · `0025` scalar voting (u64 votes, `Median`, coherence band)
+- `apps/docs/docs/adr/0012` on-chain stake accumulator · `0004` party-agnostic · `0005` Subaccord authority · `0006` evidence · `0007` upgrade · `0020` two-mint/two-vault economics · `0021` reveal-quorum + shortfall redraw · `0025` scalar voting (u64 votes, `Median`, coherence band) · `0026` Plurality tie → non-decisive round
 - `apps/docs/docs/adr/0001` Schelling-over-hired-judges · `0002` per-Subaccord staking token (partially superseded by 0020)
 - `CONTEXT.md` (domain language) · `PROJECT.md` (rationale) · `context/kleros-whitepaper.md` (prior art)

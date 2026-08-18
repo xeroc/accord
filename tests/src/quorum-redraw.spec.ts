@@ -2,11 +2,13 @@
 // redraw, against a running Surfpool instance.
 //
 // Mirrors the LiteSVM scenarios (bean accord-84vk) over the full SDK ↔ program
-// ↔ Surfnet stack:
 //   1. shortfall → RedrawEligible → redraw → Created (draw_attempt++) →
 //      re-draw → full reveal → RoundResolved (+ no-show slash retained).
 //   2. Failed-on-exhaust (max_draw_attempts = 1): filer fee_paid refunded,
 //      no-show slashes retained.
+//   3. plurality top-count TIE (split reveal, quorum met) → RedrawEligible →
+//      redraw → decisive re-vote → RoundResolved (ADR-0026 — the tie is a
+//      non-decisive round, same family as the shortfall).
 //
 // Uses the shared draw-harness (armSubaccordAndJurors → armDispute →
 // resolveDistinctPanel → submitDraw) for the initial panel, then the SDK
@@ -103,7 +105,7 @@ function randomNonce(): bigint {
     .reduce((acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)), 0n);
 }
 
-describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", () => {
+describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (requires Surfpool)", () => {
   let env: TestEnv;
 
   beforeAll(async () => {
@@ -394,6 +396,202 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
         getJurorStakeDecoder(),
       );
       expect(Number(js?.stakeDelta ?? 0)).toBeLessThan(0);
+    }
+  }, 600_000);
+  it("plurality tie (split reveal) → RedrawEligible → redraw → decisive re-vote (ADR-0026)", async () => {
+    if (!env.up) return; // offline CI lane
+
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
+    const fx: DrawFixture = { env, up: true, ...core };
+    const armed = await armDispute(fx, randomNonce());
+
+    // --- initial draw (draw_attempt = 0) ---
+    const memberships = await resolveDistinctPanel(fx, armed);
+    const roundPda = await submitDraw(fx, armed, memberships);
+    const drawn = jurorsOf(fx, memberships);
+
+    // --- seats 0,1 reveal a SPLIT vote (1-1); seat 2 stays silent ---
+    // Quorum met (2 ≥ ceil(3 × 6666/10000) = 2) but the tally deadlocks:
+    // a top-count tie is a NON-DECISIVE round (ADR-0026), same family as
+    // the ADR-0021 shortfall.
+    let round = await readRound(env, roundPda);
+    await warpTo(env, round!.reviewEnd);
+    const salts = drawn.map(() => crypto.getRandomValues(new Uint8Array(32)));
+    const votes = [0n, 1n];
+    for (let i = 0; i < 2; i++) {
+      const { instruction } = await commit(
+        drawn[i]!.accord.adapter,
+        env.programId,
+        {
+          signer: drawn[i]!.signer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        { vote: votes[i]!, salt: salts[i]! },
+      );
+      await env.sendIx(instruction);
+    }
+    await warpTo(env, round!.commitEnd);
+    for (let i = 0; i < 2; i++) {
+      await env.sendIx(
+        reveal(
+          drawn[i]!.accord.adapter,
+          env.programId,
+          {
+            signer: drawn[i]!.signer.address,
+            subaccord: fx.subaccord,
+            dispute: armed.dispute,
+            round: roundPda,
+            stakingToken: fx.mint,
+            jurorTokenAccount: drawn[i]!.jurorAta,
+            vault: fx.vault,
+          },
+          { vote: votes[i]!, salt: salts[i]! },
+        ),
+      );
+    }
+
+    // --- finalize_round → RedrawEligible (tie: no result, no credits) ---
+    await warpTo(env, round!.revealEnd);
+    const panelPdas = memberships.map((m) => m.jurorStake);
+    await env.sendIx(
+      finalizeRound(
+        env.accord.adapter,
+        env.programId,
+        {
+          signer: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        panelPdas,
+      ),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(REDRAW_ELIGIBLE);
+
+    const tiedRound = await readRound(env, roundPda);
+    expect(tiedRound!.result).toBe(0xffff_ffff_ffff_ffffn); // u64::MAX = unset
+
+    // The revealers earned nothing (a tie pays like a shortfall); the
+    // filer's fee_paid pool is intact.
+    for (const j of drawn) {
+      const js = await fetchDecoded(env, j.stakePda, getJurorStakeDecoder());
+      expect(js?.feesEarned).toBe(0n);
+    }
+    const tied = await fetchDecoded(env, armed.dispute, getDisputeDecoder());
+    expect(tied?.feePaid).toBe(3n * FEE_PER_JUROR);
+
+    // --- redraw → Created (draw_attempt 1); the silent seat is slashed ---
+    const filerAta = await ataOf(fx.mint, env.payer.address);
+    await env.sendIx(
+      redraw(
+        env.accord.adapter,
+        env.programId,
+        {
+          caller: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+          feeToken: fx.mint,
+          filerTokenAccount: filerAta,
+          feeVault: fx.vault,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        panelPdas,
+      ),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(CREATED);
+
+    const rd = await fetchDecoded(env, roundPda, getRoundDecoder());
+    expect(rd?.drawAttempt).toBe(1);
+
+    // Revealers keep stakeDelta 0; the silent no-show is slashed.
+    for (let i = 0; i < 2; i++) {
+      const js = await fetchDecoded(
+        env,
+        drawn[i]!.stakePda,
+        getJurorStakeDecoder(),
+      );
+      expect(Number(js?.stakeDelta ?? 0)).toBe(0);
+    }
+    const silent = await fetchDecoded(
+      env,
+      drawn[2]!.stakePda,
+      getJurorStakeDecoder(),
+    );
+    expect(Number(silent?.stakeDelta ?? 0)).toBeLessThan(0);
+
+    // --- re-draw at draw_attempt 1, unanimous vote 0 → RoundResolved ---
+    const reMemberships = await resolvePanelAttempt(fx, armed, 1);
+    await submitDraw(fx, armed, reMemberships);
+    const reDrawn = jurorsOf(fx, reMemberships);
+
+    round = await readRound(env, roundPda);
+    await warpTo(env, round!.reviewEnd);
+    const reSalts = reDrawn.map(() =>
+      crypto.getRandomValues(new Uint8Array(32)),
+    );
+    for (let i = 0; i < reDrawn.length; i++) {
+      const { instruction } = await commit(
+        reDrawn[i]!.accord.adapter,
+        env.programId,
+        {
+          signer: reDrawn[i]!.signer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        { vote: 0n, salt: reSalts[i]! },
+      );
+      await env.sendIx(instruction);
+    }
+    await warpTo(env, round!.commitEnd);
+    for (let i = 0; i < reDrawn.length; i++) {
+      await env.sendIx(
+        reveal(
+          reDrawn[i]!.accord.adapter,
+          env.programId,
+          {
+            signer: reDrawn[i]!.signer.address,
+            subaccord: fx.subaccord,
+            dispute: armed.dispute,
+            round: roundPda,
+            stakingToken: fx.mint,
+            jurorTokenAccount: reDrawn[i]!.jurorAta,
+            vault: fx.vault,
+          },
+          { vote: 0n, salt: reSalts[i]! },
+        ),
+      );
+    }
+
+    await warpTo(env, round!.revealEnd);
+    const rePanelPdas = reMemberships.map((m) => m.jurorStake);
+    await env.sendIx(
+      finalizeRound(
+        env.accord.adapter,
+        env.programId,
+        {
+          signer: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        rePanelPdas,
+      ),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
+
+    const finalRound = await readRound(env, roundPda);
+    expect(finalRound!.result).toBe(0n); // unanimous option 0
+
+    // Every decisive-round revealer is credited the per-juror fee (jurors
+    // drawn in both panels earned nothing in the tied attempt).
+    for (const j of reDrawn) {
+      const js = await fetchDecoded(env, j.stakePda, getJurorStakeDecoder());
+      expect(js?.feesEarned).toBe(BigInt(FEE_PER_JUROR));
     }
   }, 600_000);
 });
