@@ -106,6 +106,7 @@ export type CreateListInstructionData = {
   challengePct: number;
   listingWindow: bigint;
   withdrawalTimelock: bigint;
+  evidenceOperator: Address;
 };
 
 export type CreateListInstructionDataArgs = {
@@ -115,6 +116,7 @@ export type CreateListInstructionDataArgs = {
   challengePct: number;
   listingWindow: number | bigint;
   withdrawalTimelock: number | bigint;
+  evidenceOperator: Address;
 };
 
 export function getCreateListInstructionDataEncoder(): FixedSizeEncoder<CreateListInstructionDataArgs> {
@@ -127,6 +129,7 @@ export function getCreateListInstructionDataEncoder(): FixedSizeEncoder<CreateLi
       ["challengePct", getU16Encoder()],
       ["listingWindow", getU64Encoder()],
       ["withdrawalTimelock", getU64Encoder()],
+      ["evidenceOperator", getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: CREATE_LIST_DISCRIMINATOR }),
   );
@@ -141,6 +144,7 @@ export function getCreateListInstructionDataDecoder(): FixedSizeDecoder<CreateLi
     ["challengePct", getU16Decoder()],
     ["listingWindow", getU64Decoder()],
     ["withdrawalTimelock", getU64Decoder()],
+    ["evidenceOperator", getAddressDecoder()],
   ]);
 }
 
@@ -195,6 +199,7 @@ export type CreateListAsyncInput<
   challengePct: CreateListInstructionDataArgs["challengePct"];
   listingWindow: CreateListInstructionDataArgs["listingWindow"];
   withdrawalTimelock: CreateListInstructionDataArgs["withdrawalTimelock"];
+  evidenceOperator: CreateListInstructionDataArgs["evidenceOperator"];
 };
 
 export async function getCreateListInstructionAsync<
@@ -360,6 +365,7 @@ export type CreateListInput<
   challengePct: CreateListInstructionDataArgs["challengePct"];
   listingWindow: CreateListInstructionDataArgs["listingWindow"];
   withdrawalTimelock: CreateListInstructionDataArgs["withdrawalTimelock"];
+  evidenceOperator: CreateListInstructionDataArgs["evidenceOperator"];
 };
 
 export function getCreateListInstruction<

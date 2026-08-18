@@ -84,6 +84,9 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       { creator: env.payer, stakeMint: mint, feeMint: mint },
       {
         listProgram,
+        // Any non-default key satisfies create_list's InvalidEvidenceOperator
+        // guard; the e2e doesn't exercise ECIES (see tests/e2e.test.ts).
+        evidenceOperator: env.payer.address,
         rulesHash,
         submitDeposit: 500n,
         challengePct: 5_000, // 50%

@@ -59,6 +59,10 @@ export interface CreateListArgs {
   challengePct: number;
   listingWindow: bigint;
   withdrawalTimelock: bigint;
+  /** Backing court's evidence operator (Ed25519 pubkey). Must NOT be the
+   * default pubkey — the program rejects it (a zero key can never be an ECIES
+   * target). Deployment-configured; the dApp passes VITE_EVIDENCE_OPERATOR_ADDRESS. */
+  evidenceOperator: Address;
 }
 
 /** Build `create_list`: derives the CanonList + backing Subaccord PDAs and CPIs
@@ -91,6 +95,7 @@ export async function createList(
       challengePct: args.challengePct,
       listingWindow: args.listingWindow,
       withdrawalTimelock: args.withdrawalTimelock,
+      evidenceOperator: args.evidenceOperator,
     },
     { programAddress: programId },
   );

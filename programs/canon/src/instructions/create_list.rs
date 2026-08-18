@@ -26,9 +26,18 @@ pub fn create_list_handler(
     challenge_pct: u16,
     listing_window: u64,
     withdrawal_timelock: u64,
+    evidence_operator: Pubkey,
 ) -> Result<()> {
     // --- Validation -------------------------------------------------------
     require!(rules_hash != [0u8; 32], CanonError::InvalidRulesHash);
+    // A zero operator can never be an ECIES target — the claimant SDK refuses
+    // the X25519 conversion, so challenges against such a list dead-end at
+    // evidence publish. Force a real operator at creation (deployment-supplied;
+    // the dApp passes VITE_EVIDENCE_OPERATOR_ADDRESS).
+    require!(
+        evidence_operator != Pubkey::default(),
+        CanonError::InvalidEvidenceOperator
+    );
     require!(
         challenge_pct <= MAX_CHALLENGE_PCT_BPS,
         CanonError::ChallengePctTooHigh
@@ -75,7 +84,7 @@ pub fn create_list_handler(
             coherence_tol_bps: 0,
             // The CanonList PDA — see the CPI comment above.
             authority: list_pda,
-            evidence_operator: Pubkey::default(),
+            evidence_operator,
             depth: DEFAULT_TREE_DEPTH,
             // PROG-ATTESTTION: stake-only backing court (no credential gate).
             // Canon lists do not gate jurors by attestation in v1.

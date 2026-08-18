@@ -47,4 +47,6 @@ pub enum CanonError {
     InvalidRulesHash,
     #[msg("challenge_pct exceeds MAX_CHALLENGE_PCT_BPS.")]
     ChallengePctTooHigh,
+    #[msg("evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence.")]
+    InvalidEvidenceOperator,
 }

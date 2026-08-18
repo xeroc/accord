@@ -47,3 +47,14 @@ creator, rules_hash]` with `seeds::program = accord::ID`.
 no-entrypoint` — 4/4 LiteSVM tests pass; `cargo fmt` / `cargo clippy` clean;
   `anchor build --ignore-keys` emits `canon.so` + IDL with `create_list`
   instruction + `CanonList` type.
+
+## Superseded in part (2026-08-18 — accord-mpff)
+
+The `evidence_operator = Pubkey::default()` half of the "immutable until the
+Canon governance multisig exists" decision is superseded by accord-mpff: a
+zero operator key can never be an ECIES target (claimant SDK refuses the
+X25519 conversion), so canon challenges dead-ended at evidence publish.
+`create_list` now takes `evidence_operator` as an instruction arg
+(`Pubkey::default()` rejected with `InvalidEvidenceOperator`); the dApp
+supplies it from `VITE_EVIDENCE_OPERATOR_ADDRESS` (deployment env). The
+`authority = list_pda` half (already drifted from this bean's text) stands.

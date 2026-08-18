@@ -3,11 +3,13 @@
 //!
 //! Coverage (safe-solana-builder matrix, instruction subset):
 //! - happy: create_list inits CanonList with all fields + CPI-creates the
-//!   backing Subaccord with the Canon canonical defaults
+//!   backing Subaccord with the Canon canonical defaults (incl. the passed
+//!   evidence_operator)
 //! - auth: (permissionless — no auth-fail case; any signer works)
 //! - reinit: double create_list on the same PDA -> must fail (account in use)
 //! - args: zero rules_hash -> InvalidRulesHash
 //! - args: challenge_pct > MAX -> ChallengePctTooHigh
+//! - args: evidence_operator = Pubkey::default -> InvalidEvidenceOperator
 //!
 //! Run via `make test_unit` (builds .so then `cargo test --features
 //! no-entrypoint` in programs/canon). One fresh context per test.
@@ -117,6 +119,7 @@ fn do_create_list(
     creator: &Keypair,
     rules: [u8; 32],
     challenge_pct: u16,
+    evidence_operator: Pubkey,
 ) -> (TransactionResult, Pubkey, Pubkey) {
     let stake_mint = Pubkey::new_unique();
     let fee_mint = Pubkey::new_unique();
@@ -140,6 +143,7 @@ fn do_create_list(
             challenge_pct,
             listing_window: DEFAULT_LISTING_WINDOW_SECS,
             withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
+            evidence_operator,
         })
         .instruction()
         .expect("build create_list instruction");
@@ -156,8 +160,14 @@ fn create_list_inits_canon_list_and_subaccord() {
     let list_pda = canon_list_pda(&creator.pubkey(), &rules);
     let sub_pda = subaccord_pda(&creator.pubkey(), &rules);
 
-    let (r, stake_mint, fee_mint) =
-        do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
+    let evidence_operator = Pubkey::new_unique();
+    let (r, stake_mint, fee_mint) = do_create_list(
+        &mut ctx,
+        &creator,
+        rules,
+        DEFAULT_CHALLENGE_PCT_BPS,
+        evidence_operator,
+    );
     r.assert_success();
 
     // --- Verify CanonList ---
@@ -202,7 +212,7 @@ fn create_list_inits_canon_list_and_subaccord() {
     // canon (a future gated instruction CPIs propose_subaccord_update with the
     // list PDA as signer). No external key, no burned upgrade path.
     assert_eq!(sub.authority, list_pda);
-    assert_eq!(sub.evidence_operator, Pubkey::default());
+    assert_eq!(sub.evidence_operator, evidence_operator);
     assert_eq!(sub.depth, DEFAULT_TREE_DEPTH);
 }
 
@@ -212,11 +222,23 @@ fn create_list_double_init_fails() {
     let (mut ctx, creator) = setup();
     let rules = rules_hash();
 
-    let (r, ..) = do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
+    let (r, ..) = do_create_list(
+        &mut ctx,
+        &creator,
+        rules,
+        DEFAULT_CHALLENGE_PCT_BPS,
+        Pubkey::new_unique(),
+    );
     r.assert_success();
     ctx.svm.expire_blockhash();
 
-    let (r, ..) = do_create_list(&mut ctx, &creator, rules, DEFAULT_CHALLENGE_PCT_BPS);
+    let (r, ..) = do_create_list(
+        &mut ctx,
+        &creator,
+        rules,
+        DEFAULT_CHALLENGE_PCT_BPS,
+        Pubkey::new_unique(),
+    );
     assert!(
         !r.is_success(),
         "double create_list must fail; logs={:?}",
@@ -229,7 +251,13 @@ fn create_list_double_init_fails() {
 fn create_list_zero_rules_hash_fails() {
     let (mut ctx, creator) = setup();
 
-    let (r, ..) = do_create_list(&mut ctx, &creator, [0u8; 32], DEFAULT_CHALLENGE_PCT_BPS);
+    let (r, ..) = do_create_list(
+        &mut ctx,
+        &creator,
+        [0u8; 32],
+        DEFAULT_CHALLENGE_PCT_BPS,
+        Pubkey::new_unique(),
+    );
     assert!(
         !r.is_success(),
         "zero rules_hash must fail (InvalidRulesHash); logs={:?}",
@@ -243,10 +271,38 @@ fn create_list_challenge_pct_too_high_fails() {
     let (mut ctx, creator) = setup();
     let rules = rules_hash();
 
-    let (r, ..) = do_create_list(&mut ctx, &creator, rules, MAX_CHALLENGE_PCT_BPS + 1);
+    let (r, ..) = do_create_list(
+        &mut ctx,
+        &creator,
+        rules,
+        MAX_CHALLENGE_PCT_BPS + 1,
+        Pubkey::new_unique(),
+    );
     assert!(
         !r.is_success(),
         "challenge_pct > MAX must fail (ChallengePctTooHigh); logs={:?}",
+        r.logs()
+    );
+}
+
+/// evidence_operator = Pubkey::default must fail (InvalidEvidenceOperator) —
+/// a zero operator key can never be an ECIES target (the SDK refuses the
+/// X25519 conversion), so lists must pin a real operator at creation.
+#[test]
+fn create_list_default_evidence_operator_fails() {
+    let (mut ctx, creator) = setup();
+    let rules = rules_hash();
+
+    let (r, ..) = do_create_list(
+        &mut ctx,
+        &creator,
+        rules,
+        DEFAULT_CHALLENGE_PCT_BPS,
+        Pubkey::default(),
+    );
+    assert!(
+        !r.is_success(),
+        "default evidence_operator must fail (InvalidEvidenceOperator); logs={:?}",
         r.logs()
     );
 }

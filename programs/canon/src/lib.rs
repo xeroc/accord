@@ -92,6 +92,7 @@ pub mod canon {
         challenge_pct: u16,
         listing_window: u64,
         withdrawal_timelock: u64,
+        evidence_operator: Pubkey,
     ) -> Result<()> {
         instructions::create_list::create_list_handler(
             ctx,
@@ -101,6 +102,7 @@ pub mod canon {
             challenge_pct,
             listing_window,
             withdrawal_timelock,
+            evidence_operator,
         )
     }
 }

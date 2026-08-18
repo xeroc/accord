@@ -306,7 +306,7 @@ fn set_disputed(
 /// `accord::state::Dispute` (correct discriminator + layout), so `settle_item`'s
 /// `Dispute::try_deserialize` succeeds. `state`/`final_ruling` are the only
 /// fields `settle_item` reads; the rest are plausible defaults.
-fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling: u8) {
+fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling: u64) {
     let mut options = [[0u8; 32]; accord::constants::MAX_OPTIONS];
     options[0][0] = b'k';
     options[1][0] = b'r';
@@ -337,6 +337,7 @@ fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling
             reveal_threshold_bps: 6_666,
             shortfall_policy: accord::state::ShortfallPolicy::Redraw,
             max_draw_attempts: 3,
+            coherence_tol_bps: 0,
         },
         final_ruling: ruling,
         finalized_at: if is_final { 99 } else { 0 },
@@ -346,6 +347,7 @@ fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling
         frozen_total_stake: 0,
         filed_at: 0,
         bump: 254,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     d.try_serialize(&mut buf).unwrap();

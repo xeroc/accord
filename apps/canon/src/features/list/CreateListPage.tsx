@@ -8,7 +8,9 @@
  *
  * The creator IS the connected wallet — the SDK adapter wires `creator: signer`.
  * The backing Subaccord is created via CPI inside the on-chain `create_list`
- * handler (Canon canonical defaults; the user does not configure Accord params).
+ * handler (Canon canonical defaults; the user does not configure Accord params
+ * except the evidence operator, which is deployment-configured — see
+ * EVIDENCE_OPERATOR below).
  *
  * Signer seam: `useSigner()` resolves the connected wallet via ConnectorKit.
  * When no wallet is connected the form renders a connect-wallet gate.
@@ -31,6 +33,13 @@ const DEFAULT_SUBMIT_DEPOSIT = "500";
 const DEFAULT_CHALLENGE_PCT_BPS = "5000";
 const FIVE_DAYS_SECS = (5 * 24 * 60 * 60).toString();
 const MAX_CHALLENGE_PCT_BPS = 10_000;
+
+/** Deployment-configured evidence operator — the evidence daemon's Ed25519
+ * pubkey (must match a key in the daemon's keyring). Static per .env, not a
+ * form field — same pattern as VITE_EVIDENCE_DAEMON_URL. The program rejects
+ * the default pubkey: a zero operator key can never be an ECIES target. */
+const EVIDENCE_OPERATOR =
+  import.meta.env.VITE_EVIDENCE_OPERATOR_ADDRESS ?? "";
 
 /** String-valued form state — every input is text; parsed on submit. */
 interface FormState {
@@ -86,6 +95,10 @@ export function CreateListPage() {
         },
         {
           listProgram: listProgram as Address,
+          evidenceOperator: requireAddress(
+            EVIDENCE_OPERATOR,
+            "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS in .env)",
+          ),
           rulesHash: parseHex32(form.rulesHash, "Rules hash"),
           submitDeposit: parseBigint(form.submitDeposit, "Submit deposit"),
           challengePct: parseBoundedInt(

@@ -35,7 +35,7 @@ staking.
 
 | # | Instruction | Semantics |
 | --- | --- | --- |
-| 1 | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
+| 1 | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock, evidence_operator)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**, `evidence_operator` forwarded — `Pubkey::default()` rejected with `InvalidEvidenceOperator`); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
 | 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
 | 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
 | 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
@@ -99,7 +99,7 @@ signer.
 | `max_appeals` | 3 | 3 → 7 → 15 → 31 ladder |
 | `alpha_bps` | 1000 (10%) | Accord v1 slash default |
 | review / commit / reveal | 7d / 2d / 2d | Accord v1 defaults |
-| `evidence_operator` | canonical Accord/Canon operator | ADR-0006 |
+| `evidence_operator` | creator-supplied (deployment-configured; dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`) | must be a real key held by the daemon's keyring (ADR-0006/0011) — a zero key can never be an ECIES target |
 | `fee_per_juror` | 10 | in `fee_mint`; round-1 ≈ 30 |
 | `submit_deposit` | 500 | in `fee_mint`; base skin (recoverable via withdrawal) |
 | `challenge_pct` | 50% (5000 bps) | challenger stakes half the accumulated stake |
