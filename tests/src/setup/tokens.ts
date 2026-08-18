@@ -9,6 +9,7 @@
 import {
   generateKeyPairSigner,
   getAddressEncoder,
+  getProgramDerivedAddress,
   type Address,
   type KeyPairSigner,
 } from "@solana/kit";
@@ -69,4 +70,27 @@ export async function setTokenBalance(
   amount: bigint,
 ): Promise<void> {
   await cheat(env, "surfnet_setTokenAccount", [owner, mint, { amount: Number(amount) }]);
+}
+
+// --- ATA derivation (shared — no per-spec copies) ---------------------------
+
+/** Associated Token Account program (`ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`). */
+export const ATA_PROGRAM_ID =
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
+
+/**
+ * Derive the canonical ATA for (mint, owner) the way the program does
+ * (seeds: owner ‖ token program ‖ mint). Use for vault + party accounts.
+ */
+export async function ataOf(mint: Address, owner: Address): Promise<Address> {
+  const enc = getAddressEncoder();
+  const [ata] = await getProgramDerivedAddress({
+    programAddress: ATA_PROGRAM_ID,
+    seeds: [
+      new Uint8Array(enc.encode(owner)),
+      new Uint8Array(enc.encode(TOKEN_PROGRAM_ID)),
+      new Uint8Array(enc.encode(mint)),
+    ],
+  });
+  return ata;
 }
