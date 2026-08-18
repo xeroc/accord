@@ -6,8 +6,8 @@
  * `evidence_operator` and `Round.jurors[]` Ed25519 pubkeys by dual-using each
  * key: signing on-chain (Ed25519) + encryption off-chain via its Montgomery
  * (X25519) form — a libsodium-style `crypto_sign_ed25519_{pk,sk}_to_curve25519`
- * conversion (SPEC §Crypto model). Every conversion / ECDH here is backed by
- * `@noble/curves`; the wrappers only add length validation at the public seam.
+ * `@noble/curves`; the wrappers only add length + zero-key validation at the
+ * public seam.
  */
 import {
   ed25519,
@@ -42,6 +42,14 @@ export interface Keyring {
 /** Convert an Ed25519 public key (32 bytes) to its X25519 (Montgomery) form. */
 export function ed25519ToX25519PublicKey(ed25519Pubkey: Uint8Array): Uint8Array {
   requireLen(ed25519Pubkey, 32, "Ed25519 public key");
+  // Pubkey::default() converts to Montgomery u=1 (order-2) — the X25519 shared
+  // secret would be all zeros and noble throws a cryptic error downstream.
+  // Canon's create_list CPI still sets evidence_operator = Pubkey::default().
+  if (ed25519Pubkey.every((b) => b === 0)) {
+    throw new Error(
+      "Ed25519 public key is all zeros (Solana Pubkey::default — unset evidence_operator on-chain); refusing X25519 conversion",
+    );
+  }
   return edwardsToMontgomeryPub(ed25519Pubkey);
 }
 

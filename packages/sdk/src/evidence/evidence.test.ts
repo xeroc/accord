@@ -212,6 +212,17 @@ test("ECIES ingest: a different operator secret cannot decrypt", async () => {
   await assert.rejects(() => operatorDecrypt(bundle, stranger.sk));
 });
 
+test("ECIES ingest: all-zero operator pubkey (Pubkey::default — unset on-chain evidence_operator) is rejected with a clear error", async () => {
+  // Solana Pubkey::default — e.g. canon `create_list` CPIs `create_subaccord`
+  // with evidence_operator = Pubkey::default() until a canonical operator
+  // exists. Montgomery u=1 (order-2) → shared secret would be all zeros.
+  const zeroPub = new Uint8Array(32);
+  await assert.rejects(
+    () => claimantEncrypt(enc.encode("p"), zeroPub),
+    /unset evidence_operator/,
+  );
+});
+
 test("ECIES deliver: operator re-encrypt -> juror decrypt round-trip", async () => {
   const juror = edPair();
   const pt = enc.encode("for the juror's eyes");
