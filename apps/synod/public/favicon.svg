@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Synod">
+  <!-- assembly glyph: muted nodes converge into one amber verdict diamond -->
+  <rect width="32" height="32" rx="7" fill="#0A0E14"/>
+  <circle cx="7" cy="8" r="2" fill="#7D8590"/>
+  <circle cx="7" cy="16" r="2" fill="#7D8590"/>
+  <circle cx="7" cy="24" r="2" fill="#7D8590"/>
+  <line x1="9" y1="8" x2="20" y2="16" stroke="#7D8590" stroke-width="1.2"/>
+  <line x1="9" y1="16" x2="20" y2="16" stroke="#7D8590" stroke-width="1.2"/>
+  <line x1="9" y1="24" x2="20" y2="16" stroke="#7D8590" stroke-width="1.2"/>
+  <path d="M20 12 L25 16 L20 20 L15 16 Z" fill="#F0A830"/>
+</svg>

@@ -208,6 +208,7 @@ See [Testing](#testing) for the two-harness philosophy.
 │   ├── evidence-daemon/        # Evidence Operator daemon (ADR-0011)
 │   ├── app/                    # Accord dApp (React + Vite)
 │   ├── canon/                  # Canon Registry dApp (React + Vite)
+│   ├── synod/                  # Synod dApp (React + Vite)
 │   ├── landing/                # Landing page
 │   └── docs/                   # Documentation hub
 │       ├── docs/               # MkDocs site content (integration, reference, security)
