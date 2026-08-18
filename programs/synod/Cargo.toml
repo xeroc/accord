@@ -1,0 +1,50 @@
+[package]
+name = "synod"
+version.workspace = true
+edition.workspace = true
+description = "Syncod — N-party dispute resolution"
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "synod"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+# Required by `anchor build` for IDL generation since anchor 0.30 (#2824).
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang.workspace = true
+anchor-spl.workspace = true
+
+[profile.release]
+overflow-checks = true
+
+# LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
+#
+# `anchor-litesvm` 0.4.x tracks anchor-lang 1.x (the 0.1 line was the 0.31 pin).
+# It wraps litesvm 0.11 with a solana-3.x dep set and the same typed Anchor
+# builder: `ctx.program().request().accounts(..).args(..).instruction()` ->
+# `ctx.execute_instruction(ix, &[&kp]).assert_success()`.
+#
+# The safe-solana-builder `references/litesvm.md` stays the *checklist/pattern*
+# authority for every instruction bean (happy/auth/reinit/time-lock/arithmetic/
+# closure, sysvar manipulation, CU profiling) — wiring differs, concepts don't.
+[target.'cfg(not(target_os = "solana"))'.dev-dependencies]
+anchor-litesvm = "0.4"
+anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }
+solana-program = "3"
+solana-sdk = "3"
+# For stake tests: derive the Subaccord PDA's vault ATA address + unpack SPL
+# token accounts for balance assertions. Pinned to match litesvm-utils'
+# resolved versions so no extra copies land in the dep tree.
+spl-associated-token-account = "8"
+spl-token = "9"

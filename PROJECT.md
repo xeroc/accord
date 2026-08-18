@@ -153,7 +153,29 @@ authentication) enforce the expertise they are named for.
 
 These four are illustrative, not exhaustive — and not all exist today. The point
 is structural: any program that needs a "who is right?" decision can become an
-Arbitrable with two CPI calls, without the Accord changing.
+Arbitrable with two CPI calls, without the Accord changing. Two of them already
+have names and crates:
+
+**Canon — the curated-list Arbitrable (built).** The registry row above, made
+concrete: a general curated-list factory where submitters lock permanent
+deposits, challengers contest, and each list gets its own backing Subaccord.
+On a challenge, Canon is the single filer — `create_dispute([keep, remove])` —
+and on the ruling it flips item status and redistributes deposits. It is the
+first-party reference Arbitrable for the token-authenticity beachhead, with
+Stake-Curate economics (permanent deposits, progressive protection,
+challenger accountability). (`programs/canon`, ADR `canon/0001`.)
+
+**Synod — the N-party dispute-escrow Arbitrable (specced).** The generalization
+of the escrow row: 2–7 named parties each stake the same amount into a Case;
+when the full roster has joined, Synod files one dispute whose options are the
+parties themselves ("party i is right", plus a neutral "no party prevails");
+Accord's jury rules; the pot goes to the prevailing party, a neutral ruling
+refunds everyone minus the juror fee, and a missed roster deadline refunds
+everyone in full. This is the shape escrows, milestone disputes, and
+multi-signer disagreements compose on — parties bring stake, Accord brings the
+verdict, Synod brings the escrow. Crucially, Accord itself stays party-agnostic
+(ADR-0004): all party economics live in Synod. (`programs/synod`,
+ADRs `synod/0001`–`0002`.)
 
 ### Why this is a standalone product
 

@@ -181,32 +181,30 @@ See [Testing](#testing) for the two-harness philosophy.
 ```text
 .
 ├── programs/
-│   └── accord/                 # The on-chain arbitration program (Anchor)
-│       ├── src/
-│       │   ├── lib.rs          # Thin #[program] wrappers (IDL docs + dispatch)
-│       │   ├── instructions/   # Per-instruction handler + Accounts context
-│       │   ├── state.rs        # Account structs, enums, PDA proof types
-│       │   ├── constants.rs    # Size bounds, windows, seeds, byte-offset layout
-│       │   ├── attestation.rs  # SAS attestation parsing + credential gate
-│       │   ├── utils.rs        # MST math, settlement, panel-sizing helpers
-│       │   ├── tests.rs        # Host unit tests (layout pins, MST math)
-│       │   ├── errors.rs       # AccordError codes
-│       │   └── events.rs       # Emitted events for off-chain indexers
-│       ├── tests/              # LiteSVM unit tests (one file per instruction)
-│       ├── accord.qedspec      # Formal-verification spec (qedgen)
-│       ├── SPEC.md             # v1 build spec (account model, state machine)
-│       └── security-checklist.md
+│   ├── accord/                 # The on-chain arbitration program (Anchor)
+│   │   ├── src/
+│   │   │   ├── lib.rs          # Thin #[program] wrappers (IDL docs + dispatch)
+│   │   │   ├── instructions/   # Per-instruction handler + Accounts context
+│   │   │   ├── state.rs        # Account structs, enums, PDA proof types
+│   │   │   ├── constants.rs    # Size bounds, windows, seeds, byte-offset layout
+│   │   │   ├── attestation.rs  # SAS attestation parsing + credential gate
+│   │   │   ├── utils.rs        # MST math, settlement, panel-sizing helpers
+│   │   │   ├── tests.rs        # Host unit tests (layout pins, MST math)
+│   │   │   ├── errors.rs       # AccordError codes
+│   │   │   └── events.rs       # Emitted events for off-chain indexers
+│   │   ├── tests/              # LiteSVM unit tests (one file per instruction)
+│   │   ├── accord.qedspec      # Formal-verification spec (qedgen)
+│   │   ├── SPEC.md             # v1 build spec (account model, state machine)
+│   │   └── security-checklist.md
+│   ├── canon/                  # Canon — curated-list registry Arbitrable (Anchor)
+│   └── synod/                  # Synod — N-party dispute-escrow Arbitrable (stub; SPEC.md)
 ├── packages/
 │   └── sdk/                    # @useaccord/sdk — TypeScript SDK (codegen, in progress)
 ├── tests/                      # jest + Surfpool integration suite
 ├── apps/
-│   └── docs/                   # MkDocs Material docs site (domain TBD)
-│       ├── docs/
-│       │   ├── adr/            # Architecture Decision Records (0001–0012)
-│       │   ├── integration/    # Arbitrable integration guide
-│       │   ├── reference/      # Accounts, instructions, state machine, errors
-│       │   └── security/       # Accumulator trust, sortition/VRF, circuit breaker
-│       └── mkdocs.yml
+│   └── docs/                   # Documentation hub
+│       ├── docs/               # MkDocs site content (integration, reference, security)
+│       └── adr/                # ADRs — repo-only, per-program series (accord/, canon/, synod/)
 ├── formal_verification/        # Lean / qedgen harness
 ├── CONTEXT.md                  # Domain language (ubiquitous-language glossary)
 ├── PROJECT.md                  # Project rationale (the "why")
@@ -240,7 +238,10 @@ stateDiagram-v2
     Final --> [*]: get_ruling (lazy read by Arbitrable)
 ```
 
-Odd Juror counts (3 / 7 / 15 / 31) make ties impossible.
+Odd Juror counts (3 / 7 / 15 / 31) make full-reveal ties impossible in binary
+disputes; ties in multi-option rounds (or from non-reveals) currently resolve
+to the highest option index — treating a tie as a non-decisive round is queued
+(bean `accord-n3vw`).
 
 ### Account & PDA Model
 
@@ -518,9 +519,11 @@ layout decisions are one-way doors; walk this list (and the open findings in
   re-stake. Any seed change after the first mainnet deploy means new PDAs +
   state migration — treat seeds as frozen from that point on.
 - **Program IDs + deploy keypairs.** `declare_id!` (accord
-  `cordhVosh…`, canon `can5Zhfg…`) is immutable once deployed. Generate the
-  final keypairs under multisig control, provision them per AGENTS.md
-  §Gotchas, and keep `anchor build --ignore-keys` discipline until then.
+  `cordhVosh…`, canon `can5Zhfg…`) is immutable once deployed. **Synod's
+  `declare_id!` is still the `anchor new` placeholder** — generate and
+  provision its canonical keypair (multisig-controlled, per AGENTS.md
+  §Gotchas) before the first build, and keep
+  `anchor build --ignore-keys` discipline until then.
 - **Account data layouts.** `InitSpace`, field order, Anchor discriminators,
   and the zero-copy `Round` offset consts — any post-deploy change requires a
   state migration. Freeze layouts in review before deploy.
@@ -674,6 +677,9 @@ pre-commit install
     off-chain decrypt-re-encryption service
   - [0012](apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) On-chain stake
     accumulator replaces the optimistic snapshot (current draw mechanism)
+
+  Per-program ADR indexes: [Accord](apps/docs/adr/accord/index.md) ·
+  [Canon](apps/docs/adr/canon/index.md) · [Synod](apps/docs/adr/synod/index.md)
 
 ---
 
