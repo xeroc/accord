@@ -70,13 +70,31 @@ impl<'info> FinalizeRound<'info> {
                 let mut counts = [0u32; MAX_OPTIONS];
                 for i in 0..round.juror_count as usize {
                     let v = round.reveals[i];
-                    if v != u8::MAX && (v as usize) < MAX_OPTIONS {
+                    if v != u64::MAX && (v as usize) < MAX_OPTIONS {
                         counts[v as usize] += 1;
                     }
                 }
                 (0..dispute.num_options as usize)
                     .max_by_key(|&i| counts[i])
-                    .unwrap_or(0) as u8
+                    .unwrap_or(0) as u64
+            }
+            // Scalar tally (ADR-0025): median of the revealed values. Panels
+            // are odd by construction (`(J+1)·2^k − 1`), but non-revealers can
+            // leave an even reveal count — then `vs[n/2]` picks the UPPER
+            // middle element (n=4 → index 2; deterministic, biased high).
+            // `needed ≥ 1` (the quorum gate above) guarantees at least one
+            // reveal, so `n == 0` is unreachable here.
+            Aggregation::Median => {
+                let mut vs = [0u64; MAX_JURORS];
+                let mut n = 0usize;
+                for i in 0..round.juror_count as usize {
+                    if round.reveals[i] != u64::MAX {
+                        vs[n] = round.reveals[i];
+                        n += 1;
+                    }
+                }
+                vs[..n].sort_unstable();
+                vs[n / 2]
             }
         };
         round.result = winner;
@@ -93,7 +111,7 @@ impl<'info> FinalizeRound<'info> {
             // CU-opt field access — see `crate::layout`.
             const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
             for i in 0..panel_us {
-                if round.reveals[i] == u8::MAX {
+                if round.reveals[i] == u64::MAX {
                     continue; // non-revealer: no credit
                 }
                 let expected_pda = Pubkey::find_program_address(

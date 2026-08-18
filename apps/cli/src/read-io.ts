@@ -33,6 +33,10 @@ export type EmitRead = (data: unknown, opts?: { primary?: string; human?: string
 const ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 /** Field names whose bigint value is a Unix-seconds timestamp (→ ISO label). */
 const TS_FIELD_RE = /(End|At)$/;
+/** `u64::MAX` — the ADR-0025 no-value sentinel (`NO_VOTE` / `NO_RULING` / unset result). */
+const U64_MAX = 2n ** 64n - 1n;
+/** Scalar fields whose `u64::MAX` means "no value yet" (ADR-0025). */
+const SENTINEL_FIELDS: Record<string, true> = { result: true, finalRuling: true };
 
 // --- serialization ----------------------------------------------------------
 
@@ -156,6 +160,7 @@ function humanField(key: string, value: unknown): string {
   if (isOption(value) && isNone(value)) return "none";
   if (value instanceof Uint8Array) return `${truncateHex(toHex(value))} (${value.byteLength}B)`;
   if (typeof value === "bigint") {
+    if (value === U64_MAX && SENTINEL_FIELDS[key]) return "— (not set)";
     if (TS_FIELD_RE.test(key)) {
       const iso = isoFromUnixSeconds(value);
       return `${groupBigInt(value)}${iso ? `  (${iso})` : ""}`;
@@ -175,9 +180,10 @@ function humanField(key: string, value: unknown): string {
         .join(", ")}${value.length > 4 ? ", …" : ""}`;
     }
     if (typeof head === "bigint") {
+      // `u64::MAX` elements (e.g. `reveals` not yet revealed — ADR-0025) → "—".
       return `[${value.length}] ${value
         .slice(0, 4)
-        .map((b) => groupBigInt(b))
+        .map((b) => (b === U64_MAX ? "—" : groupBigInt(b)))
         .join(", ")}${value.length > 4 ? ", …" : ""}`;
     }
     return `[${value.length}]`;

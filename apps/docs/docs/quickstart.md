@@ -16,14 +16,14 @@ Your program needs exactly two CPI calls:
 // 1. File the dispute
 let dispute = accord::create_dispute(
     ctx.accounts.clone(),
-    vec![option_a_hash, option_b_hash], // 2+ option hashes
+    vec![option_a_hash, option_b_hash], // 2..=8 option hashes (Plurality); scalar Median pools file none
     evidence_hash,                       // commitment to the evidence
     nonce,                               // caller-chosen, for PDA uniqueness
     fee,                                 // INITIAL_NUM_JURORS (3) * fee_per_juror
 )?;
 
 // 2. Read the ruling (lazy — call whenever, after finalization)
-let ruling: Option<u8> = accord::get_ruling(
+let ruling: Option<u64> = accord::get_ruling( // option index, or the median for scalar pools (ADR-0025)
     ctx.accounts.dispute
 )?;
 ```

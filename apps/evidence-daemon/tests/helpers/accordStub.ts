@@ -111,22 +111,20 @@ const ROUND_DEFAULT = {
   jurorCount: 0,
   commitCount: 0,
   revealCount: 0,
+  drawAttempt: 0,
+  settled: 0,
+  bump: 0,
+  pad0: new Uint8Array(2),
   reviewEnd: 0n,
   commitEnd: 0n,
   revealEnd: 0n,
-  result: 0,
-  bump: 0,
-  pad0: new Uint8Array(2),
+  result: 0xffff_ffff_ffff_ffffn, // u64::MAX = not set
   dispute: ZERO,
   jurors: Array.from({ length: 31 }, (): Address => ZERO),
   commits: Array.from({ length: 31 }, z32),
-  reveals: new Uint8Array(31),
-  settled: 0,
-  pad1: new Uint8Array(4),
   seatPrefix: Array.from({ length: 31 }, () => 0n),
   seatStake: Array.from({ length: 31 }, () => 0n),
-  drawAttempt: 0,
-  padDrawAttempt: new Uint8Array(4),
+  reveals: Array.from({ length: 31 }, () => 0xffff_ffff_ffff_ffffn), // u64::MAX = not revealed
 };
 
 export type SubaccordStubData = Partial<typeof SUBACCORD_DEFAULT>;

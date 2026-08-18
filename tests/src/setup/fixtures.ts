@@ -49,6 +49,7 @@ export function defaultSubaccordArgs(
     revealThresholdBps: 6_666, // 2/3 (ADR-0021)
     shortfallPolicy: ShortfallPolicy.Redraw, // ADR-0021
     maxDrawAttempts: 3, // ADR-0021
+    coherenceTolBps: 0, // Plurality default — exact-match coherence (ADR-0025)
     authority: DEFAULT_PUBKEY, // immutable
     evidenceOperator,
     depth: 4, // small for tests (2^4 = 16 seats max)

@@ -14,6 +14,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { Address, ReadonlyUint8Array } from "@solana/kit";
+import { Aggregation } from "@useaccord/sdk";
 
 import { useClusterRpc } from "../../shared/rpc";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
@@ -192,7 +193,20 @@ function SubaccordDetail({
           />
           <Row
             label="Aggregation"
-            value={<span className="font-mono text-sm text-foreground">{d.aggregation}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.aggregation === Aggregation.Median ? "Median" : "Plurality"}
+              </span>
+            }
+          />
+          <Row
+            label="Coherence tolerance"
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {(d.coherenceTolBps / 100).toFixed(2)}% ({d.coherenceTolBps}{" "}
+                bps)
+              </span>
+            }
           />
         </Group>
 

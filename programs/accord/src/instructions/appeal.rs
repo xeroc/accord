@@ -90,7 +90,7 @@ impl<'info> Appeal<'info> {
 
         let round = ctx.accounts.round.load()?;
         let prior_result = round.result;
-        require!(prior_result != u8::MAX, AccordError::InvalidState);
+        require!(prior_result != u64::MAX, AccordError::InvalidState);
 
         let now = Clock::get()?.unix_timestamp;
         let appeal_deadline = round

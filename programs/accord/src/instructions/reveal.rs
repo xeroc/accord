@@ -29,14 +29,24 @@ pub struct Reveal<'info> {
 }
 
 impl<'info> Reveal<'info> {
-    pub fn handler_reveal(ctx: Context<Reveal>, vote: u8, salt: [u8; 32]) -> Result<()> {
+    pub fn handler_reveal(ctx: Context<Reveal>, vote: u64, salt: [u8; 32]) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
         require!(
             dispute.state == DisputeState::Commit || dispute.state == DisputeState::Reveal,
             AccordError::InvalidState
         );
 
-        require!(vote < dispute.num_options, AccordError::InvalidVote);
+        // Vote gate by aggregation (ADR-0025): Plurality bounds the vote to a
+        // real option index; Median takes any scalar except the no-reveal
+        // sentinel.
+        match dispute.terms.aggregation {
+            Aggregation::Plurality => {
+                require!(vote < dispute.num_options as u64, AccordError::InvalidVote);
+            }
+            Aggregation::Median => {
+                require!(vote != u64::MAX, AccordError::InvalidVote);
+            }
+        }
         let round = &mut ctx.accounts.round.load_mut()?;
         let now = Clock::get()?.unix_timestamp;
         // Reveal opens at `commit_end`, OR as soon as the panel is fully
@@ -57,10 +67,12 @@ impl<'info> Reveal<'info> {
 
         let committed = round.commits[idx];
         require!(committed != [0u8; 32], AccordError::CommitMissing);
-        require!(round.reveals[idx] == u8::MAX, AccordError::AlreadyRevealed);
+        require!(round.reveals[idx] == u64::MAX, AccordError::AlreadyRevealed);
 
+        // Commit preimage (ADR-0025): the vote is hashed as 8-byte
+        // little-endian — `hash(vote_le ‖ salt ‖ juror_pubkey)`.
         use solana_program::hash::hashv;
-        let computed = hashv(&[&[vote], &salt, juror_key.as_ref()]).to_bytes();
+        let computed = hashv(&[&vote.to_le_bytes(), &salt, juror_key.as_ref()]).to_bytes();
         require!(computed == committed, AccordError::RevealMismatch);
 
         round.reveals[idx] = vote;

@@ -71,6 +71,8 @@ pub fn create_list_handler(
             reveal_threshold_bps: DEFAULT_REVEAL_THRESHOLD_BPS,
             shortfall_policy: ShortfallPolicy::Redraw,
             max_draw_attempts: DEFAULT_MAX_DRAW_ATTEMPTS,
+            // Plurality pool — tolerance is inert; zero keeps it exact.
+            coherence_tol_bps: 0,
             // The CanonList PDA — see the CPI comment above.
             authority: list_pda,
             evidence_operator: Pubkey::default(),

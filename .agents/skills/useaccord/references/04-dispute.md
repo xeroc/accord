@@ -12,7 +12,8 @@ a liveness escape when a round stalls.
 The **Arbitrable CPI entry** (`create_dispute`, lib.rs:768). The filer pays the
 full round-1 fee up front into the Subaccord's shared `fee_vault`; the on-chain
 fee is authoritative. Initializes the Dispute PDA `["dispute", filer, nonce]`,
-sets `state = Created`, `final_ruling = u8::MAX`, and **freezes** the Subaccord's
+sets `state = Created`, `final_ruling = u64::MAX` (the ADR-0025 no-ruling
+sentinel — votes/results/rulings are u64 now), and **freezes** the Subaccord's
 economics (`CaseTerms`) at filing time so a 48h parameter update can't shift
 slashing/fees/windows mid-dispute.
 
@@ -27,12 +28,18 @@ useaccord dispute:create \
 
 # Explicit fee (must equal 3 × subaccord.fee_per_juror exactly)
 useaccord dispute:create --subaccord cordh… --options $A,$B --nonce 7 --fee 300_000
+
+# Scalar (Median) pool — OMIT --options entirely (ADR-0025); needs the
+# Subaccord read to confirm the pool's aggregation, so --fee auto (default)
+useaccord dispute:create --subaccord cordh… --fee auto
 ```
 
-Flags (mirror `CreateDisputeArgs`, dispute.ts:46):
+Flags (mirror `CreateDisputeArgs`, dispute.ts):
 
-- `--options <hex,hex,…>` — 2..32 option label hashes, each 32 bytes
-  (`2..=MAX_OPTIONS`, lib.rs:778).
+- `--options <hex,hex,…>` — 2..8 option label hashes, each 32 bytes
+  (`2..=MAX_OPTIONS`). `Plurality` pools only — OMIT the flag to file a
+  scalar (`Median`) dispute with zero options (ADR-0025); the command reads
+  the pool's `aggregation` from the Subaccord to validate the gate.
 - `--nonce <u64|random>` — filer-chosen; gives a private dispute namespace.
 - `--fee <lamports|auto>` — `auto` ⇒ `requiredFee` from the Subaccord's
   `fee_per_juror`. On-chain `fee == required_fee` is enforced exactly
@@ -65,19 +72,23 @@ SDK: `requiredFee(feePerJuror)` (dispute.ts:113).
 
 ### `dispute:ruling` — read-only outcome read
 
-Lazily read a dispute's final ruling. Returns `null` until the dispute reaches
-`Final`; afterwards, the winning option index (`0..num_options`). Mirrors the
-on-chain `get_ruling` CPI entry (lib.rs:2063), which stores the unfinalized
-value as the `u8::MAX` sentinel. Arbitrables call this via CPI to read the
-verdict; the CLI exposes it for monitoring/scripts.
+Lazily read a dispute's final ruling (u64, ADR-0025). Returns `null` until the
+dispute reaches `Final`; afterwards the ruling value — the winning option index
+(`0..num_options`) for `Plurality` pools, the final median (a scalar in
+settlement-mint base units) for `Median` pools. Mirrors the on-chain
+`get_ruling` CPI entry (lib.rs:2063), which stores the unfinalized value as
+the `u64::MAX` sentinel. Arbitrables call this via CPI to read the verdict;
+the CLI exposes it for monitoring/scripts. Human mode labels the value by the
+dispute's frozen aggregation; `--json` emits bigints as strings (jq-safe).
 
 ```bash
-useaccord dispute:ruling --dispute RokL…HEef
-# mid-lifecycle → { finalRuling: null }
-# after Final   → { finalRuling: 1 }
+useaccord dispute:ruling RokL…HEef
+# mid-lifecycle → { "dispute": "RokL…HEef", "ruling": null }
+# after Final   → { "dispute": "RokL…HEef", "ruling": "1" }   # option index (Plurality)
+#                … or "123450000" = 123.45 @ 6 decimals (Median scalar, ADR-0025)
 ```
 
-Read-only. SDK: `getRuling(dispute)` (dispute.ts:232).
+Read-only. SDK: `getRuling(dispute)` (methods/dispute.ts).
 
 ### `dispute:cancel` — permissionless liveness escape
 

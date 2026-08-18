@@ -49,6 +49,7 @@ impl<'info> CreateSubaccord<'info> {
             reveal_threshold_bps,
             shortfall_policy,
             max_draw_attempts,
+            coherence_tol_bps,
             authority,
             evidence_operator,
             depth,
@@ -91,6 +92,9 @@ impl<'info> CreateSubaccord<'info> {
             (1..=MAX_DRAW_ATTEMPTS).contains(&max_draw_attempts),
             AccordError::MaxDrawAttemptsLimitExceeded
         );
+        // ADR-0025: coherence tolerance is a bps fraction; 10_000 = ±100%
+        // (every non-zero vote coherent). Inert on Plurality pools.
+        require!(coherence_tol_bps <= 10_000, AccordError::InvalidThreshold);
         // Accumulator depth bounds the pool at 2^depth. Cap at 31 (u32 index
         // headroom + sane rent/depth tradeoff); the common default is 20.
         require!(depth <= 31, AccordError::TreeFull);
@@ -126,6 +130,7 @@ impl<'info> CreateSubaccord<'info> {
         acc.reveal_threshold_bps = reveal_threshold_bps;
         acc.shortfall_policy = shortfall_policy;
         acc.max_draw_attempts = max_draw_attempts;
+        acc.coherence_tol_bps = coherence_tol_bps;
         acc.authority = authority;
         acc.evidence_operator = evidence_operator;
         acc.domain_ref = domain_ref;

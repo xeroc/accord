@@ -20,6 +20,13 @@ Each returns the decoded account (or `{ error: "not found" }`).
 > **PROG-ATTESTTION:** `read:subaccord` decodes `jurorCredential` /
 > `jurorSchema` and appends a `gate` line — `stake-only` when both are the
 > default pubkey, else `credential-gated (credential=…, schema=…)`.
+>
+> **u64 values (ADR-0025):** votes, round `result`s, and rulings are u64
+> bigints. `--json` / `--out` emit them as decimal strings (jq-safe); human
+> mode renders the `u64::MAX` sentinel as `— (not set)` / `—` (not revealed).
+> `read:round` labels `result`/`reveals` by the dispute's aggregation (option
+> indexes vs scalar base units), and `dispute:ruling` frames the ruling the
+> same way.
 
 ## Collection queries
 
@@ -55,18 +62,18 @@ This is what the cranker's state resolver uses to determine the next action.
 
 ## SDK functions
 
-| CLI command | SDK fn |
-|---|---|
-| `read:subaccord` | `fetchMaybeSubaccord` |
-| `read:dispute` | `fetchMaybeDispute` |
-| `read:round` | `fetchMaybeRound` |
-| `read:juror-stake` | `fetchMaybeJurorStake` |
-| `read:pause-state` | `fetchMaybeAccordState` |
-| `read:pending-update` | `fetchMaybePendingUpdate` |
-| `read:appeal-bond` | `fetchMaybeAppealBond` |
-| `read:disputes --by-subaccord` | `findDisputesBySubaccord` |
-| `read:disputes --by-filer` | `findDisputesByFiler` |
-| `read:disputes --all` | `findAllDisputes` |
+| CLI command                        | SDK fn                       |
+| ---------------------------------- | ---------------------------- |
+| `read:subaccord`                   | `fetchMaybeSubaccord`        |
+| `read:dispute`                     | `fetchMaybeDispute`          |
+| `read:round`                       | `fetchMaybeRound`            |
+| `read:juror-stake`                 | `fetchMaybeJurorStake`       |
+| `read:pause-state`                 | `fetchMaybeAccordState`      |
+| `read:pending-update`              | `fetchMaybePendingUpdate`    |
+| `read:appeal-bond`                 | `fetchMaybeAppealBond`       |
+| `read:disputes --by-subaccord`     | `findDisputesBySubaccord`    |
+| `read:disputes --by-filer`         | `findDisputesByFiler`        |
+| `read:disputes --all`              | `findAllDisputes`            |
 | `read:juror-stakes --by-subaccord` | `findJurorStakesBySubaccord` |
-| `read:subaccords` | `findAllSubaccords` |
-| `read:phase` | `disputePhase` |
+| `read:subaccords`                  | `findAllSubaccords`          |
+| `read:phase`                       | `disputePhase`               |

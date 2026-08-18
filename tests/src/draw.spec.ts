@@ -43,7 +43,12 @@ describe("e2e: draw_seat (accumulator + deterministic sortition) — requires Su
   it("draw_seat fills the panel and writes it to the Round", async () => {
     if (!fx.up) return; // offline CI lane
 
-    const armed = await armDispute(fx, 1n);
+    // Random nonce ⇒ unique Dispute PDA per run (the filer is fixed) — keeps
+    // the spec re-runnable on a persistent Surfnet.
+    const nonce = crypto
+      .getRandomValues(new Uint8Array(8))
+      .reduce((acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)), 0n);
+    const armed = await armDispute(fx, nonce);
     const memberships = await resolveDistinctPanel(fx, armed);
     const jurorStakeAccounts = jurorStakeAccountsFor(fx, memberships);
     const roundPda = await submitDraw(fx, armed, memberships);

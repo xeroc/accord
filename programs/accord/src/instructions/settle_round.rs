@@ -41,7 +41,7 @@ impl<'info> SettleRound<'info> {
             AccordError::RoundNotSettlable
         );
         let final_ruling = dispute.final_ruling;
-        require!(final_ruling != u8::MAX, AccordError::InvalidState);
+        require!(final_ruling != u64::MAX, AccordError::InvalidState);
 
         let mut round = ctx.accounts.round.load_mut()?;
         require!(round.round_idx == round_idx, AccordError::InvalidState);

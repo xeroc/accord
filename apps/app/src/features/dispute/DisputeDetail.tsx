@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { isSome, type ReadonlyUint8Array } from "@solana/kit";
-import { findAppealBondPda, findAccordStatePda } from "@useaccord/sdk";
+import {
+  Aggregation,
+  decodeScalarVote,
+  findAppealBondPda,
+  findAccordStatePda,
+  NO_VOTE,
+} from "@useaccord/sdk";
 
 import {
   DISPUTE_STATE_LABELS,
@@ -22,7 +28,6 @@ import { PublishEvidence } from "./evidence/PublishEvidence";
 import { EvidenceManifest } from "./evidence/EvidenceManifest";
 import { useManifest } from "./evidence/useManifest";
 
-const FINAL_SENTINEL = 255;
 
 function hex(bytes: ReadonlyUint8Array): string {
   return Array.from(bytes)
@@ -89,8 +94,9 @@ export function DisputeDetail() {
   const d = dispute.data;
   const isFinal = d.state === 6; // DisputeState.Final
   const isRoundResolved = d.state === 5; // DisputeState.RoundResolved
-  const roundResult = round?.data.result ?? FINAL_SENTINEL;
-  const hasRoundResult = isRoundResolved && roundResult !== FINAL_SENTINEL;
+  // u64::MAX sentinel = no result yet (ADR-0025; same value as NO_VOTE).
+  const roundResult = round?.data.result ?? NO_VOTE;
+  const hasRoundResult = isRoundResolved && roundResult !== NO_VOTE;
 
   async function handleAppeal() {
     if (!env || !dispute || !round || !subaccord) return;
@@ -201,82 +207,116 @@ export function DisputeDetail() {
         <InfoRow label="Filed at" value={formatTimestamp(d.filedAt)} />
       </div>
 
-      {/* Options */}
+      {/* Options (plurality) / revealed scalars (median, ADR-0025) */}
       <div className="rounded-lg border border-border-subtle bg-raised p-4">
         <h2 className="mb-3 font-mono text-sm text-text-secondary">
-          Options ({d.numOptions})
+          {d.terms.aggregation === Aggregation.Median
+            ? "Revealed scalars"
+            : `Options (${d.numOptions})`}
         </h2>
         <div className="space-y-2">
-          {(() => {
-            // Tally revealed votes per option (round resolved or final).
-            const tally = new Map<number, number>();
-            if (round && (isRoundResolved || isFinal)) {
-              for (const v of round.data.reveals) {
-                if (v !== FINAL_SENTINEL && v < d.numOptions) {
-                  tally.set(v, (tally.get(v) ?? 0) + 1);
+          {d.terms.aggregation === Aggregation.Median
+            ? (() => {
+                // Median disputes file without option hashes (numOptions 0);
+                // reveals are u64 scalars in settlement-mint base units. No
+                // per-option tally — list each seat's reveal; the aggregated
+                // median is `result` (shown in the appeal / ruling blocks).
+                if (!round || !(isRoundResolved || isFinal)) {
+                  return (
+                    <p className="text-sm text-text-secondary">
+                      No reveals yet.
+                    </p>
+                  );
                 }
-              }
-            }
-            const showTally = tally.size > 0;
-            return d.options.slice(0, d.numOptions).map((opt, idx) => {
-              const isWinner = isFinal && d.finalRuling === idx;
-              const isRoundWinner = hasRoundResult && roundResult === idx;
-              const votes = tally.get(idx) ?? 0;
-              return (
-                <div
-                  key={idx}
-                  className={`flex items-center gap-3 rounded border px-3 py-2 ${
-                    isWinner
-                      ? "border-amber bg-amber/10"
-                      : isRoundWinner
-                        ? "border-confirm bg-confirm/10"
-                        : "border-border-subtle"
-                  }`}
-                >
-                  <span className="font-mono text-sm text-text-secondary">
-                    {idx}
-                  </span>
-                  <Copyable value={hex(opt)} />
-                  {isWinner && (
-                    <span className="font-mono text-sm text-amber">
-                      ← Verdict
-                    </span>
-                  )}
-                  {isRoundWinner && (
-                    <span className="font-mono text-sm text-confirm">
-                      ← Won round {d.currentRound}
-                    </span>
-                  )}
-                  {showTally && (
-                    <span
-                      className={`ml-auto font-mono text-xs ${
+                return round.data.reveals.map((v, seat) =>
+                  v === NO_VOTE ? null : (
+                    <div
+                      key={seat}
+                      className="flex items-center gap-3 rounded border border-border-subtle px-3 py-2"
+                    >
+                      <span className="w-16 shrink-0 font-mono text-xs text-text-secondary">
+                        seat {seat}
+                      </span>
+                      <span className="font-mono text-sm text-text-primary">
+                        {decodeScalarVote(v)}
+                      </span>
+                    </div>
+                  ),
+                );
+              })()
+            : (() => {
+                // Tally revealed votes per option (round resolved or final).
+                // Votes are u64 (ADR-0025) — compare against BigInt bounds.
+                const tally = new Map<number, number>();
+                if (round && (isRoundResolved || isFinal)) {
+                  for (const v of round.data.reveals) {
+                    if (v !== NO_VOTE && v < BigInt(d.numOptions)) {
+                      const idx = Number(v);
+                      tally.set(idx, (tally.get(idx) ?? 0) + 1);
+                    }
+                  }
+                }
+                const showTally = tally.size > 0;
+                return d.options.slice(0, d.numOptions).map((opt, idx) => {
+                  const isWinner = isFinal && d.finalRuling === BigInt(idx);
+                  const isRoundWinner =
+                    hasRoundResult && roundResult === BigInt(idx);
+                  const votes = tally.get(idx) ?? 0;
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex items-center gap-3 rounded border px-3 py-2 ${
                         isWinner
-                          ? "text-amber/70"
+                          ? "border-amber bg-amber/10"
                           : isRoundWinner
-                            ? "text-confirm/70"
-                            : "text-text-secondary"
+                            ? "border-confirm bg-confirm/10"
+                            : "border-border-subtle"
                       }`}
                     >
-                      {votes} vote{votes === 1 ? "" : "s"}
-                    </span>
-                  )}
-                  {isRoundWinner && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        document
-                          .getElementById("appeal")
-                          ?.scrollIntoView({ behavior: "smooth" })
-                      }
-                      className="font-mono text-xs text-text-secondary hover:text-confirm"
-                    >
-                      appeal ↓
-                    </button>
-                  )}
-                </div>
-              );
-            });
-          })()}
+                      <span className="font-mono text-sm text-text-secondary">
+                        {idx}
+                      </span>
+                      <Copyable value={hex(opt)} />
+                      {isWinner && (
+                        <span className="font-mono text-sm text-amber">
+                          ← Verdict
+                        </span>
+                      )}
+                      {isRoundWinner && (
+                        <span className="font-mono text-sm text-confirm">
+                          ← Won round {d.currentRound}
+                        </span>
+                      )}
+                      {showTally && (
+                        <span
+                          className={`ml-auto font-mono text-xs ${
+                            isWinner
+                              ? "text-amber/70"
+                              : isRoundWinner
+                                ? "text-confirm/70"
+                                : "text-text-secondary"
+                          }`}
+                        >
+                          {votes} vote{votes === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      {isRoundWinner && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById("appeal")
+                              ?.scrollIntoView({ behavior: "smooth" })
+                          }
+                          className="font-mono text-xs text-text-secondary hover:text-confirm"
+                        >
+                          appeal ↓
+                        </button>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
         </div>
       </div>
 
@@ -342,10 +382,12 @@ export function DisputeDetail() {
       )}
 
       {/* Final ruling */}
-      {isFinal && d.finalRuling !== FINAL_SENTINEL && (
+      {isFinal && d.finalRuling !== NO_VOTE && (
         <div className="rounded-lg border border-amber bg-amber/10 p-4">
           <h2 className="mb-1 font-mono text-sm text-amber">Final ruling</h2>
-          <p className="text-lg">Option {d.finalRuling}</p>
+          <p className="text-lg">
+            {formatRuling(d.finalRuling, d.terms.aggregation)}
+          </p>
           <p className="mt-1 text-sm text-text-secondary">
             Finalized at {formatTimestamp(d.finalizedAt)}
           </p>
@@ -418,7 +460,7 @@ export function DisputeDetail() {
             />
             <InfoRow
               label="Prior result"
-              value={formatRuling(appealBond.data.priorResult)}
+              value={formatRuling(appealBond.data.priorResult, d.terms.aggregation)}
               mono
             />
           </div>
@@ -451,7 +493,7 @@ export function DisputeDetail() {
                   <p className="text-sm">
                     Round {d.currentRound} resolved to{" "}
                     <span className="font-mono text-confirm">
-                      Option {roundResult}
+                      {formatRuling(roundResult, d.terms.aggregation)}
                     </span>
                     .
                   </p>

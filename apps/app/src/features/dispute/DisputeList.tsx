@@ -83,7 +83,7 @@ export function DisputeList() {
                 {d.data.currentRound}
               </td>
               <td className="py-2 pr-4 font-mono text-sm">
-                {formatRuling(d.data.finalRuling)}
+                {formatRuling(d.data.finalRuling, d.data.terms.aggregation)}
               </td>
             </tr>
           ))}

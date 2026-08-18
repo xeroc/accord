@@ -1,6 +1,7 @@
 /**
  * finalize_round crank — advance a round to `RoundResolved` once the reveal window elapses OR every juror has revealed.
- * Writes the plurality winner. Permissionless. Passes the
+ * Writes the round result — plurality winner or median, per the dispute's
+ * aggregation (ADR-0025). Permissionless. Passes the
  * panel's JurorStake PDAs as remainingAccounts so ADR-0020 `fees_earned`
  * credits land when `fee_per_juror > 0`. (lib.rs:1136, milestone accord-27r5.)
  */

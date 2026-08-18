@@ -100,8 +100,8 @@ export type Subaccord = {
   /**
    * Reveal-quorum fraction in basis points (ADR-0021). A round is
    * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
-   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
-   * free via panel growth.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal
+   * for free via panel growth.
    */
   revealThresholdBps: number;
   /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
@@ -112,6 +112,15 @@ export type Subaccord = {
    * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
    */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools (ADR-0025), in bps of the final
+   * median: a revealed vote is coherent iff
+   * `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+   * match. Inert for `Plurality` (exact option equality). Frozen onto
+   * `CaseTerms` at filing; immutable on the Subaccord (not in
+   * `UpdatePayload`) — it defines the pool's coherence game.
+   */
+  coherenceTolBps: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
@@ -223,8 +232,8 @@ export type SubaccordArgs = {
   /**
    * Reveal-quorum fraction in basis points (ADR-0021). A round is
    * authoritative only if `reveal_count >= ceil(panel × bps / 10_000)`.
-   * Default 6666 (= 2/3); the absolute commitment escalates per appeal for
-   * free via panel growth.
+   * Default 6666 (= 2/3); the absolute commitment escalates per appeal
+   * for free via panel growth.
    */
   revealThresholdBps: number;
   /** What to do on a shortfall (ADR-0021). v1 = `Redraw`. */
@@ -235,6 +244,15 @@ export type SubaccordArgs = {
    * `Failed`. Orthogonal to `max_appeals` (which bounds `round_idx`).
    */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools (ADR-0025), in bps of the final
+   * median: a revealed vote is coherent iff
+   * `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+   * match. Inert for `Plurality` (exact option equality). Frozen onto
+   * `CaseTerms` at filing; immutable on the Subaccord (not in
+   * `UpdatePayload`) — it defines the pool's coherence game.
+   */
+  coherenceTolBps: number;
   /** `Pubkey::default()` => immutable. Otherwise signs propose/execute updates. */
   authority: Address;
   evidenceOperator: Address;
@@ -329,6 +347,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["revealThresholdBps", getU16Encoder()],
       ["shortfallPolicy", getShortfallPolicyEncoder()],
       ["maxDrawAttempts", getU8Encoder()],
+      ["coherenceTolBps", getU16Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["domainRef", fixEncoderSize(getBytesEncoder(), 32)],
@@ -371,6 +390,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["revealThresholdBps", getU16Decoder()],
     ["shortfallPolicy", getShortfallPolicyDecoder()],
     ["maxDrawAttempts", getU8Decoder()],
+    ["coherenceTolBps", getU16Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["domainRef", fixDecoderSize(getBytesDecoder(), 32)],
@@ -450,5 +470,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 442;
+  return 444;
 }

@@ -83,7 +83,7 @@ export interface AccordMethods {
     accounts: CreateDisputeAccounts,
     args: CreateDisputeArgs,
   ): Promise<{ instruction: Instruction; dispute: Address; bump: number }>;
-  getRuling(dispute: Address): Promise<number | null>;
+  getRuling(dispute: Address): Promise<bigint | null>;
 
   // lifecycle
   createSubaccord(

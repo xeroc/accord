@@ -319,9 +319,10 @@ pub mod accord {
 
     // --- Voting & Ruling (veridao-pq1s) ---------------------------------------
 
-    /// Commit a vote hash. `h = hash(vote_le ‖ salt ‖ juror_pubkey)` — the
-    /// juror's pubkey is bound into the hash to prevent commit-copying (a juror
-    /// who copies another's hash can never reveal it). One per drawn Juror;
+    /// Commit a vote hash. `h = hash(vote_le ‖ salt ‖ juror_pubkey)` where
+    /// `vote_le` is the vote's 8-byte little-endian encoding — the juror's
+    /// pubkey is bound into the hash to prevent commit-copying (a juror who
+    /// copies another's hash can never reveal it). One per drawn Juror;
     /// immutable after commit. Allowed during the commit window
     /// (`review_end ≤ now < commit_end`). The **last** commit (panel full)
     /// flips straight to `Reveal`, opening reveal early — all votes are then
@@ -337,7 +338,13 @@ pub mod accord {
     /// per-reveal ATA creation). Allowed once `now ≥ commit_end`, OR as soon as
     /// every juror has committed (early reveal — the panel-full commit flips
     /// state to `Reveal`), through `reveal_end`.
-    pub fn reveal(ctx: Context<Reveal>, vote: u8, salt: [u8; 32]) -> Result<()> {
+    ///
+    /// ADR-0025: the vote is a `u64`. `Plurality` disputes bound it to the
+    /// option range (`vote < num_options`); `Median` (scalar) disputes accept
+    /// any fixed-point value except the `u64::MAX` no-reveal sentinel —
+    /// jurors encode e.g. `123.45` USDC as `123_450_000` (settlement-mint
+    /// decimals, applied client-side; the chain is scale-agnostic).
+    pub fn reveal(ctx: Context<Reveal>, vote: u64, salt: [u8; 32]) -> Result<()> {
         Reveal::handler_reveal(ctx, vote, salt)
     }
 
@@ -347,8 +354,10 @@ pub mod accord {
     /// quorum:
     ///
     /// - **Quorum met** (`reveal_count >= ceil(panel × threshold_bps / 10_000)`):
-    ///   credits each revealer's `fees_earned` (ADR-0020), sets the plurality
-    ///   `result`, and transitions to `RoundResolved` (appeal window / final).
+    ///   credits each revealer's `fees_earned` (ADR-0020), sets the tally
+    ///   result per `terms.aggregation` — the plurality winner (option index)
+    ///   or the **median** of the revealed scalar votes (ADR-0025) — and
+    ///   transitions to `RoundResolved` (appeal window / final).
     /// - **Quorum not met**: no credits, no result — transitions to
     ///   `RedrawEligible` so the `redraw` crank can reconvene the panel (or, on
     ///   `max_draw_attempts` exhaustion, fail the dispute).
@@ -368,7 +377,8 @@ pub mod accord {
     ///
     /// Settlement is pure ledger accounting (ADR-0020: two pools):
     ///
-    /// 1. Determine coherence (revealed vote == final ruling).
+    /// 1. Determine coherence (Plurality: revealed vote == final ruling;
+    ///    Median: within `coherence_tol_bps` of it — ADR-0025).
     /// 2. Slash each incoherent/non-revealing juror: `α · min_stake` →
     ///    `stake_delta` (stake_token).
     /// 3. Stake pool = slash_total → coherent `stake_delta` (stake_token).
@@ -438,8 +448,6 @@ pub mod accord {
     pub fn claim_appeal_refund(ctx: Context<ClaimAppealRefund>, round_idx: u32) -> Result<()> {
         ClaimAppealRefund::handler_claim_appeal_refund(ctx, round_idx)
     }
-
-    /// Permissionless liveness-escape crank (CONCEPT-REVIEW Ugly 4). If a
     /// dispute has stalled past its per-stage timeout, any cranker may cancel
     /// it: the filer's round-1 fee is refunded from the vault, the current
     /// round's drawn jurors have their `active_draws` released (post-draw
@@ -466,8 +474,10 @@ pub mod accord {
 
     /// Read-only: returns the dispute's `final_ruling`. The Arbitrable calls
     /// this via CPI to lazily read the outcome. Returns `None` until the
-    /// dispute reaches `Final` (stored on-chain as the `u8::MAX` sentinel).
-    pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
+    /// dispute reaches `Final` (stored on-chain as the `u64::MAX` sentinel).
+    /// The value is the winning option index for `Plurality` disputes or the
+    /// final median for `Median` disputes (ADR-0025).
+    pub fn get_ruling(ctx: Context<GetRuling>) -> Result<Option<u64>> {
         GetRuling::handler_get_ruling(ctx)
     }
 

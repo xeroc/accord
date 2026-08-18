@@ -311,7 +311,7 @@ create_dispute(subaccord, options, evidence_hash, fee)    — [Arbitrable CPI]; 
 post_snapshot(dispute, merkle_root)                       — off-chain indexer; 1× bond; 1-day challenge window
 challenge_snapshot(dispute, fraud_proof)                  — contest a wrong root within the window
 draw(dispute, vrf, memberships[])                         — VRF; N distinct Jurors over the Snapshot
-commit / reveal                                           — hash(vote, salt, juror_pubkey) then {vote, salt}
+commit / reveal                                           — hash(vote_le8, salt, juror_pubkey) then {vote: u64, salt}; vote = option index (Plurality, gate vote < num_options) or u64 fixed-point scalar (Median, gate vote != u64::MAX; ADR-0025)
 appeal(dispute)                                           — permissionless; 2N+1; bond forfeited if no flip
 finalize_round / finalize_dispute                         — permissionless crank; redistribution + active_draws--
 redraw(dispute)                                            — permissionless; shortfall redraw (slash no-shows, draw_attempt++) / Failed on exhaustion (ADR-0021)
@@ -320,7 +320,7 @@ get_ruling(dispute)                                       — lazy read by the A
 pause() / unpause()                                       — multisig circuit-breaker
 ```
 
-Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0022` (per-Subaccord appeal window), `0015` (evidence crypto → `@useaccord/sdk/evidence`), `0020` (two-mint/two-vault economics), `0021` (reveal quorum + shortfall redraw).
+Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` (Schelling), `0002` (per-Subaccord staking token, partially superseded by 0020), `0003` (draw), `0004` (party-agnostic), `0005` (Subaccord authority), `0006` (evidence), `0007` (upgrade), `0008` (snapshot trust), `0009` (sortition), `0010` (SDK facade), `0011` (evidence daemon), `0012` (on-chain accumulator), `0017` (evidence data format), `0019` (dispute-kit aggregation), `0022` (per-Subaccord appeal window), `0015` (evidence crypto → `@useaccord/sdk/evidence`), `0020` (two-mint/two-vault economics), `0021` (reveal quorum + shortfall redraw), `0025` (scalar voting — u64 votes, `Median`, coherence band).
 
 ## Build Order
 
@@ -344,6 +344,7 @@ Authority: `PROJECT.md`, `programs/accord/SPEC.md`, `apps/docs/adr/accord/0001` 
 | Reveal threshold     | 6,666 bps (2/3)          | Reveal-quorum fraction; absolute commitment escalates per appeal for free (ADR-0021) |
 | Shortfall policy     | `Redraw`                 | Same-size redraw via orthogonal `draw_attempt` (ADR-0021)                            |
 | Max draw attempts    | 3                        | Per-round redraw cap before `Failed`; orthogonal to `max_appeals` (ADR-0021)         |
+| Coherence tolerance  | 100 bps of median        | Median pools only (ADR-0025); `0` = exact; ≤10_000; immutable, frozen onto CaseTerms |
 
 ## Beans
 

@@ -40,6 +40,7 @@ status banner is annotated.
 | [0022](0022-per-subaccord-configurable-appeal-window.md)                      | Per-Subaccord configurable appeal window                                                            | Accepted             |
 | [0023](0023-per-round-evidence-hashes.md)                                     | Per-round evidence hashes — evidence-on-appeal                                                      | Accepted             |
 | [0024](0024-attestation-gated-subaccords.md)                                     | Attestation-gated Subaccords — optional SAS credential gate, `prune_juror` crank                      | Accepted             |
+| [0025](0025-scalar-voting.md)                                               | Scalar voting — u64 votes, Median aggregation, bps coherence band                                  | Accepted             |
 
 ### Supersession map
 
@@ -61,6 +62,10 @@ status banner is annotated.
   not one hash frozen at filing; ADR-0017's `sha256(manifest.yaml)` remains each slot's
   content). The round-0 commitment and `create_dispute`'s filer-facing arg are unchanged.
 - **0024** amends **0005** (`juror_credential`/`juror_schema` join `domain_ref`/`evidence_spec` as the immutable identity set on `Subaccord`, excluded from `UpdatePayload`). The gate is opt-in (both `default` ⇒ stake-only); the Credential Authority is a trusted off-chain peer of the Evidence Operator (ADR-0006), not a trustless oracle.
+- **0025** amends **0019** (ships the deferred `Median` aggregation variant — scalar disputes
+  file with zero options, votes/results/rulings widen u8→u64 with `u64::MAX` sentinels, and
+  coherence gains a per-Subaccord `coherence_tol_bps` band frozen onto `CaseTerms`;
+  `Plurality` semantics unchanged).
 
 ## How to read them
 
@@ -76,7 +81,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0025**).
+1. Number = next sequential (currently **0026**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

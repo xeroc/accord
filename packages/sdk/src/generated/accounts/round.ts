@@ -59,21 +59,13 @@ export type Round = {
   jurorCount: number;
   commitCount: number;
   revealCount: number;
-  /** Commit opens at this timestamp (= draw_time + review_window). */
-  reviewEnd: bigint;
-  /** Reveal opens at this timestamp (= review_end + commit_window). */
-  commitEnd: bigint;
-  /** Round can be finalized after this timestamp (= commit_end + reveal_window). */
-  revealEnd: bigint;
-  result: number;
-  bump: number;
-  pad0: ReadonlyUint8Array;
-  dispute: Address;
-  jurors: Array<Address>;
-  /** `hash(vote, salt, juror_pubkey)` per drawn Juror; `[0;32]` until committed. */
-  commits: Array<ReadonlyUint8Array>;
-  /** Revealed vote option index per drawn Juror; `u8::MAX` until revealed. */
-  reveals: ReadonlyUint8Array;
+  /**
+   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
+   * `round_idx`: bumping it changes only the sortition seed, never the panel
+   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+   */
+  drawAttempt: number;
   /**
    * Whether this round's coherence settlement has been applied
    * (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
@@ -82,7 +74,26 @@ export type Round = {
    * (`u8` not `bool` — `bool` is not `Pod`.)
    */
   settled: number;
-  pad1: ReadonlyUint8Array;
+  bump: number;
+  pad0: ReadonlyUint8Array;
+  /** Commit opens at this timestamp (= draw_time + review_window). */
+  reviewEnd: bigint;
+  /** Reveal opens at this timestamp (= review_end + commit_window). */
+  commitEnd: bigint;
+  /** Round can be finalized after this timestamp (= commit_end + reveal_window). */
+  revealEnd: bigint;
+  /**
+   * The tallied round result; `u64::MAX` = not set. `Plurality`: winning
+   * option index. `Median` (ADR-0025): the median of revealed scalar votes.
+   */
+  result: bigint;
+  dispute: Address;
+  jurors: Array<Address>;
+  /**
+   * `hash(vote_le, salt, juror_pubkey)` per drawn Juror; `[0;32]` until
+   * committed. `vote_le` = the 8-byte little-endian vote (ADR-0025).
+   */
+  commits: Array<ReadonlyUint8Array>;
   /**
    * Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
    * when the seat lands; later seats read these to verify that every prior
@@ -96,14 +107,11 @@ export type Round = {
    */
   seatStake: Array<bigint>;
   /**
-   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
-   * `round_idx`: bumping it changes only the sortition seed, never the panel
-   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
-   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
-   * Appended (with trailing pad) so existing field offsets are stable.
+   * Revealed vote per drawn Juror; `u64::MAX` until revealed. Option index
+   * for `Plurality`, fixed-point scalar (settlement-mint base units) for
+   * `Median` (ADR-0025). Tail field — struct size stays a multiple of 8.
    */
-  drawAttempt: number;
-  padDrawAttempt: ReadonlyUint8Array;
+  reveals: Array<bigint>;
 };
 
 export type RoundArgs = {
@@ -111,21 +119,13 @@ export type RoundArgs = {
   jurorCount: number;
   commitCount: number;
   revealCount: number;
-  /** Commit opens at this timestamp (= draw_time + review_window). */
-  reviewEnd: number | bigint;
-  /** Reveal opens at this timestamp (= review_end + commit_window). */
-  commitEnd: number | bigint;
-  /** Round can be finalized after this timestamp (= commit_end + reveal_window). */
-  revealEnd: number | bigint;
-  result: number;
-  bump: number;
-  pad0: ReadonlyUint8Array;
-  dispute: Address;
-  jurors: Array<Address>;
-  /** `hash(vote, salt, juror_pubkey)` per drawn Juror; `[0;32]` until committed. */
-  commits: Array<ReadonlyUint8Array>;
-  /** Revealed vote option index per drawn Juror; `u8::MAX` until revealed. */
-  reveals: ReadonlyUint8Array;
+  /**
+   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
+   * `round_idx`: bumping it changes only the sortition seed, never the panel
+   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
+   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
+   */
+  drawAttempt: number;
   /**
    * Whether this round's coherence settlement has been applied
    * (CONCEPT-REVIEW Ugly 5 / bean accord-r6ti). 0 until
@@ -134,7 +134,26 @@ export type RoundArgs = {
    * (`u8` not `bool` — `bool` is not `Pod`.)
    */
   settled: number;
-  pad1: ReadonlyUint8Array;
+  bump: number;
+  pad0: ReadonlyUint8Array;
+  /** Commit opens at this timestamp (= draw_time + review_window). */
+  reviewEnd: number | bigint;
+  /** Reveal opens at this timestamp (= review_end + commit_window). */
+  commitEnd: number | bigint;
+  /** Round can be finalized after this timestamp (= commit_end + reveal_window). */
+  revealEnd: number | bigint;
+  /**
+   * The tallied round result; `u64::MAX` = not set. `Plurality`: winning
+   * option index. `Median` (ADR-0025): the median of revealed scalar votes.
+   */
+  result: number | bigint;
+  dispute: Address;
+  jurors: Array<Address>;
+  /**
+   * `hash(vote_le, salt, juror_pubkey)` per drawn Juror; `[0;32]` until
+   * committed. `vote_le` = the 8-byte little-endian vote (ADR-0025).
+   */
+  commits: Array<ReadonlyUint8Array>;
   /**
    * Cumulative-from-left prefix per drawn seat (bean accord-tzo0). Filled
    * when the seat lands; later seats read these to verify that every prior
@@ -148,14 +167,11 @@ export type RoundArgs = {
    */
   seatStake: Array<number | bigint>;
   /**
-   * Same-size redraw counter within this round (ADR-0021). Orthogonal to
-   * `round_idx`: bumping it changes only the sortition seed, never the panel
-   * size or the appeal budget. `(0,0)` = initial draw; resets implicitly on a
-   * new appeal round (fresh `Round` PDA keyed by the new `round_idx`).
-   * Appended (with trailing pad) so existing field offsets are stable.
+   * Revealed vote per drawn Juror; `u64::MAX` until revealed. Option index
+   * for `Plurality`, fixed-point scalar (settlement-mint base units) for
+   * `Median` (ADR-0025). Tail field — struct size stays a multiple of 8.
    */
-  drawAttempt: number;
-  padDrawAttempt: ReadonlyUint8Array;
+  reveals: Array<number | bigint>;
 };
 
 /** Gets the encoder for {@link RoundArgs} account data. */
@@ -167,25 +183,23 @@ export function getRoundEncoder(): FixedSizeEncoder<RoundArgs> {
       ["jurorCount", getU32Encoder()],
       ["commitCount", getU32Encoder()],
       ["revealCount", getU32Encoder()],
+      ["drawAttempt", getU32Encoder()],
+      ["settled", getU8Encoder()],
+      ["bump", getU8Encoder()],
+      ["pad0", fixEncoderSize(getBytesEncoder(), 2)],
       ["reviewEnd", getI64Encoder()],
       ["commitEnd", getI64Encoder()],
       ["revealEnd", getI64Encoder()],
-      ["result", getU8Encoder()],
-      ["bump", getU8Encoder()],
-      ["pad0", fixEncoderSize(getBytesEncoder(), 2)],
+      ["result", getU64Encoder()],
       ["dispute", getAddressEncoder()],
       ["jurors", getArrayEncoder(getAddressEncoder(), { size: 31 })],
       [
         "commits",
         getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32), { size: 31 }),
       ],
-      ["reveals", fixEncoderSize(getBytesEncoder(), 31)],
-      ["settled", getU8Encoder()],
-      ["pad1", fixEncoderSize(getBytesEncoder(), 4)],
       ["seatPrefix", getArrayEncoder(getU64Encoder(), { size: 31 })],
       ["seatStake", getArrayEncoder(getU64Encoder(), { size: 31 })],
-      ["drawAttempt", getU32Encoder()],
-      ["padDrawAttempt", fixEncoderSize(getBytesEncoder(), 4)],
+      ["reveals", getArrayEncoder(getU64Encoder(), { size: 31 })],
     ]),
     (value) => ({ ...value, discriminator: ROUND_DISCRIMINATOR }),
   );
@@ -199,25 +213,23 @@ export function getRoundDecoder(): FixedSizeDecoder<Round> {
     ["jurorCount", getU32Decoder()],
     ["commitCount", getU32Decoder()],
     ["revealCount", getU32Decoder()],
+    ["drawAttempt", getU32Decoder()],
+    ["settled", getU8Decoder()],
+    ["bump", getU8Decoder()],
+    ["pad0", fixDecoderSize(getBytesDecoder(), 2)],
     ["reviewEnd", getI64Decoder()],
     ["commitEnd", getI64Decoder()],
     ["revealEnd", getI64Decoder()],
-    ["result", getU8Decoder()],
-    ["bump", getU8Decoder()],
-    ["pad0", fixDecoderSize(getBytesDecoder(), 2)],
+    ["result", getU64Decoder()],
     ["dispute", getAddressDecoder()],
     ["jurors", getArrayDecoder(getAddressDecoder(), { size: 31 })],
     [
       "commits",
       getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: 31 }),
     ],
-    ["reveals", fixDecoderSize(getBytesDecoder(), 31)],
-    ["settled", getU8Decoder()],
-    ["pad1", fixDecoderSize(getBytesDecoder(), 4)],
     ["seatPrefix", getArrayDecoder(getU64Decoder(), { size: 31 })],
     ["seatStake", getArrayDecoder(getU64Decoder(), { size: 31 })],
-    ["drawAttempt", getU32Decoder()],
-    ["padDrawAttempt", fixDecoderSize(getBytesDecoder(), 4)],
+    ["reveals", getArrayDecoder(getU64Decoder(), { size: 31 })],
   ]);
 }
 
@@ -280,5 +292,5 @@ export async function fetchAllMaybeRound(
 }
 
 export function getRoundSize(): number {
-  return 2608;
+  return 2824;
 }

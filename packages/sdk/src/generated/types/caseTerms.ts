@@ -68,6 +68,12 @@ export type CaseTerms = {
   shortfallPolicy: ShortfallPolicy;
   /** Frozen redraw cap (ADR-0021). */
   maxDrawAttempts: number;
+  /**
+   * Frozen coherence tolerance (ADR-0025). Mirrors
+   * `Subaccord.coherence_tol_bps` at filing time; read only on the
+   * `Median` path by `settle_round_accounts`.
+   */
+  coherenceTolBps: number;
 };
 
 export type CaseTermsArgs = {
@@ -95,6 +101,12 @@ export type CaseTermsArgs = {
   shortfallPolicy: ShortfallPolicyArgs;
   /** Frozen redraw cap (ADR-0021). */
   maxDrawAttempts: number;
+  /**
+   * Frozen coherence tolerance (ADR-0025). Mirrors
+   * `Subaccord.coherence_tol_bps` at filing time; read only on the
+   * `Median` path by `settle_round_accounts`.
+   */
+  coherenceTolBps: number;
 };
 
 export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
@@ -112,6 +124,7 @@ export function getCaseTermsEncoder(): FixedSizeEncoder<CaseTermsArgs> {
     ["revealThresholdBps", getU16Encoder()],
     ["shortfallPolicy", getShortfallPolicyEncoder()],
     ["maxDrawAttempts", getU8Encoder()],
+    ["coherenceTolBps", getU16Encoder()],
   ]);
 }
 
@@ -130,6 +143,7 @@ export function getCaseTermsDecoder(): FixedSizeDecoder<CaseTerms> {
     ["revealThresholdBps", getU16Decoder()],
     ["shortfallPolicy", getShortfallPolicyDecoder()],
     ["maxDrawAttempts", getU8Decoder()],
+    ["coherenceTolBps", getU16Decoder()],
   ]);
 }
 

@@ -1,23 +1,30 @@
 // dispute.test.ts — runnable self-check for the pure domain logic in dispute.ts
-// (PDA seeds, fee math, option/evidence/nonce validation).
+// (PDA seeds, fee math, option/evidence/nonce validation, ruling read).
 //
 // Excluded from the TypeScript build (tsconfig.json exclude); run via:
 //   pnpm --filter @useaccord/sdk test
 //
-// Kit-dependent paths (findDisputePda / createDispute / getRuling) are exercised
+// Kit-dependent paths (findDisputePda / createDispute) are exercised
 // by the jest/Surfpool integration suite (bean veridao-7iiv) once the generated
 // client + fetchers land; here we cover the deterministic logic that must hold
-// regardless of the chain.
+// regardless of the chain. `getRuling` runs against a stub seam client — it is
+// pure orchestration over `AccordDisputeClient`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import type { Address } from "@solana/kit";
 import {
   MAX_OPTIONS,
+  NO_RULING,
   assertValidEvidenceHash,
   assertValidNonce,
   assertValidOptions,
   disputeSeeds,
+  getRuling,
   requiredFee,
+  type AccordDisputeClient,
+  type DisputeRulingView,
 } from "./dispute.ts";
+import { Aggregation } from "../types.ts";
 
 const U64_MAX = 0xffffffffffffffffn;
 
@@ -54,18 +61,47 @@ test("requiredFee: min_jury_size · fee_per_juror, null on overflow (accord-9q3e
   assert.equal(requiredFee(1_000n, 0), null); // invalid min_jury_size
 });
 
-test("assertValidOptions: 2..=MAX_OPTIONS, each 32 bytes", () => {
+test("assertValidOptions: Plurality 2..=MAX_OPTIONS x 32B; Median none (ADR-0025)", () => {
   const h = () => new Uint8Array(32);
-  assertValidOptions([h(), h()]); // 2 ok
+  assertValidOptions([h(), h()]); // 2 ok (default = Plurality)
+  assertValidOptions([h(), h()], Aggregation.Plurality);
   assertValidOptions(Array.from({ length: MAX_OPTIONS }, h)); // max ok
   assert.throws(() => assertValidOptions([h()]), /InvalidOptions/); // 1
   assert.throws(
     () => assertValidOptions(Array.from({ length: MAX_OPTIONS + 1 }, h)),
     /InvalidOptions/,
-  ); // 33
+  ); // 9
   assert.throws(
     () => assertValidOptions([new Uint8Array(31), h()]),
     /32 bytes/,
+  );
+  // Median (scalar) disputes file without option hashes (create_dispute.rs).
+  assertValidOptions([], Aggregation.Median);
+  assert.throws(() => assertValidOptions([h()], Aggregation.Median), /Median/);
+});
+
+test("getRuling: u64::MAX sentinel → null, real ruling → bigint (ADR-0025)", async () => {
+  const stub = (view: DisputeRulingView | null): AccordDisputeClient => ({
+    buildCreateDispute: () => {
+      throw new Error("unused in this test");
+    },
+    fetchDispute: async () => view,
+  });
+  const addr = "11111111111111111111111111111111" as Address;
+  // Account does not exist yet → null.
+  assert.equal(await getRuling(stub(null), addr), null);
+  // No ruling yet → null. The adapter folds the u64::MAX sentinel (was
+  // u8::MAX/255 pre-ADR-0025) when building the view; `getRuling` also folds
+  // defensively (on-chain `Dispute::ruling()` posture), so a seam that leaks
+  // the sentinel still yields null.
+  assert.equal(NO_RULING, 0xffff_ffff_ffff_ffffn);
+  assert.equal(await getRuling(stub({ finalRuling: null }), addr), null);
+  assert.equal(await getRuling(stub({ finalRuling: NO_RULING }), addr), null);
+  // Plurality: option index; Median: scalar in settlement-mint base units.
+  assert.equal(await getRuling(stub({ finalRuling: 2n }), addr), 2n);
+  assert.equal(
+    await getRuling(stub({ finalRuling: 123_450_000n }), addr),
+    123_450_000n,
   );
 });
 

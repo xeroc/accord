@@ -43,8 +43,9 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
     "Permissionlessly create a Subaccord — a stake-weighted dispute pool keyed " +
     "by an immutable (creator, domain_ref) namespace. The loaded wallet becomes " +
     "the Subaccord authority and the fee payer. All CaseTerms parameters " +
-    "(windows, alpha, max_appeals, reveal threshold, shortfall policy, …) are " +
-    "frozen at creation; later changes go through propose/execute-update.";
+    "(windows, alpha, max_appeals, aggregation, reveal threshold, shortfall " +
+    "policy, …) are frozen at creation; later changes go through " +
+    "propose/execute-update.";
 
   static examples = [
     "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
@@ -57,6 +58,10 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
       "  --min-stake 1000 --juror-credential <issuer> --juror-schema <schema> \\\n" +
       "  --evidence-operator <addr>  # credential-gated (attestation required to stake)",
+    "<%= config.bin %> lifecycle:create-subaccord --random-domain-id \\\n" +
+      "  --evidence-spec 0000…0001 --staking-token <mint> --fee-token <mint> \\\n" +
+      "  --min-stake 1000 --aggregation median --coherence-tol-bps 100 \\\n" +
+      "  --evidence-operator <addr>  # scalar-voting (Median) pool — ADR-0025",
   ];
 
   static flags = {
@@ -116,9 +121,11 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       default: 3,
     }),
     aggregation: Flags.string({
-      description: "Dispute-kit aggregation rule (ADR-0019)",
-      options: ["Plurality"],
-      default: "Plurality",
+      description:
+        "Tally rule: plurality (option-index votes, default) or median " +
+        "(scalar u64 votes, ADR-0025); frozen onto CaseTerms at filing",
+      options: ["plurality", "median"],
+      default: "plurality",
     }),
     "fee-per-juror": Flags.string({
       description: "Per-juror fee, in base units of the fee token",
@@ -136,6 +143,13 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
     "max-draw-attempts": Flags.integer({
       description: "Per-round redraw cap before the dispute fails (1..10; ADR-0021)",
       required: true,
+    }),
+    "coherence-tol-bps": Flags.integer({
+      description:
+        "Median coherence band in bps of the final median (100 = 1%; " +
+        "|vote − ruling| · 10_000 ≤ ruling · tol — ADR-0025). Inert for " +
+        "plurality; frozen onto CaseTerms at filing",
+      default: 100,
     }),
     "evidence-operator": Flags.string({
       description: "ADR-0006 trusted re-encryption service address",
@@ -192,13 +206,13 @@ export default class LifecycleCreateSubaccord extends ChainCommand {
       appealWindow: BigInt(flags["appeal-window"]),
       maxAppeals: flags["max-appeals"],
       minJurySize: flags["min-jury-size"],
-      aggregation:
-        flags.aggregation === "Plurality" ? Aggregation.Plurality : Aggregation.Plurality,
+      aggregation: flags.aggregation === "median" ? Aggregation.Median : Aggregation.Plurality,
       feePerJuror: BigInt(flags["fee-per-juror"]),
       revealThresholdBps: flags["reveal-threshold-bps"],
       shortfallPolicy:
         flags["shortfall-policy"] === "Redraw" ? ShortfallPolicy.Redraw : ShortfallPolicy.Redraw,
       maxDrawAttempts: flags["max-draw-attempts"],
+      coherenceTolBps: flags["coherence-tol-bps"],
       // Single-signer model: the wallet IS the authority (no --authority flag).
       authority: ctx.signer.address,
       evidenceOperator: flags["evidence-operator"] as Address,

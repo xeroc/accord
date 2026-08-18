@@ -23,7 +23,10 @@ then ledger-only adjustments are written to `JurorStake` — no SPL transfer
 
 ```
 slash_per_juror = alpha_bps · min_stake / 10_000        # one slash unit
-coherent        = reveals[i] != 0xFF && reveals[i] == final_ruling
+coherent        = reveals[i] != u64::MAX && match aggregation (ADR-0025):
+                    Plurality: reveals[i] == final_ruling
+                    Median:    |reveals[i] − final_ruling| · 10_000
+                               ≤ final_ruling · coherence_tol_bps
 stake_pool      = Σ slashes       (stake_token)
 fee_pool        = (panel − reveal_count) · fee_per_juror + forfeited_bonds  (fee_token)
 ```

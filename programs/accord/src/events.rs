@@ -96,7 +96,7 @@ pub struct Revealed {
     pub dispute: Pubkey,
     pub round_idx: u32,
     pub juror: Pubkey,
-    pub vote: u8,
+    pub vote: u64,
 }
 
 /// Emitted when a round is tallied.
@@ -104,14 +104,14 @@ pub struct Revealed {
 pub struct RoundResolved {
     pub dispute: Pubkey,
     pub round_idx: u32,
-    pub result: u8,
+    pub result: u64,
 }
 
 /// Emitted when a dispute reaches its final ruling (Arbitrable reads this).
 #[event]
 pub struct RulingFinalized {
     pub dispute: Pubkey,
-    pub ruling: u8,
+    pub ruling: u64,
 }
 
 /// Emitted when a prior round's coherence settlement lands via `settle_round`

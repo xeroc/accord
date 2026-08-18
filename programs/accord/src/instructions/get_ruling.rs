@@ -15,7 +15,7 @@ pub struct GetRuling<'info> {
 }
 
 impl<'info> GetRuling<'info> {
-    pub fn handler_get_ruling(ctx: Context<GetRuling>) -> Result<Option<u8>> {
+    pub fn handler_get_ruling(ctx: Context<GetRuling>) -> Result<Option<u64>> {
         Ok(ctx.accounts.dispute.ruling())
     }
 }

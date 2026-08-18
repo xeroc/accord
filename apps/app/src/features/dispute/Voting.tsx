@@ -7,7 +7,10 @@ import {
 import {
   type Dispute,
   type Round,
+  Aggregation,
   DisputeState,
+  decodeScalarVote,
+  encodeScalarVote,
   NO_VOTE,
 } from "@useaccord/sdk";
 
@@ -23,7 +26,8 @@ import { useManifest, optionLabels } from "./evidence";
 const VOTE_KEY = "accord:vote";
 
 interface StoredVote {
-  vote: number;
+  /** u64 vote serialized as a decimal string (bigint-safe in JSON). */
+  vote: string;
   salt: number[];
 }
 
@@ -33,19 +37,20 @@ function voteKey(dispute: string, roundIdx: number, juror: string): string {
 
 function loadStoredVote(
   key: string,
-): { vote: number; salt: Uint8Array } | null {
+): { vote: bigint; salt: Uint8Array } | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredVote;
-    return { vote: parsed.vote, salt: new Uint8Array(parsed.salt) };
+    // BigInt(String(v)) also revives u8-era entries stored as JSON numbers.
+    return { vote: BigInt(String(parsed.vote)), salt: new Uint8Array(parsed.salt) };
   } catch {
     return null;
   }
 }
 
-function saveStoredVote(key: string, vote: number, salt: Uint8Array): void {
-  const data: StoredVote = { vote, salt: Array.from(salt) };
+function saveStoredVote(key: string, vote: bigint, salt: Uint8Array): void {
+  const data: StoredVote = { vote: vote.toString(), salt: Array.from(salt) };
   localStorage.setItem(key, JSON.stringify(data));
 }
 
@@ -91,7 +96,8 @@ export function Voting({
   round: Account<Round>;
 }) {
   const env = useAccord();
-  const [vote, setVote] = useState(0);
+  const [vote, setVote] = useState(0); // plurality: selected option index
+  const [scalar, setScalar] = useState(""); // median: decimal scalar string
   const [salt] = useState(() => randomSalt());
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +106,9 @@ export function Voting({
   const r = round.data;
   const state = d.state as DisputeState;
   const numOptions = d.numOptions;
+  // Median (scalar) pools: no option list — the vote is a u64 scalar
+  // (ADR-0025), keyed off the terms frozen at filing.
+  const isMedian = d.terms.aggregation === Aggregation.Median;
   // Option labels from the evidence manifest (round 0 — options are fixed at
   // dispute creation). Absent label → fall back to the on-chain option hash.
   const { data: manifest } = useManifest(d.subaccord, dispute.address, 0);
@@ -155,7 +164,15 @@ export function Voting({
     setError(null);
     setSending(true);
     try {
-      saveStoredVote(voteKey(dispute.address, r.roundIdx, wallet), vote, salt);
+      // Choice: mint decimals aren't fetched here, so scalars use the SDK's
+      // canonical 6-decimal scaling (encodeScalarVote default) — the same
+      // default formatRuling decodes with, so the value round-trips.
+      const voteBigint = isMedian ? encodeScalarVote(scalar) : BigInt(vote);
+      saveStoredVote(
+        voteKey(dispute.address, r.roundIdx, wallet),
+        voteBigint,
+        salt,
+      );
       const { instruction } = await env.accord.methods.commit(
         {
           signer: env.signer.address,
@@ -163,7 +180,7 @@ export function Voting({
           dispute: dispute.address,
           round: round.address,
         },
-        { vote, salt },
+        { vote: voteBigint, salt },
       );
       await sendInstruction(
         env.rpc,
@@ -286,36 +303,50 @@ export function Voting({
           {commitOpen && !hasCommitted && (
             <div className="space-y-3">
               <label className="block font-mono text-sm text-text-secondary">
-                Select option
+                {isMedian ? "Scalar vote" : "Select option"}
               </label>
-              <select
-                value={vote}
-                onChange={(e) => setVote(Number(e.target.value))}
-                className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-              >
-                {Array.from({ length: numOptions }, (_, i) => {
-                  const label = manifestLabels[i]?.trim();
-                  if (label) {
+              {isMedian ? (
+                // Median: decimal scalar string (encodeScalarVote scales it).
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g. 123.45"
+                  value={scalar}
+                  onChange={(e) => setScalar(e.target.value)}
+                  className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
+                />
+              ) : (
+                <select
+                  value={vote}
+                  onChange={(e) => setVote(Number(e.target.value))}
+                  className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
+                >
+                  {Array.from({ length: numOptions }, (_, i) => {
+                    const label = manifestLabels[i]?.trim();
+                    if (label) {
+                      return (
+                        <option key={i} value={i}>
+                          {label}
+                        </option>
+                      );
+                    }
+                    const hash = d.options[i] ? hexBytes(d.options[i]) : "";
                     return (
                       <option key={i} value={i}>
-                        {label}
+                        {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
                       </option>
                     );
-                  }
-                  const hash = d.options[i] ? hexBytes(d.options[i]) : "";
-                  return (
-                    <option key={i} value={i}>
-                      {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="break-all font-mono text-xs text-text-secondary">
-                {manifestLabels[vote]?.trim()
-                  ? `${manifestLabels[vote]} · `
-                  : "option hash: "}
-                {d.options[vote] ? hexBytes(d.options[vote]) : "—"}
-              </div>
+                  })}
+                </select>
+              )}
+              {!isMedian && (
+                <div className="break-all font-mono text-xs text-text-secondary">
+                  {manifestLabels[vote]?.trim()
+                    ? `${manifestLabels[vote]} · `
+                    : "option hash: "}
+                  {d.options[vote] ? hexBytes(d.options[vote]) : "—"}
+                </div>
+              )}
               <button
                 onClick={handleCommit}
                 disabled={sending}
@@ -339,9 +370,10 @@ export function Voting({
                   <p className="text-sm text-text-secondary">
                     Reveal vote{" "}
                     <span className="font-mono text-text-primary">
-                      {stored.vote}
+                      {isMedian
+                        ? decodeScalarVote(stored.vote)
+                        : String(stored.vote)}
                     </span>{" "}
-                    (stored at commit time).
                   </p>
                   <button
                     onClick={handleReveal}

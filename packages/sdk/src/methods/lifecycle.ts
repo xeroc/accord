@@ -115,6 +115,15 @@ export interface CreateSubaccordArgs {
    * Orthogonal to {@link CreateSubaccordArgs.maxAppeals} (which bounds rounds).
    */
   maxDrawAttempts: number; // u8, 1..=MAX_DRAW_ATTEMPTS
+  /**
+   * Coherence tolerance for `Median` pools, in bps of the final median
+   * (ADR-0025): a revealed vote is coherent iff
+   * `|vote − ruling| · 10_000 ≤ ruling · coherence_tol_bps`. `0` = exact
+   * match. Inert for `Plurality`. Immutable on the Subaccord (not in
+   * `UpdatePayload`); frozen onto `CaseTerms` at filing. Docs default 100
+   * (1% band) for `Median` pools; use `0` for `Plurality`-only pools.
+   */
+  coherenceTolBps: number; // u16, 0..=10_000
   /** `Pubkey::default()` => immutable Subaccord; else signs propose/execute. */
   authority: Address;
   /** ADR-0006 trusted re-encryption service. */
@@ -256,6 +265,21 @@ export function assertValidMaxDrawAttempts(maxDrawAttempts: number): void {
   }
 }
 
+/** Validate `coherence_tol_bps ≤ 10_000` (lib.rs create_subaccord, ADR-0025).
+ * Mirrors the on-chain `InvalidThreshold` gate — same bound as
+ * {@link assertValidRevealThreshold}. */
+export function assertValidCoherenceTol(coherenceTolBps: number): void {
+  if (
+    !Number.isInteger(coherenceTolBps) ||
+    coherenceTolBps < 0 ||
+    coherenceTolBps > 10_000
+  ) {
+    throw new Error(
+      `InvalidThreshold: expected 0..10000 bps, got ${coherenceTolBps}`,
+    );
+  }
+}
+
 /** Reject the degenerate zero domain_ref (lib.rs:164 namespace squat guard). */
 export function assertValidRiskType(domainRef: Uint8Array): void {
   if (domainRef.length !== 32) {
@@ -385,6 +409,7 @@ export async function createSubaccord(
   assertValidAppealWindow(args.appealWindow);
   assertValidRevealThreshold(args.revealThresholdBps);
   assertValidMaxDrawAttempts(args.maxDrawAttempts);
+  assertValidCoherenceTol(args.coherenceTolBps);
   assertValidMinJurySize(args.minJurySize, args.maxAppeals);
   const { address, bump } = await findSubaccordPda(
     programId,

@@ -30,6 +30,7 @@ import {
   findJurorStakePda,
   findRoundPda,
   findAccordStatePda,
+  Aggregation,
   getDisputeDecoder,
   getRoundDecoder,
   getJurorStakeDecoder,
@@ -350,6 +351,11 @@ export interface ArmedDispute {
 export async function armDispute(
   fx: DrawFixture,
   nonce: bigint,
+  options: Uint8Array[] = [
+    new Uint8Array(32).fill(1),
+    new Uint8Array(32).fill(2),
+  ],
+  aggregation: Aggregation = Aggregation.Plurality,
 ): Promise<ArmedDispute> {
   const { env, subaccord, mint, vault, accordState } = fx;
   const fee = requiredFee(FEE_PER_JUROR);
@@ -368,10 +374,11 @@ export async function armDispute(
       accordState,
     },
     {
-      options: [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)],
+      options,
       evidenceHash: randomBytes32(),
       nonce,
       fee,
+      aggregation,
     },
     env.programId,
   );
@@ -483,7 +490,7 @@ export interface RoundView {
   commitCount: number;
   revealCount: number;
   jurors: Address[];
-  result: number;
+  result: bigint;
   reviewEnd: bigint;
   commitEnd: bigint;
   revealEnd: bigint;
@@ -519,11 +526,12 @@ export async function readDisputeState(
 export async function readDisputeFinalRuling(
   env: TestEnv,
   dispute: Address,
-): Promise<number | null> {
+): Promise<bigint | null> {
   const d = await fetchDecoded(env, dispute, getDisputeDecoder());
   if (!d) return null;
   const fr = d.finalRuling;
-  return fr === 255 ? null : Number(fr);
+  // u64::MAX sentinel (ADR-0025) — no ruling yet.
+  return fr === 0xffff_ffff_ffff_ffffn ? null : fr;
 }
 
 export async function readJurorActiveDraws(

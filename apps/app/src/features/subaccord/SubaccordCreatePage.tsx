@@ -30,6 +30,7 @@ import {
   DEFAULT_MAX_APPEALS,
   DEFAULT_REVEAL_THRESHOLD_BPS,
   DEFAULT_MAX_DRAW_ATTEMPTS,
+  DEFAULT_COHERENCE_TOL_BPS,
   DEFAULT_FEE_PER_JUROR,
   DEFAULT_TREE_DEPTH,
   MAX_SAFE_TREE_DEPTH,
@@ -61,6 +62,8 @@ interface FormState {
   feePerJuror: string;
   revealThresholdBps: string;
   maxDrawAttempts: string;
+  aggregation: string; // "plurality" | "median"
+  coherenceTolBps: string;
   depth: string;
   authority: string;
   evidenceOperator: string;
@@ -82,6 +85,8 @@ const DEFAULTS: FormState = {
   feePerJuror: DEFAULT_FEE_PER_JUROR.toString(),
   revealThresholdBps: DEFAULT_REVEAL_THRESHOLD_BPS.toString(),
   maxDrawAttempts: DEFAULT_MAX_DRAW_ATTEMPTS.toString(),
+  aggregation: "plurality",
+  coherenceTolBps: DEFAULT_COHERENCE_TOL_BPS.toString(),
   depth: DEFAULT_TREE_DEPTH.toString(),
   authority: "",
   evidenceOperator: "",
@@ -280,6 +285,29 @@ export function SubaccordCreatePage() {
               required
               mono
             />
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-foreground">Aggregation.</span>
+              <select
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
+                value={form.aggregation}
+                onChange={(e) => set("aggregation", e.target.value)}
+              >
+                <option value="plurality">Plurality — pick one of N options</option>
+                <option value="median">Median — scalar ruling (ADR-0025)</option>
+              </select>
+              <span className="text-xs text-muted-foreground">
+                How revealed votes aggregate into a ruling. Median disputes file
+                without option hashes; the vote is a scalar.
+              </span>
+            </label>
+            <Field
+              label="Coherence tolerance (bps)"
+              help={`Max relative spread of scalar reveals before incoherence kicks in. 0–10,000. Default ${DEFAULT_COHERENCE_TOL_BPS}.`}
+              value={form.coherenceTolBps}
+              onChange={(v) => set("coherenceTolBps", v)}
+              required
+              mono
+            />
             <DepthPicker value={form.depth} onChange={(v) => set("depth", v)} />
           </fieldset>
 
@@ -352,7 +380,14 @@ function buildArgs(
     appealWindow: parseBigint(form.appealWindow, "Appeal window"),
     maxAppeals: parseBoundedInt(form.maxAppeals, "Max appeals", 0, MAX_APPEALS),
     minJurySize: 3, // accord-9q3e: default round-1 panel (form field TODO)
-    aggregation: Aggregation.Plurality, // v1 sole variant (ADR-0019)
+    aggregation:
+      form.aggregation === "median" ? Aggregation.Median : Aggregation.Plurality,
+    coherenceTolBps: parseBoundedInt(
+      form.coherenceTolBps,
+      "Coherence tolerance",
+      0,
+      10_000,
+    ),
     feePerJuror: parseBigint(form.feePerJuror, "Fee per juror"),
     revealThresholdBps: parseBoundedInt(
       form.revealThresholdBps,

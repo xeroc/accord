@@ -50,7 +50,7 @@ impl<'info> FinalizeDispute<'info> {
         require!(now >= appeal_deadline, AccordError::AppealWindowOpen);
 
         let final_ruling = round.result;
-        require!(final_ruling != u8::MAX, AccordError::InvalidState);
+        require!(final_ruling != u64::MAX, AccordError::InvalidState);
 
         let sub_key = ctx.accounts.subaccord.key();
         let dispute_key = dispute.key();
@@ -66,7 +66,7 @@ impl<'info> FinalizeDispute<'info> {
         // `amount` is the total deposit (fee + bond). Derive the fee from the
         // round's panel size, forfeit only the bond portion on no-flip.
         // AppealBond layout: disc(8) + dispute(32) + round_idx(4) + appellant(32)
-        // => amount @ 76 (u64), prior_result @ 84 (u8).
+        // => amount @ 76 (u64), prior_result @ 84 (u64, ADR-0025).
         let mut forfeited_total: u64 = 0;
         // AppealBond field access (CU-opt — see `crate::layout`).
         const BOND_ROUND_IDX_OFFSET: usize = crate::layout::AB_ROUND_IDX_OFF;
@@ -94,7 +94,7 @@ impl<'info> FinalizeDispute<'info> {
             let (bond_portion, prior_result) = {
                 let d = bond_info.try_borrow_data()?;
                 require!(
-                    d.len() > BOND_PRIOR_OFFSET,
+                    d.len() >= BOND_PRIOR_OFFSET + 8,
                     AccordError::InvalidMembershipProof
                 );
                 let total_deposit = u64::from_le_bytes(
@@ -110,7 +110,14 @@ impl<'info> FinalizeDispute<'info> {
                 let fee = (panel_size_for_round(round_idx, dispute.terms.min_jury_size)? as u64)
                     .checked_mul(fee_per_juror)
                     .ok_or(AccordError::ArithmeticOverflow)?;
-                (total_deposit.saturating_sub(fee), d[BOND_PRIOR_OFFSET])
+                (
+                    total_deposit.saturating_sub(fee),
+                    u64::from_le_bytes(
+                        d[BOND_PRIOR_OFFSET..BOND_PRIOR_OFFSET + 8]
+                            .try_into()
+                            .unwrap(),
+                    ),
+                )
             };
             if prior_result == final_ruling {
                 forfeited_total = forfeited_total

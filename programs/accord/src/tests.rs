@@ -59,7 +59,7 @@ mod layout_tests {
             round_idx: 0x0102_0304,
             appellant: Pubkey::new_from_array([0xB1; 32]),
             amount: 0x0506_0708_090A_0B0C,
-            prior_result: 0x0D,
+            prior_result: 0x0D0E_0F10_1112_1314,
             bump: 0x0E,
         };
         let mut buf = Vec::new();
@@ -72,7 +72,10 @@ mod layout_tests {
             &buf[layout::AB_AMOUNT_OFF..layout::AB_AMOUNT_OFF + 8],
             &ab.amount.to_le_bytes()[..]
         );
-        assert_eq!(buf[layout::AB_PRIOR_OFF], ab.prior_result);
+        assert_eq!(
+            &buf[layout::AB_PRIOR_OFF..layout::AB_PRIOR_OFF + 8],
+            &ab.prior_result.to_le_bytes()[..]
+        );
     }
 }
 

@@ -67,10 +67,18 @@ impl<'info> CreateDispute<'info> {
             !ctx.accounts.accord_state.paused,
             AccordError::ProgramPaused
         );
-
+        // Options gate (ADR-0025): Plurality disputes enumerate 2..=MAX_OPTIONS
+        // option hashes; Median (scalar) disputes file with none — the vote is
+        // a u64 fixed-point value, not an index.
         let n = options.len();
-        require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
-
+        match ctx.accounts.subaccord.aggregation {
+            Aggregation::Plurality => {
+                require!((2..=MAX_OPTIONS).contains(&n), AccordError::InvalidOptions);
+            }
+            Aggregation::Median => {
+                require!(n == 0, AccordError::InvalidOptions);
+            }
+        }
         let sub = &mut ctx.accounts.subaccord;
         let required_fee = sub.filing_fee()?;
         require!(fee == required_fee, AccordError::FeeMismatch);
@@ -118,7 +126,7 @@ impl<'info> CreateDispute<'info> {
         d.evidence_hashes[0] = evidence_hash;
         d.state = DisputeState::Created;
         d.current_round = 0;
-        d.final_ruling = u8::MAX;
+        d.final_ruling = u64::MAX;
         d.finalized_at = 0;
         d.fee_paid = fee;
         // Ugly 4: record the filing timestamp so cancel_dispute has a pre-draw
@@ -141,6 +149,7 @@ impl<'info> CreateDispute<'info> {
             reveal_threshold_bps: sub.reveal_threshold_bps,
             shortfall_policy: sub.shortfall_policy,
             max_draw_attempts: sub.max_draw_attempts,
+            coherence_tol_bps: sub.coherence_tol_bps,
         };
         d.bump = ctx.bumps.dispute;
 

@@ -66,8 +66,8 @@ pub struct Withdrawn {
 pub struct ItemSettled {
     pub list: Pubkey,
     pub item: Pubkey,
-    /// 0 = keep, 1 = remove (index into Accord options).
-    pub ruling: u8,
+    /// 0 = keep, 1 = remove (index into Accord options; u64 since ADR-0025).
+    pub ruling: u64,
     /// True if the item was in WithdrawPending when challenged.
     pub is_withdrawal: bool,
     /// The challenger's locked stake.

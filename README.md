@@ -324,14 +324,14 @@ Your program integrates with two CPI calls. The Accord handles everything else.
 // 1. File the dispute
 let dispute = accord::create_dispute(
     ctx.accounts.clone(),
-    vec![option_a_hash, option_b_hash], // 2+ option hashes
+    vec![option_a_hash, option_b_hash], // 2..=8 option hashes (Plurality); scalar Median pools file none
     evidence_hash,                       // commitment to the evidence
     nonce,                               // caller-chosen, for PDA uniqueness
     fee,                                 // INITIAL_NUM_JURORS (3) * fee_per_juror
 )?;
 
 // 2. Read the ruling (lazy — call whenever, after finalization)
-let ruling: Option<u8> = accord::get_ruling(ctx.accounts.dispute)?;
+let ruling: Option<u64> = accord::get_ruling(ctx.accounts.dispute)?; // option index, or the median for scalar pools (ADR-0025)
 ```
 
 ```typescript
@@ -346,7 +346,8 @@ const { dispute } = await accord.createDispute({
   fee: requiredFee,
 });
 
-// Later: read the ruling (0 = option A, 1 = option B, null = not final)
+// Later: read the ruling (0 = option A, 1 = option B for Plurality; a u64
+// scalar (e.g. settlement-mint base units) for Median pools; null = not final)
 const ruling = await accord.getRuling(dispute);
 ```
 

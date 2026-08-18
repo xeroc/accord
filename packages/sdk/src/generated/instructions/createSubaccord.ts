@@ -128,6 +128,12 @@ export type CreateSubaccordInstructionData = {
   shortfallPolicy: ShortfallPolicy;
   /** Redraw cap per round (ADR-0021). Default 3. */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools in bps of the final median
+   * (ADR-0025). `0` = exact match. Inert for `Plurality`. Immutable on
+   * the Subaccord (not in `UpdatePayload`).
+   */
+  coherenceTolBps: number;
   authority: Address;
   evidenceOperator: Address;
   depth: number;
@@ -164,6 +170,12 @@ export type CreateSubaccordInstructionDataArgs = {
   shortfallPolicy: ShortfallPolicyArgs;
   /** Redraw cap per round (ADR-0021). Default 3. */
   maxDrawAttempts: number;
+  /**
+   * Coherence tolerance for `Median` pools in bps of the final median
+   * (ADR-0025). `0` = exact match. Inert for `Plurality`. Immutable on
+   * the Subaccord (not in `UpdatePayload`).
+   */
+  coherenceTolBps: number;
   authority: Address;
   evidenceOperator: Address;
   depth: number;
@@ -195,6 +207,7 @@ export function getCreateSubaccordInstructionDataEncoder(): FixedSizeEncoder<Cre
       ["revealThresholdBps", getU16Encoder()],
       ["shortfallPolicy", getShortfallPolicyEncoder()],
       ["maxDrawAttempts", getU8Encoder()],
+      ["coherenceTolBps", getU16Encoder()],
       ["authority", getAddressEncoder()],
       ["evidenceOperator", getAddressEncoder()],
       ["depth", getU8Encoder()],
@@ -223,6 +236,7 @@ export function getCreateSubaccordInstructionDataDecoder(): FixedSizeDecoder<Cre
     ["revealThresholdBps", getU16Decoder()],
     ["shortfallPolicy", getShortfallPolicyDecoder()],
     ["maxDrawAttempts", getU8Decoder()],
+    ["coherenceTolBps", getU16Decoder()],
     ["authority", getAddressDecoder()],
     ["evidenceOperator", getAddressDecoder()],
     ["depth", getU8Decoder()],
@@ -273,6 +287,7 @@ export type CreateSubaccordAsyncInput<
   revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
   shortfallPolicy: CreateSubaccordInstructionDataArgs["shortfallPolicy"];
   maxDrawAttempts: CreateSubaccordInstructionDataArgs["maxDrawAttempts"];
+  coherenceTolBps: CreateSubaccordInstructionDataArgs["coherenceTolBps"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];
@@ -332,7 +347,10 @@ export async function getCreateSubaccordInstructionAsync<
         "creator",
         accounts.creator.value,
       ),
-      domainRef: getNonNullResolvedInstructionInput("domainRef", args.domainRef),
+      domainRef: getNonNullResolvedInstructionInput(
+        "domainRef",
+        args.domainRef,
+      ),
     });
   }
   if (!accounts.systemProgram.value) {
@@ -395,6 +413,7 @@ export type CreateSubaccordInput<
   revealThresholdBps: CreateSubaccordInstructionDataArgs["revealThresholdBps"];
   shortfallPolicy: CreateSubaccordInstructionDataArgs["shortfallPolicy"];
   maxDrawAttempts: CreateSubaccordInstructionDataArgs["maxDrawAttempts"];
+  coherenceTolBps: CreateSubaccordInstructionDataArgs["coherenceTolBps"];
   authority: CreateSubaccordInstructionDataArgs["authority"];
   evidenceOperator: CreateSubaccordInstructionDataArgs["evidenceOperator"];
   depth: CreateSubaccordInstructionDataArgs["depth"];

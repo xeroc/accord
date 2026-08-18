@@ -273,6 +273,7 @@ fn setup_accumulator() -> AccEnv {
                 aggregation: Aggregation::Plurality,
                 fee_per_juror: 1_000_000,
                 reveal_threshold_bps: 6_666,
+                coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts: 3,
                 authority: creator.pubkey(),

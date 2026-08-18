@@ -21,7 +21,7 @@ import {
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 import { resolveSalt } from "./commit.js";
-import { toHex } from "./commit-hash.js";
+import { parseVote, toHex } from "./commit-hash.js";
 
 export default class VoteReveal extends ChainCommand {
   static summary = "Reveal {vote, salt} for the loaded juror (signer)";
@@ -36,6 +36,7 @@ export default class VoteReveal extends ChainCommand {
   static examples = [
     "<%= config.bin %> vote:reveal --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 1 --salt 0x0101…01 --staking-token EPjF… --juror-token-account 7vv…",
     "<%= config.bin %> vote:reveal --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 1 --salt-from ./salt.txt --staking-token EPjF… --juror-token-account 7vv…",
+    "<%= config.bin %> vote:reveal --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --vote 123.45 --decimals 6 --salt 0x0101…01 --staking-token EPjF… --juror-token-account 7vv…",
   ];
 
   static flags = {
@@ -46,7 +47,20 @@ export default class VoteReveal extends ChainCommand {
       description: "Round index (u32) — the round PDA is derived from (dispute, round-idx)",
       required: true,
     }),
-    vote: Flags.integer({ description: "Vote option index (must match commit)", required: true }),
+    vote: Flags.string({
+      description:
+        "Vote: option index (0..num_options) for Plurality, or decimal scalar " +
+        "(e.g. 123.45) for Median (ADR-0025) — must match the pair used in " +
+        "vote:commit. Integer strings are used as-is (raw u64 base units); " +
+        "strings containing '.' are scaled by 10^--decimals",
+      required: true,
+    }),
+    decimals: Flags.integer({
+      description:
+        "Scalar decimals (ADR-0025): 10^decimals scaling applied when --vote " +
+        "contains '.' (default 0 = no scaling, raw base units / option index)",
+      default: 0,
+    }),
     salt: Flags.string({
       description: '32-byte salt (64 hex) or "random" — must match the commit pair',
       required: true,
@@ -97,7 +111,7 @@ export default class VoteReveal extends ChainCommand {
     };
 
     const instruction = ctx.accord.methods.reveal(accounts, {
-      vote: flags.vote,
+      vote: parseVote(flags.vote, flags.decimals),
       salt,
     });
 

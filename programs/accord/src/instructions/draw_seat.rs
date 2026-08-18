@@ -91,9 +91,9 @@ impl<'info> DrawSeat<'info> {
             round.juror_count = 0;
             round.commit_count = 0;
             round.reveal_count = 0;
-            round.result = u8::MAX;
+            round.result = u64::MAX;
             round.commits = [[0u8; 32]; MAX_JURORS];
-            round.reveals = [u8::MAX; MAX_JURORS];
+            round.reveals = [u64::MAX; MAX_JURORS];
         }
         require!(
             round.dispute == dispute_key && round.round_idx == round_idx,

@@ -10,7 +10,8 @@ A specialized Juror pool. Permissionless to create; one per `(creator, domain_re
 | `evidence_spec`     | `[u8; 32]`    | Immutable evidence-format hash. [ADR-0006](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0006-evidence-onchain-hash-trusted-re-encryption-operator.md)                                                                            |
 | `staking_token`     | `Pubkey`      | SPL mint for juror capital. [ADR-0002](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0002-per-subaccord-staking-token-no-accord-token-v1.md)                                                                                      |
 | `min_stake`         | `u64`         | Draw eligibility threshold (in `staking_token`).                                                                                                                                           |
-| `aggregation`       | `Aggregation` | Dispute-kit tally rule (v1 = `Plurality`). [ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)                                                            |
+| `aggregation`       | `Aggregation` | Dispute-kit tally rule: `Plurality` (option-index votes) or `Median` (scalar u64 votes — [ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)). [ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)                                                            |
+| `coherence_tol_bps` | `u16`         | Median coherence band in bps of the final median: coherent iff `\|vote − ruling\|·10_000 ≤ ruling·tol_bps`. Default `100` (±1%); `0` = exact; validated `≤ 10_000`. Inert for `Plurality`. **Immutable** — frozen onto `CaseTerms` per dispute ([ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)). |
 | `alpha_bps`         | `u16`         | Slash factor in bps. `loss = alpha_bps · min_stake / 10_000`.                                                                                                                              |
 | `review_window`     | `u64`         | seconds                                                                                                                                                                                    |
 | `commit_window`     | `u64`         | seconds                                                                                                                                                                                    |
@@ -28,8 +29,8 @@ A specialized Juror pool. Permissionless to create; one per `(creator, domain_re
 
 ## Mutability
 
-- Immutable: `domain_ref`, `evidence_spec`.
-- Mutable only via 48h timelock (`propose_subaccord_update` → `execute_subaccord_update`): `min_stake`, `alpha_bps`, `review/commit/reveal_window`, `max_appeals`, `fee_per_juror`, `authority`, `evidence_operator`. Round-1 panel size is not configurable (fixed `INITIAL_NUM_JURORS` = 3); `aggregation` is immutable ([ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)).
+- Immutable: `domain_ref`, `evidence_spec`, `aggregation`, `coherence_tol_bps`, `min_jury_size`.
+- Mutable only via 48h timelock (`propose_subaccord_update` → `execute_subaccord_update`): `min_stake`, `alpha_bps`, `review/commit/reveal_window`, `appeal_window`, `max_appeals`, `fee_per_juror`, `authority`, `evidence_operator`, `reveal_threshold_bps`, `shortfall_policy`, `max_draw_attempts`. `aggregation` and `coherence_tol_bps` are immutable ([ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)/[0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)) — they define the pool's coherence game.
 - `authority == Pubkey::default()` ⇒ `propose_subaccord_update` reverts with `ImmutableSubaccord`.
 
 ```rust

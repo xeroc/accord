@@ -36,7 +36,7 @@
 | Code                 | Message                                                                                     | Raised by                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `InsufficientJurors` | Subaccord has fewer active distinct stakers than the required panel size.                   | `create_dispute`, `appeal`                                                                             |
-| `InvalidOptions`     | Dispute options are invalid (need 2..=MAX_OPTIONS).                                         | `create_dispute`, `create_subaccord`                                                                   |
+| `InvalidOptions`     | Dispute options are invalid (need 2..=MAX_OPTIONS).                                          | `create_dispute` (Plurality: `2..=8` options; Median: **0** — [ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)), `create_subaccord`                                                                   |
 | `InvalidState`       | Dispute is not in the required state for this instruction.                                  | `draw_seat`, `commit`, `reveal`, `finalize_round`, `finalize_dispute`, `appeal`, `claim_appeal_refund` |
 | `FeeMismatch`        | Tendered fee does not match the required dispute fee (jurors_per_dispute \* fee_per_juror). | `create_dispute`                                                                                       |
 
@@ -68,7 +68,7 @@
 | `CommitWindowClosed`  | Commit window is closed.                    | `commit`           |
 | `RevealWindowClosed`  | Reveal window is closed.                    | `reveal`           |
 | `NotDrawnJuror`       | Signer is not a drawn Juror for this round. | `commit`, `reveal` |
-| `InvalidVote`         | Revealed vote index is out of range.        | `reveal`           |
+| `InvalidVote`         | Revealed vote index is out of range.        | `reveal` — per aggregation ([ADR-0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)): Plurality `vote ≥ num_options`; Median `vote == u64::MAX` (sentinel reserved) |
 | `AlreadyRevealed`     | Juror has already revealed.                 | `reveal`           |
 
 ## Appeals / finalization ([ADR-0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md))

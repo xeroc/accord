@@ -55,8 +55,11 @@ export type AppealBond = {
   roundIdx: number;
   appellant: Address;
   amount: bigint;
-  /** Winning option of the round being appealed (set at `appeal` time). */
-  priorResult: number;
+  /**
+   * Winning value of the round being appealed (set at `appeal` time).
+   * Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
+   */
+  priorResult: bigint;
   bump: number;
 };
 
@@ -65,8 +68,11 @@ export type AppealBondArgs = {
   roundIdx: number;
   appellant: Address;
   amount: number | bigint;
-  /** Winning option of the round being appealed (set at `appeal` time). */
-  priorResult: number;
+  /**
+   * Winning value of the round being appealed (set at `appeal` time).
+   * Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
+   */
+  priorResult: number | bigint;
   bump: number;
 };
 
@@ -79,7 +85,7 @@ export function getAppealBondEncoder(): FixedSizeEncoder<AppealBondArgs> {
       ["roundIdx", getU32Encoder()],
       ["appellant", getAddressEncoder()],
       ["amount", getU64Encoder()],
-      ["priorResult", getU8Encoder()],
+      ["priorResult", getU64Encoder()],
       ["bump", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: APPEAL_BOND_DISCRIMINATOR }),
@@ -94,7 +100,7 @@ export function getAppealBondDecoder(): FixedSizeDecoder<AppealBond> {
     ["roundIdx", getU32Decoder()],
     ["appellant", getAddressDecoder()],
     ["amount", getU64Decoder()],
-    ["priorResult", getU8Decoder()],
+    ["priorResult", getU64Decoder()],
     ["bump", getU8Decoder()],
   ]);
 }
@@ -161,5 +167,5 @@ export async function fetchAllMaybeAppealBond(
 }
 
 export function getAppealBondSize(): number {
-  return 86;
+  return 93;
 }

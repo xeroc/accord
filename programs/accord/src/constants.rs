@@ -109,9 +109,15 @@ pub const DEFAULT_MAX_APPEALS: u8 = 3;
 /// The absolute commitment escalates per appeal for free via panel growth.
 pub const DEFAULT_REVEAL_THRESHOLD_BPS: u16 = 6_666;
 
-/// Default maximum same-size redraws per round before a dispute fails
+/// Default maximum same-size redraws per round before the dispute fails
 /// (ADR-0021). Orthogonal to `MAX_APPEALS` (which bounds appeal rounds).
 pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
+
+/// Default coherence tolerance for `Median` pools (ADR-0025): a revealed
+/// scalar vote is coherent iff `|vote − ruling| · 10_000 ≤ ruling · 100`,
+/// i.e. within ±1% of the final median. Scale-free, so it works for any
+/// settlement-mint decimals. Inert for `Plurality` pools.
+pub const DEFAULT_COHERENCE_TOL_BPS: u16 = 100;
 /// Program ceiling on per-round redraw attempts (bounds the redraw ladder).
 pub const MAX_DRAW_ATTEMPTS: u8 = 10;
 
@@ -185,7 +191,7 @@ pub(crate) mod layout {
     // disc | dispute | round_idx | appellant | amount | prior_result | bump
     const AB_ROUND_IDX_W: usize = 4;
     const AB_AMOUNT_W: usize = 8;
-    const AB_PRIOR_W: usize = 1;
+    const AB_PRIOR_W: usize = 8; // u64 since scalar voting (ADR-0025)
 
     pub(crate) const AB_ROUND_IDX_OFF: usize = DISC + PUBKEY;
     pub(crate) const AB_AMOUNT_OFF: usize = AB_ROUND_IDX_OFF + AB_ROUND_IDX_W + PUBKEY;

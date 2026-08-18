@@ -108,7 +108,7 @@ impl<'info> Redraw<'info> {
                 acct_info.owner == &crate::ID,
                 AccordError::InvalidMembershipProof
             );
-            let no_show = round.reveals[i] == u8::MAX;
+            let no_show = round.reveals[i] == u64::MAX;
             let mut data = acct_info.try_borrow_mut_data()?;
             // active_draws -= 1: every drawn juror is released from this round.
             let draws = u32::from_le_bytes(
@@ -212,16 +212,15 @@ impl<'info> Redraw<'info> {
             round.juror_count = 0;
             round.commit_count = 0;
             round.reveal_count = 0;
-            round.result = u8::MAX;
+            round.result = u64::MAX;
             round.review_end = 0;
             round.commit_end = 0;
             round.reveal_end = 0;
             round.jurors = [Pubkey::default(); MAX_JURORS];
             round.commits = [[0u8; 32]; MAX_JURORS];
-            round.reveals = [u8::MAX; MAX_JURORS];
+            round.reveals = [u64::MAX; MAX_JURORS];
             round.seat_prefix = [0u64; MAX_JURORS];
             round.seat_stake = [0u64; MAX_JURORS];
-            // `dispute`/`round_idx`/`bump`/`settled` preserved; seed entropy
             // now differs via the bumped `draw_attempt`.
             dispute.state = DisputeState::Created;
 

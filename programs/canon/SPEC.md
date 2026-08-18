@@ -39,7 +39,7 @@ staking.
 | 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
 | 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
 | 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
-| 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling`. `keep` → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` → `item.accumulated_stake` → challenger (bounty), item → `Removed`. |
+| 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling: u64` via `Dispute::ruling()` (`Option<u64>`; Canon files Plurality disputes only, so the ruling is an option index — gate `ruling < 2`, u64 since ADR-0025). `keep` (0) → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` (1) → `item.accumulated_stake` → challenger (bounty), item → `Removed`. Emits `ItemSettled{ruling: u64}`. |
 | 6 | `request_withdrawal(item)` | submitter-only; item → `WithdrawPending`; opens the `withdrawal_timelock` challenge window. |
 | 7 | `advance_withdrawal(item)` | permissionless crank; after the timelock, if unchallenged → return `accumulated_stake` to submitter, item → `Removed`. |
 
@@ -94,6 +94,8 @@ signer.
 | param | v1 value | notes |
 | --- | --- | --- |
 | `initial_num_jurors` | 3 | ADR-0019 default; round-1 panel |
+| `aggregation` | `Plurality` | Canon files 2-option `[keep, remove]` disputes only (ADR-0019/0025) |
+| `coherence_tol_bps` | 0 | Inert on a `Plurality` pool — zero keeps coherence exact (ADR-0025) |
 | `max_appeals` | 3 | 3 → 7 → 15 → 31 ladder |
 | `alpha_bps` | 1000 (10%) | Accord v1 slash default |
 | review / commit / reveal | 7d / 2d / 2d | Accord v1 defaults |

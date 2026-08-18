@@ -75,14 +75,18 @@ export type Dispute = {
    */
   terms: CaseTerms;
   /**
-   * Winning option index once `state == Final`; `u8::MAX` until then.
-   * Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
-   * `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
-   * which made `finalize_dispute`'s `Some` write overflow the account
-   * (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
-   * sentinels for `reveals`/`result`.
+   * The round's winning value once `state == Final`; `u64::MAX` until
+   * then. For `Plurality` disputes this is the winning option index; for
+   * `Median` disputes (ADR-0025) it is the final median — a u64
+   * fixed-point value the Arbitrable interprets (e.g. base units of the
+   * settlement mint, 6 decimals for USDC). Sentinel (not `Option<u64>`):
+   * keeps the account fixed-size — the SBF `InitSpace` for `Option<T>`
+   * undercounts its `Some` variant by the option tag, which made
+   * `finalize_dispute`'s `Some` write overflow the account (Anchor
+   * `AccountDidNotSerialize` #3004). Mirrors `Round`'s u64::MAX sentinels
+   * for `reveals`/`result`.
    */
-  finalRuling: number;
+  finalRuling: bigint;
   /**
    * Unix timestamp stamped at the single `Final` transition
    * (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
@@ -148,14 +152,18 @@ export type DisputeArgs = {
    */
   terms: CaseTermsArgs;
   /**
-   * Winning option index once `state == Final`; `u8::MAX` until then.
-   * Sentinel (not `Option<u8>`): keeps the account fixed-size — the SBF
-   * `InitSpace` for `Option<u8>` undercounts its `Some` variant by 1 byte,
-   * which made `finalize_dispute`'s `Some` write overflow the account
-   * (Anchor `AccountDidNotSerialize` #3004). Mirrors `Round`'s u8::MAX
-   * sentinels for `reveals`/`result`.
+   * The round's winning value once `state == Final`; `u64::MAX` until
+   * then. For `Plurality` disputes this is the winning option index; for
+   * `Median` disputes (ADR-0025) it is the final median — a u64
+   * fixed-point value the Arbitrable interprets (e.g. base units of the
+   * settlement mint, 6 decimals for USDC). Sentinel (not `Option<u64>`):
+   * keeps the account fixed-size — the SBF `InitSpace` for `Option<T>`
+   * undercounts its `Some` variant by the option tag, which made
+   * `finalize_dispute`'s `Some` write overflow the account (Anchor
+   * `AccountDidNotSerialize` #3004). Mirrors `Round`'s u64::MAX sentinels
+   * for `reveals`/`result`.
    */
-  finalRuling: number;
+  finalRuling: number | bigint;
   /**
    * Unix timestamp stamped at the single `Final` transition
    * (`finalize_dispute`); `0` until then. Canonical "verdict time" anchor
@@ -216,7 +224,7 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
     ["state", getDisputeStateEncoder()],
     ["currentRound", getU32Encoder()],
     ["terms", getCaseTermsEncoder()],
-    ["finalRuling", getU8Encoder()],
+    ["finalRuling", getU64Encoder()],
     ["finalizedAt", getI64Encoder()],
     ["feePaid", getU64Encoder()],
     ["committedVrf", getOptionEncoder(fixEncoderSize(getBytesEncoder(), 32))],
@@ -244,7 +252,7 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["state", getDisputeStateDecoder()],
     ["currentRound", getU32Decoder()],
     ["terms", getCaseTermsDecoder()],
-    ["finalRuling", getU8Decoder()],
+    ["finalRuling", getU64Decoder()],
     ["finalizedAt", getI64Decoder()],
     ["feePaid", getU64Decoder()],
     ["committedVrf", getOptionDecoder(fixDecoderSize(getBytesDecoder(), 32))],

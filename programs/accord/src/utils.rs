@@ -360,7 +360,7 @@ pub(crate) fn settle_round_accounts(
     terms: &CaseTerms,
     sub_key: &Pubkey,
     accounts: &[AccountInfo],
-    final_ruling: u8,
+    final_ruling: u64,
     pool_extra: u64,
 ) -> Result<()> {
     let panel = round.juror_count as usize;
@@ -370,6 +370,22 @@ pub(crate) fn settle_round_accounts(
         .checked_mul(terms.min_stake)
         .and_then(|v| v.checked_div(10_000))
         .ok_or(AccordError::ArithmeticOverflow)?;
+
+    // Coherence judge (ADR-0025): Plurality — exact option match; Median — a
+    // tolerance band around the final median, `|vote − ruling| · 10_000 ≤
+    // ruling · coherence_tol_bps` (u128 so `ruling · bps` cannot overflow).
+    let judge_coherent = |vote: u64| -> bool {
+        if vote == u64::MAX || final_ruling == u64::MAX {
+            return false;
+        }
+        match terms.aggregation {
+            Aggregation::Plurality => vote == final_ruling,
+            Aggregation::Median => {
+                let diff = vote.abs_diff(final_ruling) as u128;
+                diff * 10_000 <= (final_ruling as u128) * (terms.coherence_tol_bps as u128)
+            }
+        }
+    };
 
     // --- First pass: verify PDAs + compute coherence stats ---
     let mut coherent_count: u32 = 0;
@@ -389,7 +405,7 @@ pub(crate) fn settle_round_accounts(
             AccordError::InvalidMembershipProof
         );
 
-        if round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling {
+        if judge_coherent(round.reveals[i]) {
             coherent_count += 1;
         } else {
             slash_total = slash_total
@@ -444,7 +460,7 @@ pub(crate) fn settle_round_accounts(
     const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
 
     for (i, acct_info) in accounts.iter().enumerate() {
-        let is_coherent = round.reveals[i] != u8::MAX && round.reveals[i] == final_ruling;
+        let is_coherent = judge_coherent(round.reveals[i]);
 
         let (staked, active_draws, existing_delta, slash_reserve, existing_fees) = {
             let data = acct_info.try_borrow_data()?;
@@ -482,7 +498,7 @@ pub(crate) fn settle_round_accounts(
         let is_reward_eligible = if coherent_count > 0 {
             is_coherent
         } else {
-            round.reveals[i] != u8::MAX
+            round.reveals[i] != u64::MAX
         };
         let slash_delta = if is_coherent {
             0i64

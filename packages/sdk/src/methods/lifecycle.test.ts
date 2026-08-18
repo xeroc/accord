@@ -9,6 +9,7 @@ import {
   UNPAUSE_TIMELOCK_SLOTS,
   UPDATE_TIMELOCK_SLOTS,
   assertValidAppealWindow,
+  assertValidCoherenceTol,
   assertValidMaxAppeals,
   assertValidRiskType,
   canExecuteAt,
@@ -72,6 +73,15 @@ test("assertValidMaxAppeals: 0..=MAX_APPEALS", () => {
   assert.throws(() => assertValidMaxAppeals(MAX_APPEALS + 1), /MaxAppeals/);
   assert.throws(() => assertValidMaxAppeals(-1), /MaxAppeals/);
   assert.throws(() => assertValidMaxAppeals(1.5), /MaxAppeals/);
+});
+
+test("assertValidCoherenceTol: 0..=10_000 bps (ADR-0025)", () => {
+  assertValidCoherenceTol(0); // exact-match Median; the Plurality inert value
+  assertValidCoherenceTol(100); // docs default: 1% band around the median
+  assertValidCoherenceTol(10_000);
+  assert.throws(() => assertValidCoherenceTol(-1), /InvalidThreshold/);
+  assert.throws(() => assertValidCoherenceTol(10_001), /InvalidThreshold/);
+  assert.throws(() => assertValidCoherenceTol(1.5), /InvalidThreshold/);
 });
 
 test("assertValidAppealWindow: >= MIN_APPEAL_WINDOW_SECS (ADR-0022)", () => {

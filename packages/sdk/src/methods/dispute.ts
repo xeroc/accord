@@ -3,9 +3,9 @@
  *
  * Two methods every Arbitrable integrates against:
  *   - {@link createDispute} — files a Dispute (CPI from an Arbitrable program,
- *     or any wallet); the filer pays the full panel fee up front.
  *   - {@link getRuling}    — lazy read of a dispute's `final_ruling`
- *     (`Option<u8>`; `null` until the dispute reaches `Final`).
+ *     (u64 with the `u64::MAX` no-ruling sentinel; `null` until the dispute
+ *     reaches `Final` — ADR-0025).
  *
  * Per ADR-0010 the SDK is two layers: a Codama-generated Kit client (drift-free
  * instruction builders + account codecs) and a thin hand-written facade that
@@ -28,6 +28,7 @@ import {
   type Instruction,
 } from "@solana/kit";
 import { MAX_OPTIONS } from "../constants.js";
+import { Aggregation } from "../types.js";
 
 export { MAX_OPTIONS } from "../constants.js";
 
@@ -47,9 +48,16 @@ const SEED_DISPUTE = new Uint8Array([100, 105, 115, 112, 117, 116, 101]);
  */
 export type OptionHash = Uint8Array;
 
-/** Args for `create_dispute` (lib.rs:408). All amounts in the Subaccord's staking token. */
+/**
+ * Args for `create_dispute` (lib.rs:254). All amounts in the Subaccord's
+ * staking token.
+ */
 export interface CreateDisputeArgs {
-  /** 2..={@link MAX_OPTIONS} option label hashes, each 32 bytes. */
+  /**
+   * Option label hashes, each 32 bytes. `Plurality`: 2..={@link MAX_OPTIONS}
+   * (see {@link assertValidOptions}). `Median` (ADR-0025): file with none —
+   * the vote is a u64 fixed-point scalar, not an index.
+   */
   options: OptionHash[];
   /** ADR-0006 on-chain evidence commitment (`[u8; 32]`). */
   evidenceHash: Uint8Array;
@@ -57,6 +65,12 @@ export interface CreateDisputeArgs {
   nonce: bigint;
   /** Total fee = `min_jury_size * fee_per_juror` (see {@link requiredFee}). Filer pays in full. */
   fee: bigint;
+  /**
+   * Aggregation rule of the Subaccord being filed against — gates
+   * {@link CreateDisputeArgs.options} exactly like the on-chain handler
+   * (instructions/create_dispute.rs). Omit for `Plurality` (v1 default).
+   */
+  aggregation?: Aggregation;
 }
 
 /** Signer + token accounts the filer brings to `create_dispute`. */
@@ -87,9 +101,22 @@ export interface CreateDisputeResult {
 
 /** Minimal decoded view `getRuling` consumes (avoids duplicating the full Dispute shape). */
 export interface DisputeRulingView {
-  /** u8 winning option index once `state == Final`; `u8::MAX` (255) → `null`. */
-  finalRuling: number | null;
+  /**
+   * Winning value once `state == Final`: the option index for `Plurality`
+   * disputes, the final median (settlement-mint base units) for `Median`
+   * disputes (ADR-0025). `u64::MAX` ({@link NO_RULING}) → `null`.
+   */
+  finalRuling: bigint | null;
 }
+
+/**
+ * Dispute `final_ruling` no-ruling sentinel — `u64::MAX`. ADR-0025 widened
+ * the ruling from `Option<u8>` to a plain u64 (so `Median` disputes can carry
+ * a scalar verdict); the old `u8::MAX` (255) sentinel is gone. Stored until
+ * `finalize_dispute` writes the real value atomically with `state = Final`
+ * (state.rs: `Dispute::ruling`). Same value as voting's `NO_VOTE`.
+ */
+export const NO_RULING = 0xffff_ffff_ffff_ffffn;
 
 /**
  * Seam to the Codama-generated Kit client + typed fetcher (ADR-0010). The
@@ -128,10 +155,24 @@ export function requiredFee(
   return product;
 }
 /**
- * Validate `create_dispute` options (lib.rs:418: `2..=MAX_OPTIONS`, each `[u8; 32]`).
- * Throws a typed `Error` on violation. Pure — no chain access.
+ * Validate `create_dispute` options against the Subaccord's aggregation rule
+ * (instructions/create_dispute.rs, ADR-0025). `Plurality` (default):
+ * `2..=MAX_OPTIONS` hashes, each `[u8; 32]`. `Median`: none — the vote is a
+ * u64 scalar, not an option index. Throws a typed `Error` on violation.
+ * Pure — no chain access.
  */
-export function assertValidOptions(options: OptionHash[]): void {
+export function assertValidOptions(
+  options: OptionHash[],
+  aggregation: Aggregation = Aggregation.Plurality,
+): void {
+  if (aggregation === Aggregation.Median) {
+    if (options.length !== 0) {
+      throw new Error(
+        `InvalidOptions: Median (scalar) disputes file without option hashes, got ${options.length}`,
+      );
+    }
+    return;
+  }
   if (options.length < 2 || options.length > MAX_OPTIONS) {
     throw new Error(
       `InvalidOptions: expected 2..=${MAX_OPTIONS} options, got ${options.length}`,
@@ -147,7 +188,7 @@ export function assertValidOptions(options: OptionHash[]): void {
   }
 }
 
-/** Validate the evidence commitment is `[u8; 32]` (lib.rs:411 instruction arg). */
+/** Validate the evidence commitment is `[u8; 32]` (lib.rs:257 instruction arg). */
 export function assertValidEvidenceHash(evidenceHash: Uint8Array): void {
   if (evidenceHash.length !== 32) {
     throw new Error(
@@ -156,7 +197,7 @@ export function assertValidEvidenceHash(evidenceHash: Uint8Array): void {
   }
 }
 
-/** Validate a `nonce` fits in a u64 (lib.rs:412 instruction arg). */
+/** Validate a `nonce` fits in a u64 (lib.rs:258 instruction arg). */
 export function assertValidNonce(nonce: bigint): void {
   if (nonce < 0n || nonce > U64_MAX) {
     throw new Error(`InvalidNonce: expected u64, got ${nonce}`);
@@ -203,8 +244,8 @@ export async function findDisputePda(
  * the instruction via the client seam. The caller (Accord facade) signs + sends
  * `result.instruction` with its wallet adapter.
  *
- * On success the Dispute PDA is `init`-ialized (lib.rs:1868-1875) and reads
- * `state == Created`, `final_ruling == None`.
+ * On success the Dispute PDA is `init`-ialized (instructions/create_dispute.rs)
+ * and reads `state == Created`, `final_ruling == u64::MAX` ({@link NO_RULING}).
  */
 export async function createDispute(
   client: AccordDisputeClient,
@@ -212,7 +253,7 @@ export async function createDispute(
   args: CreateDisputeArgs,
   programId: Address = ACCORD_PROGRAM_ID,
 ): Promise<CreateDisputeResult> {
-  assertValidOptions(args.options);
+  assertValidOptions(args.options, args.aggregation);
   assertValidEvidenceHash(args.evidenceHash);
   assertValidNonce(args.nonce);
   const { address, bump } = await findDisputePda(
@@ -230,15 +271,24 @@ export async function createDispute(
 }
 
 /**
- * Lazily read a dispute's final ruling. Returns the winning option index once
- * the dispute reaches `Final`, or `null` beforehand (matches the on-chain
- * `get_ruling` CPI entry, lib.rs:1528: `Ok(dispute.final_ruling)`). Returns
- * `null` if the Dispute account does not exist yet.
+ * Lazily read a dispute's final ruling. Returns the winning value once the
+ * dispute reaches `Final` — the option index for `Plurality` disputes, the
+ * final median in settlement-mint base units for `Median` disputes
+ * (ADR-0025) — or `null` beforehand; on-chain `final_ruling` holds the
+ * `u64::MAX` sentinel ({@link NO_RULING}) until then, and both the adapter
+ * and {@link getRuling} fold it to `null` (matches the on-chain `get_ruling`
+ * CPI entry, lib.rs:480 → `Dispute::ruling()`). Returns `null` if the
+ * Dispute account does not exist yet.
  */
 export async function getRuling(
   client: AccordDisputeClient,
   dispute: Address,
-): Promise<number | null> {
+): Promise<bigint | null> {
   const view = await client.fetchDispute(dispute);
-  return view?.finalRuling ?? null;
+  // Defense in depth: the adapter already folds the sentinel, but fold here
+  // too so no seam implementor can leak it — same posture as on-chain
+  // `Dispute::ruling()` (state.rs) checking the sentinel even though the
+  // Final⟺ruling-written invariant makes it unreachable.
+  const fr = view?.finalRuling ?? NO_RULING;
+  return fr === NO_RULING ? null : fr;
 }

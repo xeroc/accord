@@ -32,11 +32,12 @@ Flags mirror `CreateSubaccordArgs` (`methods/lifecycle.ts`):
 | `--appeal-window <secs>` | u64 | `≥ 3_600` (1h floor); default `259_200` (3d) |
 | `--max-appeals <n>` | u8 | `≤ 3`; bounds the appeal ladder depth. `0` ⇒ no appeals |
 | `--min-jury-size <n>` | u32 | Round-1 panel size (accord-9q3e). Default `3`; must be odd; ladder `(J+1)·2^maxAppeals − 1 ≤ 31`. Set `1` for a single-juror pool (`--max-appeals 0`) |
-| `--aggregation <Plurality>` | enum | v1 = `Plurality` |
+| `--aggregation <rule>` | enum | Tally rule (ADR-0025): `plurality` — option-index votes (default); `median` — scalar u64 votes, ruling = median. Frozen onto `CaseTerms` at filing |
 | `--fee-per-juror <lamports>` | u64 | Default `0` |
 | `--reveal-threshold-bps <n>` | u16 | `≤ 10_000`; default `6_666` (2/3) |
 | `--shortfall-policy <Redraw>` | enum | v1 = `Redraw` |
 | `--max-draw-attempts <n>` | u8 | `1..=10`; default `3` |
+| `--coherence-tol-bps <n>` | u16 | `Median` coherence band in bps of the final median: `\|vote − ruling\| · 10_000 ≤ ruling · tol` (ADR-0025). Default `100` (1%); `0` = exact match. Inert for `plurality` |
 | `--authority <addr\|none>` | address | `none` ⇒ immutable Subaccord |
 | `--evidence-operator <addr>` | address | Trusted re-encryption service (ADR-0006) |
 | `--juror-credential <addr>` | address | PROG-ATTESTTION SAS attestation issuer; both-or-neither with `--juror-schema`. Omit ⇒ stake-only |
@@ -64,6 +65,13 @@ useaccord lifecycle:create-subaccord \
   --evidence-spec 0x0000…0001 \
   --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
   --juror-credential <issuer> --juror-schema <schema>   # both-or-neither
+
+# Scalar-voting (Median) pool — jurors vote u64 scalars, ruling = median (ADR-0025)
+useaccord lifecycle:create-subaccord \
+  --random-domain-id \
+  --evidence-spec 0x0000…0001 \
+  --staking-token Es9vM…z6Xq --fee-token EPjFW…e4U \
+  --aggregation median --coherence-tol-bps 100
 ```
 
 SDK: `createSubaccord(client, programId, creator, args)` → `{ instruction, subaccord, bump }`
