@@ -258,9 +258,30 @@ Upload an encrypted `EvidenceBundle`. `round` defaults to `0` (filer evidence); 
 | `400`  | Malformed bundle or invalid base58 address                              |
 | `409`  | A different `plaintext_hash` already exists for this `(dispute, round)` |
 
+### `POST /evidence/synod/{case}/{party}`
+
+Synod **pre-dispute grouping** (milestone accord-daq8): a party pushes its encrypted `EvidenceBundle` for a SynodCase **before** any Accord dispute exists. Same wire body as the dispute-keyed ingest. Storage is grouped by case PDA + party slot (`party` = roster index `0..6`).
+
+Unauthenticated **by design**: the per-party hash committed on-chain at `join` (`SynodCase.evidence[party]`) is the commitment — junk bundles simply fail the post-file root verification. Keying fields are chain-derived: the daemon reads the case's Subaccord and never trusts client-supplied `subaccord`/`dispute`/`round`.
+
+**Responses:**
+
+| Status | Meaning                                                                        |
+| ------ | ------------------------------------------------------------------------------ |
+| `201`  | Stored. `Location: /evidence/synod/{case}/{party}`                             |
+| `400`  | Malformed bundle, invalid case address, or `party` ≥ on-chain `party_count`    |
+| `404`  | SynodCase not found on-chain                                                    |
+| `409`  | Dispute already filed for this case (`SynodCase.dispute` bound), or a different `plaintext_hash` already exists for this slot |
+
+### `GET /evidence/synod/{case}`
+
+Assembled multi-bundle manifest (accord-lry5): every roster slot `0..party_count-1` with ADR-0017 payload attribution — `{ party, present, plaintext_hash, ingested_at, manifest }` per stored bundle (the daemon decrypts in memory with the operator key; an undecryptable slot keeps its entry with `manifest: null`). Absent slots appear as `{ party, present: false }` — the pre-file view is intentionally **partial**. Post-file, `verified` reports the recomputed file-time root `H(case_pda ‖ h_0 ‖ … ‖ h_{N-1})` (from the stored bundles) vs `Dispute.evidence_hashes[0]`; a mismatch — or a missing slot — ⇒ `verified: false`, and the deliver bridge refuses juror assembly on the same input. Pre-file `verified` is `null` (nothing to verify).
+
+**Responses:** `200` assembled manifest · `404` case not found (or the bound dispute is missing on-chain).
+
 ### `GET /evidence/{dispute}/for/{juror}`
 
-Pull all deliverable evidence packages for a drawn juror.
+Pull all deliverable evidence packages for a drawn juror. **Synod bridge (accord-g1dy):** when `Dispute.filer` is a SynodCase PDA bound to that dispute, the response is the assembled pre-dispute group instead — one package per party slot, the `round` field carrying the slot index. Assembly is gated by the file-time root: `H(case_pda ‖ h_0 ‖ … ‖ h_{N-1})` recomputed from the stored bundles must equal `evidence_hashes[0]`; a mismatch (daemon-side bundle swap) ⇒ `409`, assembly refused.
 
 **Responses:**
 
