@@ -31,6 +31,11 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
     ingest: async () => ({ ok: true, status: 201, location: `/evidence/s/d` }),
     synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/c/0" }),
+    synodManifest: async () => ({
+      ok: true,
+      status: 200,
+      body: { party_count: 0, parties: [], verified: null },
+    }),
     deliver: async () => ({
       ok: true,
       status: 200,

@@ -31,6 +31,10 @@ import {
 import { NoOpWatermark } from "./pipeline/watermark";
 import { synodIngest as synodIngestPipeline } from "./pipeline/synod-ingest";
 import {
+  synodManifest as synodManifestPipeline,
+  type BundleDecryptor,
+} from "./pipeline/synod-manifest";
+import {
   base64ToBytes,
   bytesToBase64,
   type EvidenceStore,
@@ -42,6 +46,7 @@ import type {
   ManifestHandler,
   ServerDeps,
   SynodIngestHandler,
+  SynodManifestHandler,
 } from "./server/handlers";
 import type { KeyringPublicKeys } from "./server/public-keys";
 
@@ -298,6 +303,78 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     return { ok: false, status: out.status, error: out.reason };
   };
 
+  // Synod assembled manifest (accord-lry5): GET /evidence/synod/:case. The
+  // decrypt closure memoizes the operator secret (resolved via the stored
+  // bundle's chain-derived subaccord); an unknown operator or a tampered
+  // bundle yields null — that slot keeps its entry with `manifest: null`.
+  const synodManifestHandler: SynodManifestHandler = async (caseStr) => {
+    let c: Uint8Array;
+    try {
+      c = b58ToBytes(caseStr);
+    } catch {
+      return { ok: false, status: 404, error: "invalid address" };
+    }
+    let operatorSecret: Uint8Array | null | undefined; // undefined = not yet resolved
+    const decrypt: BundleDecryptor = async (b) => {
+      if (operatorSecret === undefined) {
+        const sub = await readSubaccord(accord, bytesToAddr(b.subaccord));
+        const kp =
+          sub === null ? null : await keyring.forOperator(b58ToBytes(sub.evidenceOperator));
+        operatorSecret = kp === null ? null : kp.secretKey;
+      }
+      const sk = operatorSecret;
+      if (sk === null || sk === undefined) return null;
+      try {
+        return await operatorDecrypt(
+          {
+            ct: b.ct,
+            claimant_ephem_pub: b.claimant_ephem_pub,
+            wrapped: b.wrapped,
+            plaintext_hash: b.plaintext_hash,
+          },
+          sk,
+        );
+      } catch {
+        return null; // tampered/undecryptable — the slot reports manifest: null
+      }
+    };
+    const out = await synodManifestPipeline(c, {
+      store: ingestStore,
+      chain: {
+        readSynodCase: readSynodCaseBytes,
+        async readDisputeRoot(d) {
+          const v = await readDispute(accord, bytesToAddr(d));
+          if (v === null) return null;
+          const h = v.evidenceHashes[0];
+          return h ? new Uint8Array(h) : null;
+        },
+      },
+      sha256,
+      decrypt,
+    });
+    if (out.status === 200) {
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          party_count: out.body.party_count,
+          verified: out.body.verified,
+          parties: out.body.parties.map((p) =>
+            p.present
+              ? {
+                  party: p.party,
+                  present: true,
+                  plaintext_hash: bytesToBase64(p.plaintext_hash),
+                  ingested_at: p.ingested_at,
+                  manifest: p.manifest,
+                }
+              : { party: p.party, present: false },
+          ),
+        },
+      };
+    }
+    return { ok: false, status: out.status, error: out.reason };
+  };
   const deliverHandler: DeliverHandler = async (disputeStr, jurorStr) => {
     let d: Uint8Array;
     let j: Uint8Array;
@@ -394,6 +471,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
   return {
     ingest: ingestHandler,
     synodIngest: synodIngestHandler,
+    synodManifest: synodManifestHandler,
     deliver: deliverHandler,
     manifest: manifestHandler,
     publicKeys: deps.publicKeys,

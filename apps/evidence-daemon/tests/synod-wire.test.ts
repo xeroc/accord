@@ -260,3 +260,55 @@ test("synod wire: deliver bridge — unseeded group → 404 (nothing assembled)"
   if (res.ok) throw new Error("unreachable");
   expect(res.status).toBe(404);
 });
+
+// ------------------------------------------- assembled manifest (wire) ---
+
+test("synod wire: manifest GET — pre-file partial view via the route (precedence over generic manifest)", async () => {
+  const { deps, app } = await rig({ bound: false });
+  await deps.synodIngest(CASE, 0, await bodyFor(PT0)); // only party 0 pushed
+
+  const res = await app.request(`http://x/evidence/synod/${CASE}`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+    party_count: number;
+    verified: boolean | null;
+    parties: Array<{ party: number; present: boolean; manifest?: unknown }>;
+  };
+  expect(body.party_count).toBe(2);
+  expect(body.verified).toBe(null);
+  expect(body.parties.map((p) => p.present)).toEqual([true, false]);
+  expect(body.parties[0]!.manifest).toBe(new TextDecoder().decode(PT0));
+});
+
+test("synod wire: manifest GET — post-file recomputed root matches → verified:true", async () => {
+  const { deps } = await rig({ bound: true, withDispute: true, seedGroup: true });
+  const res = await deps.synodManifest(CASE);
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(200);
+  const body = res.body as { verified: boolean | null };
+  expect(body.verified).toBe(true);
+});
+
+test("synod wire: manifest GET — assembled hashes ≠ evidence_hashes[0] → verified:false", async () => {
+  const wrongRoot = new Uint8Array(32).fill(0xcd);
+  const { deps } = await rig({
+    bound: true,
+    withDispute: true,
+    seedGroup: true,
+    rootOverride: wrongRoot,
+  });
+  const res = await deps.synodManifest(CASE);
+  expect(res.ok).toBe(true);
+  if (!res.ok) throw new Error("unreachable");
+  const body = res.body as { verified: boolean | null };
+  expect(body.verified).toBe(false);
+});
+
+test("synod wire: manifest GET — unknown case → 404", async () => {
+  const { deps } = await rig({ bound: false });
+  const res = await deps.synodManifest(SUB); // no case registered there
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(404);
+});

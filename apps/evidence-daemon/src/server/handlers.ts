@@ -118,6 +118,15 @@ export type SynodIngestHandler = (
 ) => Promise<IngestResult>;
 
 /**
+ * Synod manifest = GET /evidence/synod/{case} (accord-lry5). Assembled
+ * multi-bundle manifest: every roster slot with ADR-0017 payload attribution
+ * (`party` field), absent slots marked (partial pre-file view), and post-file
+ * the `verified` flag from recomputing H(case ‖ h_0…h_{N-1}) vs
+ * `evidence_hashes[0]`. Result shape is {@link ManifestResult}.
+ */
+export type SynodManifestHandler = (casePda: string) => Promise<ManifestResult>;
+
+/**
  * Liveness/readiness = GET /healthz. ok iff Storage + RPC reachable; LB drains
  * on a non-ok result. (Bean accord-u1pu implements the real probe; the server
  * boots with a stub until then.)
@@ -133,6 +142,7 @@ export interface ServerDeps {
   readonly synodIngest: SynodIngestHandler;
   readonly deliver: DeliverHandler;
   readonly manifest: ManifestHandler;
+  readonly synodManifest: SynodManifestHandler;
   readonly health: HealthProbe;
 
   /**

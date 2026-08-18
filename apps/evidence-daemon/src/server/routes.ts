@@ -4,6 +4,7 @@
  * No domain logic lives here.
  *
  *   POST /evidence/synod/:case/:party          → synod ingest handler (pre-dispute grouping, accord-1viq)
+ *   GET  /evidence/synod/:case                 → synod manifest handler (assembled group, accord-lry5)
  *   POST /evidence/:subaccord/:dispute[/:round]   → ingest handler (round default 0)
  *   GET  /evidence/:dispute/for/:juror            → deliver handler
  *   GET  /evidence/:subaccord/:dispute[/:round]   → manifest handler (public, round default 0)
@@ -47,6 +48,19 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     const res = await deps.synodIngest(casePda, Number(party), body);
     if (res.ok) {
       return c.body(null, 201, { Location: res.location });
+    }
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  // Assembled multi-bundle manifest (accord-lry5). Registered BEFORE the
+  // generic GET /evidence/:subaccord/:dispute so "synod" is not captured as
+  // a subaccord address.
+  app.get("/evidence/synod/:case", async (c) => {
+    const casePda = c.req.param("case");
+    if (!ADDRESS.test(casePda)) return badAddress("case");
+    const res = await deps.synodManifest(casePda);
+    if (res.ok) {
+      return Response.json(res.body, { status: res.status });
     }
     return Response.json({ error: res.error }, { status: res.status });
   });
