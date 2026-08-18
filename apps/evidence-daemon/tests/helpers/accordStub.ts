@@ -53,11 +53,13 @@ const SUBACCORD_DEFAULT = {
   revealThresholdBps: 0,
   shortfallPolicy: ShortfallPolicy.Redraw,
   maxDrawAttempts: 0,
+  minJurySize: 3,
   authority: ZERO,
   evidenceOperator: ZERO,
   domainRef: z32(),
   evidenceSpec: z32(),
   jurorCredential: ZERO,
+  coherenceTolBps: 0,
   jurorSchema: ZERO,
   stakerCount: 0,
   rootHash: z32(),
@@ -68,7 +70,9 @@ const SUBACCORD_DEFAULT = {
   feeVaultWithdrawn: 0n,
   stakeVaultDeposited: 0n,
   stakeVaultWithdrawn: 0n,
+  freeHead: 0xffff_ffff, // u32::MAX = free-list empty
   bump: 0,
+  padding: new Uint8Array(64),
 };
 
 const CASE_TERMS_DEFAULT = {
@@ -84,6 +88,8 @@ const CASE_TERMS_DEFAULT = {
   revealThresholdBps: 0,
   shortfallPolicy: ShortfallPolicy.Redraw,
   maxDrawAttempts: 0,
+  minJurySize: 3,
+  coherenceTolBps: 0,
 };
 
 const DISPUTE_DEFAULT = {
@@ -104,6 +110,7 @@ const DISPUTE_DEFAULT = {
   frozenTotalStake: 0n,
   filedAt: 0n,
   bump: 0,
+  padding: new Uint8Array(64),
 };
 
 const ROUND_DEFAULT = {

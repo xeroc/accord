@@ -192,6 +192,12 @@ export type Subaccord = {
    */
   freeHead: number;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 export type SubaccordArgs = {
@@ -324,6 +330,12 @@ export type SubaccordArgs = {
    */
   freeHead: number;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link SubaccordArgs} account data. */
@@ -365,6 +377,7 @@ export function getSubaccordEncoder(): FixedSizeEncoder<SubaccordArgs> {
       ["stakeVaultWithdrawn", getU64Encoder()],
       ["freeHead", getU32Encoder()],
       ["bump", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
     ]),
     (value) => ({ ...value, discriminator: SUBACCORD_DISCRIMINATOR }),
   );
@@ -408,6 +421,7 @@ export function getSubaccordDecoder(): FixedSizeDecoder<Subaccord> {
     ["stakeVaultWithdrawn", getU64Decoder()],
     ["freeHead", getU32Decoder()],
     ["bump", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
   ]);
 }
 
@@ -470,5 +484,5 @@ export async function fetchAllMaybeSubaccord(
 }
 
 export function getSubaccordSize(): number {
-  return 444;
+  return 508;
 }

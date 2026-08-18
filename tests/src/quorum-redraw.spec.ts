@@ -290,6 +290,125 @@ describe("e2e: ADR-0021 reveal quorum + shortfall redraw (requires Surfpool)", (
     }
   }, 600_000);
 
+  it("literal tie (quorum met) → RedrawEligible → redraw → Created, revealers unslashed + unbilled", async () => {
+    if (!env.up) return; // offline CI lane
+
+    // --- setup: threshold 6666 ⇒ 2-of-3 quorum ---
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
+    const fx: DrawFixture = { env, up: true, ...core };
+    const armed = await armDispute(fx, randomNonce());
+
+    const memberships = await resolveDistinctPanel(fx, armed);
+    const roundPda = await submitDraw(fx, armed, memberships);
+    const drawn = jurorsOf(fx, memberships);
+
+    // --- jurors 0 and 1 reveal DIFFERENT options: counts [1,1] — a literal
+    // tie with the quorum MET (2 ≥ ceil(3 × 6666/10000)). Odd panels don't
+    // prevent this (partial reveal keeps parity even); the tally used to
+    // resolve it to the LAST option index via max_by_key. ---
+    const round = await readRound(env, roundPda);
+    await warpTo(env, round!.reviewEnd);
+    const votes = [0n, 1n];
+    const salts = votes.map(() => crypto.getRandomValues(new Uint8Array(32)));
+    for (const i of [0, 1]) {
+      const { instruction } = await commit(
+        drawn[i]!.accord.adapter,
+        env.programId,
+        {
+          signer: drawn[i]!.signer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        { vote: votes[i]!, salt: salts[i]! },
+      );
+      await env.sendIx(instruction);
+    }
+    await warpTo(env, round!.commitEnd);
+    for (const i of [0, 1]) {
+      await env.sendIx(
+        reveal(
+          drawn[i]!.accord.adapter,
+          env.programId,
+          {
+            signer: drawn[i]!.signer.address,
+            subaccord: fx.subaccord,
+            dispute: armed.dispute,
+            round: roundPda,
+            stakingToken: fx.mint,
+            jurorTokenAccount: drawn[i]!.jurorAta,
+            vault: fx.vault,
+          },
+          { vote: votes[i]!, salt: salts[i]! },
+        ),
+      );
+    }
+
+    const feeBefore = (await fetchDecoded(env, armed.dispute, getDisputeDecoder()))!
+      .feePaid;
+
+    // --- finalize_round → RedrawEligible via the ADR-0021 seam ---
+    await warpTo(env, round!.revealEnd);
+    const panelPdas = memberships.map((m) => m.jurorStake);
+    await env.sendIx(
+      finalizeRound(
+        env.accord.adapter,
+        env.programId,
+        {
+          signer: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        panelPdas,
+      ),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(REDRAW_ELIGIBLE);
+
+    // No ruling recorded, nothing billed: result sentinel, fee_paid intact,
+    // no fee credits for the tied revealers.
+    const rd = await fetchDecoded(env, roundPda, getRoundDecoder());
+    expect(rd?.result).toBe(0xffff_ffff_ffff_ffffn);
+    const d = await fetchDecoded(env, armed.dispute, getDisputeDecoder());
+    expect(d?.feePaid).toBe(feeBefore);
+    for (const i of [0, 1]) {
+      const js = await fetchDecoded(env, drawn[i]!.stakePda, getJurorStakeDecoder());
+      expect(js?.feesEarned ?? 0n).toBe(0n);
+    }
+
+    // --- redraw: no-show seat slashed, both revealers released unslashed,
+    // seed re-keyed via draw_attempt, dispute reopens Created ---
+    const filerAta = await ataOf(fx.mint, env.payer.address);
+    await env.sendIx(
+      redraw(
+        env.accord.adapter,
+        env.programId,
+        {
+          caller: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+          feeToken: fx.mint,
+          filerTokenAccount: filerAta,
+          feeVault: fx.vault,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        },
+        panelPdas,
+      ),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(CREATED);
+    const rd2 = await fetchDecoded(env, roundPda, getRoundDecoder());
+    expect(rd2?.drawAttempt).toBe(1);
+    expect(rd2?.jurorCount).toBe(0);
+    for (const i of [0, 1]) {
+      const js = await fetchDecoded(env, drawn[i]!.stakePda, getJurorStakeDecoder());
+      expect(js?.stakeDelta ?? 0n).toBe(0n);
+    }
+    const jsNoShow = await fetchDecoded(env, drawn[2]!.stakePda, getJurorStakeDecoder());
+    expect(Number(jsNoShow?.stakeDelta ?? 0)).toBeLessThan(0);
+  }, 600_000);
+
   it("Failed on draw_attempt exhaustion: filer fee_paid refunded, slashes retained", async () => {
     if (!env.up) return; // offline CI lane
 

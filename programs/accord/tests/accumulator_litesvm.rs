@@ -1812,8 +1812,8 @@ fn fabricate_appeal_bond(
     );
     let disc = solana_program::hash::hash(b"account:AppealBond").to_bytes();
     // disc(8) + dispute(32) + round_idx(4) + appellant(32) + amount(8)
-    // + prior_result(8, u64 — ADR-0025) + bump(1) = 93
-    let mut data = vec![0u8; 93];
+    // + prior_result(8, u64 — ADR-0025) + bump(1) + padding(64) = 157
+    let mut data = vec![0u8; 157];
     data[..8].copy_from_slice(&disc[..8]);
     data[8..40].copy_from_slice(dispute.as_ref());
     data[40..44].copy_from_slice(&round_idx.to_le_bytes());
@@ -4355,8 +4355,13 @@ struct DrawnDispute {
 /// jurors + a drawn dispute, commit+reveal the first `n_reveal` jurors (vote 0),
 /// then run `finalize_round`. Returns the post-finalize state. The VRF is
 /// brute-forced to yield 3 distinct jurors at draw_attempt 0.
-fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize) -> DrawnDispute {
+fn setup_and_finalize_votes(
+    threshold_bps: u16,
+    max_draw_attempts: u8,
+    votes: &[u64],
+) -> DrawnDispute {
     let mut env = setup_accumulator_with(threshold_bps, max_draw_attempts);
+    let n_reveal = votes.len();
 
     let stakes = [5_000u64, 3_000, 2_000];
     let mut jurors: Vec<Keypair> = Vec::new();
@@ -4437,12 +4442,11 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
 
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
     warp_seconds(&mut env, review_end - now + 1);
-    let vote: u64 = 0;
     let mut salts: Vec<[u8; 32]> = Vec::new();
     for i in 0..n_reveal {
         let salt = [(i as u8) + 7; 32];
         let comm = hashv(&[
-            &vote.to_le_bytes(),
+            &votes[i].to_le_bytes(),
             &salt,
             jurors[drawn[i].1].pubkey().as_ref(),
         ])
@@ -4478,7 +4482,7 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
                 round: rnd,
             })
             .args(instruction::Reveal {
-                vote,
+                vote: votes[i],
                 salt: salts[i],
             })
             .instruction()
@@ -4534,6 +4538,11 @@ fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize
         filer,
         vrf,
     }
+}
+
+/// `setup_and_finalize` with every revealer voting option 0.
+fn setup_and_finalize(threshold_bps: u16, max_draw_attempts: u8, n_reveal: usize) -> DrawnDispute {
+    setup_and_finalize_votes(threshold_bps, max_draw_attempts, &vec![0u64; n_reveal])
 }
 
 /// Drive `redraw` for round 0 (no appeals ⇒ remaining_accounts = panel juror
@@ -4674,6 +4683,38 @@ fn redraw_slashes_noshows_and_reopens_created() {
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
     assert_eq!(d.fee_paid, 3_000_000);
+}
+
+#[test]
+fn tie_routes_to_redraw_eligible_no_credits() {
+    // Threshold 6_666 ⇒ needs 2 of 3; two reveals split 0/1 ⇒ counts [1,1]
+    // — a literal tie with the quorum MET (not the shortfall branch). Odd
+    // panels don't prevent this: partial reveals keep the effective parity
+    // even, and N>2 options can tie on a full panel too (3-3-1 of 7).
+    let mut dd = setup_and_finalize_votes(6_666, 3, &[0, 1]);
+    assert_eq!(dispute_state(&dd), DisputeState::RedrawEligible);
+
+    // Tie round is unbilled: no fee credits, filer's fee_paid intact
+    // (the single deposit must fund the redrawn panel).
+    for &(_, leaf_idx) in &dd.drawn[..2] {
+        let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[leaf_idx].0);
+        assert_eq!(js.fees_earned, 0, "no credits on tie");
+    }
+    let d =
+        Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
+            .unwrap();
+    assert_eq!(d.fee_paid, 3_000_000, "fee_paid intact on tie");
+
+    // No ruling was recorded — the result sentinel stays unset.
+    let acc = dd.env.ctx.svm.get_account(&dd.rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
+    assert_eq!(round.result, u64::MAX, "no result on tie");
+
+    // The tie rides the existing ADR-0021 seam: redraw succeeds, slashes the
+    // one non-revealer, re-keys the seed via draw_attempt, reopens Created.
+    do_redraw(&mut dd).assert_success();
+    assert_eq!(dispute_state(&dd), DisputeState::Created);
+    assert_eq!(round_draw_attempt(&dd), 1, "draw_attempt advanced");
 }
 
 #[test]
