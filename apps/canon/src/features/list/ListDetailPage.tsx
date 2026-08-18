@@ -3,10 +3,10 @@
  * via `findAllCanonItemsByList` (memcmp on `list` at byte 40). A client-side
  * filter narrows items by ItemState. Items link to `/items/:address` (item
  * detail). The "Propose item." CTA links to the submit form
- * (`/lists/:address/submit`); item cards in a challengeable state
- * (Pending/Listed/WithdrawPending — SPEC §Instructions #4) link to the
- * challenge form (`/items/:address/challenge`). Cranks are NOT wired
- * (cranker-owned).
+ * (`/lists/:address/submit`); items render as table rows, and rows in a
+ * challengeable state (Pending/Listed/WithdrawPending — SPEC §Instructions #4)
+ * link to the challenge form (`/items/:address/challenge`). Cranks are NOT
+ * wired (cranker-owned).
  *
  * see SPEC §Item state machine, milestone §1(d), §2.
  */
@@ -148,7 +148,7 @@ export function ListDetailPage() {
           />
 
           {itemsQuery.isLoading ? (
-            <ItemGridSkeleton />
+            <ItemTableSkeleton />
           ) : itemsQuery.isError ? (
             <div className="rounded-lg border border-dashed border-border p-12 text-center">
               <p className="mb-2 text-lg font-semibold">Items read failed.</p>
@@ -161,7 +161,7 @@ export function ListDetailPage() {
               </button>
             </div>
           ) : (
-            <ItemGrid
+            <ItemTable
               items={itemsQuery.data ?? []}
               filter={filter}
               listData={list.data}
@@ -274,9 +274,9 @@ function FilterBar({
   );
 }
 
-// --- Item grid --------------------------------------------------------------
+// --- Item table --------------------------------------------------------------
 
-function ItemGrid({
+function ItemTable({
   items,
   filter,
   listData,
@@ -302,16 +302,30 @@ function ItemGrid({
   }
 
   return (
-    <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Items">
-      {filtered.map((item) => (
-        <ItemCard key={item.address} item={item} listData={listData} />
-      ))}
-    </ul>
+    <div className="overflow-x-auto rounded-lg bg-card ring-1 ring-foreground/10">
+      <table className="w-full border-collapse text-sm" aria-label="Items">
+        <thead>
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th scope="col" className="px-4 py-2.5 font-semibold">Account</th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">State</th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">Time</th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">Stake</th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">Submitter</th>
+            <th scope="col" className="px-4 py-2.5 font-semibold">Challenges</th>
+            <th scope="col" className="px-4 py-2.5" />
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((item) => (
+            <ItemRow key={item.address} item={item} listData={listData} />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-
-function ItemCard({
+function ItemRow({
   item,
   listData,
 }: {
@@ -319,35 +333,41 @@ function ItemCard({
   listData: CanonList;
 }) {
   const d = item.data;
-  const challengeable = CHALLENGEABLE_STATES[d.state];
+  const t = itemTime(d, listData);
   return (
-    <li className="flex flex-col rounded-lg bg-card ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
-      <Link to={`/items/${item.address}`} className="block p-4">
-        <span className="mb-3.5 block">
+    <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-foreground/5">
+      <td className="px-4 py-2.5">
+        <Link
+          to={`/items/${item.address}`}
+          className="transition-colors hover:text-amber"
+        >
           <Copyable value={d.account} />
-        </span>
-        <dl className="grid gap-1.5">
-          <Stat label="State" value={ITEM_STATE_LABELS[d.state] ?? "Unknown"} />
-          <ItemTimeStat item={d} listData={listData} />
-          <Stat
-            label="Stake"
-            value={formatTokenAmount(d.accumulatedStake)}
-          />
-          <Stat label="Submitter" value={<Copyable value={d.submitter} />} />
-          <Stat label="Challenges" value={d.challengeCount.toString()} />
-        </dl>
-      </Link>
-      {challengeable && (
-        <div className="mt-auto border-t border-border px-4 py-2.5">
+        </Link>
+      </td>
+      <td className="whitespace-nowrap px-4 py-2.5">
+        {ITEM_STATE_LABELS[d.state] ?? "Unknown"}
+      </td>
+      <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
+        {t ? `${t.label} ${t.value || "—"}` : "—"}
+      </td>
+      <td className="whitespace-nowrap px-4 py-2.5">
+        {formatTokenAmount(d.accumulatedStake)}
+      </td>
+      <td className="px-4 py-2.5">
+        <Copyable value={d.submitter} />
+      </td>
+      <td className="px-4 py-2.5">{d.challengeCount.toString()}</td>
+      <td className="px-4 py-2.5 text-right">
+        {CHALLENGEABLE_STATES[d.state] && (
           <Link
             to={`/items/${item.address}/challenge`}
             className="inline-flex items-center justify-center rounded-md bg-transparent px-3 py-1.5 text-xs font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
           >
             Challenge.
           </Link>
-        </div>
-      )}
-    </li>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -355,28 +375,22 @@ function ItemCard({
  * WithdrawPending to the timelock elapsing; Disputed shows time since the
  * challenge. There is no on-chain `listed_at`/`removed_at` (the crank flips
  * state without stamping), so Listed/Removed fall back to submitted-at age. */
-function ItemTimeStat({
-  item,
-  listData,
-}: {
-  item: CanonItem;
-  listData: CanonList;
-}) {
-  let label = "";
-  let value = "";
+function itemTime(
+  item: CanonItem,
+  listData: CanonList,
+): { label: string; value: string } | null {
   switch (item.state) {
     case ItemState.Pending: {
       const r = timeRemaining(
         Number(item.submittedAt) + Number(listData.listingWindow),
       );
-      label = "Lists in";
-      value = r === "expired" ? "window elapsed" : r;
-      break;
+      return {
+        label: "Lists in",
+        value: r === "expired" ? "window elapsed" : r,
+      };
     }
     case ItemState.Disputed:
-      label = "Challenged";
-      value = timeAgo(item.challengedAt);
-      break;
+      return { label: "Challenged", value: timeAgo(item.challengedAt) };
     case ItemState.WithdrawPending: {
       const at =
         item.withdrawalRequestedAt.__option === "Some"
@@ -386,27 +400,16 @@ function ItemTimeStat({
         at !== null
           ? timeRemaining(at + Number(listData.withdrawalTimelock))
           : "";
-      label = "Unlocks in";
-      value = r === "expired" ? "timelock elapsed" : r;
-      break;
+      return {
+        label: "Unlocks in",
+        value: r === "expired" ? "timelock elapsed" : r,
+      };
     }
     case ItemState.Listed:
     case ItemState.Removed:
-      label = "Submitted";
-      value = timeAgo(item.submittedAt);
-      break;
+      return { label: "Submitted", value: timeAgo(item.submittedAt) };
   }
-  if (!label) return null;
-  return <Stat label={label} value={value || "—"} />;
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <dt className="text-muted-foreground">{label}.</dt>
-      <dd className="text-right">{value}</dd>
-    </div>
-  );
+  return null;
 }
 
 // --- Skeletons --------------------------------------------------------------
@@ -429,17 +432,26 @@ function ListParamsSkeleton() {
   );
 }
 
-function ItemGridSkeleton() {
+function ItemTableSkeleton() {
   return (
-    <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading items">
+    <div
+      className="overflow-x-auto rounded-lg bg-card ring-1 ring-foreground/10"
+      aria-busy
+      aria-label="Loading items"
+    >
       {Array.from({ length: 4 }).map((_, i) => (
-        <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
-          <Skeleton style={{ width: "60%", height: "1rem" }} />
+        <div
+          key={i}
+          className="flex items-center gap-6 border-b border-border px-4 py-3 last:border-b-0"
+        >
+          <Skeleton style={{ width: "26%", height: "0.85rem" }} />
+          <Skeleton style={{ width: "10%", height: "0.85rem" }} />
+          <Skeleton style={{ width: "14%", height: "0.85rem" }} />
           <Skeleton
-            style={{ width: "70%", height: "0.85rem", marginTop: "0.6rem" }}
+            style={{ width: "18%", height: "0.85rem", marginLeft: "auto" }}
           />
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
