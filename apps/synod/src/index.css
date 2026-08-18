@@ -1,0 +1,156 @@
+/* @useaccord/synod-app — global styles
+ * Tailwind v4 CSS-first config with shadcn theme tokens.
+ *
+ * Dark-first brand palette (BRAND.md, Synod milestone accord-daq8):
+ *   ink #0A0E14 · raised #11161D · border #1F2630
+ *   amber #F0A830 (primary) · green #3FB950 (confirm) · red #F85149 (slash)
+ *   muted #7D8590
+ * IBM Plex Sans (body) + IBM Plex Mono (code/labels/stats).
+ * The app is always dark — no light theme toggle. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Brand tokens used by feature views.
+ * Coexist with the shadcn token system below — these are the original
+ * Accord brand names (ink/raised/amber/text-primary/etc.).
+ */
+@theme {
+  --color-ink: #0a0e14;
+  --color-raised: #11161d;
+  --color-border-subtle: #1f2630;
+  --color-amber: #f0a830;
+  --color-confirm: #3fb950;
+  --color-slash: #f85149;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Dark-first: :root carries the ink palette directly. */
+:root {
+  --background: #0a0e14;
+  --foreground: #f0f6fc;
+  --card: #11161d;
+  --card-foreground: #f0f6fc;
+  --popover: #11161d;
+  --popover-foreground: #f0f6fc;
+  --primary: #f0a830;
+  --primary-foreground: #0a0e14;
+  --secondary: #1f2630;
+  --secondary-foreground: #f0f6fc;
+  --muted: #11161d;
+  --muted-foreground: #7d8590;
+  --accent: #1f2630;
+  --accent-foreground: #f0f6fc;
+  --destructive: #f85149;
+  --success: #3fb950;
+  --border: #1f2630;
+  --input: #1f2630;
+  --ring: #f0a830;
+  --chart-1: #f0a830;
+  --chart-2: #3fb950;
+  --chart-3: #f85149;
+  --chart-4: #7d8590;
+  --chart-5: #c9d1d9;
+  --radius: 0.5rem;
+  --sidebar: #11161d;
+  --sidebar-foreground: #f0f6fc;
+  --sidebar-primary: #f0a830;
+  --sidebar-primary-foreground: #0a0e14;
+  --sidebar-accent: #1f2630;
+  --sidebar-accent-foreground: #f0f6fc;
+  --sidebar-border: #1f2630;
+  --sidebar-ring: #f0a830;
+}
+
+/*
+ * Brand aliases — feature views reference the original Accord
+ * variable names. These point to the shadcn tokens above so both naming
+ * systems coexist.
+ */
+:root {
+  --ink: var(--background);
+  --raised: var(--card);
+  --amber: var(--primary);
+  --green: var(--success);
+  --red: var(--destructive);
+  --text: var(--foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* html/body/#root full-height for the SPA shell. */
+html,
+body,
+#root {
+  height: 100%;
+}

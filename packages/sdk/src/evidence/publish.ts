@@ -36,16 +36,10 @@ export interface PublishParams {
   operatorPub: Uint8Array;
 }
 
-/**
- * Encrypt the manifest to the operator and POST it to the daemon.
- * Daemon ingest is idempotent on `(dispute, round, plaintext_hash)` — same
- * manifest → 201 no-op, first POST wins. Safe to retry without re-creating
- * the dispute.
- */
-export async function publishEvidence(params: PublishParams): Promise<void> {
-  const { endpoint, subaccord, dispute, manifest, operatorPub } = params;
+/** Encrypt the manifest to the operator and POST the wire bundle to `url`. */
+async function postBundle(url: string, manifest: Uint8Array, operatorPub: Uint8Array): Promise<void> {
   const bundle = await claimantEncrypt(manifest, operatorPub);
-  const res = await fetch(`${endpoint}/evidence/${subaccord}/${dispute}`, {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -59,6 +53,54 @@ export async function publishEvidence(params: PublishParams): Promise<void> {
     const body = await res.text().catch(() => "");
     throw new Error(`evidence publish failed: ${res.status} ${body}`);
   }
+}
+
+/**
+ * Encrypt the manifest to the operator and POST it to the daemon.
+ * Daemon ingest is idempotent on `(dispute, round, plaintext_hash)` — same
+ * manifest → 201 no-op, first POST wins. Safe to retry without re-creating
+ * the dispute.
+ */
+export async function publishEvidence(params: PublishParams): Promise<void> {
+  const { endpoint, subaccord, dispute, manifest, operatorPub } = params;
+  await postBundle(
+    `${endpoint}/evidence/${subaccord}/${dispute}`,
+    manifest,
+    operatorPub,
+  );
+}
+
+export interface PublishSynodParams {
+  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
+  endpoint: string;
+  /** The SynodCase PDA — the pre-dispute grouping key. */
+  casePda: string;
+  /** Roster slot of the joining party (0–6). */
+  slot: number;
+  /** The party's manifest buffer (same bytes that produced the join hash). */
+  manifest: Uint8Array;
+  /** Evidence operator's raw Ed25519 public key (32 bytes, decoded from address). */
+  operatorPub: Uint8Array;
+}
+
+/**
+ * Encrypt the party's manifest to the operator and POST it to the daemon's
+ * synod pre-dispute grouping route (`POST /evidence/synod/{case}/{slot}`,
+ * milestone accord-daq8). Unauthenticated by design: the on-chain
+ * `SynodCase.evidence[slot]` hash committed at `join` IS the commit; pushes
+ * are gated chain-side (case exists, slot live, dispute unbound). Same-bundle
+ * re-pushes are 201-idempotent server-side; a different hash for a filled
+ * slot is a 409.
+ */
+export async function publishSynodEvidence(
+  params: PublishSynodParams,
+): Promise<void> {
+  const { endpoint, casePda, slot, manifest, operatorPub } = params;
+  await postBundle(
+    `${endpoint}/evidence/synod/${casePda}/${slot}`,
+    manifest,
+    operatorPub,
+  );
 }
 
 /**
