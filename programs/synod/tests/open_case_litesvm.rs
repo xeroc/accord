@@ -110,6 +110,7 @@ fn fabricate_subaccord(
         stake_vault_withdrawn: 0,
         free_head: u32::MAX,
         bump: 254,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     sub.try_serialize(&mut buf).unwrap();

@@ -42,6 +42,7 @@ staking.
 | 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling: u64` via `Dispute::ruling()` (`Option<u64>`; Canon files Plurality disputes only, so the ruling is an option index — gate `ruling < 2`, u64 since ADR-0025). `keep` (0) → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` (1) → `accumulated_stake + challenge_stake` (bounty + the challenger's own stake back) → challenger, item → `Removed`. Terminal `Failed` (cancel / redraw exhaustion) → no ruling: `accumulated_stake` → submitter, `challenge_stake` → challenger (no bounty, no forfeit), item → `Removed`. Emits `ItemSettled{ruling: u64}` / `ItemSettlementVoided`. Payout destinations are constrained on-chain to the payee recorded on the item (`token::mint = fee_mint`, `token::authority = item.challenger\|item.submitter`). |
 | 6 | `request_withdrawal(item)` | submitter-only; item → `WithdrawPending`; opens the `withdrawal_timelock` challenge window. |
 | 7 | `advance_withdrawal(item)` | permissionless crank; after the timelock, if unchallenged → return `accumulated_stake` to submitter, item → `Removed`. |
+| 8 | `close_item(item)` | permissionless PDA close of a settled item; guards `state == Removed` (`NotRemoved` otherwise — incl. mid-dispute), plus the terminal invariants `accumulated_stake == 0` (`StakeOutstanding`) and no live `active_dispute`; emits `ItemClosed { list, item, account, submitter }` then closes with rent → `caller`. No `CanonList` account — the PDA is self-seeded from `item.list` / `item.account` / `item.bump`. |
 
 A challenge filed during `WithdrawPending` re-enters the dispute path
 (`challenge_item` → `settle_item`); see state machine.
@@ -60,6 +61,14 @@ LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdra
                                         └── challenged ──► ACCORD DISPUTE ─► submitter-keeps | challenger-bounty
                                                             (item Removed either way)
 ```
+
+`REMOVED` is not final-final: any caller may `close_item` the PDA (rent →
+caller). Closing frees the `["canon-item", list, account]` seed, so the same
+curated `account` can be re-submitted later — a fresh deposit, `challenge_count`
+reset to 0, progressive protection restarting from `submit_deposit` (the
+cheap-to-challenge zone; a re-submit cycle bleeds the scammer and pays
+challengers each round). Durable history lives in events (`ItemSettled` /
+`ItemSettlementVoided` / `Withdrawn` / `ItemClosed`), not in tombstone accounts.
 
 ## Economics (Stake-Curate; all amounts in `fee_mint`)
 
@@ -162,6 +171,13 @@ juror-only evidence → `keep` / `remove`.
 - **Program upgrade authority:** the Canon program mirrors Accord ADR-0007 —
   Squads multisig, then post-audit freeze.
 - **Insufficient accord_fee / challenge_stake:** `challenge_item` reverts.
+
+- **`close_item` rent bounty:** the closer pockets the item's rent-exempt
+  lamports — a live submitter self-cranks and recovers the rent they paid at
+  `submit_item`; abandoned / adjudicated-scam items are self-funding GC
+  bounties for whoever cleans them up (rent ≫ tx fee). Re-submission after a
+  close is a separate instruction/transaction by construction — the same PDA
+  is never re-initialized in the same tx as its close.
 
 ## Out of scope (v2+)
 

@@ -91,3 +91,15 @@ pub struct ItemSettlementVoided {
     /// Returned to the challenger (their locked `challenge_stake`).
     pub challenger_refund: u64,
 }
+
+/// Emitted by `close_item` right before the rent drain — the explicit
+/// tombstone indexers need so a GPA-derived view sees an end-of-life instead
+/// of an account silently vanishing.
+#[event]
+pub struct ItemClosed {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    /// The curated account (seed component; re-submittable after close).
+    pub account: Pubkey,
+    pub submitter: Pubkey,
+}

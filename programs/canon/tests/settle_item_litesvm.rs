@@ -356,7 +356,8 @@ fn fabricate_dispute(
         frozen_total_stake: 0,
         filed_at: 0,
         bump: 254,
-        padding: [0; 64],
+        drawn_seats: 0,
+        padding: [0; 60],
     };
     let mut buf = Vec::new();
     d.try_serialize(&mut buf).unwrap();
