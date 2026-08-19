@@ -128,6 +128,12 @@ export type Dispute = {
    */
   filedAt: bigint;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 export type DisputeArgs = {
@@ -205,6 +211,12 @@ export type DisputeArgs = {
    */
   filedAt: number | bigint;
   bump: number;
+  /**
+   * Reserved tail space for future field extensions. Zeroed at `init`;
+   * must stay the last field — new fields are carved out of it without
+   * moving existing offsets or resizing the account.
+   */
+  padding: ReadonlyUint8Array;
 };
 
 export function getDisputeEncoder(): Encoder<DisputeArgs> {
@@ -232,6 +244,7 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
     ["frozenTotalStake", getU64Encoder()],
     ["filedAt", getI64Encoder()],
     ["bump", getU8Encoder()],
+    ["padding", fixEncoderSize(getBytesEncoder(), 64)],
   ]);
 }
 
@@ -260,6 +273,7 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["frozenTotalStake", getU64Decoder()],
     ["filedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
   ]);
 }
 

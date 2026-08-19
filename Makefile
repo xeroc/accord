@@ -12,7 +12,7 @@ DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
 SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
 SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
-.PHONY: prep build codegen sdk docs test test_unit test_surfpool run_surfpool run_validator lint clean help
+.PHONY: prep build codegen sdk docs test test_unit lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
