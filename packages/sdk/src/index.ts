@@ -195,3 +195,14 @@ export {
 // Typed getProgramAccounts query wrappers — no raw bytes leak to the caller
 // (ADR-0010, bean accord-3f19/accord-bp9y).
 export { findAllDisputes, findAllPendingUpdates, type QueryConfig } from "./queries.js";
+
+// Domain document convention (ADR-0027, milestone accord-lgof): sha256-CAS
+// hashing, frontmatter parsing, and daemon fetch/verify for canon rules docs.
+export {
+  hashDomainDoc,
+  parseDomainDoc,
+  verifyDomainDoc,
+  fetchDomainDoc,
+  type ParsedDomainDoc,
+  type FetchedDomainDoc,
+} from "./domain.js";
