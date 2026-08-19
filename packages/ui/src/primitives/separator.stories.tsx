@@ -5,7 +5,6 @@ import { Separator } from "./separator";
 const meta = {
   title: "Primitives/Separator",
   component: Separator,
-  tags: ["autodocs"],
   argTypes: {
     orientation: { control: "radio", options: ["horizontal", "vertical"] },
     decorative: { control: "boolean" },

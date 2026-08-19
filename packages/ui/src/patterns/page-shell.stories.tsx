@@ -6,7 +6,6 @@ import { ProductNavbar } from "./product-navbar";
 const meta = {
   title: "Patterns/PageShell",
   component: PageShell,
-  tags: ["autodocs"],
   parameters: {
     layout: "fullscreen",
     docs: {

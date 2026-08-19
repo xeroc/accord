@@ -10,7 +10,6 @@ import { Button } from "./button";
 const meta = {
   title: "Primitives/Toaster",
   component: Toaster,
-  tags: ["autodocs"],
   parameters: {
     // Toasts are fixed-position; render just the toaster surface.
     layout: "fullscreen",

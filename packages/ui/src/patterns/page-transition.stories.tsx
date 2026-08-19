@@ -7,7 +7,6 @@ import { Button } from "../primitives/button";
 const meta = {
   title: "Patterns/PageTransition",
   component: PageTransition,
-  tags: ["autodocs"],
   parameters: {
     docs: {
       description: {

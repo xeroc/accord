@@ -5,7 +5,6 @@ import { Copyable } from "./copyable";
 const meta = {
   title: "Primitives/Copyable",
   component: Copyable,
-  tags: ["autodocs"],
   argTypes: {
     value: { control: "text" },
     head: { control: "number" },

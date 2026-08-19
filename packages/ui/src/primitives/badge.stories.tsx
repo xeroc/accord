@@ -5,7 +5,6 @@ import { Badge } from "./badge";
 const meta = {
   title: "Primitives/Badge",
   component: Badge,
-  tags: ["autodocs"],
   argTypes: {
     variant: {
       control: "select",

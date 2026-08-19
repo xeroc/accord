@@ -17,7 +17,6 @@ import { Separator } from "./separator";
 const meta = {
   title: "Primitives/Card",
   component: Card,
-  tags: ["autodocs"],
   argTypes: {
     size: { control: "radio", options: ["default", "sm"] },
   },

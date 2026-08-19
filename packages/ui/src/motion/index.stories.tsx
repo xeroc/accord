@@ -9,7 +9,6 @@ import { Skeleton } from "../primitives/skeleton";
 
 const meta = {
   title: "Motion/Primitives",
-  tags: ["autodocs"],
   parameters: {
     docs: {
       description: {

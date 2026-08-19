@@ -5,7 +5,6 @@ import { DisputeStatusCard } from "./dispute-status-card";
 const meta = {
   title: "Patterns/DisputeStatusCard",
   component: DisputeStatusCard,
-  tags: ["autodocs"],
   parameters: {
     docs: {
       description: {

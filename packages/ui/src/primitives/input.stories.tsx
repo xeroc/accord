@@ -6,7 +6,6 @@ import { Button } from "./button";
 const meta = {
   title: "Primitives/Input",
   component: Input,
-  tags: ["autodocs"],
 } satisfies Meta<typeof Input>;
 
 export default meta;

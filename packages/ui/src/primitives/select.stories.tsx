@@ -18,7 +18,6 @@ import {
 const meta = {
   title: "Primitives/Select",
   component: Select,
-  tags: ["autodocs"],
 } satisfies Meta<typeof Select>;
 
 export default meta;

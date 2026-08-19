@@ -13,7 +13,6 @@ import {
 const meta = {
   title: "Patterns/ProductNavbar",
   component: ProductNavbar,
-  tags: ["autodocs"],
   parameters: {
     layout: "fullscreen",
     docs: {

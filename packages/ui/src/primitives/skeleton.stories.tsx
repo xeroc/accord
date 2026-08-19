@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader } from "./card";
 const meta = {
   title: "Primitives/Skeleton",
   component: Skeleton,
-  tags: ["autodocs"],
 } satisfies Meta<typeof Skeleton>;
 
 export default meta;

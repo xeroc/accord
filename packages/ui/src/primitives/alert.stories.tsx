@@ -7,7 +7,6 @@ import { Button } from "./button";
 const meta = {
   title: "Primitives/Alert",
   component: Alert,
-  tags: ["autodocs"],
   argTypes: {
     variant: { control: "select", options: ["default", "destructive"] },
   },
