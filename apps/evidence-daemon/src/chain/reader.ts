@@ -39,6 +39,11 @@ export interface SubaccordView {
   readonly evidenceOperator: Address;
   /** Immutable evidence-format spec hash (ADR-0006); pins watermark scheme. */
   readonly evidenceSpec: ReadonlyUint8Array;
+  /**
+   * `sha256(domain doc)` — the public CAS anchor (ADR-0027 as amended).
+   * Gates `PUT /domains/{hash}`: the hash must equal this field.
+   */
+  readonly domainRef: ReadonlyUint8Array;
 }
 
 export interface DisputeView {
@@ -84,6 +89,7 @@ export async function readSubaccord(
   return {
     evidenceOperator: m.data.evidenceOperator,
     evidenceSpec: m.data.evidenceSpec,
+    domainRef: m.data.domainRef,
   };
 }
 

@@ -127,12 +127,14 @@ export type SynodIngestHandler = (
 export type SynodManifestHandler = (casePda: string) => Promise<ManifestResult>;
 
 /**
- * Domain CAS = PUT/GET /domains/{hash} (ADR-0027). Permissionless,
- * content-addressed PUBLIC documents; preimage resistance is the auth.
+ * Domain CAS = PUT/GET /domains/{hash} (ADR-0027). Content-addressed PUBLIC
+ * documents; preimage resistance is the auth. PUT is chain-anchored
+ * (create-first): the ?subaccord anchor must exist on-chain with
+ * domain_ref == hash. GET is ungated.
  */
 export type DomainPutResult =
   | { readonly ok: true; readonly status: 200 | 201 }
-  | { readonly ok: false; readonly status: 400 | 409 | 413; readonly error: string };
+  | { readonly ok: false; readonly status: 400 | 404 | 409 | 413; readonly error: string };
 
 export type DomainGetResult =
   | {
@@ -143,11 +145,12 @@ export type DomainGetResult =
     }
   | { readonly ok: false; readonly status: 400 | 404; readonly error: string };
 
-/** PUT /domains/{hash} — body bytes + optional Content-Type (default text/markdown). */
+/** PUT /domains/{hash}?subaccord={addr} — bytes + Content-Type (default text/markdown) + anchor. */
 export type DomainPutHandler = (
   hash: string,
   bytes: Uint8Array,
   contentType: string,
+  subaccord: string,
 ) => Promise<DomainPutResult>;
 
 /** GET /domains/{hash} — the stored bytes + stored Content-Type. */

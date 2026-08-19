@@ -1,12 +1,19 @@
-// domain.test.ts — PUT/GET /domains/{hash} contract suite (bean accord-49b3).
+// domain.test.ts — PUT/GET /domains/{hash} contract suite (beans accord-49b3,
+// accord-lbst).
 //
 // Drives createApp over the REAL domain pipeline (pipeline/domain.ts) wired to
 // a real FsDomainStore in a temp dir — the full HTTP contract of the public
-// document CAS (ADR-0027, milestone §6 Test Matrix): 201 create, 200
-// idempotent no-op, 409 collision, 400 hash mismatch / malformed hex, 413
+// document CAS (ADR-0027 as amended, milestone §6 Test Matrix): 201 create,
+// 200 idempotent no-op, 409 collision, 400 hash mismatch / malformed hex, 413
 // over-cap, 404 unknown, content-type default + passthrough, ETag +
 // Cache-Control immutable. Evidence handlers are stubs — this suite owns the
 // domain namespace only.
+//
+// Chain-anchored PUT (accord-lbst): every PUT carries ?subaccord=<addr>; the
+// pipeline resolves the anchor Subaccord via an injected reader seam (with a
+// poll budget for commitment lag) and requires domain_ref == hash. Gate
+// matrix: no param → 400, malformed param → 400, anchor never appears → 404,
+// domain_ref mismatch → 400, anchor appears late → accepted.
 //
 // Run: `pnpm --filter @useaccord/evidence-daemon test` (→ bun test).
 
@@ -17,7 +24,7 @@ import { join } from "node:path";
 import { loadServerConfig } from "../config.js";
 import { FsDomainStore } from "../store/domain-fs.js";
 import { DEFAULT_DOMAIN_CONTENT_TYPE } from "../store/domain.js";
-import { getDomain, putDomain } from "../pipeline/domain.js";
+import { getDomain, putDomain, type DomainAnchorReader } from "../pipeline/domain.js";
 import { createApp } from "./app.js";
 import type { ServerDeps } from "./handlers.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
@@ -29,10 +36,14 @@ const STUB_PUBLIC_KEYS: KeyringPublicKeys = {
 
 const MAX_DOMAIN_BYTES = loadServerConfig({}).maxDomainBytes; // default 1 MiB
 
+/** Anchor Subaccord address used by every PUT the `put()` helper builds. */
+const SUB = "2".repeat(32);
+
 let rootDir: string;
 
 beforeEach(async () => {
   rootDir = await mkdtemp(join(tmpdir(), "domain-routes-"));
+  anchorRefs.clear(); // fresh chain per test — no cross-test anchor leakage
 });
 
 afterEach(async () => {
@@ -44,9 +55,38 @@ function sha256Hex(bytes: Uint8Array): string {
   return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 }
 
+/** 64-char lowercase hex → 32 raw bytes. */
+function hexToBytes(hex: string): Uint8Array {
+  return new Uint8Array(hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+}
+
+// Anchor fixture: subaccord → domain_ref hex. `put()` auto-anchors the doc's
+// hash (the honest-author default); gate tests override via setAnchor/opts.
+const anchorRefs = new Map<string, string>();
+
+function setAnchor(subaccord: string, domainRefHex: string | null): void {
+  if (domainRefHex === null) anchorRefs.delete(subaccord);
+  else anchorRefs.set(subaccord, domainRefHex);
+}
+
+const mapAnchor: DomainAnchorReader = async (sa) => {
+  const h = anchorRefs.get(sa);
+  return h === undefined ? null : hexToBytes(h);
+};
+
+interface MakeAppOpts {
+  /** PUT body cap (default: server default). */
+  maxBytes?: number;
+  /** Anchor poll budget; tests shrink it so exhaustion runs in ms. */
+  anchorPollMs?: number;
+  /** Injected anchor reader seam (chain/reader in production). */
+  anchor?: DomainAnchorReader;
+}
+
 /** App with the real domain pipeline over an FsDomainStore; evidence stubbed. */
-function makeApp(maxBytes: number = MAX_DOMAIN_BYTES) {
+function makeApp(opts: MakeAppOpts = {}) {
   const store = new FsDomainStore({ rootDir });
+  const anchor = opts.anchor ?? mapAnchor;
   const deps: ServerDeps = {
     ingest: async () => ({ ok: true, status: 201, location: "/evidence/s/d" }),
     synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/c/0" }),
@@ -60,11 +100,13 @@ function makeApp(maxBytes: number = MAX_DOMAIN_BYTES) {
     health: async () => ({ ok: true }),
     publicKeys: STUB_PUBLIC_KEYS,
     // Same outcome→result mapping wire.ts applies (pipeline ⇒ handler shape).
-    domainPut: async (hash, bytes, contentType) => {
-      const out = await putDomain(hash, bytes, contentType, {
+    domainPut: async (hash, bytes, contentType, subaccord) => {
+      const out = await putDomain(hash, bytes, contentType, subaccord, {
         store,
-        maxBytes,
+        maxBytes: opts.maxBytes ?? MAX_DOMAIN_BYTES,
         sha256: sdkSha256,
+        readAnchor: anchor,
+        anchorPollMs: opts.anchorPollMs ?? 25,
       });
       return out.status === 200 || out.status === 201
         ? { ok: true, status: out.status }
@@ -87,8 +129,11 @@ async function sdkSha256(data: Uint8Array): Promise<Uint8Array> {
 
 const DOC = new TextEncoder().encode("# Rules\n\nBe excellent to each other.\n");
 
-function put(hash: string, body: Uint8Array, contentType?: string): Request {
-  return new Request(`http://x/domains/${hash}`, {
+function put(hash: string, body: Uint8Array, contentType?: string, subaccord = SUB): Request {
+  // Auto-anchor: an honest author creates the Subaccord with domain_ref =
+  // sha256(doc) before publishing. Gate tests override AFTER/BEFORE this.
+  if (!anchorRefs.has(subaccord)) anchorRefs.set(subaccord, hash);
+  return new Request(`http://x/domains/${hash}?subaccord=${subaccord}`, {
     method: "PUT",
     body,
     ...(contentType ? { headers: { "content-type": contentType } } : {}),
@@ -99,7 +144,7 @@ function get(hash: string): Request {
   return new Request(`http://x/domains/${hash}`);
 }
 
-describe("PUT /domains/:hash", () => {
+describe("PUT /domains/:hash — CAS semantics (anchor satisfied)", () => {
   it("correct bytes → 201 + Location; GET returns identical bytes + content-type", async () => {
     const app = makeApp();
     const hash = sha256Hex(DOC);
@@ -164,11 +209,91 @@ describe("PUT /domains/:hash", () => {
   });
 
   it("over-cap body → 413 before any store write", async () => {
-    const app = makeApp(4); // tiny cap for the test
+    const app = makeApp({ maxBytes: 4 }); // tiny cap for the test
     const bytes = new Uint8Array(5); // any bytes — cap check precedes hash check
     const res = await app.request(put("ab".repeat(32), bytes));
     expect(res.status).toBe(413);
     expect((await app.request(get("ab".repeat(32)))).status).toBe(404); // never stored
+  });
+
+  it("binary (non-UTF-8) bytes round-trip byte-exact", async () => {
+    const app = makeApp();
+    const bytes = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) bytes[i] = i;
+    const hash = sha256Hex(bytes);
+    await app.request(put(hash, bytes, "application/octet-stream"));
+    const got = await app.request(get(hash));
+    expect(new Uint8Array(await got.arrayBuffer())).toEqual(bytes);
+  });
+});
+
+describe("PUT /domains/:hash — anchor gate (accord-lbst)", () => {
+  it("missing ?subaccord → 400", async () => {
+    const app = makeApp();
+    const hash = sha256Hex(DOC);
+    const res = await app.request(
+      new Request(`http://x/domains/${hash}`, { method: "PUT", body: DOC }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("subaccord");
+  });
+
+  it("malformed ?subaccord → 400", async () => {
+    const app = makeApp();
+    const hash = sha256Hex(DOC);
+    const res = await app.request(
+      new Request(`http://x/domains/${hash}?subaccord=not-an-address`, {
+        method: "PUT",
+        body: DOC,
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("subaccord");
+  });
+
+  it("anchor never appears within the poll budget → 404 (anchor not found)", async () => {
+    const app = makeApp({ anchorPollMs: 20 });
+    const hash = sha256Hex(DOC);
+    // Manual request (no put()) — the auto-anchor fixture must not fire.
+    const res = await app.request(
+      new Request(`http://x/domains/${hash}?subaccord=${"3".repeat(32)}`, {
+        method: "PUT",
+        body: DOC,
+      }),
+    );
+    expect(res.status).toBe(404);
+    // Nothing stored — the gate precedes the write.
+    expect((await app.request(get(hash))).status).toBe(404);
+  });
+
+  it("anchor domain_ref ≠ route hash → 400", async () => {
+    const app = makeApp();
+    const hash = sha256Hex(DOC);
+    setAnchor(SUB, sha256Hex(new TextEncoder().encode("some other doc")));
+    const res = await app.request(put(hash, DOC));
+    expect(res.status).toBe(400);
+    expect((await app.request(get(hash))).status).toBe(404); // never stored
+  });
+
+  it("anchor appears after commitment lag → poll retries → 201", async () => {
+    const hash = sha256Hex(DOC);
+    let calls = 0;
+    const app = makeApp({
+      anchorPollMs: 500,
+      // First read (pre-commitment) misses; the retry inside the budget hits.
+      anchor: async () => (calls++ === 0 ? null : hexToBytes(hash)),
+    });
+    const res = await app.request(put(hash, DOC));
+    expect(res.status).toBe(201);
+    expect(calls).toBe(2);
+    expect((await app.request(get(hash))).status).toBe(200);
+  });
+
+  it("idempotent re-PUT still passes the gate (anchor exists by construction)", async () => {
+    const app = makeApp();
+    const hash = sha256Hex(DOC);
+    expect((await app.request(put(hash, DOC))).status).toBe(201);
+    expect((await app.request(put(hash, DOC))).status).toBe(200);
   });
 });
 
@@ -184,15 +309,5 @@ describe("GET /domains/:hash", () => {
     // NB: "../x" can't reach the route — URL path normalization resolves it
     // client-side; the route-level guard covers shape ("nothex" below).
     expect((await app.request(get("nothex"))).status).toBe(400);
-  });
-
-  it("binary (non-UTF-8) bytes round-trip byte-exact", async () => {
-    const app = makeApp();
-    const bytes = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) bytes[i] = i;
-    const hash = sha256Hex(bytes);
-    await app.request(put(hash, bytes, "application/octet-stream"));
-    const got = await app.request(get(hash));
-    expect(new Uint8Array(await got.arrayBuffer())).toEqual(bytes);
   });
 });

@@ -14,7 +14,7 @@ import type { ServerDeps } from "./handlers.js";
 
 /** Base58 Solana address, 32-44 chars (light guard; chain reader validates). */
 // ponytail: charset+length guard only — real validation is the live account read.
-const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+export const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** Non-negative integer (evidence round index, ADR-0023). */
 const ROUND = /^(0|[1-9][0-9]*)$/;
