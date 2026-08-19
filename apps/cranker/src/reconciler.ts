@@ -43,12 +43,14 @@ import {
 import {
   findAllCanonItems as defaultFetchCanonItems,
   findAllCanonLists as defaultFetchCanonLists,
+  CANON_PROGRAM_ID,
   ItemState,
   type CanonItem,
   type CanonList,
 } from "@useaccord/canon";
 import { findAllSynodCases as defaultFetchSynodCases, type SynodCase } from "@useaccord/synod";
 
+import { findRemovedCanonItemAddresses as defaultScanRemovedCanonItems } from "./canon-gc.js";
 import { resolveCanonAction } from "./canon-state.js";
 import { resolveSynodAction } from "./synod-state.js";
 import type { CrankAction, CrankContext, CrankDispatch, CrankKind } from "./dispatch.js";
@@ -80,6 +82,13 @@ export interface ReconcilerConfig {
   fetchCanonItems?: () => Promise<Account<CanonItem>[]>;
   /** Override the Canon list scan (tests). Defaults to `findAllCanonLists(rpc)`. */
   fetchCanonLists?: () => Promise<Account<CanonList>[]>;
+  /** Override the Removed-canon-item GC scan (tests). Defaults to the canon-gc
+   * GPA query (discriminator + `state == Removed` memcmp, bean accord-m5fd). */
+  fetchRemovedCanonItems?: () => Promise<Address[]>;
+  /** Canon GC (close_item) module toggle. Default: enabled. */
+  canonCloseEnabled?: boolean;
+  /** Canon program id for canon cranks + the GC scan. Default: SDK `CANON_PROGRAM_ID`. */
+  canonProgramId?: Address;
   /** Override the Synod case scan (tests). Defaults to `findAllSynodCases(rpc)`. */
   fetchSynodCases?: () => Promise<Account<SynodCase>[]>;
 
@@ -130,6 +139,9 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     fetchCanonItems = () => defaultFetchCanonItems(accord.rpc),
     fetchCanonLists = () => defaultFetchCanonLists(accord.rpc),
     fetchSynodCases = () => defaultFetchSynodCases(accord.rpc),
+    canonCloseEnabled = true,
+    canonProgramId = CANON_PROGRAM_ID as Address,
+    fetchRemovedCanonItems = () => defaultScanRemovedCanonItems(accord.rpc, canonProgramId),
   } = config;
 
   const rpc = accord.rpc;
@@ -205,6 +217,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       round,
       rpc,
       rpcSubscriptions: config.rpcSubscriptions,
+      canonProgramId,
     };
     const handled = await dispatch.execute(ctx, action);
     log("crank action", {
@@ -227,6 +240,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     log: ctxLog,
     rpc,
     rpcSubscriptions: config.rpcSubscriptions,
+    canonProgramId,
   };
   const updates = await fetchPendingUpdates();
   const currentSlot = await slot();
@@ -287,6 +301,22 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       const action: CrankAction = { kind: resolved.kind, item: item.address };
       const handled = await dispatch.execute(baseCtx, action);
       log("crank action", { item: item.address, action: action.kind, handled });
+      if (handled) fired++;
+    }
+  }
+
+  // --- Phase 5b: Canon GC (canon_close_item — bean accord-m5fd) ---
+  // Server-side-filtered GPA sweep for Removed items; catches everything the
+  // canon WS listener missed, including items delisted before the cranker
+  // booted. Profitability (rent vs tx fee + margin) is guarded inside the
+  // executor, and the dispatch map dedupes against the in-flight listener
+  // dispatch of the same item.
+  if (canonCloseEnabled) {
+    const removed = await fetchRemovedCanonItems();
+    for (const item of removed) {
+      const action: CrankAction = { kind: "canon_close_item", item };
+      const handled = await dispatch.execute(baseCtx, action);
+      log("crank action", { item, action: action.kind, handled });
       if (handled) fired++;
     }
   }
