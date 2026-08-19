@@ -1,0 +1,23 @@
+/*
+ * @useaccord/remotion — Tailwind v4 engine wiring, identical to
+ * apps/app/src/index.css. The engine stays with each consuming app by
+ * design (see @useaccord/ui styles.css header); this file owns it for
+ * videos. Depths differ: this file sits at src/shell/, one level deeper
+ * than the app's src/index.css, hence four ../ segments in @source.
+ *
+ * @import "tailwindcss"        — the engine
+ * @import "tw-animate-css"     — animation utilities base.css expects
+ * @import "@useaccord/ui/styles.css" — tokens, theme, Fontsource fonts, base
+ * @source packages/ui/src      — discover utilities used inside the kit
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@useaccord/ui/styles.css";
+
+@source "../../../../packages/ui/src";
+
+/* Remotion mounts into its own container; keep the page dark + full-size. */
+html,
+body {
+  height: 100%;
+}

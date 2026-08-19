@@ -1,0 +1,48 @@
+{
+  "name": "@useaccord/remotion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "@useaccord/remotion — Remotion 4 video framework rendering brand-obedient videos from @useaccord/ui. Videos under videos/ are local-only (gitignored).",
+  "type": "module",
+  "scripts": {
+    "sync": "tsx src/cli/main.ts sync",
+    "new": "tsx src/cli/main.ts new",
+    "dev": "tsx src/cli/main.ts sync && remotion studio",
+    "studio": "tsx src/cli/main.ts sync && remotion studio",
+    "render": "tsx src/cli/main.ts sync && remotion render",
+    "still": "tsx src/cli/main.ts sync && remotion still",
+    "build": "tsx src/cli/main.ts sync && tsc -b --noEmit && remotion bundle",
+    "lint": "tsx src/cli/main.ts sync && tsc -b --noEmit",
+    "test": "tsx src/cli/main.ts sync && vitest run",
+    "clean": "rm -rf build out src/videos.gen.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.513",
+    "@solana/connector": "^0.2.6",
+    "@solana/kit": "^7.0.0",
+    "@tanstack/react-query": "^5.62.0",
+    "@useaccord/sdk": "workspace:*",
+    "@useaccord/ui": "workspace:*",
+    "motion": "^13.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "remotion": "4.0.513",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "jsdom": "^26.1.0",
+    "postcss": "^8.5.6",
+    "postcss-loader": "^8.2.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

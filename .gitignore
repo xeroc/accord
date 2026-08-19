@@ -37,5 +37,6 @@ apps/docs/pitch
 **/.cache
 target/
 meta
-.omp
-.claude
+
+# Remotion (apps/remotion) — local videos, generated manifest, renders
+apps/remotion/out/
