@@ -229,6 +229,38 @@ credentials (and vice versa).
   metastable race — a conflicting PUT does not occur in the protocol).
 - **Single-node only.** For HA / multi-replica, use S3 (or a shared volume).
 
+### Domain CAS namespace (storage seam — ADR-0027)
+
+Public, content-addressed storage for domain documents (canon's
+`rules_hash` / `Subaccord.domain_ref` preimages). A separate namespace from
+evidence: **plaintext by design** — readership is "everyone", so the
+encrypted-at-rest invariant above applies to evidence only. The store is a
+dumb CAS: no parsing, no format mandate, no chain reads.
+
+```ts
+interface DomainStore {
+  put(o: DomainObject): Promise<void>; // idempotent on bytes; different bytes at same hash ⇒ conflict
+  get(hash: string): Promise<DomainObject | null>;
+  exists(hash: string): Promise<boolean>; // no delete — retention is forever
+}
+```
+
+- **Key:** `domains/{hash}` (`hash` = 64-char lowercase hex sha256 of the
+  bytes; validated before it reaches a path/key). Backends share the evidence
+  deployment's client+bucket (S3) or `rootDir` (fs) — the `domains/` prefix is
+  the only separator, and retention sweeps must never touch it.
+- **Idempotent put:** existing object with equal bytes ⇒ no-op (first
+  content-type wins); different bytes at the same hash ⇒ `DomainConflictError`
+  (a sha256 collision alarm — never overwrite); absent ⇒ write.
+- **Content-type:** stored alongside the bytes and round-trips on both
+  backends (S3 native `ContentType`; fs JSON envelope `{v, content_type,
+  bytes}`). The HTTP layer defaults it to `text/markdown`; the store never
+  sniffs it.
+- **Format-blind:** bytes in, bytes out — arbitrary binary round-trips
+  byte-exact.
+- v1 impls: `S3DomainStore` (`domain-s3.ts`), `FsDomainStore` (`domain-fs.ts`);
+  trait + errors in `domain.ts`.
+
 ### Keyring (pluggable) — v1: env var
 
 ```ts
@@ -270,6 +302,9 @@ apps/evidence-daemon/
       store.ts                 // EvidenceStore trait
       s3.ts                    // S3/MinIO impl (default)
       fs.ts                    // local filesystem impl (EVIDENCE_STORAGE=fs)
+      domain.ts                // DomainStore trait — public doc CAS (ADR-0027)
+      domain-s3.ts             // S3/MinIO impl — key domains/{hash}
+      domain-fs.ts             // local filesystem impl — domains/{hash}.json envelope
     chain/
       reader.ts                // @useaccord/sdk reads (Subaccord/Dispute/Round)
       events.ts                // log subscriber (DisputeCreated/JurorsDrawn/RulingFinalized)
