@@ -1,26 +1,31 @@
 /**
  * listener.ts — WebSocket latency optimization for the cranker reconciler
- * (milestone accord-27r5 §2).
+ * (milestone accord-27r5 §2), generic over the watched program + account
+ * filters (bean accord-m5fd parameterized it for the canon GC module).
  *
- * Subscribes to **Dispute accounts owned by the Accord program** via
- * `programSubscribe`, filtered server-side by the Dispute discriminator, and
- * reconciles the referenced dispute the instant it changes. The reconciler
- * poll loop (60s) stays authoritative; this only closes the latency gap.
+ * Subscribes to **accounts owned by one program** via `programSubscribe`,
+ * filtered server-side by memcmp filters (default: the Accord Dispute
+ * discriminator), and drives the target the instant an account changes. The
+ * reconciler poll loop (60s) stays authoritative; this only closes the
+ * latency gap.
  *
  * Why a discriminator-filtered account subscription (replacing the old
- * program-logs scraper): only Dispute accounts arrive, so the log regex +
- * address blacklist are gone — no ComputeBudget / VRF / system-program noise.
- * Every crank-actionable transition (create, VRF freeze, draw-complete, commit,
- * reveal-flip, finalize, appeal, redraw, cancel) writes the Dispute account, so
- * the subscription fires for each. The last-per-round reveal writes only the
- * Round; that one is picked up by the 60s poll — including the early finalize
- * once every juror has revealed (ADR-0021 + the finalize-on-full-reveal gate).
+ * program-logs scraper): only the watched account family arrives, so the log
+ * regex + address blacklist are gone — no ComputeBudget / VRF / system-program
+ * noise. Every crank-actionable transition (create, VRF freeze, draw-complete,
+ * commit, reveal-flip, finalize, appeal, redraw, cancel) writes the Dispute
+ * account, so the subscription fires for each. The last-per-round reveal
+ * writes only the Round; that one is picked up by the 60s poll — including
+ * the early finalize once every juror has revealed (ADR-0021 + the
+ * finalize-on-full-reveal gate). The canon variant watches CanonItem accounts
+ * with an extra `state == Removed` memcmp, so only GC-eligible items arrive.
  */
 import {
   type Address,
   type Base64EncodedBytes,
   type Commitment,
   getBase64Decoder,
+  type GetProgramAccountsMemcmpFilter,
   type RpcSubscriptions,
   type SolanaRpcSubscriptionsApi,
 } from "@solana/kit";
@@ -29,24 +34,29 @@ import { DISPUTE_DISCRIMINATOR } from "@useaccord/sdk";
 import { log } from "./log.js";
 
 /**
- * The surface the listener needs from the reconciler (bean accord-rev4).
- * Declared here, not imported, so this module compiles standalone and stays
- * decoupled from the reconciler's concrete implementation.
+ * What the listener drives on account activity. Declared here, not imported,
+ * so this module compiles standalone and stays decoupled from the
+ * reconciler's concrete implementation.
  */
-export interface ReconcilerTarget {
-  /** Reconcile a single dispute immediately (latency path). */
-  reconcileDispute(address: Address): Promise<void>;
-  /** Reconcile all active disputes (fired on reconnect to close the gap). */
-  reconcileAll(): Promise<void>;
+export interface ListenerTarget {
+  /** Act on one account notification (latency path). */
+  onAccount(address: Address): Promise<void>;
+  /** Full sweep on reconnect to close the gap. */
+  onResubscribe(): Promise<void>;
 }
 
 export interface ProgramAccountListenerOptions {
   /** A subscriptions client built from `ACCORD_WS_URL` (see `.env.example`). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  /** The Accord program id to watch (`ACCORD_PROGRAM_ID` from the SDK). */
+  /** The program id to watch (`ACCORD_PROGRAM_ID` from the SDK). */
   programId: Address;
-  /** The reconciler the listener drives. */
-  reconciler: ReconcilerTarget;
+  /** What each notification drives (the reconciler, or the canon GC dispatch). */
+  target: ListenerTarget;
+  /**
+   * Server-side memcmp filters restricting the subscription to one account
+   * family. Default: the Accord Dispute discriminator at offset 0.
+   */
+  filters?: readonly GetProgramAccountsMemcmpFilter[];
   /** Commitment level for the account subscription. Default `"confirmed"`. */
   commitment?: Commitment;
   /** Structured logger sink. Defaults to `console.log`. */
@@ -70,6 +80,11 @@ export const DISPUTE_FILTER_BYTES: Base64EncodedBytes = getBase64Decoder().decod
   DISPUTE_DISCRIMINATOR,
 ) as Base64EncodedBytes;
 
+/** The default subscription filters: Dispute accounts only. */
+export const DISPUTE_FILTERS: readonly GetProgramAccountsMemcmpFilter[] = [
+  { memcmp: { offset: 0n, bytes: DISPUTE_FILTER_BYTES, encoding: "base64" } },
+];
+
 /** Default capped-exponential backoff: 1s, 2s, 4s, … capped at 30s. */
 function defaultBackoff(attempt: number): number {
   return Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
@@ -82,7 +97,8 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 /**
- * Subscribes to Accord Dispute accounts and drives immediate reconciliation.
+ * Subscribes to a program's accounts (server-side filtered) and drives the
+ * target on every notification.
  *
  * Construct with explicit options (the service entry wires `ACCORD_WS_URL` →
  * `rpcSubscriptions`); call {@link ProgramAccountListener.start} to begin, and
@@ -92,7 +108,8 @@ export class ProgramAccountListener {
   private readonly opts: {
     rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
     programId: Address;
-    reconciler: ReconcilerTarget;
+    target: ListenerTarget;
+    filters: readonly GetProgramAccountsMemcmpFilter[];
     commitment: Commitment;
     log: (msg: string) => void;
     backoffMs: (attempt: number) => number;
@@ -105,7 +122,8 @@ export class ProgramAccountListener {
     this.opts = {
       rpcSubscriptions: options.rpcSubscriptions,
       programId: options.programId,
-      reconciler: options.reconciler,
+      target: options.target,
+      filters: options.filters ?? DISPUTE_FILTERS,
       commitment: options.commitment ?? "confirmed",
       log: options.log ?? ((m) => log(m)),
       backoffMs: options.backoffMs ?? defaultBackoff,
@@ -149,37 +167,35 @@ export class ProgramAccountListener {
 
   /**
    * Open one subscription and pump it until it errors or is aborted.
-   * `reconcileAllFirst` triggers a full sweep on reconnect to close the gap.
+   * `onResubscribeFirst` triggers a full sweep on reconnect to close the gap.
    */
-  private async subscribeOnce(reconcileAllFirst: boolean): Promise<void> {
+  private async subscribeOnce(onResubscribeFirst: boolean): Promise<void> {
     const stream = await this.opts.rpcSubscriptions
       .programNotifications(this.opts.programId, {
         commitment: this.opts.commitment,
-        // Discriminator filter: the RPC only delivers Dispute accounts, so we
-        // never handle (or even receive) Round / JurorStake / Subaccord noise.
-        filters: [{ memcmp: { offset: 0n, bytes: DISPUTE_FILTER_BYTES, encoding: "base64" } }],
+        // Server-side filters: the RPC only delivers the watched account
+        // family (e.g. Dispute accounts, or Removed CanonItems for the GC).
+        filters: this.opts.filters,
       })
       .subscribe({ abortSignal: this.abort.signal });
 
-    this.opts.log(`[listener] subscribed to ${this.opts.programId} dispute accounts`);
+    this.opts.log(`[listener] subscribed to ${this.opts.programId} accounts`);
 
-    if (reconcileAllFirst) {
+    if (onResubscribeFirst) {
       this.opts.log("[listener] reconnect: triggering full reconcile");
-      void this.opts.reconciler
-        .reconcileAll()
-        .catch((e) => this.opts.log(`[listener] reconcileAll failed: ${stringifyErr(e)}`));
+      void this.opts.target
+        .onResubscribe()
+        .catch((e) => this.opts.log(`[listener] resubscribe sweep failed: ${stringifyErr(e)}`));
     }
 
     for await (const notification of stream) {
-      // fire-and-forget; the reconciler is idempotent. Never block/await here
-      // — a slow or failed reconcile must not stall the account stream.
+      // fire-and-forget; the target is idempotent. Never block/await here
+      // — a slow or failed action must not stall the account stream.
       const address = notification.value.pubkey;
-      this.opts.log(`[listener] account -> reconcile ${address}`);
-      void this.opts.reconciler
-        .reconcileDispute(address)
-        .catch((e) =>
-          this.opts.log(`[listener] reconcileDispute ${address} failed: ${stringifyErr(e)}`),
-        );
+      this.opts.log(`[listener] account -> dispatch ${address}`);
+      void this.opts.target
+        .onAccount(address)
+        .catch((e) => this.opts.log(`[listener] onAccount ${address} failed: ${stringifyErr(e)}`));
     }
   }
 }

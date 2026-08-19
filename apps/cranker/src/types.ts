@@ -52,6 +52,7 @@ export type CrankKind =
   | "canon_advance_pending"
   | "canon_settle_item"
   | "canon_advance_withdrawal"
+  | "canon_close_item"
   | "synod_file_dispute"
   | "synod_refund_roster_miss"
   | "synod_claim";
@@ -88,6 +89,7 @@ export type CrankAction =
   | { kind: "canon_advance_pending"; item: Address }
   | { kind: "canon_settle_item"; item: Address }
   | { kind: "canon_advance_withdrawal"; item: Address }
+  | { kind: "canon_close_item"; item: Address }
   | { kind: "synod_file_dispute"; case: Address }
   | { kind: "synod_refund_roster_miss"; case: Address; partyIndex: number }
   | { kind: "synod_claim"; case: Address; partyIndex: number };
@@ -137,6 +139,12 @@ export interface CrankContext {
   /** Live RPC + subscriptions (TreeCache, send). */
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /**
+   * Canon program id the canon cranks build instructions against. Defaults to
+   * the SDK's canonical `CANON_PROGRAM_ID`; overridden when the cranker runs
+   * against a relocated canon program (bean accord-m5fd).
+   */
+  readonly canonProgramId?: Address;
 }
 
 /** Outcome of one crank attempt. */
