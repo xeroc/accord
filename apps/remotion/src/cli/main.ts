@@ -11,13 +11,14 @@ const pkgRoot = path.resolve(
 );
 const videosDir = path.join(pkgRoot, "videos");
 const manifestFile = path.join(pkgRoot, "src", "videos.gen.ts");
+const twClassesFile = path.join(pkgRoot, "src", "video-tw-classes.ts");
 
 const USAGE = "usage: tsx src/cli/main.ts [sync | new <slug>]";
 
 const command = process.argv[2] ?? "sync";
 switch (command) {
   case "sync": {
-    const r = sync(videosDir, manifestFile);
+    const r = sync(videosDir, manifestFile, twClassesFile);
     console.log(
       `[remotion] manifest: ${r.count} video(s) [${r.slugs.join(", ")}]${r.changed ? " (regenerated)" : ""}`,
     );
@@ -29,7 +30,7 @@ switch (command) {
       console.error(USAGE);
       process.exit(1);
     }
-    const dest = scaffoldVideo(slug, { videosDir, manifestFile });
+    const dest = scaffoldVideo(slug, { videosDir, manifestFile, twClassesFile });
     console.log(
       `[remotion] scaffolded ${path.relative(pkgRoot, dest)} — edit it, then: pnpm --filter @useaccord/remotion studio`,
     );

@@ -40,7 +40,7 @@ function copyTemplate(templateDir: string, dest: string, slug: string): void {
 
 export function scaffoldVideo(
   slug: string,
-  opts: { videosDir: string; manifestFile: string },
+  opts: { videosDir: string; manifestFile: string; twClassesFile: string },
 ): string {
   if (!SLUG_RE.test(slug)) {
     throw new Error(`video slug must be kebab-case (e.g. my-video), got '${slug}'`);
@@ -50,6 +50,6 @@ export function scaffoldVideo(
     throw new Error(`videos/${slug} already exists`);
   }
   copyTemplate(path.join(opts.videosDir, "_template"), dest, slug);
-  sync(opts.videosDir, opts.manifestFile);
+  sync(opts.videosDir, opts.manifestFile, opts.twClassesFile);
   return dest;
 }

@@ -3,9 +3,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { renderManifest, scanVideos, sync } from "./sync";
+import {
+  collectTwClasses,
+  renderManifest,
+  renderTwClassesFile,
+  scanVideos,
+  sync,
+} from "./sync";
 
 const dirs: string[] = [];
+
 function tmp(): string {
   const d = mkdtempSync(path.join(tmpdir(), "remotion-sync-"));
   dirs.push(d);
@@ -73,8 +80,9 @@ describe("sync", () => {
     writeFileSync(path.join(videosRoot, "demo", "index.tsx"), "export {}");
     const outDir = tmp();
     const outFile = path.join(outDir, "videos.gen.ts");
+    const twFile = path.join(outDir, "video-tw-classes.ts");
 
-    const result = sync(videosRoot, outFile);
+    const result = sync(videosRoot, outFile, twFile);
 
     expect(result.slugs).toEqual(["demo"]);
     const content = readFileSync(outFile, "utf8");
@@ -85,11 +93,66 @@ describe("sync", () => {
     const videosRoot = tmp();
     mkdirSync(path.join(videosRoot, "demo"));
     writeFileSync(path.join(videosRoot, "demo", "index.tsx"), "export {}");
-    const outFile = path.join(tmp(), "videos.gen.ts");
+    const outDir = tmp();
+    const outFile = path.join(outDir, "videos.gen.ts");
+    const twFile = path.join(outDir, "video-tw-classes.ts");
 
-    sync(videosRoot, outFile);
-    const second = sync(videosRoot, outFile);
+    sync(videosRoot, outFile, twFile);
+    const second = sync(videosRoot, outFile, twFile);
 
     expect(second.changed).toBe(false);
+  });
+});
+
+describe("collectTwClasses / renderTwClassesFile", () => {
+  it("collects candidate classes from all video sources, sorted and unique", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo", "scenes"), { recursive: true });
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const v = <div className="text-7xl w-[430px]" />;',
+    );
+    writeFileSync(
+      path.join(root, "demo", "scenes", "s.tsx"),
+      "export const s = <div className={`text-7xl border-amber`} />;",
+    );
+
+    const classes = collectTwClasses(root);
+    expect(classes).toContain("text-7xl");
+    expect(classes).toContain("w-[430px]");
+    expect(classes).toContain("border-amber");
+    expect(classes.indexOf("text-7xl")).toBe(classes.lastIndexOf("text-7xl"));
+  });
+
+  it("skips plain identifiers without a dash, bracket, or slash", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo"));
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const hooks = "useCurrentFrame"; // Accord notAClass',
+    );
+
+    expect(collectTwClasses(root)).toEqual([]);
+  });
+
+  it("renders the manifest with the generated-file header", () => {
+    const out = renderTwClassesFile(["bg-amber", "text-7xl"]);
+    expect(out).toContain("GENERATED");
+    expect(out).toContain('"bg-amber text-7xl"');
+  });
+
+  it("sync writes the tw-classes file alongside the manifest", () => {
+    const videosRoot = tmp();
+    mkdirSync(path.join(videosRoot, "demo"));
+    writeFileSync(
+      path.join(videosRoot, "demo", "index.tsx"),
+      'export const v = <div className="text-7xl" />;',
+    );
+    const outDir = tmp();
+    const twFile = path.join(outDir, "video-tw-classes.ts");
+
+    sync(videosRoot, path.join(outDir, "videos.gen.ts"), twFile);
+
+    expect(readFileSync(twFile, "utf8")).toContain("text-7xl");
   });
 });

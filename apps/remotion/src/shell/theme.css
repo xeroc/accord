@@ -9,12 +9,19 @@
  * @import "tw-animate-css"     — animation utilities base.css expects
  * @import "@useaccord/ui/styles.css" — tokens, theme, Fontsource fonts, base
  * @source packages/ui/src      — discover utilities used inside the kit
+ *
+ * videos/ utilities: the videos/ tree is gitignored, so Tailwind v4 auto
+ * source detection (and directory @source globs) never scans it — classes
+ * used only by a video would silently not generate. The sync CLI emits
+ * src/video-tw-classes.ts (under src/, which IS scanned) listing every
+ * candidate class found under videos/. See src/cli/sync.ts.
  */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@useaccord/ui/styles.css";
 
 @source "../../../../packages/ui/src";
+
 
 /* Remotion mounts into its own container; keep the page dark + full-size. */
 html,
