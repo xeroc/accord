@@ -21,11 +21,11 @@ arbitrary registry.
 
 ## Account / PDA model
 
-| Account | Seeds | Key fields |
-| --- | --- | --- |
+| Account     | Seeds                            | Key fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `domain_ref`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
-| `CanonItem` | `["canon-item", list, account]` | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`. |
-| token vault | `CanonList`-PDA-owned SPL | deposit pool (`fee_mint`) |
+| `CanonItem` | `["canon-item", list, account]`  | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`.                                                                                                                                                                                                                                                                       |
+| token vault | `CanonList`-PDA-owned SPL        | deposit pool (`fee_mint`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Canon **reuses** Accord's `Dispute`, `Round`, `JurorStake`, and the per-list
 backing `Subaccord`. It does **not** reimplement voting, the draw, or juror
@@ -33,15 +33,15 @@ staking.
 
 ## Instructions
 
-| # | Instruction | Semantics |
-| --- | --- | --- |
-| 1 | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock, evidence_operator)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**, `evidence_operator` forwarded — `Pubkey::default()` rejected with `InvalidEvidenceOperator`); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
-| 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
-| 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
-| 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
-| 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling: u64` via `Dispute::ruling()` (`Option<u64>`; Canon files Plurality disputes only, so the ruling is an option index — gate `ruling < 2`, u64 since ADR-0025). `keep` (0) → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` (1) → `accumulated_stake + challenge_stake` (bounty + the challenger's own stake back) → challenger, item → `Removed`. Terminal `Failed` (cancel / redraw exhaustion) → no ruling: `accumulated_stake` → submitter, `challenge_stake` → challenger (no bounty, no forfeit), item → `Removed`. Emits `ItemSettled{ruling: u64}` / `ItemSettlementVoided`. Payout destinations are constrained on-chain to the payee recorded on the item (`token::mint = fee_mint`, `token::authority = item.challenger\|item.submitter`). |
-| 6 | `request_withdrawal(item)` | submitter-only; item → `WithdrawPending`; opens the `withdrawal_timelock` challenge window. |
-| 7 | `advance_withdrawal(item)` | permissionless crank; after the timelock, if unchallenged → return `accumulated_stake` to submitter, item → `Removed`. |
+| #   | Instruction                                                                                                                                                                                                                 | Semantics                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock, evidence_operator)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**, `evidence_operator` forwarded — `Pubkey::default()` rejected with `InvalidEvidenceOperator`); inits `CanonList`. `stake_mint` may equal `fee_mint`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2   | `submit_item(list, account, evidence, deposit = submit_deposit)`                                                                                                                                                            | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 3   | `advance_pending(item)`                                                                                                                                                                                                     | permissionless crank; after `listing_window` with no challenge → `Listed`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 4   | `challenge_item(item, evidence)`                                                                                                                                                                                            | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 5   | `settle_item(item)`                                                                                                                                                                                                         | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling: u64` via `Dispute::ruling()` (`Option<u64>`; Canon files Plurality disputes only, so the ruling is an option index — gate `ruling < 2`, u64 since ADR-0025). `keep` (0) → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` (1) → `accumulated_stake + challenge_stake` (bounty + the challenger's own stake back) → challenger, item → `Removed`. Terminal `Failed` (cancel / redraw exhaustion) → no ruling: `accumulated_stake` → submitter, `challenge_stake` → challenger (no bounty, no forfeit), item → `Removed`. Emits `ItemSettled{ruling: u64}` / `ItemSettlementVoided`. Payout destinations are constrained on-chain to the payee recorded on the item (`token::mint = fee_mint`, `token::authority = item.challenger\|item.submitter`). |
+| 6   | `request_withdrawal(item)`                                                                                                                                                                                                  | submitter-only; item → `WithdrawPending`; opens the `withdrawal_timelock` challenge window.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 7   | `advance_withdrawal(item)`                                                                                                                                                                                                  | permissionless crank; after the timelock, if unchallenged → return `accumulated_stake` to submitter, item → `Removed`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 A challenge filed during `WithdrawPending` re-enters the dispute path
 (`challenge_item` → `settle_item`); see state machine.
@@ -66,12 +66,12 @@ LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdra
 - **Permanent deposit.** `submit_item` locks `submit_deposit`; not refundable
   except via the withdrawal path. Skin-in-the-game cannot be yanked to escape a
   live challenge.
-- **Progressive protection.** Each *failed* challenge (ruling `keep`) adds the
+- **Progressive protection.** Each _failed_ challenge (ruling `keep`) adds the
   challenger's forfeited `challenge_stake` to `item.accumulated_stake`.
   Dislodging a long-standing, many-times-defended item costs proportionally
   more — vetting effort concentrates on new items (where fraud lives).
 - **Challenger accountability.** `challenge_stake = challenge_pct ×
-  item.accumulated_stake` (forfeited on a failed challenge).
+item.accumulated_stake` (forfeited on a failed challenge).
 - **Bounty = full accumulated.** On `remove`, the challenger receives the item's
   full `accumulated_stake` (original deposit + all prior forfeited challenge
   stakes). The reward scales with how established the item was — the harder it
@@ -92,20 +92,20 @@ retuning instruction (not yet implemented) that CPIs
 `propose/execute_subaccord_update` with the list PDA as `invoke_signed`
 signer.
 
-| param | v1 value | notes |
-| --- | --- | --- |
-| `initial_num_jurors` | 3 | ADR-0019 default; round-1 panel |
-| `aggregation` | `Plurality` | Canon files 2-option `[keep, remove]` disputes only (ADR-0019/0025) |
-| `coherence_tol_bps` | 0 | Inert on a `Plurality` pool — zero keeps coherence exact (ADR-0025) |
-| `max_appeals` | 3 | 3 → 7 → 15 → 31 ladder |
-| `alpha_bps` | 1000 (10%) | Accord v1 slash default |
-| review / commit / reveal | 7d / 2d / 2d | Accord v1 defaults |
-| `evidence_operator` | creator-supplied (deployment-configured; dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`) | must be a real key held by the daemon's keyring (ADR-0006/0011) — a zero key can never be an ECIES target |
-| `fee_per_juror` | 10 | in `fee_mint`; round-1 ≈ 30 |
-| `submit_deposit` | 500 | in `fee_mint`; base skin (recoverable via withdrawal) |
-| `challenge_pct` | 50% (5000 bps) | challenger stakes half the accumulated stake |
-| `listing_window` | 5 days | watcher time to catch a scam before auto-list |
-| `withdrawal_timelock` | 5 days | final fraud-challenge window (matches listing_window) |
+| param                    | v1 value                                                                         | notes                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `initial_num_jurors`     | 3                                                                                | ADR-0019 default; round-1 panel                                                                           |
+| `aggregation`            | `Plurality`                                                                      | Canon files 2-option `[keep, remove]` disputes only (ADR-0019/0025)                                       |
+| `coherence_tol_bps`      | 0                                                                                | Inert on a `Plurality` pool — zero keeps coherence exact (ADR-0025)                                       |
+| `max_appeals`            | 3                                                                                | 3 → 7 → 15 → 31 ladder                                                                                    |
+| `alpha_bps`              | 1000 (10%)                                                                       | Accord v1 slash default                                                                                   |
+| review / commit / reveal | 7d / 2d / 2d                                                                     | Accord v1 defaults                                                                                        |
+| `evidence_operator`      | creator-supplied (deployment-configured; dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`) | must be a real key held by the daemon's keyring (ADR-0006/0011) — a zero key can never be an ECIES target |
+| `fee_per_juror`          | 10                                                                               | in `fee_mint`; round-1 ≈ 30                                                                               |
+| `submit_deposit`         | 500                                                                              | in `fee_mint`; base skin (recoverable via withdrawal)                                                     |
+| `challenge_pct`          | 50% (5000 bps)                                                                   | challenger stakes half the accumulated stake                                                              |
+| `listing_window`         | 5 days                                                                           | watcher time to catch a scam before auto-list                                                             |
+| `withdrawal_timelock`    | 5 days                                                                           | final fraud-challenge window (matches listing_window)                                                     |
 
 ## Token model
 
@@ -122,10 +122,18 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
 
 - **Rules (public, list-level, stable).** `CanonList.rules_hash` anchors an
   off-chain rules doc — the listing criteria (e.g. "canonical mint verified by
-  the project's official account + deployer signature"). Public by nature
-  (transparent criteria ⇒ consistent, auditable rulings); anyone reads and
-  verifies it against the on-chain hash. Passed to Accord as the Subaccord
-  `domain_ref`.
+  the project's official account + deployer signature"). Canon defines the
+  hash's bytes as `sha256(rules_doc)` over the **raw file bytes** and hosts the
+  preimage on the evidence daemon's public content-addressed CAS
+  (`PUT`/`GET /domains/{hash}`, ADR-0027): permissionless PUT (preimage
+  resistance is the auth — upload precedes `create_list`, doc-first), `GET`
+  returns the bytes and the client verifies `sha256(bytes) == rules_hash`.
+  Recommended format: markdown with optional YAML frontmatter (`title`,
+  `description`, `version`); the convention's single home is
+  `packages/sdk/src/domain.ts` (`hashDomainDoc` / `parseDomainDoc` /
+  `verifyDomainDoc` / `fetchDomainDoc`) — no second implementation. Passed to
+  Accord as the Subaccord `domain_ref` (opaque bytes there; the sha256-doc
+  definition is canon's).
 - **Evidence (juror-only, dispute-level, single-party).** The per-dispute
   manifest (`evidence_hash`, `accord-evidence/v1`) carries the `item` reference
   plus the **challenger's** claim and proof — the challenger files via Canon
@@ -134,9 +142,14 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
   wrong `remove` is the permissionless appeal ladder (two-party Accord disputes
   are a future extension, bean `accord-s72c`).
 
-Because Canon is the filer, item → list → `rules_hash` resolution is trivial;
-because the rules are public, the evidence operator needs no extension (it only
-ever re-encrypts the per-dispute evidence). Jurors apply the public rules to the
+Because Canon is the filer, item → list → `rules_hash` resolution is trivial.
+Publishing/reading the doc itself is two explicit CLI commands —
+`useaccord domain:put <file>` (hash locally, PUT, print the hash) and
+`domain:get <hash>` (fetch + re-hash verify) — with `--daemon-url` /
+`ACCORD_DAEMON_URL`; create flows do **not** auto-publish. A future
+`canon:create-list --rules <file>` will hash locally and warn (yellow,
+non-fatal) if `GET /domains/{hash}` 404s — the half-state (list live, doc
+missing) must be loud, not impossible. Jurors apply the public rules to the
 juror-only evidence → `keep` / `remove`.
 
 ## Edge cases & defaults
@@ -165,11 +178,11 @@ juror-only evidence → `keep` / `remove`.
 
 ## Out of scope (v2+)
 
-ATQ "code-as-item" scaling (curate tagging *modules*, not individual items) ·
+ATQ "code-as-item" scaling (curate tagging _modules_, not individual items) ·
 multi-surface distribution (wallet snap / explorer / DEX) · per-list custom
 dispute-param tiers · badges/tiers as separate Canon lists.
 
 ## Authority
 
 `canon-0001` · `CURATED-LIST.md` · `programs/accord/SPEC.md` · Accord ADR-0001 /
-0002 / 0004 / 0019 · `CONTEXT.md` · `BRAND.md`.
+0002 / 0004 / 0019 / 0027 · `CONTEXT.md` · `BRAND.md`.

@@ -15,15 +15,22 @@ for each **drawn** Juror on demand. The Accord program stores only
 ADR-0023, §"Per-round delivery"); the daemon holds the only copy of the
 decryption key and the ciphertext.
 
-The daemon is **evidence-only**. It signs no governance. The Subaccord
+The daemon hosts encrypted evidence **and** the public domain-doc CAS
+(ADR-0027). It signs no governance. The Subaccord
 `authority` is a Squads multisig operated via the Squads UI (ADR-0005/0007/0011).
 
-### Encrypted-at-rest invariant (non-negotiable)
+### Encrypted-at-rest invariant (evidence objects — non-negotiable)
 
-**Plaintext is never persisted.** The only thing ever written to storage is the
-encrypted `EvidenceBundle` (ciphertext). Decrypt → re-encrypt happens
-**in-memory per request** and the plaintext is discarded immediately after.
-Storage (S3/MinIO or local FS) holds ciphertext objects only.
+**Evidence plaintext is never persisted.** The only evidence-derived thing ever
+written to storage is the encrypted `EvidenceBundle` (ciphertext). Decrypt →
+re-encrypt happens **in-memory per request** and the plaintext is discarded
+immediately after. Evidence objects in storage (S3/MinIO or local FS) are
+ciphertext only.
+
+Scope (ADR-0027): this invariant binds _evidence_ objects. The `domains/`
+namespace is **public plaintext by design** — readership is "everyone", so
+encryption there would be posture, not access control; content addressing
+(`sha256(bytes) == key`) is its integrity layer.
 
 ### In scope (v1)
 
@@ -254,7 +261,7 @@ interface DomainStore {
   (a sha256 collision alarm — never overwrite); absent ⇒ write.
 - **Content-type:** stored alongside the bytes and round-trips on both
   backends (S3 native `ContentType`; fs JSON envelope `{v, content_type,
-  bytes}`). The HTTP layer defaults it to `text/markdown`; the store never
+bytes}`). The HTTP layer defaults it to `text/markdown`; the store never
   sniffs it.
 - **Format-blind:** bytes in, bytes out — arbitrary binary round-trips
   byte-exact.
@@ -336,17 +343,17 @@ All routes TLS-only. Rate-limited per peer IP. An optional `X-Account-Key`
 header is accepted for **accounting only** — it never grants or denies access
 (security rests on the Juror-bound re-encryption, not on auth).
 
-| Method | Path                                        | Body / Result                                                                                                                                                                                                                                                                                                |
-| ------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/evidence/{subaccord}/{dispute}[/{round}]` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists for that `(dispute, round)`. `round` defaults to `0` (filer); appeal rounds `1..MAX_APPEALS` post under ADR-0023.                                                                                                        |
-| POST   | `/evidence/synod/{case}/{party}`            | Synod pre-dispute grouping (accord-daq8): party `0..6` pushes an `EvidenceBundle` for a SynodCase **before** a dispute exists; stored grouped by case PDA + slot (key `{subaccord}/{case}/{slot}`). Unauthenticated by design — the join-committed per-party hash is the commit; junk fails post-file root verification. `404` case absent; `400` slot ≥ `party_count`; `409` once `SynodCase.dispute` is bound or a different hash fills the slot.                |
-| GET    | `/evidence/{dispute}/for/{juror}`           | → `200` `{ rounds: [{ round, out, operator_ephem_pub }] }` — every non-zero `evidence_hashes[0..=N]` package for the juror's round `N` (ADR-0023). `404` if juror not drawn / not deliverable. `409` if any round's integrity gate fails (alerts). **Synod bridge (accord-g1dy):** when `Dispute.filer` is a SynodCase bound to the dispute, serves the assembled group — one package per party slot (`round` = slot), gated by the recomputed file-time root `H(case ‖ h_0…h_{N-1}) == evidence_hashes[0]`; mismatch ⇒ `409` assembly refused. |
-| GET    | `/evidence/synod/{case}`                    | Assembled multi-bundle manifest (accord-lry5): per-slot entries with the ADR-0017 payload + `party` field, absent slots marked (partial pre-file view), daemon-decrypted in memory. Post-file `verified` = recomputed `H(case ‖ h_0…h_{N-1})` vs `evidence_hashes[0]`; mismatch/missing slot ⇒ `verified: false` (deliver bridge refuses assembly on the same input). `404` case/bound-dispute absent.            |
-| GET    | `/evidence/{subaccord}/{dispute}[/{round}]` | → `200` decrypted manifest (plaintext). Daemon decrypts in memory using the operator key; no auth. `404` if no bundle / subaccord / unknown operator. `409` if undecryptable. `round` defaults to `0`. **MVP:** returns the full plaintext; will publish only public parts once the manifest schema is defined. |
-| PUT    | `/domains/{hash}`                          | Public document CAS (ADR-0027). Body = arbitrary bytes ≤ `EVIDENCE_MAX_DOMAIN_BYTES` (default 1 MiB; over-cap ⇒ `413` before any store write). `sha256(body)` must equal the 64-lowercase-hex route hash, else `400`. `201` + `Location` on create; `200` no-op on byte-identical re-PUT (first Content-Type wins); `409` if different bytes exist at the hash (collision alarm — never overwrite). Content-Type stored verbatim, defaults `text/markdown`. No auth, no chain gate — upload legally precedes `create_list`. Malformed hash ⇒ `400`. |
-| GET    | `/domains/{hash}`                          | → `200` the stored bytes + stored Content-Type; `ETag: {hash}`, `Cache-Control: immutable` (retention is forever — no DELETE route, sweeps never touch `domains/`). `404` unknown hash; `400` malformed hash. No auth. |
-| GET    | `/healthz`                                  | `200` if Storage + RPC reachable, else `503`.                                                                                                                                                                                                                                                                |
-| GET    | `/config`                                   | → `200` `{ operators: [{ base58, hex }] }` — the operator Ed25519 **public** keys loaded into the keyring (== on-chain `evidence_operator` set). Discloses nothing else: no seeds, no RPC/storage/server config. Pubkeys are public by construction. |
+| Method | Path                                        | Body / Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/evidence/{subaccord}/{dispute}[/{round}]` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists for that `(dispute, round)`. `round` defaults to `0` (filer); appeal rounds `1..MAX_APPEALS` post under ADR-0023.                                                                                                                                                                                                                                                                                                                                               |
+| POST   | `/evidence/synod/{case}/{party}`            | Synod pre-dispute grouping (accord-daq8): party `0..6` pushes an `EvidenceBundle` for a SynodCase **before** a dispute exists; stored grouped by case PDA + slot (key `{subaccord}/{case}/{slot}`). Unauthenticated by design — the join-committed per-party hash is the commit; junk fails post-file root verification. `404` case absent; `400` slot ≥ `party_count`; `409` once `SynodCase.dispute` is bound or a different hash fills the slot.                                                                                                 |
+| GET    | `/evidence/{dispute}/for/{juror}`           | → `200` `{ rounds: [{ round, out, operator_ephem_pub }] }` — every non-zero `evidence_hashes[0..=N]` package for the juror's round `N` (ADR-0023). `404` if juror not drawn / not deliverable. `409` if any round's integrity gate fails (alerts). **Synod bridge (accord-g1dy):** when `Dispute.filer` is a SynodCase bound to the dispute, serves the assembled group — one package per party slot (`round` = slot), gated by the recomputed file-time root `H(case ‖ h_0…h_{N-1}) == evidence_hashes[0]`; mismatch ⇒ `409` assembly refused.     |
+| GET    | `/evidence/synod/{case}`                    | Assembled multi-bundle manifest (accord-lry5): per-slot entries with the ADR-0017 payload + `party` field, absent slots marked (partial pre-file view), daemon-decrypted in memory. Post-file `verified` = recomputed `H(case ‖ h_0…h_{N-1})` vs `evidence_hashes[0]`; mismatch/missing slot ⇒ `verified: false` (deliver bridge refuses assembly on the same input). `404` case/bound-dispute absent.                                                                                                                                              |
+| GET    | `/evidence/{subaccord}/{dispute}[/{round}]` | → `200` decrypted manifest (plaintext). Daemon decrypts in memory using the operator key; no auth. `404` if no bundle / subaccord / unknown operator. `409` if undecryptable. `round` defaults to `0`. **MVP:** returns the full plaintext; will publish only public parts once the manifest schema is defined.                                                                                                                                                                                                                                     |
+| PUT    | `/domains/{hash}`                           | Public document CAS (ADR-0027). Body = arbitrary bytes ≤ `EVIDENCE_MAX_DOMAIN_BYTES` (default 1 MiB; over-cap ⇒ `413` before any store write). `sha256(body)` must equal the 64-lowercase-hex route hash, else `400`. `201` + `Location` on create; `200` no-op on byte-identical re-PUT (first Content-Type wins); `409` if different bytes exist at the hash (collision alarm — never overwrite). Content-Type stored verbatim, defaults `text/markdown`. No auth, no chain gate — upload legally precedes `create_list`. Malformed hash ⇒ `400`. |
+| GET    | `/domains/{hash}`                           | → `200` the stored bytes + stored Content-Type; `ETag: {hash}`, `Cache-Control: immutable` (retention is forever — no DELETE route, sweeps never touch `domains/`). `404` unknown hash; `400` malformed hash. No auth.                                                                                                                                                                                                                                                                                                                              |
+| GET    | `/healthz`                                  | `200` if Storage + RPC reachable, else `503`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| GET    | `/config`                                   | → `200` `{ operators: [{ base58, hex }] }` — the operator Ed25519 **public** keys loaded into the keyring (== on-chain `evidence_operator` set). Discloses nothing else: no seeds, no RPC/storage/server config. Pubkeys are public by construction.                                                                                                                                                                                                                                                                                                |
 
 Delivery preconditions (enforced via live account reads): `Dispute.state` is at
 or past Drawn for the current round; `{juror}` ∈ `Round.jurors[]` for that
@@ -425,10 +432,12 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   sourced from env** (ADR-0011). Hardening: minimal process privileges, dedicated
   service user, no secret/plaintext logging, no core dumps, env injected by the
   orchestrator (never committed). `Keyring` trait enables a file/KMS migration.
-- **Encrypted-at-rest:** the storage backend (S3/MinIO or local FS) holds
-  application-level ciphertext; plaintext exists only ephemerally in memory
-  during delivery. SSE-S3/SSE-KMS is additional defense-in-depth (S3 backend
-  only); for the FS backend, rely on OS-level disk encryption (LUKS).
+- **Encrypted-at-rest (evidence objects):** the storage backend (S3/MinIO or
+  local FS) holds application-level ciphertext for evidence objects; plaintext
+  exists only ephemerally in memory during delivery. The public `domains/`
+  namespace is plaintext by design (ADR-0027). SSE-S3/SSE-KMS is additional
+  defense-in-depth (S3 backend only); for the FS backend, rely on OS-level
+  disk encryption (LUKS).
 - The daemon is **trusted** (sees plaintext in memory) per ADR-0006. Mitigations:
   open-source, attributability, per-Juror watermarking in v1.1.
 - **DoS:** public read endpoint. Per-IP rate limit; response-size cap; optional
@@ -455,7 +464,8 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
 ## References
 
 - ADR-0011 (this daemon's decision), ADR-0006 (evidence), ADR-0005 (authority),
-  ADR-0007 (upgrade/multisig), ADR-0023 (per-round evidence hashes)
+  ADR-0007 (upgrade/multisig), ADR-0023 (per-round evidence hashes),
+  ADR-0027 (domain document registry — public CAS on this daemon)
 - `apps/evidence-daemon/EVIDENCE-FORMAT.md` §9 (per-round data format)
 - `programs/accord/SPEC.md` (Evidence flow), `programs/accord/src/state.rs:33,265`
 - `CONTEXT.md` — Evidence Operator
