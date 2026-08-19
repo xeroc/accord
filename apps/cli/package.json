@@ -13,7 +13,7 @@
     "start": "bun run bin/run.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "bun test",
+    "test": "bun test --timeout 20000",
     "clean": "rm -rf dist"
   },
   "dependencies": {

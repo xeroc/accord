@@ -34,17 +34,38 @@ async function help(topic: string): Promise<{ stdout: string; exitCode: number }
 const DOC =
   "---\ntitle: Test Rules\ndescription: fixture doc\nversion: 2\n---\n\n# Rules\n\nBe honest.\n";
 
-// Minimal CAS mirroring the daemon's domain contract (ADR-0027): PUT 201/200/
-// 400/409, GET 404/200 + stored Content-Type.
+// Anchor fixture (ADR-0027 amendment): subaccord → domain_ref. The stub
+// daemon enforces the chain gate — ?subaccord required, domain_ref == hash.
+const SUB = "SubACC0rd1111111111111111111111111111111111";
+const anchors = new Map<string, string>([[SUB, ""]]); // hash filled below
+
+// Minimal CAS mirroring the daemon's domain contract (ADR-0027 as amended):
+// PUT requires ?subaccord=<addr> whose anchored domain_ref == route hash;
+// 201/200/400/409/404, GET 404/200 + stored Content-Type (GET ungated).
 const store = new Map<string, { bytes: Uint8Array; contentType: string }>();
 const server = Bun.serve({
   port: 0,
   fetch: async (req) => {
-    const hash = new URL(req.url).pathname.match(/^\/domains\/([0-9a-f]{64})$/)?.[1];
+    const url = new URL(req.url);
+    const hash = url.pathname.match(/^\/domains\/([0-9a-f]{64})$/)?.[1];
     if (!hash) {
       return Response.json({ error: "hash must be 64-char lowercase hex" }, { status: 400 });
     }
     if (req.method === "PUT") {
+      const sub = url.searchParams.get("subaccord");
+      if (!sub) {
+        return Response.json({ error: "subaccord query parameter required" }, { status: 400 });
+      }
+      const anchorRef = anchors.get(sub);
+      if (anchorRef === undefined) {
+        return Response.json({ error: "anchor subaccord not found" }, { status: 404 });
+      }
+      if (anchorRef !== hash) {
+        return Response.json(
+          { error: "anchor subaccord domain_ref does not match route hash" },
+          { status: 400 },
+        );
+      }
       const bytes = new Uint8Array(await req.arrayBuffer());
       const existing = store.get(hash);
       if (existing) {
@@ -72,6 +93,7 @@ const tmpDir = mkdtempSync(join(tmpdir(), "accord-domain-"));
 const docFile = join(tmpDir, "rules.md");
 writeFileSync(docFile, DOC);
 const docHash = hashDomainDoc(new TextEncoder().encode(DOC));
+anchors.set(SUB, docHash);
 
 afterAll(() => {
   server.stop(true);
@@ -83,6 +105,7 @@ describe("useaccord domain:* — help smoke", () => {
     const { stdout, exitCode } = await help("domain:put");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("--daemon-url");
+    expect(stdout).toContain("--subaccord");
     expect(stdout).toContain("ACCORD_DAEMON_URL");
   });
 
@@ -99,6 +122,8 @@ describe("useaccord domain:put", () => {
     const out = await runJson<{ hash: string; status: string }>([
       "domain:put",
       docFile,
+      "--subaccord",
+      SUB,
       "--daemon-url",
       daemonUrl,
       "--json",
@@ -108,7 +133,14 @@ describe("useaccord domain:put", () => {
   });
 
   it("human mode reports the 200 no-op on identical bytes", async () => {
-    const { stdout, exitCode } = await run(["domain:put", docFile, "--daemon-url", daemonUrl]);
+    const { stdout, exitCode } = await run([
+      "domain:put",
+      docFile,
+      "--subaccord",
+      SUB,
+      "--daemon-url",
+      daemonUrl,
+    ]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain(`hash   : ${docHash}`);
     expect(stdout).toContain("already published");
@@ -118,6 +150,8 @@ describe("useaccord domain:put", () => {
     const { stdout, exitCode } = await run([
       "domain:put",
       docFile,
+      "--subaccord",
+      SUB,
       "--daemon-url",
       daemonUrl,
       "--quiet",
@@ -127,11 +161,45 @@ describe("useaccord domain:put", () => {
   });
 
   it("honors ACCORD_DAEMON_URL env fallback", async () => {
-    const { stdout, exitCode } = await run(["domain:put", docFile, "--json"], {
+    const { stdout, exitCode } = await run(["domain:put", docFile, "--subaccord", SUB, "--json"], {
       ACCORD_DAEMON_URL: daemonUrl,
     });
     expect(exitCode, stdout).toBe(0);
     expect(JSON.parse(stdout).hash).toBe(docHash);
+  });
+
+  it("requires --subaccord (missing flag is a usage error)", async () => {
+    const { exitCode, stderr } = await run(["domain:put", docFile, "--daemon-url", daemonUrl]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/subaccord/i);
+  });
+
+  it("errors on 404 (anchor Subaccord not on chain)", async () => {
+    const { exitCode, stderr } = await run([
+      "domain:put",
+      docFile,
+      "--subaccord",
+      "Unkn0wnAddr111111111111111111111111111111111",
+      "--daemon-url",
+      daemonUrl,
+    ]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/404|anchor/i);
+  });
+
+  it("errors on 400 (anchor domain_ref mismatch)", async () => {
+    anchors.set(SUB, "ab".repeat(32)); // anchor points at a different doc
+    const { exitCode, stderr } = await run([
+      "domain:put",
+      docFile,
+      "--subaccord",
+      SUB,
+      "--daemon-url",
+      daemonUrl,
+    ]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/400|domain_ref/i);
+    anchors.set(SUB, docHash);
   });
 
   it("errors on 409 (different bytes at the same hash)", async () => {
@@ -139,7 +207,14 @@ describe("useaccord domain:put", () => {
       bytes: new TextEncoder().encode("imposter"),
       contentType: "text/markdown",
     });
-    const { exitCode, stderr } = await run(["domain:put", docFile, "--daemon-url", daemonUrl]);
+    const { exitCode, stderr } = await run([
+      "domain:put",
+      docFile,
+      "--subaccord",
+      SUB,
+      "--daemon-url",
+      daemonUrl,
+    ]);
     expect(exitCode).not.toBe(0);
     expect(stderr).toMatch(/409|collision/i);
   });
@@ -152,14 +227,15 @@ describe("useaccord domain:get", () => {
       hash: string;
       contentType: string;
       title?: string;
-      version?: number;
       body: string;
     }>(["domain:get", docHash, "--daemon-url", daemonUrl, "--json"]);
     expect(out.hash).toBe(docHash);
     expect(out.contentType).toBe("text/markdown");
     expect(out.title).toBe("Test Rules");
-    expect(out.version).toBe(2);
     expect(out.body).toContain("Be honest.");
+    // version was dropped from the convention (ADR-0027 amendment) — the
+    // legacy frontmatter key must not surface in the output.
+    expect("version" in out && out.version !== undefined).toBe(false);
   });
 
   it("human mode prints title line and the body", async () => {

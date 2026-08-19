@@ -48,8 +48,8 @@ read-only.
 
 ## Semantics
 
-- `put` hashes locally (SDK `hashDomainDoc`), verifies the bytes against the
-  anchor's on-chain `domain_ref`, and PUTs via SDK `putDomainDoc`:
+- `put` hashes locally (SDK `hashDomainDoc`) and PUTs via SDK
+  `putDomainDoc`; the daemon anchor-verifies `domain_ref == hash` server-side:
   `201` published · `200` identical bytes already stored (no-op) · `404`
   anchor Subaccord not found (create-tx unconfirmed or wrong address) · `400`
   anchor `domain_ref ≠` doc hash / body sha mismatch / missing `--subaccord` ·
