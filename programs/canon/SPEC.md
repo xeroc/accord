@@ -39,7 +39,7 @@ staking.
 | 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
 | 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
 | 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
-| 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling: u64` via `Dispute::ruling()` (`Option<u64>`; Canon files Plurality disputes only, so the ruling is an option index — gate `ruling < 2`, u64 since ADR-0025). `keep` (0) → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` (1) → `item.accumulated_stake` → challenger (bounty), item → `Removed`. Emits `ItemSettled{ruling: u64}`. |
+| 5 | `settle_item(item)` | permissionless crank after the Accord dispute finalizes; reads Accord's `final_ruling: u64` via `Dispute::ruling()` (`Option<u64>`; Canon files Plurality disputes only, so the ruling is an option index — gate `ruling < 2`, u64 since ADR-0025). `keep` (0) → `challenge_stake` → `item.accumulated_stake` (progressive protection), fee consumed by jurors, item → `Listed`. `remove` (1) → `accumulated_stake + challenge_stake` (bounty + the challenger's own stake back) → challenger, item → `Removed`. Terminal `Failed` (cancel / redraw exhaustion) → no ruling: `accumulated_stake` → submitter, `challenge_stake` → challenger (no bounty, no forfeit), item → `Removed`. Emits `ItemSettled{ruling: u64}` / `ItemSettlementVoided`. Payout destinations are constrained on-chain to the payee recorded on the item (`token::mint = fee_mint`, `token::authority = item.challenger\|item.submitter`). |
 | 6 | `request_withdrawal(item)` | submitter-only; item → `WithdrawPending`; opens the `withdrawal_timelock` challenge window. |
 | 7 | `advance_withdrawal(item)` | permissionless crank; after the timelock, if unchallenged → return `accumulated_stake` to submitter, item → `Removed`. |
 
@@ -52,7 +52,8 @@ A challenge filed during `WithdrawPending` re-enters the dispute path
 submit + permanent deposit ──► PENDING ──(listing_window)──┬── unchallenged ──► LISTED
                                                            └── challenged ───► ACCORD DISPUTE [keep | remove]
                                                                   ├─ keep   ► LISTED  (challenge_stake → accumulated_stake; fee → jurors)
-                                                                  └─ remove ► REMOVED (accumulated_stake → challenger; fee → jurors)
+                                                                  ├─ remove ► REMOVED (accumulated_stake + challenge_stake → challenger; fee → jurors)
+                                                                  └─ failed ► REMOVED (no ruling; accumulated_stake → submitter, challenge_stake → challenger)
 LISTED ──(challenge_item, anytime)──► ACCORD DISPUTE ──► LISTED (+protection) | REMOVED
 LISTED ──(request_withdrawal)──────► WITHDRAW-PENDING (withdrawal_timelock + challengeable)
                                         ├── unchallenged ► WITHDRAWN (deposit → submitter; item Removed)
@@ -145,9 +146,11 @@ juror-only evidence → `keep` / `remove`.
   deposit (item was legit) or **forfeits** it to the challenger (item was a
   scam). On a failed withdrawal-block (`keep`), the challenger's stake goes to
   the submitter (frivolous-block penalty).
-- **Accord dispute `Failed` (escape hatch):** Canon treats a failed/cancelled
-  Accord dispute as `remove`-with-no-bounty (refund submitter, no challenger
-  payout) — *flag for revisit.*
+- **Accord dispute `Failed` (escape hatch):** a failed/cancelled Accord dispute
+  carries no ruling, so nobody won or lost — `settle_item` refunds the
+  submitter's `accumulated_stake`, returns the challenger's `challenge_stake`
+  (no bounty, no forfeit), and `Removed`s the item. The Accord filer fee is
+  already refunded to the vault by `cancel_dispute` / redraw exhaustion.
 - **Re-challenge while `Listed`:** re-uses `challenge_item`; progressive
   protection continues to accumulate.
 - **No cancel during `Pending` (v1):** a submitted item is committed through the

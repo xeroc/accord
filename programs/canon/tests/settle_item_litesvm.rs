@@ -8,8 +8,12 @@
 //!   - regular keep: challenge_stake → accumulated_stake, item → Listed
 //!   - regular remove: accumulated_stake + challenge_stake → challenger, Removed
 //!   - withdrawal-keep: stake → submitter (frivolous-block penalty), Removed
+//!   - Failed dispute: submitter refunded, challenger stake returned, Removed
 //!   - revert: dispute not Final
 //!   - revert: item not Disputed
+//!   - revert: remove bounty to a non-challenger destination (C-1)
+//!   - revert: withdrawal-keep payout to a non-submitter destination (C-1)
+//!   - revert: vault passed as payout destination (C-1 duplicate-account)
 
 use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::AnchorLiteSVM;
@@ -306,7 +310,12 @@ fn set_disputed(
 /// `accord::state::Dispute` (correct discriminator + layout), so `settle_item`'s
 /// `Dispute::try_deserialize` succeeds. `state`/`final_ruling` are the only
 /// fields `settle_item` reads; the rest are plausible defaults.
-fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling: u64) {
+fn fabricate_dispute(
+    env: &mut TestEnv,
+    dispute: &Pubkey,
+    state: accord::state::DisputeState,
+    ruling: u64,
+) {
     let mut options = [[0u8; 32]; accord::constants::MAX_OPTIONS];
     options[0][0] = b'k';
     options[1][0] = b'r';
@@ -317,11 +326,7 @@ fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling
         num_options: 2,
         options,
         evidence_hashes: [[0u8; 32]; accord::constants::MAX_APPEALS as usize + 1],
-        state: if is_final {
-            accord::state::DisputeState::Final
-        } else {
-            accord::state::DisputeState::Created
-        },
+        state,
         current_round: 0,
         terms: accord::state::CaseTerms {
             alpha_bps: 1000,
@@ -340,7 +345,11 @@ fn fabricate_dispute(env: &mut TestEnv, dispute: &Pubkey, is_final: bool, ruling
             coherence_tol_bps: 0,
         },
         final_ruling: ruling,
-        finalized_at: if is_final { 99 } else { 0 },
+        finalized_at: if state == accord::state::DisputeState::Final {
+            99
+        } else {
+            0
+        },
         fee_paid: 30,
         committed_vrf: None,
         frozen_root: [0u8; 32],
@@ -397,11 +406,23 @@ fn do_settle(
     challenger: &Keypair,
     submitter: &Keypair,
 ) -> anchor_litesvm::TransactionResult {
+    let cata = user_ata(&challenger.pubkey(), &env.mint);
+    let sata = user_ata(&submitter.pubkey(), &env.mint);
+    do_settle_with_dests(env, caller, curated, &cata, &sata)
+}
+
+/// `settle_item` with explicit payout destinations — the C-1 auth tests pass
+/// attacker-controlled / vault addresses through here.
+fn do_settle_with_dests(
+    env: &mut TestEnv,
+    caller: &Keypair,
+    curated: &Pubkey,
+    challenger_ta: &Pubkey,
+    submitter_ta: &Pubkey,
+) -> anchor_litesvm::TransactionResult {
     let item = item_pda(&env.list, curated);
     let dispute = dispute_pda(&env.list, 0);
     let vata = vault_ata(&env.list, &env.mint);
-    let cata = user_ata(&challenger.pubkey(), &env.mint);
-    let sata = user_ata(&submitter.pubkey(), &env.mint);
     let ix = env
         .ctx
         .program()
@@ -412,8 +433,8 @@ fn do_settle(
             dispute,
             fee_mint: env.mint,
             vault: vata,
-            challenger_token_account: cata,
-            submitter_token_account: sata,
+            challenger_token_account: *challenger_ta,
+            submitter_token_account: *submitter_ta,
             token_program: TOKEN_PROGRAM_ID,
         })
         .args(instruction::SettleItem {})
@@ -442,7 +463,7 @@ fn settle_keep_progressive_protection() {
         &dispute,
         false,
     );
-    fabricate_dispute(&mut env, &dispute, true, 0); // keep
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 0); // keep
 
     let caller = Keypair::new();
     env.ctx
@@ -480,7 +501,7 @@ fn settle_remove_bounty_to_challenger() {
         &dispute,
         false,
     );
-    fabricate_dispute(&mut env, &dispute, true, 1); // remove
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 1); // remove
 
     let caller = Keypair::new();
     env.ctx
@@ -519,7 +540,7 @@ fn settle_withdrawal_keep_submitter_gets_stake() {
         &dispute,
         true,
     ); // withdrawal
-    fabricate_dispute(&mut env, &dispute, true, 0); // keep
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 0); // keep
 
     let caller = Keypair::new();
     env.ctx
@@ -557,7 +578,7 @@ fn settle_reverts_if_dispute_not_final() {
         &dispute,
         false,
     );
-    fabricate_dispute(&mut env, &dispute, false, 0); // NOT final
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Created, 0); // NOT final
 
     let caller = Keypair::new();
     env.ctx
@@ -579,7 +600,7 @@ fn settle_reverts_if_not_disputed() {
     arm_user(&mut env, &submitter, 10_000);
     let curated = make_listed(&mut env, &submitter); // Listed, not Disputed
     let dispute = dispute_pda(&env.list, 0);
-    fabricate_dispute(&mut env, &dispute, true, 0);
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 0);
 
     let caller = Keypair::new();
     env.ctx
@@ -594,4 +615,185 @@ fn settle_reverts_if_not_disputed() {
         "settle on non-Disputed must revert; logs={:?}",
         r.logs()
     );
+}
+
+// ─── C-1: payout destinations are constrained (no redirect) ─────────────────
+
+/// The crank caller passes their own ATA as the remove-bounty destination.
+#[test]
+fn settle_remove_reverts_on_wrong_challenger_destination() {
+    let mut env = setup();
+    let submitter = Keypair::new();
+    arm_user(&mut env, &submitter, 10_000);
+    let curated = make_listed(&mut env, &submitter);
+    let challenger = Keypair::new();
+    arm_user(&mut env, &challenger, 10_000);
+    let dispute = dispute_pda(&env.list, 0);
+    let challenge_stake = (DEFAULT_CHALLENGE_PCT_BPS as u64) * env.deposit / 10_000;
+    set_disputed(
+        &mut env,
+        &curated,
+        &challenger.pubkey(),
+        challenge_stake,
+        &dispute,
+        false,
+    );
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 1); // remove
+
+    let caller = Keypair::new();
+    arm_user(&mut env, &caller, 0); // attacker's own fee-mint ATA
+    let attacker_ta = user_ata(&caller.pubkey(), &env.mint);
+    let submitter_ta = user_ata(&submitter.pubkey(), &env.mint);
+    let r = do_settle_with_dests(
+        &mut env,
+        &caller,
+        &curated,
+        &attacker_ta, // ← attacker destination
+        &submitter_ta,
+    );
+    assert!(
+        !r.is_success(),
+        "bounty must only reach item.challenger's account; logs={:?}",
+        r.logs()
+    );
+}
+
+/// The crank caller passes their own ATA as the withdrawal-keep destination.
+#[test]
+fn settle_withdrawal_keep_reverts_on_wrong_submitter_destination() {
+    let mut env = setup();
+    let submitter = Keypair::new();
+    arm_user(&mut env, &submitter, 10_000);
+    let curated = make_listed(&mut env, &submitter);
+    let challenger = Keypair::new();
+    arm_user(&mut env, &challenger, 10_000);
+    let dispute = dispute_pda(&env.list, 0);
+    let challenge_stake = (DEFAULT_CHALLENGE_PCT_BPS as u64) * env.deposit / 10_000;
+    set_disputed(
+        &mut env,
+        &curated,
+        &challenger.pubkey(),
+        challenge_stake,
+        &dispute,
+        true,
+    ); // withdrawal
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 0); // keep
+
+    let caller = Keypair::new();
+    arm_user(&mut env, &caller, 0);
+    let challenger_ta = user_ata(&challenger.pubkey(), &env.mint);
+    let attacker_ta = user_ata(&caller.pubkey(), &env.mint);
+    let r = do_settle_with_dests(
+        &mut env,
+        &caller,
+        &curated,
+        &challenger_ta,
+        &attacker_ta, // ← attacker destination
+    );
+    assert!(
+        !r.is_success(),
+        "withdrawal-keep payout must only reach item.submitter's account; logs={:?}",
+        r.logs()
+    );
+}
+
+/// The vault itself as the bounty destination — self-transfer would desync
+/// accounting (Removed + accumulated_stake=0 while funds stay in the vault).
+#[test]
+fn settle_remove_reverts_on_vault_as_destination() {
+    let mut env = setup();
+    let submitter = Keypair::new();
+    arm_user(&mut env, &submitter, 10_000);
+    let curated = make_listed(&mut env, &submitter);
+    let challenger = Keypair::new();
+    arm_user(&mut env, &challenger, 10_000);
+    let dispute = dispute_pda(&env.list, 0);
+    let challenge_stake = (DEFAULT_CHALLENGE_PCT_BPS as u64) * env.deposit / 10_000;
+    set_disputed(
+        &mut env,
+        &curated,
+        &challenger.pubkey(),
+        challenge_stake,
+        &dispute,
+        false,
+    );
+    fabricate_dispute(&mut env, &dispute, accord::state::DisputeState::Final, 1); // remove
+
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let vault_ta = vault_ata(&env.list, &env.mint);
+    let submitter_ta = user_ata(&submitter.pubkey(), &env.mint);
+    let r = do_settle_with_dests(
+        &mut env,
+        &caller,
+        &curated,
+        &vault_ta, // ← vault as destination
+        &submitter_ta,
+    );
+    assert!(
+        !r.is_success(),
+        "vault (authority = list PDA) must not be a payout destination; logs={:?}",
+        r.logs()
+    );
+}
+
+// ─── H-1: Failed dispute settlement ──────────────────────────────────────────
+
+/// Terminal `Failed` (cancel / redraw exhaustion): no ruling exists, so both
+/// parties are made whole — accumulated_stake → submitter, challenge_stake →
+/// challenger (no bounty) — and the item lands in `Removed`.
+#[test]
+fn settle_failed_dispute_refunds_both_parties() {
+    let mut env = setup();
+    let submitter = Keypair::new();
+    arm_user(&mut env, &submitter, 10_000);
+    let curated = make_listed(&mut env, &submitter);
+    let challenger = Keypair::new();
+    arm_user(&mut env, &challenger, 10_000);
+    let dispute = dispute_pda(&env.list, 0);
+    let challenge_stake = (DEFAULT_CHALLENGE_PCT_BPS as u64) * env.deposit / 10_000;
+    set_disputed(
+        &mut env,
+        &curated,
+        &challenger.pubkey(),
+        challenge_stake,
+        &dispute,
+        false,
+    );
+    fabricate_dispute(
+        &mut env,
+        &dispute,
+        accord::state::DisputeState::Failed,
+        u64::MAX,
+    );
+
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let sub_before = read_balance(&env, &submitter.pubkey());
+    let chall_before = read_balance(&env, &challenger.pubkey());
+    do_settle(&mut env, &caller, &curated, &challenger, &submitter).assert_success();
+
+    let item = read_item(&env, &curated);
+    assert_eq!(item.state, ItemState::Removed, "failed → Removed");
+    assert_eq!(item.accumulated_stake, 0, "accounting zeroed");
+    assert_eq!(item.active_dispute, Pubkey::default(), "dispute unlinked");
+    assert_eq!(item.challenger, Pubkey::default(), "challenger cleared");
+    assert_eq!(item.challenge_stake, 0, "challenge stake cleared");
+    assert_eq!(
+        read_balance(&env, &submitter.pubkey()),
+        sub_before + env.deposit,
+        "submitter refunded the accumulated stake"
+    );
+    assert_eq!(
+        read_balance(&env, &challenger.pubkey()),
+        chall_before + challenge_stake,
+        "challenger stake returned (no bounty)"
+    );
+    assert_eq!(read_vault(&env), 0, "vault fully drained for this item");
 }

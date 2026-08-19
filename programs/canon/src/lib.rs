@@ -77,6 +77,9 @@ pub mod canon {
     /// (challenge_stake folds into accumulated_stake, → Listed). `remove` →
     /// bounty to challenger (→ Removed). Withdrawal-challenge: item Removed
     /// either way; `keep` → submitter gets stake (frivolous-block penalty).
+    /// A terminal `Failed` dispute (cancel / redraw exhaustion) has no ruling:
+    /// submitter and challenger are each refunded their own stake (no bounty)
+    /// and the item is `Removed`.
     pub fn settle_item(ctx: Context<SettleItem>) -> Result<()> {
         instructions::settle_item::handler(ctx)
     }
