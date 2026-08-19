@@ -10,8 +10,10 @@
  * module does.
  *
  * Recommended format: markdown with optional YAML frontmatter carrying
- * `title` / `description` / `version`; the body is the rules. Any other bytes
- * are valid opaque content — hash-verified, `body`-only.
+ * `title` / `description`; the body is the rules. Any other bytes
+ * are valid opaque content — hash-verified, `body`-only. There is no
+ * `version` key: the doc is content-addressed and immutable, so the hash
+ * IS the version.
  */
 import { sha256 } from "@noble/hashes/sha256";
 import { bytesToHex } from "@noble/hashes/utils";
@@ -20,7 +22,6 @@ import { bytesToHex } from "@noble/hashes/utils";
 export interface ParsedDomainDoc {
   title?: string;
   description?: string;
-  version?: number;
   body: string;
 }
 
@@ -49,7 +50,9 @@ export function verifyDomainDoc(
 ): boolean {
   const digest = sha256(bytes);
   if (typeof domainRef === "string") {
-    return HEX64.test(domainRef) && domainRef.toLowerCase() === bytesToHex(digest);
+    return (
+      HEX64.test(domainRef) && domainRef.toLowerCase() === bytesToHex(digest)
+    );
   }
   if (domainRef.length !== 32) return false;
   return domainRef.every((b, i) => b === digest[i]);
@@ -57,9 +60,10 @@ export function verifyDomainDoc(
 
 /**
  * Parse a domain doc: optional `---`-delimited frontmatter with `title` /
- * `description` / `version` (single-line `key: value`, surrounding quotes
- * stripped), everything after the closing delimiter is `body`. Absent or
- * unterminated frontmatter ⇒ the whole text is `body`.
+ * `description` (single-line `key: value`, surrounding quotes stripped),
+ * everything after the closing delimiter is `body`. Absent or unterminated
+ * frontmatter ⇒ the whole text is `body`. Unknown keys (including any
+ * `version`) are ignored.
  */
 export function parseDomainDoc(bytes: Uint8Array): ParsedDomainDoc {
   const text = new TextDecoder().decode(bytes);
@@ -78,9 +82,7 @@ export async function fetchDomainDoc(
   daemonUrl: string,
   hash: string,
 ): Promise<FetchedDomainDoc> {
-  const res = await fetch(
-    `${daemonUrl.replace(/\/+$/, "")}/domains/${hash}`,
-  );
+  const res = await fetch(`${daemonUrl.replace(/\/+$/, "")}/domains/${hash}`);
   if (!res.ok) {
     throw new Error(`domain daemon returned ${res.status} for ${hash}`);
   }
@@ -118,7 +120,7 @@ function splitFrontmatter(
   return null; // unterminated frontmatter — treat whole text as body
 }
 
-/** Line-based `key: value` scan of the frontmatter block (title/description/version only). */
+/** Line-based `key: value` scan of the frontmatter block (title/description only). */
 function parseFrontmatter(text: string): Partial<ParsedDomainDoc> {
   const out: Partial<ParsedDomainDoc> = {};
   for (const line of text.split("\n")) {
@@ -130,10 +132,6 @@ function parseFrontmatter(text: string): Partial<ParsedDomainDoc> {
     if (!value) continue;
     if (key === "title") out.title = value;
     else if (key === "description") out.description = value;
-    else if (key === "version") {
-      const v = Number(value);
-      if (Number.isFinite(v)) out.version = v;
-    }
   }
   return out;
 }

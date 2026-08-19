@@ -152,13 +152,13 @@ describe("useaccord domain:get", () => {
       hash: string;
       contentType: string;
       title?: string;
-      version?: number;
       body: string;
     }>(["domain:get", docHash, "--daemon-url", daemonUrl, "--json"]);
     expect(out.hash).toBe(docHash);
     expect(out.contentType).toBe("text/markdown");
     expect(out.title).toBe("Test Rules");
-    expect(out.version).toBe(2);
+    // the fixture doc carries `version: 2` frontmatter — ignored (hash is the version)
+    expect((out as Record<string, unknown>).version).toBeUndefined();
     expect(out.body).toContain("Be honest.");
   });
 

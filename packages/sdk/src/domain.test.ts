@@ -3,7 +3,7 @@
 //
 // Proves the public surface of src/domain.ts: sha256 CAS hashing (RFC 6234
 // known-answer), the zero-dep frontmatter parser (present / absent /
-// unterminated / quoted values), verifyDomainDoc against both the string
+// unterminated / quoted values / unknown keys ignored), verifyDomainDoc against both the string
 // (64-hex) and Uint8Array (32-byte) domain_ref shapes, and fetchDomainDoc's
 // fetch → verify → parse pipeline (including tampered-bytes and non-200
 // failures).
@@ -31,25 +31,27 @@ test("hashDomainDoc is deterministic and 64 hex chars", () => {
   assert.equal(a, b);
   assert.match(a, /^[0-9a-f]{64}$/);
   // and equals plain noble sha256 (no exotic framing)
-  assert.equal(
-    a,
-    Buffer.from(nobleSha256(bytes)).toString("hex"),
-  );
+  assert.equal(a, Buffer.from(nobleSha256(bytes)).toString("hex"));
 });
 
 // ---------------------------------------------------------------------------
 // parseDomainDoc
 // ---------------------------------------------------------------------------
 
-test("parseDomainDoc extracts title/description/version; body excludes frontmatter", () => {
+test("parseDomainDoc extracts title/description; body excludes frontmatter", () => {
   const doc = enc.encode(
     "---\ntitle: Curated Rules\ndescription: The rules\nversion: 2\n---\n# Body\n",
   );
   const parsed = parseDomainDoc(doc);
   assert.equal(parsed.title, "Curated Rules");
   assert.equal(parsed.description, "The rules");
-  assert.equal(parsed.version, 2);
   assert.equal(parsed.body, "# Body\n");
+  // `version` is not part of the surface — the hash IS the version
+  assert.deepEqual(Object.keys(parsed).sort(), [
+    "body",
+    "description",
+    "title",
+  ]);
 });
 
 test("parseDomainDoc: absent frontmatter yields only body", () => {
@@ -57,7 +59,6 @@ test("parseDomainDoc: absent frontmatter yields only body", () => {
   assert.equal(parsed.body, "# Just markdown\n");
   assert.equal(parsed.title, undefined);
   assert.equal(parsed.description, undefined);
-  assert.equal(parsed.version, undefined);
 });
 
 test("parseDomainDoc: unterminated frontmatter is treated as body", () => {
@@ -69,17 +70,20 @@ test("parseDomainDoc: unterminated frontmatter is treated as body", () => {
 
 test("parseDomainDoc: quoted values are unquoted", () => {
   const parsed = parseDomainDoc(
-    enc.encode('---\ntitle: "Quoted Title"\ndescription: \'Single\'\n---\nbody'),
+    enc.encode(
+      "---\ntitle: \"Quoted Title\"\ndescription: 'Single'\n---\nbody",
+    ),
   );
   assert.equal(parsed.title, "Quoted Title");
   assert.equal(parsed.description, "Single");
 });
 
-test("parseDomainDoc: non-numeric version is omitted (never NaN)", () => {
+test("parseDomainDoc: unknown keys (incl. version) are ignored", () => {
   const parsed = parseDomainDoc(
-    enc.encode("---\nversion: next\n---\nbody"),
+    enc.encode("---\nversion: next\nauthor: x\n---\nbody"),
   );
-  assert.equal(parsed.version, undefined);
+  assert.equal(parsed.body, "body");
+  assert.deepEqual(Object.keys(parsed), ["body"]);
 });
 
 test("parseDomainDoc: empty frontmatter block yields empty body after it", () => {
@@ -145,13 +149,9 @@ test("fetchDomainDoc fetches, verifies, parses", async () => {
 test("fetchDomainDoc: tampered bytes fail sha256 verification", async () => {
   const hash = hashDomainDoc(enc.encode("real"));
   const orig = globalThis.fetch;
-  stubFetch((async () =>
-    new Response(enc.encode("tampered"))) as typeof fetch);
+  stubFetch((async () => new Response(enc.encode("tampered"))) as typeof fetch);
   try {
-    await assert.rejects(
-      fetchDomainDoc("http://daemon.test", hash),
-      /sha256/i,
-    );
+    await assert.rejects(fetchDomainDoc("http://daemon.test", hash), /sha256/i);
   } finally {
     globalThis.fetch = orig;
   }
@@ -162,10 +162,7 @@ test("fetchDomainDoc: non-200 throws with status", async () => {
   const orig = globalThis.fetch;
   stubFetch((async () => new Response(null, { status: 404 })) as typeof fetch);
   try {
-    await assert.rejects(
-      fetchDomainDoc("http://daemon.test", hash),
-      /404/,
-    );
+    await assert.rejects(fetchDomainDoc("http://daemon.test", hash), /404/);
   } finally {
     globalThis.fetch = orig;
   }

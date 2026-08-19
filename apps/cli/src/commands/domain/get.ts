@@ -16,7 +16,7 @@ export default class DomainGet extends BaseCommand {
   static description =
     "GETs {--daemon-url}/domains/{hash} via SDK fetchDomainDoc, which throws " +
     "unless sha256(bytes) === hash. Prints metadata (hash, content-type, " +
-    "frontmatter title/description/version when present) then the body. " +
+    "frontmatter title/description when present) then the body. " +
     "Unknown hash ⇒ 404 error, exit 1.";
 
   static examples = [
@@ -47,7 +47,6 @@ export default class DomainGet extends BaseCommand {
     const human = [`hash   : ${hash}`, `type   : ${contentType}`];
     if (doc.title) human.push(`title  : ${doc.title}`);
     if (doc.description) human.push(`descr  : ${doc.description}`);
-    if (doc.version !== undefined) human.push(`version: ${doc.version}`);
 
     this.emitRead(
       { hash, contentType, ...doc },

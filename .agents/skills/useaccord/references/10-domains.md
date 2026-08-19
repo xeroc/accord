@@ -45,8 +45,8 @@ takes the 64-hex sha256.
   different bytes at that hash (collision alarm — the CAS never overwrites) ·
   `413` over the daemon's 1 MiB cap.
 - `get` uses SDK `fetchDomainDoc`: fetch, verify `sha256(bytes) === hash`
-  (throws on mismatch), parse optional frontmatter (`title`, `description`,
-  `version`); unknown hash ⇒ 404 error, exit 1.
+  (throws on mismatch), parse optional frontmatter (`title`, `description`);
+  unknown hash ⇒ 404 error, exit 1.
 - Content-Type sent by `put`: `text/markdown` for `.md`/`.markdown`, otherwise
   `application/octet-stream`; the daemon stores it and returns it on GET.
 - On-chain `rules_hash` / `domain_ref` binding: pass the printed hash when
@@ -60,5 +60,6 @@ takes the 64-hex sha256.
 | `domain:get` | `fetchDomainDoc` |
 
 Recommended doc format: markdown with optional YAML frontmatter (`title`,
-`description`, `version`); the body is the rules. The hash covers the raw file
-bytes — frontmatter included.
+`description`); the body is the rules. There is no `version` key — the doc is
+content-addressed and immutable, so the hash IS the version. The hash covers
+the raw file bytes — frontmatter included.
