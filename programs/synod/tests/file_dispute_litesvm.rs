@@ -223,6 +223,7 @@ fn setup_env() -> TestEnv {
         stake_vault_withdrawn: 0,
         free_head: u32::MAX,
         bump: 254,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     sub.try_serialize(&mut buf).unwrap();
@@ -246,6 +247,7 @@ fn setup_env() -> TestEnv {
         paused: false,
         pending_unpause_after: None,
         bump: state_bump,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     st.try_serialize(&mut buf).unwrap();

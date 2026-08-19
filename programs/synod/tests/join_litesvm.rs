@@ -171,6 +171,7 @@ fn fabricate_subaccord(ctx: &mut anchor_litesvm::AnchorContext, addr: &Pubkey, f
         stake_vault_withdrawn: 0,
         free_head: u32::MAX,
         bump: 254,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     sub.try_serialize(&mut buf).unwrap();

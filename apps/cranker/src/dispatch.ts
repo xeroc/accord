@@ -37,6 +37,12 @@ export interface CrankDispatch {
 
 export function createCrankDispatch(): CrankDispatch {
   const handlers = new Map<CrankKind, CrankHandler>();
+  // In-flight dedup: `kind:subject` keys with a handler currently running.
+  // The WS listener (push) and the reconciler poll can resolve the same
+  // action concurrently (bean accord-m5fd); the second execute is absorbed,
+  // not re-sent. Keys are released on completion, so a failed crank retries
+  // on the next trigger.
+  const inFlight = new Set<string>();
   return {
     register(kind, handler) {
       if (handlers.has(kind)) {
@@ -47,7 +53,14 @@ export function createCrankDispatch(): CrankDispatch {
     async execute(ctx, action) {
       const handler = handlers.get(action.kind);
       if (handler === undefined) return false;
-      await handler(ctx, action);
+      const key = `${action.kind}:${subjectOf(action) ?? ""}`;
+      if (inFlight.has(key)) return true;
+      inFlight.add(key);
+      try {
+        await handler(ctx, action);
+      } finally {
+        inFlight.delete(key);
+      }
       return true;
     },
     has(kind) {

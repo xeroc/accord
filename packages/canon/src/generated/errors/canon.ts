@@ -58,6 +58,10 @@ export const CANON_ERROR__INVALID_RULES_HASH = 0x1783; // 6019
 export const CANON_ERROR__CHALLENGE_PCT_TOO_HIGH = 0x1784; // 6020
 /** InvalidEvidenceOperator: evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence. */
 export const CANON_ERROR__INVALID_EVIDENCE_OPERATOR = 0x1785; // 6021
+/** NotRemoved: Item is not in the Removed state. */
+export const CANON_ERROR__NOT_REMOVED = 0x1786; // 6022
+/** StakeOutstanding: Removed item still holds accumulated_stake (invariant breach). */
+export const CANON_ERROR__STAKE_OUTSTANDING = 0x1787; // 6023
 
 export type CanonError =
   | typeof CANON_ERROR__ALREADY_DISPUTED
@@ -76,9 +80,11 @@ export type CanonError =
   | typeof CANON_ERROR__NOT_DISPUTED
   | typeof CANON_ERROR__NOT_LISTED
   | typeof CANON_ERROR__NOT_PENDING
+  | typeof CANON_ERROR__NOT_REMOVED
   | typeof CANON_ERROR__NOT_SUBMITTER
   | typeof CANON_ERROR__NOT_WITHDRAW_PENDING
   | typeof CANON_ERROR__OWNER_MISMATCH
+  | typeof CANON_ERROR__STAKE_OUTSTANDING
   | typeof CANON_ERROR__SUBACCORD_MISMATCH
   | typeof CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN
   | typeof CANON_ERROR__WRONG_ACCORD_PROGRAM;
@@ -102,9 +108,11 @@ if (process.env["NODE_ENV"] !== "production") {
     [CANON_ERROR__NOT_DISPUTED]: `Item is not in the Disputed state.`,
     [CANON_ERROR__NOT_LISTED]: `Item is not in the Listed state.`,
     [CANON_ERROR__NOT_PENDING]: `Item is not in the Pending state.`,
+    [CANON_ERROR__NOT_REMOVED]: `Item is not in the Removed state.`,
     [CANON_ERROR__NOT_SUBMITTER]: `Caller is not the item submitter.`,
     [CANON_ERROR__NOT_WITHDRAW_PENDING]: `Item is not in the WithdrawPending state.`,
     [CANON_ERROR__OWNER_MISMATCH]: `Curated account is not owned by the list's list_program.`,
+    [CANON_ERROR__STAKE_OUTSTANDING]: `Removed item still holds accumulated_stake (invariant breach).`,
     [CANON_ERROR__SUBACCORD_MISMATCH]: `Provided Subaccord does not match the list's backing Subaccord.`,
     [CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN]: `Withdrawal timelock has not elapsed yet.`,
     [CANON_ERROR__WRONG_ACCORD_PROGRAM]: `Wrong Accord program account.`,

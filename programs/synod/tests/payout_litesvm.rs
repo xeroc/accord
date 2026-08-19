@@ -204,6 +204,7 @@ fn setup_env(party_count: usize, join_count: usize) -> TestEnv {
         stake_vault_withdrawn: 0,
         free_head: u32::MAX,
         bump: 254,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     sub.try_serialize(&mut buf).unwrap();
@@ -376,6 +377,8 @@ fn bind_dispute(env: &mut TestEnv, state: DisputeState, ruling: u64) {
         frozen_total_stake: 0,
         filed_at: 0,
         bump: 254,
+        drawn_seats: 0,
+        padding: [0; 60],
     };
     let mut buf = Vec::new();
     d.try_serialize(&mut buf).unwrap();

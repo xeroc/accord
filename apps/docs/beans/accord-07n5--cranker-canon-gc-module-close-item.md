@@ -1,10 +1,11 @@
 ---
 # accord-07n5
 title: Cranker — canon GC module (close-item)
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-14T19:06:10Z
-updated_at: 2026-08-14T19:06:10Z
+updated_at: 2026-08-19T19:47:45Z
 parent: accord-clfq
 ---
 

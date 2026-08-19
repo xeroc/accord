@@ -49,4 +49,8 @@ pub enum CanonError {
     ChallengePctTooHigh,
     #[msg("evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence.")]
     InvalidEvidenceOperator,
+    #[msg("Item is not in the Removed state.")]
+    NotRemoved,
+    #[msg("Removed item still holds accumulated_stake (invariant breach).")]
+    StakeOutstanding,
 }

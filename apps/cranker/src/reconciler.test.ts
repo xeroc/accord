@@ -134,6 +134,7 @@ function config(
     fetchReclaimableSlots: async () => [],
     fetchCanonItems: async () => [],
     fetchCanonLists: async () => [],
+    fetchRemovedCanonItems: async () => [],
     fetchSynodCases: async () => [],
     ...over,
   };
@@ -406,6 +407,46 @@ test("canon: WithdrawPending past timelock → advance_withdrawal; item without 
   );
   expect(fired).toBe(1);
   expect(calls).toEqual([{ kind: "canon_advance_withdrawal", item: CANON_ITEM_ADDR }]);
+});
+
+// --- Canon GC phase (bean accord-m5fd) ----------------------------------------
+
+test("canon GC: Removed sweep dispatches canon_close_item per item address", async () => {
+  const { d, calls } = recordingDispatch({ canon_close_item: async () => {} });
+  const other = address("Canon22222222222222222222222222222222222222");
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      fetchRemovedCanonItems: async () => [CANON_ITEM_ADDR, other],
+    }),
+  );
+  expect(fired).toBe(2);
+  expect(calls).toEqual([
+    { kind: "canon_close_item", item: CANON_ITEM_ADDR },
+    { kind: "canon_close_item", item: other },
+  ]);
+});
+
+test("canon GC: module disabled → scan never runs, nothing dispatched", async () => {
+  const { d, calls } = recordingDispatch({ canon_close_item: async () => {} });
+  let scanned = 0;
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      canonCloseEnabled: false,
+      fetchRemovedCanonItems: async () => {
+        scanned += 1;
+        return [CANON_ITEM_ADDR];
+      },
+    }),
+  );
+  expect(fired).toBe(0);
+  expect(calls).toEqual([]);
+  expect(scanned).toBe(0);
 });
 
 // --- Synod case phase (bean accord-i1mp) -------------------------------------

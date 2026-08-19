@@ -108,4 +108,13 @@ pub mod canon {
             evidence_operator,
         )
     }
+
+    /// Permissionless PDA close (SPEC §Instructions #8): closes a settled
+    /// (`Removed`) `CanonItem` and drains its rent to the caller. Guards the
+    /// terminal invariants (`state == Removed`, no outstanding stake, no live
+    /// dispute) and emits `ItemClosed` before the drain. Closing frees the
+    /// seed — the same `account` may be re-submitted fresh afterwards.
+    pub fn close_item(ctx: Context<CloseItem>) -> Result<()> {
+        instructions::close_item::handler(ctx)
+    }
 }
