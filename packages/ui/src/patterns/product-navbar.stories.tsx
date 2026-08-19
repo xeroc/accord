@@ -57,7 +57,7 @@ export const FullBar: Story = {
       accountControls={
         <>
           <Select value="devnet" onValueChange={() => {}}>
-            <SelectTrigger className="w-32 text-xs">
+            <SelectTrigger aria-label="Cluster" className="w-32 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

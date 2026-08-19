@@ -49,6 +49,16 @@ export {
 export { Separator } from "./primitives/separator";
 export { Skeleton } from "./primitives/skeleton";
 export { Toaster } from "./primitives/toaster";
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from "./primitives/table";
 
 export { StaggerGroup, StaggerItem, Reveal, ErrorShake, EASE_EXPO } from "./motion";
 

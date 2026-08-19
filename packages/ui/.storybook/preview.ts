@@ -21,9 +21,9 @@ const preview: Preview = {
       toc: true,
     },
     a11y: {
-      // axe runs per story in the A11y panel. Radix portals (Dialog, Select,
-      // Toaster) render into document.body — still covered, since axe scans
-      // the whole document by default.
+      // axe runs per story. "fail" makes violations fail the story test in
+      // CI (vitest storybook project); per-story opt-out: a11y: { test: "off" }.
+      test: "fail",
     },
     viewport: {
       options: {

@@ -29,7 +29,16 @@ import {
   timeAgo,
   timeRemaining,
 } from "@/shared/format";
-import { Copyable, Skeleton } from "@useaccord/ui";
+import {
+  Copyable,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@useaccord/ui";
 
 const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
@@ -302,24 +311,36 @@ function ItemTable({
 
   return (
     <div className="overflow-x-auto rounded-lg bg-card ring-1 ring-foreground/10">
-      <table className="w-full border-collapse text-sm" aria-label="Items">
-        <thead>
-          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th scope="col" className="px-4 py-2.5 font-semibold">Account</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">State</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">Time</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">Stake</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">Submitter</th>
-            <th scope="col" className="px-4 py-2.5 font-semibold">Challenges</th>
-            <th scope="col" className="px-4 py-2.5" />
-          </tr>
-        </thead>
-        <tbody>
+      <Table aria-label="Items" className="w-full border-collapse text-sm">
+        <TableHeader>
+          <TableRow className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <TableHead scope="col" className="px-4 py-2.5 font-semibold">
+              Account
+            </TableHead>
+            <TableHead scope="col" className="px-4 py-2.5 font-semibold">
+              State
+            </TableHead>
+            <TableHead scope="col" className="px-4 py-2.5 font-semibold">
+              Time
+            </TableHead>
+            <TableHead scope="col" className="px-4 py-2.5 font-semibold">
+              Stake
+            </TableHead>
+            <TableHead scope="col" className="px-4 py-2.5 font-semibold">
+              Submitter
+            </TableHead>
+            <TableHead scope="col" className="px-4 py-2.5 font-semibold">
+              Challenges
+            </TableHead>
+            <TableHead scope="col" className="px-4 py-2.5" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {filtered.map((item) => (
             <ItemRow key={item.address} item={item} listData={listData} />
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -334,29 +355,29 @@ function ItemRow({
   const d = item.data;
   const t = itemTime(d, listData);
   return (
-    <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-foreground/5">
-      <td className="px-4 py-2.5">
+    <TableRow className="border-b border-border transition-colors last:border-b-0 hover:bg-foreground/5">
+      <TableCell className="px-4 py-2.5">
         <Link
           to={`/items/${item.address}`}
           className="transition-colors hover:text-amber"
         >
           <Copyable value={d.account} />
         </Link>
-      </td>
-      <td className="whitespace-nowrap px-4 py-2.5">
+      </TableCell>
+      <TableCell className="whitespace-nowrap px-4 py-2.5">
         {ITEM_STATE_LABELS[d.state] ?? "Unknown"}
-      </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
+      </TableCell>
+      <TableCell className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
         {t ? `${t.label} ${t.value || "—"}` : "—"}
-      </td>
-      <td className="whitespace-nowrap px-4 py-2.5">
+      </TableCell>
+      <TableCell className="whitespace-nowrap px-4 py-2.5">
         {formatTokenAmount(d.accumulatedStake)}
-      </td>
-      <td className="px-4 py-2.5">
+      </TableCell>
+      <TableCell className="px-4 py-2.5">
         <Copyable value={d.submitter} />
-      </td>
-      <td className="px-4 py-2.5">{d.challengeCount.toString()}</td>
-      <td className="px-4 py-2.5 text-right">
+      </TableCell>
+      <TableCell className="px-4 py-2.5">{d.challengeCount.toString()}</TableCell>
+      <TableCell className="px-4 py-2.5 text-right">
         {CHALLENGEABLE_STATES[d.state] && (
           <Link
             to={`/items/${item.address}/challenge`}
@@ -365,8 +386,8 @@ function ItemRow({
             Challenge.
           </Link>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 

@@ -28,6 +28,7 @@ function Playground(): React.ReactElement {
     <div className="flex min-h-64 flex-col items-center justify-center gap-3">
       <div className="flex flex-wrap justify-center gap-2">
         <Button variant="outline" size="sm" onClick={() => toast.success("Verdict finalized")}>
+          toast.success
         </Button>
         <Button variant="outline" size="sm" onClick={() => toast.error("Stake transaction failed")}>
           toast.error
