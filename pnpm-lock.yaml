@@ -568,8 +568,8 @@ importers:
         specifier: ^9.1.0
         version: 9.1.20(@types/react@18.3.31)(storybook@9.1.20(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.9.6)(utf-8-validate@6.0.6)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)))
       '@storybook/addon-mcp':
-        specifier: ^0.7.0
-        version: 0.7.0(storybook@9.1.20(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.9.6)(utf-8-validate@6.0.6)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)))(typescript@5.9.3)
+        specifier: 0.6.0
+        version: 0.6.0(storybook@9.1.20(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.9.6)(utf-8-validate@6.0.6)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)))(typescript@5.9.3)
       '@storybook/react-vite':
         specifier: ^9.1.0
         version: 9.1.20(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(rollup@4.62.4)(storybook@9.1.20(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.9.6)(utf-8-validate@6.0.6)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)))(typescript@5.9.3)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0))
@@ -3639,11 +3639,11 @@ packages:
     peerDependencies:
       storybook: ^9.1.20
 
-  '@storybook/addon-mcp@0.7.0':
-    resolution: {integrity: sha512-f/IWGRMzWynBg5kDJ3DYvvnafuSX88kykGNFzzLOlkLVpfxEZoAmQF6AS47tw25GuH6EFIqSo6ZDBLHLVyZ/IQ==}
+  '@storybook/addon-mcp@0.6.0':
+    resolution: {integrity: sha512-E79m2S7ik9wiF1AnI49fwbLQkrD03PicIZpCdeFhbbB19MF4tKFKyaQtbT3f6eaAP4EP2+COLDVLCQ7B3rGF4w==}
     peerDependencies:
-      '@storybook/addon-vitest': ^0.0.0-0 || ^9.1.16 || ^10.0.0 || ^10.1.0-0 || ^10.2.0-0 || ^10.3.0-0 || ^10.4.0-0 || ^10.5.0-0
-      storybook: ^0.0.0-0 || ^9.1.16 || ^10.0.0 || ^10.1.0-0 || ^10.2.0-0 || ^10.3.0-0 || ^10.4.0-0 || ^10.5.0-0
+      '@storybook/addon-vitest': ^0.0.0-0 || ^9.1.16 || ^10.0.0 || ^10.1.0-0 || ^10.2.0-0 || ^10.3.0-0 || ^10.4.0-0
+      storybook: ^0.0.0-0 || ^9.1.16 || ^10.0.0 || ^10.1.0-0 || ^10.2.0-0 || ^10.3.0-0 || ^10.4.0-0
     peerDependenciesMeta:
       '@storybook/addon-vitest':
         optional: true
@@ -3669,8 +3669,8 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0-beta
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0-beta
 
-  '@storybook/mcp@0.8.0':
-    resolution: {integrity: sha512-G+XDgoWGrE98moXqKSee8fQyMQxoIWxRAbPG8r/HQ95pKodratevDqNyOgW+t6ZigM6AAVN1WHiFc5MI+hc8sg==}
+  '@storybook/mcp@0.7.0':
+    resolution: {integrity: sha512-Pr4E61tM5e7aDzqgNOL/Ylw8CGdb+BIDGOf3vbmFfkR8ZnXjPxaV/vhTEsiXynnIpjQWCzySCxOU1icxZsgjrA==}
 
   '@storybook/react-dom-shim@9.1.20':
     resolution: {integrity: sha512-UYdZavfPwHEqCKMqPssUOlyFVZiJExLxnSHwkICSZBmw3gxXJcp1aXWs7PvoZdWz2K4ztl3IcKErXXHeiY6w+A==}
@@ -10523,9 +10523,9 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
 
-  '@storybook/addon-mcp@0.7.0(storybook@9.1.20(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.9.6)(utf-8-validate@6.0.6)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)))(typescript@5.9.3)':
+  '@storybook/addon-mcp@0.6.0(storybook@9.1.20(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.9.6)(utf-8-validate@6.0.6)(vite@6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)))(typescript@5.9.3)':
     dependencies:
-      '@storybook/mcp': 0.8.0(typescript@5.9.3)
+      '@storybook/mcp': 0.7.0(typescript@5.9.3)
       '@tmcp/adapter-valibot': 0.1.6(tmcp@1.20.0(typescript@5.9.3))(valibot@1.2.0(typescript@5.9.3))
       '@tmcp/transport-http': 0.8.6(tmcp@1.20.0(typescript@5.9.3))
       picoquery: 2.5.0
@@ -10555,7 +10555,7 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  '@storybook/mcp@0.8.0(typescript@5.9.3)':
+  '@storybook/mcp@0.7.0(typescript@5.9.3)':
     dependencies:
       '@tmcp/adapter-valibot': 0.1.6(tmcp@1.20.0(typescript@5.9.3))(valibot@1.2.0(typescript@5.9.3))
       '@tmcp/transport-http': 0.8.6(tmcp@1.20.0(typescript@5.9.3))
