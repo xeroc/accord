@@ -31,6 +31,43 @@ export interface FetchedDomainDoc {
   doc: ParsedDomainDoc;
 }
 
+/** Options for {@link putDomainDoc} (ADR-0027 amendment — chain-anchored PUT). */
+export interface PutDomainDocOptions {
+  /**
+   * Anchor Subaccord address (`?subaccord=`): the daemon resolves it
+   * on-chain and requires its `domain_ref` to equal the doc hash
+   * (create-first — publish only after the create-tx confirms).
+   */
+  subaccord: string;
+  /** Content-Type for the PUT; defaults to `text/markdown`. */
+  contentType?: string;
+}
+
+/** Success result of {@link putDomainDoc}: 201 created / 200 idempotent no-op. */
+export interface PutDomainDocResult {
+  status: 200 | 201;
+  /** The doc's canonical 64-hex sha256 — the on-chain `domain_ref` value. */
+  hash: string;
+}
+
+/**
+ * Typed failure of {@link putDomainDoc}: the daemon rejected the publish.
+ * `status` mirrors the daemon's HTTP status (400 hash/anchor mismatch /
+ * missing param, 404 anchor not found, 409 collision alarm, 413 over cap,
+ * 5xx transport); `body` carries the raw response body for the message.
+ */
+export class DomainPublishError extends Error {
+  readonly status: number;
+  readonly body: string;
+
+  constructor(status: number, body: string) {
+    super(`domain daemon rejected publish with ${status}: ${body}`);
+    this.name = "DomainPublishError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 const FRONTMATTER_DELIM = "---";
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 
@@ -93,6 +130,38 @@ export async function fetchDomainDoc(
     contentType: res.headers.get("content-type") ?? "text/markdown",
     doc: parseDomainDoc(bytes),
   };
+}
+
+/**
+ * Publish a domain doc to the evidence daemon's public CAS
+ * (`PUT {daemonUrl}/domains/{sha256(bytes)}?subaccord=<addr>`) — the single
+ * publish implementation; the CLI and both dApps consume this (ADR-0027
+ * amendment, bean accord-uecf). Create-first: call only after the create-tx
+ * with `domain_ref = hash` has confirmed — the daemon anchor-verifies.
+ * Resolves `{ status, hash }` on 201 (created) / 200 (identical bytes already
+ * stored — idempotent no-op); throws {@link DomainPublishError} on any other
+ * status, carrying `status` + raw body.
+ */
+export async function putDomainDoc(
+  daemonUrl: string,
+  bytes: Uint8Array,
+  options: PutDomainDocOptions,
+): Promise<PutDomainDocResult> {
+  const hash = hashDomainDoc(bytes);
+  const res = await fetch(
+    `${daemonUrl.replace(/\/+$/, "")}/domains/${hash}?subaccord=${encodeURIComponent(options.subaccord)}`,
+    {
+      method: "PUT",
+      headers: { "content-type": options.contentType ?? "text/markdown" },
+      // ponytail: cast — base lib.dom's BodyInit predates generic
+      // Uint8Array<ArrayBufferLike>; no copy needed for a valid body.
+      body: bytes as unknown as BodyInit,
+    },
+  );
+  if (res.status === 200 || res.status === 201) {
+    return { status: res.status, hash };
+  }
+  throw new DomainPublishError(res.status, await res.text());
 }
 
 /** Split `---\n…\n---\n<body>`; null when there is no (well-formed) frontmatter. */

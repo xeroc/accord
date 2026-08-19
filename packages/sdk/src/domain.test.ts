@@ -12,9 +12,11 @@ import assert from "node:assert/strict";
 import { sha256 as nobleSha256 } from "@noble/hashes/sha256";
 
 import {
+  DomainPublishError,
   fetchDomainDoc,
   hashDomainDoc,
   parseDomainDoc,
+  putDomainDoc,
   verifyDomainDoc,
 } from "./domain.ts";
 
@@ -152,6 +154,117 @@ test("fetchDomainDoc: non-200 throws with status", async () => {
   stubFetch((async () => new Response(null, { status: 404 })) as typeof fetch);
   try {
     await assert.rejects(fetchDomainDoc("http://daemon.test", hash), /404/);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// putDomainDoc (ADR-0027 amendment — chain-anchored publish, bean accord-uecf)
+// ---------------------------------------------------------------------------
+
+const SUB = "SuBaccord1111111111111111111111111111111111";
+
+test("putDomainDoc PUTs to /domains/{sha256(bytes)}?subaccord= with text/markdown default", async () => {
+  const bytes = enc.encode("# Rules\n");
+  const hash = hashDomainDoc(bytes);
+  const orig = globalThis.fetch;
+  let seen: Request | null = null;
+  stubFetch(
+    (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen = new Request(input, init);
+      return new Response(null, { status: 201 });
+    }) as typeof fetch,
+  );
+  try {
+    const out = await putDomainDoc("http://daemon.test/", bytes, { subaccord: SUB });
+    assert.equal(out.status, 201);
+    assert.equal(out.hash, hash);
+    assert.equal(
+      seen!.url,
+      `http://daemon.test/domains/${hash}?subaccord=${SUB}`,
+    );
+    assert.equal(seen!.method, "PUT");
+    assert.equal(seen!.headers.get("content-type"), "text/markdown");
+    assert.deepEqual(new Uint8Array(await seen!.arrayBuffer()), bytes);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test("putDomainDoc: contentType override is passed through", async () => {
+  const bytes = enc.encode("binary-ish");
+  const orig = globalThis.fetch;
+  let ct: string | null = null;
+  stubFetch(
+    (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      ct = new Headers(init!.headers).get("content-type");
+      return new Response(null, { status: 201 });
+    }) as typeof fetch,
+  );
+  try {
+    await putDomainDoc("http://daemon.test", bytes, {
+      subaccord: SUB,
+      contentType: "application/octet-stream",
+    });
+    assert.equal(ct, "application/octet-stream");
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test("putDomainDoc: 200 idempotent no-op resolves ok alongside 201", async () => {
+  const bytes = enc.encode("same bytes");
+  const hash = hashDomainDoc(bytes);
+  const orig = globalThis.fetch;
+  stubFetch((async () => new Response(null, { status: 200 })) as typeof fetch);
+  try {
+    const out = await putDomainDoc("http://daemon.test", bytes, { subaccord: SUB });
+    assert.equal(out.status, 200);
+    assert.equal(out.hash, hash);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test("putDomainDoc: 400/404/409/413 throw DomainPublishError with status + body", async () => {
+  const bytes = enc.encode("doc");
+  const orig = globalThis.fetch;
+  for (const status of [400, 404, 409, 413] as const) {
+    stubFetch(
+      (async () =>
+        new Response(JSON.stringify({ error: `boom ${status}` }), {
+          status,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch,
+    );
+    await assert.rejects(
+      putDomainDoc("http://daemon.test", bytes, { subaccord: SUB }),
+      (e: unknown) => {
+        assert.ok(e instanceof DomainPublishError);
+        assert.equal(e.status, status);
+        assert.ok(e.body.includes(`boom ${status}`));
+        return true;
+      },
+    );
+  }
+  globalThis.fetch = orig;
+});
+
+test("putDomainDoc: non-error body (unparseable) still surfaces in the error", async () => {
+  const bytes = enc.encode("doc");
+  const orig = globalThis.fetch;
+  stubFetch((async () => new Response("gateway junk", { status: 502 })) as typeof fetch);
+  try {
+    await assert.rejects(
+      putDomainDoc("http://daemon.test", bytes, { subaccord: SUB }),
+      (e: unknown) => {
+        assert.ok(e instanceof DomainPublishError);
+        assert.equal(e.status, 502);
+        assert.ok(e.body.includes("gateway junk"));
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = orig;
   }

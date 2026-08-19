@@ -47,7 +47,6 @@ export default class DomainGet extends BaseCommand {
     const human = [`hash   : ${hash}`, `type   : ${contentType}`];
     if (doc.title) human.push(`title  : ${doc.title}`);
     if (doc.description) human.push(`descr  : ${doc.description}`);
-    if (doc.version !== undefined) human.push(`version: ${doc.version}`);
 
     this.emitRead(
       { hash, contentType, ...doc },
