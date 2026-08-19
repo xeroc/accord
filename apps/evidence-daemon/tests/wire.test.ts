@@ -26,6 +26,7 @@ import {
   type EvidenceBundle,
   type EvidenceStore,
 } from "../src/store/store";
+import { type DomainStore } from "../src/store/domain";
 import { createServerDeps } from "../src/wire";
 import { stubAccord } from "./helpers/accordStub.ts";
 import type { KeyringPublicKeys } from "../src/server/public-keys";
@@ -69,6 +70,23 @@ function memoryStore(): EvidenceStore & { size: () => number } {
   };
 }
 
+/** In-memory DomainStore stand-in (wire tests don't exercise domain routes). */
+function memoryDomainStore(): DomainStore {
+  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  return {
+    async put(o) {
+      objects.set(o.hash, { bytes: o.bytes, contentType: o.contentType });
+    },
+    async get(hash) {
+      const o = objects.get(hash);
+      return o === undefined ? null : { hash, bytes: o.bytes, contentType: o.contentType };
+    },
+    async exists(hash) {
+      return objects.has(hash);
+    },
+  };
+}
+
 async function rig() {
   const evidenceHash = await sha256(PLAINTEXT);
   const accord = await stubAccord({
@@ -99,6 +117,8 @@ async function rig() {
   const deps = createServerDeps({
     store,
     accord,
+    domainStore: memoryDomainStore(),
+    maxDomainBytes: 1_048_576,
     keyring,
     health: async () => ({ ok: true }),
     publicKeys,
@@ -180,6 +200,8 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
   const deps = createServerDeps({
     store,
     accord,
+    domainStore: memoryDomainStore(),
+    maxDomainBytes: 1_048_576,
     keyring,
     health: async () => ({ ok: true }),
     publicKeys,
