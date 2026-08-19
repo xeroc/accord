@@ -6,13 +6,15 @@ const preview: Preview = {
   //👇 Auto-generated documentation for every story file; opt out per-file
   // with tags: ["!autodocs"] on the meta.
   tags: ["autodocs"],
+
   parameters: {
     layout: "padded",
     // The kit is dark-first: paint the canvas with the real surface token,
     // not a hardcoded hex, so token changes propagate here too.
     backgrounds: {
-      default: "ink",
-      values: [{ name: "ink", value: "var(--background)" }],
+      options: {
+        ink: { name: "ink", value: "var(--background)" }
+      }
     },
     docs: {
       // Long pages (Button has 10+ stories) get a jump-to-section outline.
@@ -24,11 +26,10 @@ const preview: Preview = {
       // the whole document by default.
     },
     viewport: {
-      defaultViewport: "desktop",
-      viewports: {
+      options: {
         desktop: { name: "Desktop", styles: { width: "1280px", height: "800px" } },
         mobile: { name: "Mobile", styles: { width: "390px", height: "844px" } },
-      },
+      }
     },
     controls: {
       matchers: {
@@ -37,6 +38,17 @@ const preview: Preview = {
       },
     },
   },
+
+  initialGlobals: {
+    viewport: {
+      value: "desktop",
+      isRotated: false
+    },
+
+    backgrounds: {
+      value: "ink"
+    }
+  }
 };
 
 export default preview;
