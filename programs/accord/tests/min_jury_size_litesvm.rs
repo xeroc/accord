@@ -227,3 +227,77 @@ fn n1_ladder_top_is_one() {
     let (mut ctx, creator, mint) = setup();
     try_create(&mut ctx, &creator, &mint, nonzero_risk(6), params(1, 0)).assert_success();
 }
+
+// ─── H-3 (security review 2026-08-19): creation-path domain bounds ──────────
+// `validate_update_payload` enforces these on every propose/execute update;
+// creation must not be the unvalidated write path (shared-base §29.3).
+
+#[test]
+fn alpha_bps_above_ten_thousand_rejected_at_creation() {
+    // alpha > 100% makes slash_per_juror exceed min_stake — economically
+    // distorted pool, permanently baked in at birth.
+    let (mut ctx, creator, mint) = setup();
+    let mut p = params(3, 3);
+    p.alpha_bps = 10_001;
+    let r = try_create(&mut ctx, &creator, &mint, nonzero_risk(7), p);
+    assert!(
+        !r.is_success(),
+        "alpha_bps > 10_000 must be rejected at creation; error: {:?}",
+        r.error()
+    );
+}
+
+#[test]
+fn zero_min_stake_rejected_at_creation() {
+    // min_stake = 0 makes dust stakes draw-eligible and every slash zero.
+    let (mut ctx, creator, mint) = setup();
+    let mut p = params(3, 3);
+    p.min_stake = 0;
+    let r = try_create(&mut ctx, &creator, &mint, nonzero_risk(8), p);
+    assert!(
+        !r.is_success(),
+        "min_stake = 0 must be rejected at creation; error: {:?}",
+        r.error()
+    );
+}
+
+#[test]
+fn zero_voting_window_rejected_at_creation() {
+    // A zero review/commit/reveal window empties the commit window
+    // (review_end == commit_end) — every dispute in the pool is unvotable
+    // (state-machine reachability violation, shared-base §29.2).
+    for (name, zero) in [
+        ("review_window", 0u64),
+        ("commit_window", 0),
+        ("reveal_window", 0),
+    ] {
+        let (mut ctx, creator, mint) = setup();
+        let mut p = params(3, 3);
+        match name {
+            "review_window" => p.review_window = zero,
+            "commit_window" => p.commit_window = zero,
+            _ => p.reveal_window = zero,
+        }
+        let r = try_create(&mut ctx, &creator, &mint, nonzero_risk(9), p);
+        assert!(
+            !r.is_success(),
+            "{name} = 0 must be rejected at creation; error: {:?}",
+            r.error()
+        );
+    }
+}
+
+#[test]
+fn valid_bounds_accepted_at_creation() {
+    // Boundary values that MUST pass: alpha exactly 10_000, min_stake 1,
+    // 1-second windows — the creation gate mirrors the update path without
+    // over-rejecting.
+    let (mut ctx, creator, mint) = setup();
+    let mut p = params(3, 3);
+    p.alpha_bps = 10_000;
+    p.min_stake = 1;
+    p.review_window = 1;
+    p.commit_window = 1;
+    p.reveal_window = 1;
+    try_create(&mut ctx, &creator, &mint, nonzero_risk(10), p).assert_success();
+}

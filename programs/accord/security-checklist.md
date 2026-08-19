@@ -38,6 +38,9 @@
 | M-2 | 🟡 Medium | Raw-offset `remaining_accounts` no owner check | ✅ Fixed — `require!(owner == &crate::ID)` at all 9 sites |
 | L-1 | 🟢 Low | One-step Subaccord authority rotation | ⚠️ Accepted — timelock mitigates |
 | L-2 | 🟢 Low | `initialize_pause` frontrunnable | ⚠️ Accepted — bundle with deploy |
+| SR-H-1 | 🟠 High | `reclaim_slot` omitted `pending_withdrawal` from its drained-gates — a pending withdrawal's banked tokens were trappable via reclaim → free-list pop close (review 2026-08-19) | ✅ Fixed — gate added (+ defense-in-depth on the `stake` pop); LiteSVM `reclaim_slot_rejects_pending_withdrawal` |
+| SR-H-2 | 🟠 High | Pre-draw `cancel_dispute` probed a partially drawn round OPTIONALLY — a griefer cancelling without the accounts stranded jurors' `active_draws` forever (review 2026-08-19) | ✅ Fixed — `Dispute.drawn_seats` (carved from padding) proves a partial round exists; Round + JurorStake accounts mandatory then; e2e `draw.spec.ts` H-2 |
+| SR-H-3 | 🟠 High | `create_subaccord` skipped the update-path domain bounds — `alpha_bps > 10_000`, `min_stake = 0`, zero voting windows were accepted at birth (review 2026-08-19) | ✅ Fixed — mirrors `validate_update_payload` (shared-base §29.3); LiteSVM creation-bounds tests |
 | L-3 | 🟢 Low | No close path for terminal disputes | ⚠️ Accepted — rent locked |
 | L-4 | 🟢 Low | No mint validation at registration | ✅ Fixed — `Account<Mint>` in context |
 | L-5 | 🟢 Low | Legacy Token only (no Token-2022) | ⚠️ Accepted — fails closed |

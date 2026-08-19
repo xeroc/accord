@@ -41,6 +41,7 @@ function dispute(over: Partial<Dispute> & Pick<Dispute, "state"> = {} as never):
     options: [Z32, Z32],
     evidenceHashes: [Z32, Z32, Z32, Z32],
     currentRound: 0,
+    drawnSeats: 0,
     terms: {
       alphaBps: 1_000,
       minStake: 1_000n,

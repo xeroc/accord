@@ -31,10 +31,18 @@ impl<'info> ReclaimSlot<'info> {
         // verification: after reclaim the leaf is (default, 0), but we hash
         // (js.juror, 0) as old_juror — a second reclaim fails InvalidMerklePath
         // because the root no longer contains (juror, 0) at this index.
+        //
+        // H-1 (security review 2026-08-19): `pending_withdrawal == 0` is part
+        // of "drained". A juror between `request_withdraw` and `withdraw` has
+        // `staked == 0` but their banked tokens are custodied by this account;
+        // reclaiming the slot now would let the next `stake` free-list pop
+        // close it and permanently trap the withdrawal (mirror of the gates in
+        // `request_withdraw` / `prune_juror`).
         require!(js.staked == 0, AccordError::SlotNotDrained);
         require!(js.active_draws == 0, AccordError::SlotNotDrained);
         require!(js.stake_delta == 0, AccordError::SlotNotDrained);
         require!(js.fees_earned == 0, AccordError::SlotNotDrained);
+        require!(js.pending_withdrawal == 0, AccordError::SlotNotDrained);
 
         let juror = js.juror;
         let index = js.tree_index;

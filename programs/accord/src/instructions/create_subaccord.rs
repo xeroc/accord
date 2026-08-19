@@ -105,6 +105,24 @@ impl<'info> CreateSubaccord<'info> {
             appeal_window >= MIN_APPEAL_WINDOW_SECS,
             AccordError::AppealWindowTooShort
         );
+        // H-3 (security review 2026-08-19): creation is a write path too —
+        // mirror `validate_update_payload`'s domain bounds (shared-base §29.3)
+        // so a pool cannot be BORN misconfigured and only fixable by a 48h
+        // timelocked update. alpha > 100% makes `slash_per_juror` exceed
+        // `min_stake`; `min_stake == 0` makes dust stakes draw-eligible and
+        // every slash zero; a 0 review/commit/reveal window empties the commit
+        // window (`review_end == commit_end`) — every dispute in the pool
+        // would be unvotable (state-machine reachability, §29.2).
+        require!(alpha_bps <= 10_000, AccordError::InvalidThreshold);
+        require!(min_stake > 0, AccordError::InvalidAmount);
+        require!(review_window > 0, AccordError::InvalidAmount);
+        require!(commit_window > 0, AccordError::InvalidAmount);
+        require!(reveal_window > 0, AccordError::InvalidAmount);
+        // Same fee-overflow bound the update path enforces (filing_fee is
+        // min_jury_size · fee_per_juror; the ladder top bounds the product).
+        (MAX_JURORS as u64)
+            .checked_mul(fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
         // PROG-ATTESTTION: credential binding is both-or-neither. A half-bound
         // Subaccord (credential set, schema unset — or vice versa) is rejected;
         // both `Pubkey::default()` ⇒ stake-only (today's behavior, unchanged).

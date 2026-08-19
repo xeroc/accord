@@ -47,8 +47,10 @@ test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Sur
 	anchor build --ignore-keys
 	anchor test --skip-build
 
-test_unit:
-	cargo test
+test_unit: ## LiteSVM + unit tests. The no-entrypoint feature is REQUIRED —
+	## plain `cargo test` compiles but silently SKIPS every *_litesvm.rs
+	## (they are `#![cfg(feature = "no-entrypoint")]`-gated). AGENTS.md §Testing.
+	cargo test --features accord/no-entrypoint
 
 lint: ## Lint every workspace that declares a lint script
 	pnpm -r run lint

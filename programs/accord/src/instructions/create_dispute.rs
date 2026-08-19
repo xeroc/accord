@@ -134,6 +134,7 @@ impl<'info> CreateDispute<'info> {
         d.evidence_hashes[0] = evidence_hash;
         d.state = DisputeState::Created;
         d.current_round = 0;
+        d.drawn_seats = 0; // explicit for the field-per-field init style (H-2)
         d.final_ruling = u64::MAX;
         d.finalized_at = 0;
         d.fee_paid = fee;

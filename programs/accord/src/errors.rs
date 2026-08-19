@@ -150,7 +150,7 @@ pub enum AccordError {
     NotRedrawEligible,
     #[msg("Subaccord max_draw_attempts exceeds the program ceiling.")]
     MaxDrawAttemptsLimitExceeded,
-    #[msg("Reveal threshold (bps) must be <= 10_000.")]
+    #[msg("Basis-point value out of range (must be <= 10_000; reveal threshold or alpha).")]
     InvalidThreshold,
     // --- attestation-gated Subaccords (PROG-ATTESTTION) ---
     #[msg("Subaccord is credential-gated but no attestation account was provided.")]

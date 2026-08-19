@@ -165,6 +165,14 @@ impl<'info> Stake<'info> {
                         AccordError::FreeListHeadMismatch
                     );
                     require!(freed_js.staked == 0, AccordError::SlotNotDrained);
+                    // H-1 defense-in-depth: the pop CLOSES this account — it
+                    // must not custody a banked withdrawal (reclaim_slot gates
+                    // this; kept here so a stale free-list entry from a future
+                    // bug cannot trap funds).
+                    require!(
+                        freed_js.pending_withdrawal == 0,
+                        AccordError::SlotNotDrained
+                    );
                     (freed_js.tree_index, freed_js.next_free, freed_js.juror)
                 };
                 let expected_pda = Pubkey::find_program_address(

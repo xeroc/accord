@@ -126,7 +126,7 @@ export const ACCORD_ERROR__NO_FEES_EARNED = 0x17a5; // 6053
 export const ACCORD_ERROR__NOT_REDRAW_ELIGIBLE = 0x17a6; // 6054
 /** MaxDrawAttemptsLimitExceeded: Subaccord max_draw_attempts exceeds the program ceiling. */
 export const ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED = 0x17a7; // 6055
-/** InvalidThreshold: Reveal threshold (bps) must be <= 10_000. */
+/** InvalidThreshold: Basis-point value out of range (must be <= 10_000; reveal threshold or alpha). */
 export const ACCORD_ERROR__INVALID_THRESHOLD = 0x17a8; // 6056
 /** AttestationMissing: Subaccord is credential-gated but no attestation account was provided. */
 export const ACCORD_ERROR__ATTESTATION_MISSING = 0x17a9; // 6057
@@ -261,7 +261,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__INVALID_OPTIONS]: `Dispute options are invalid (need 2..=MAX_OPTIONS).`,
     [ACCORD_ERROR__INVALID_PANEL_SIZE]: `Number of juror memberships does not match the required panel size.`,
     [ACCORD_ERROR__INVALID_STATE]: `Dispute is not in the required state for this instruction.`,
-    [ACCORD_ERROR__INVALID_THRESHOLD]: `Reveal threshold (bps) must be <= 10_000.`,
+    [ACCORD_ERROR__INVALID_THRESHOLD]: `Basis-point value out of range (must be <= 10_000; reveal threshold or alpha).`,
     [ACCORD_ERROR__INVALID_VOTE]: `Revealed vote index is out of range.`,
     [ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS]: `The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.`,
     [ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED]: `Subaccord max_appeals exceeds the program ceiling.`,

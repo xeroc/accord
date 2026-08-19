@@ -221,8 +221,10 @@ impl<'info> Redraw<'info> {
             round.reveals = [u64::MAX; MAX_JURORS];
             round.seat_prefix = [0u64; MAX_JURORS];
             round.seat_stake = [0u64; MAX_JURORS];
-            // now differs via the bumped `draw_attempt`.
+            // The dispute re-opens in `Created`; fresh seats differ via the
+            // bumped `draw_attempt`. H-2: no seats drawn for the fresh attempt.
             dispute.state = DisputeState::Created;
+            dispute.drawn_seats = 0;
 
             emit!(Redrawn {
                 dispute: dispute_key,

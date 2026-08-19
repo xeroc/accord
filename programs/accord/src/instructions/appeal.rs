@@ -169,6 +169,8 @@ impl<'info> Appeal<'info> {
         dispute.current_round = new_round;
         dispute.state = DisputeState::Created;
         dispute.filed_at = now;
+        // H-2: fresh round — no seats drawn for it yet (draw_seat re-mirrors).
+        dispute.drawn_seats = 0;
         // Per-round evidence (milestone accord-qp7c): stash the appellant's
         // new evidence at the new round's slot. `[0u8; 32]` sentinel = no new
         // evidence this round (jurors reuse prior rounds'). The max_appeals

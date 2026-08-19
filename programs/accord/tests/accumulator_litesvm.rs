@@ -1836,16 +1836,20 @@ fn fabricate_appeal_bond(
         &ID,
     );
     let disc = solana_program::hash::hash(b"account:AppealBond").to_bytes();
-    // disc(8) + dispute(32) + round_idx(4) + appellant(32) + amount(8)
-    // + prior_result(8, u64 — ADR-0025) + bump(1) = 93
-    let mut data = vec![0u8; 93];
-    data[..8].copy_from_slice(&disc[..8]);
-    data[8..40].copy_from_slice(dispute.as_ref());
-    data[40..44].copy_from_slice(&round_idx.to_le_bytes());
-    data[44..76].copy_from_slice(appellant.as_ref());
-    data[76..84].copy_from_slice(&amount.to_le_bytes());
-    data[84..92].copy_from_slice(&0u64.to_le_bytes()); // prior_result
-    data[92] = bump;
+    // Serialize a REAL AppealBond (incl. the [u8; 64] padding tail) — a bare
+    // 93-byte field buffer fails `Box<Account<AppealBond>>` deserialization in
+    // `claim_appeal_refund` (AccountDidNotDeserialize).
+    let bond_acc = accord::state::AppealBond {
+        dispute: *dispute,
+        round_idx,
+        appellant: *appellant,
+        amount,
+        prior_result: 0,
+        bump,
+        padding: [0; 64],
+    };
+    let mut data = disc[..8].to_vec();
+    AnchorSerialize::serialize(&bond_acc, &mut data).unwrap();
     env.ctx
         .svm
         .set_account(

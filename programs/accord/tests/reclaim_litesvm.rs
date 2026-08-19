@@ -682,6 +682,65 @@ fn reclaim_slot_rejects_double_reclaim() {
 }
 
 #[test]
+fn reclaim_slot_rejects_pending_withdrawal() {
+    // H-1 (security review 2026-08-19): a juror with a *pending* withdrawal is
+    // drained in the accumulator (staked == 0) but their tokens are still
+    // banked in `pending_withdrawal`, custodied by this JurorStake. Reclaiming
+    // the slot now would let the next `stake` free-list pop close the account
+    // and permanently trap the banked tokens — reclaim must fail until the
+    // two-phase withdraw completes.
+    let mut env = setup_accumulator();
+    let amount = 5_000;
+    let juror = Keypair::new();
+
+    arm_juror(&mut env, &juror, amount);
+    let (_, _, path0) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, amount, path0).assert_success();
+
+    // Phase 1 only: request_withdraw banks the full stake, zeroes `staked`,
+    // and starts the WITHDRAWAL_DELAY timelock. Do NOT call `withdraw`.
+    let post = vec![(juror.pubkey(), amount)];
+    let (_, _, wpath) = build_root_and_path(&post, TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &juror, amount, wpath).assert_success();
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.staked, 0);
+    assert_eq!(js.pending_withdrawal, amount);
+
+    // Reclaim while the withdrawal is pending must fail. The leaf is already
+    // (juror, 0), so the path itself is valid — only the new gate rejects it.
+    let pending_leaves = vec![(juror.pubkey(), 0)];
+    let (_, _, rpath) = build_root_and_path(&pending_leaves, TEST_DEPTH, 0);
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+    let res = do_reclaim_slot(&mut env, &caller, &juror.pubkey(), rpath);
+    assert!(
+        !res.is_success(),
+        "reclaim must fail while a withdrawal is pending; error: {:?}",
+        res.error()
+    );
+
+    // Complete the two-phase withdraw, then reclaim succeeds (gate is precise,
+    // not over-broad). A FRESH cranker signs the retry: the failed reclaim
+    // above recorded this blockhash + message signature, so an identical
+    // caller/account-set would replay as AlreadyProcessed (litesvm mimics the
+    // runtime's failed-tx signature cache).
+    warp_seconds(&mut env, WITHDRAWAL_DELAY + 1);
+    do_withdraw(&mut env, &juror).assert_success();
+    let drained_leaves = vec![(juror.pubkey(), 0)];
+    let (_, _, rpath2) = build_root_and_path(&drained_leaves, TEST_DEPTH, 0);
+    let caller2 = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller2.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+    do_reclaim_slot(&mut env, &caller2, &juror.pubkey(), rpath2).assert_success();
+    assert_eq!(read_subaccord(&env).free_head, 0);
+}
+
+#[test]
 fn stake_pops_from_free_list_and_closes_freed_account() {
     let mut env = setup_accumulator();
     let amount = 5_000;

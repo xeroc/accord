@@ -209,8 +209,11 @@ pub mod accord {
     /// grows and can be exhausted by a griefing attacker.
     ///
     /// Preconditions: the juror must be fully drained (`staked == 0`,
-    /// `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`). A double
-    /// reclaim is prevented by root verification (see handler comment).
+    /// `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`,
+    /// `pending_withdrawal == 0` — the last because the slot pop closes the
+    /// account that custodies the banked withdrawal; H-1, security review
+    /// 2026-08-19). A double reclaim is prevented by root verification (see
+    /// handler comment).
     ///
     /// Any caller may trigger this — no tokens move, it's pure ledger + root
     /// accounting. The cranker supplies the juror's Merkle path.
@@ -461,6 +464,11 @@ pub mod accord {
     /// for the dispute's life trivially — stronger than a `CaseTerms` field):
     /// - **Pre-draw** (`Created`): cancelable once
     ///   `now > filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` — covers a VRF oracle
+    ///   that never lands. If any seats already landed (`drawn_seats > 0`,
+    ///   mirrored by `draw_seat`), the current `Round` + its drawn
+    ///   `JurorStake` PDAs are REQUIRED up front (`[0]`, `[1..=seats]`) — a
+    ///   cancel that omits them reverts rather than stranding the partial
+    ///   jurors' `active_draws` forever (H-2, security review 2026-08-19).
     /// - **Post-draw** (`Drawn`/`Commit`/`Reveal`/`RoundResolved`): cancelable
     ///   once `now > round.reveal_end + terms.appeal_window +
     ///   POST_DRAW_CANCEL_GRACE_SECS` — covers a round no cranker ever
