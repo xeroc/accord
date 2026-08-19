@@ -24,6 +24,7 @@ import {
   type EvidenceBundle,
   type EvidenceStore,
 } from "../src/store/store";
+import { type DomainStore } from "../src/store/domain";
 import { synodEvidenceRoot } from "../src/pipeline/synod-group";
 import { createServerDeps } from "../src/wire";
 import { createApp } from "../src/server/app";
@@ -62,6 +63,23 @@ function memoryStore(): EvidenceStore & { size: () => number } {
     },
     async exists(sa, d, r) {
       return objects.has(key(sa, d, r));
+    },
+  };
+}
+
+/** In-memory DomainStore stand-in (wire tests don't exercise domain routes). */
+function memoryDomainStore(): DomainStore {
+  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  return {
+    async put(o) {
+      objects.set(o.hash, { bytes: o.bytes, contentType: o.contentType });
+    },
+    async get(hash) {
+      const o = objects.get(hash);
+      return o === undefined ? null : { hash, bytes: o.bytes, contentType: o.contentType };
+    },
+    async exists(hash) {
+      return objects.has(hash);
     },
   };
 }
@@ -154,6 +172,8 @@ async function rig(opts: {
   const deps = createServerDeps({
     store,
     accord,
+    domainStore: memoryDomainStore(),
+    maxDomainBytes: 1_048_576,
     keyring: EnvKeyring.fromEnv(bs58.encode(operatorSeed)),
     health: async () => ({ ok: true }),
     publicKeys,

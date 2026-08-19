@@ -127,6 +127,33 @@ export type SynodIngestHandler = (
 export type SynodManifestHandler = (casePda: string) => Promise<ManifestResult>;
 
 /**
+ * Domain CAS = PUT/GET /domains/{hash} (ADR-0027). Permissionless,
+ * content-addressed PUBLIC documents; preimage resistance is the auth.
+ */
+export type DomainPutResult =
+  | { readonly ok: true; readonly status: 200 | 201 }
+  | { readonly ok: false; readonly status: 400 | 409 | 413; readonly error: string };
+
+export type DomainGetResult =
+  | {
+      readonly ok: true;
+      readonly status: 200;
+      readonly bytes: Uint8Array;
+      readonly contentType: string;
+    }
+  | { readonly ok: false; readonly status: 400 | 404; readonly error: string };
+
+/** PUT /domains/{hash} — body bytes + optional Content-Type (default text/markdown). */
+export type DomainPutHandler = (
+  hash: string,
+  bytes: Uint8Array,
+  contentType: string,
+) => Promise<DomainPutResult>;
+
+/** GET /domains/{hash} — the stored bytes + stored Content-Type. */
+export type DomainGetHandler = (hash: string) => Promise<DomainGetResult>;
+
+/**
  * Liveness/readiness = GET /healthz. ok iff Storage + RPC reachable; LB drains
  * on a non-ok result. (Bean accord-u1pu implements the real probe; the server
  * boots with a stub until then.)
@@ -139,6 +166,8 @@ export type HealthProbe = () => Promise<
 
 export interface ServerDeps {
   readonly ingest: IngestHandler;
+  readonly domainPut: DomainPutHandler;
+  readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;
   readonly deliver: DeliverHandler;
   readonly manifest: ManifestHandler;

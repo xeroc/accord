@@ -311,10 +311,12 @@ apps/evidence-daemon/
     pipeline/
       ingest.ts                // POST handler: validate + integrity-gate + store.put
       deliver.ts               // GET handler: store.get + chain read + decrypt + gate + re-encrypt
+      domain.ts                // PUT/GET /domains/{hash} pipeline: cap → hash check → CAS (ADR-0027)
       watermark.ts             // Watermark trait (no-op v1)
     server/
       app.ts                   // Bun + Hono; routes, rate limit, TLS
       routes.ts                // /evidence, /healthz
+      domain.ts                // PUT/GET /domains/{hash} routes (ADR-0027)
     main.ts                    // wiring; stateless, HA-ready
   tests/
     crypto.test.ts             // EnvKeyring ↔ @useaccord/sdk/evidence integration
@@ -341,6 +343,8 @@ header is accepted for **accounting only** — it never grants or denies access
 | GET    | `/evidence/{dispute}/for/{juror}`           | → `200` `{ rounds: [{ round, out, operator_ephem_pub }] }` — every non-zero `evidence_hashes[0..=N]` package for the juror's round `N` (ADR-0023). `404` if juror not drawn / not deliverable. `409` if any round's integrity gate fails (alerts). **Synod bridge (accord-g1dy):** when `Dispute.filer` is a SynodCase bound to the dispute, serves the assembled group — one package per party slot (`round` = slot), gated by the recomputed file-time root `H(case ‖ h_0…h_{N-1}) == evidence_hashes[0]`; mismatch ⇒ `409` assembly refused. |
 | GET    | `/evidence/synod/{case}`                    | Assembled multi-bundle manifest (accord-lry5): per-slot entries with the ADR-0017 payload + `party` field, absent slots marked (partial pre-file view), daemon-decrypted in memory. Post-file `verified` = recomputed `H(case ‖ h_0…h_{N-1})` vs `evidence_hashes[0]`; mismatch/missing slot ⇒ `verified: false` (deliver bridge refuses assembly on the same input). `404` case/bound-dispute absent.            |
 | GET    | `/evidence/{subaccord}/{dispute}[/{round}]` | → `200` decrypted manifest (plaintext). Daemon decrypts in memory using the operator key; no auth. `404` if no bundle / subaccord / unknown operator. `409` if undecryptable. `round` defaults to `0`. **MVP:** returns the full plaintext; will publish only public parts once the manifest schema is defined. |
+| PUT    | `/domains/{hash}`                          | Public document CAS (ADR-0027). Body = arbitrary bytes ≤ `EVIDENCE_MAX_DOMAIN_BYTES` (default 1 MiB; over-cap ⇒ `413` before any store write). `sha256(body)` must equal the 64-lowercase-hex route hash, else `400`. `201` + `Location` on create; `200` no-op on byte-identical re-PUT (first Content-Type wins); `409` if different bytes exist at the hash (collision alarm — never overwrite). Content-Type stored verbatim, defaults `text/markdown`. No auth, no chain gate — upload legally precedes `create_list`. Malformed hash ⇒ `400`. |
+| GET    | `/domains/{hash}`                          | → `200` the stored bytes + stored Content-Type; `ETag: {hash}`, `Cache-Control: immutable` (retention is forever — no DELETE route, sweeps never touch `domains/`). `404` unknown hash; `400` malformed hash. No auth. |
 | GET    | `/healthz`                                  | `200` if Storage + RPC reachable, else `503`.                                                                                                                                                                                                                                                                |
 | GET    | `/config`                                   | → `200` `{ operators: [{ base58, hex }] }` — the operator Ed25519 **public** keys loaded into the keyring (== on-chain `evidence_operator` set). Discloses nothing else: no seeds, no RPC/storage/server config. Pubkeys are public by construction. |
 
@@ -370,6 +374,7 @@ EVIDENCE_PORT=443
 EVIDENCE_RATE_LIMIT_PER_MIN=   // per-IP
 EVIDENCE_TRUST_PROXY=          // true → honor X-Forwarded-For (only behind a trusted LB/Ingress); default false
 EVIDENCE_MAX_EVIDENCE_BYTES=
+EVIDENCE_MAX_DOMAIN_BYTES=     // domain-doc PUT cap (ADR-0027); default 1 MiB; domain objects are never swept
 EVIDENCE_RETENTION_DAYS=       // delete N days after RulingFinalized
 EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
 ```
