@@ -9,6 +9,7 @@
 export * from "./advancePending";
 export * from "./advanceWithdrawal";
 export * from "./challengeItem";
+export * from "./closeItem";
 export * from "./createList";
 export * from "./requestWithdrawal";
 export * from "./settleItem";

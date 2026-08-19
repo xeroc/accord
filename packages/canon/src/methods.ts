@@ -3,9 +3,9 @@
  * Kit instruction builders. Each facade takes explicit accounts + args,
  * derives any needed PDAs, and returns an unsigned `Instruction` for the
  * caller to sign + send.
- * The seven v1 instructions:
+ * The eight v1 instructions:
  *   createList · submitItem · advancePending · challengeItem · settleItem ·
- *   requestWithdrawal · advanceWithdrawal
+ *   requestWithdrawal · advanceWithdrawal · closeItem
  *
  * `challenge_item` takes four Accord CPI-only accounts via `remainingAccounts`
  * (the on-chain handler reads them from `ctx.remaining_accounts[0..3]`).
@@ -28,6 +28,7 @@ import { getChallengeItemInstruction } from "./generated/instructions/challengeI
 import { getSettleItemInstruction } from "./generated/instructions/settleItem.js";
 import { getRequestWithdrawalInstruction } from "./generated/instructions/requestWithdrawal.js";
 import { getAdvanceWithdrawalInstruction } from "./generated/instructions/advanceWithdrawal.js";
+import { getCloseItemInstruction } from "./generated/instructions/closeItem.js";
 
 import {
   CANON_PROGRAM_ID,
@@ -314,6 +315,30 @@ export function advanceWithdrawal(
       feeMint: accounts.feeMint,
       submitterTokenAccount: accounts.submitterTokenAccount,
       vault: accounts.vault,
+    },
+    { programAddress: programId },
+  );
+}
+
+// ─── close_item ─────────────────────────────────────────────────────────────
+
+export interface CloseItemAccounts {
+  /** Permissionless caller; receives the item's rent-exempt lamports. */
+  caller: TransactionSigner;
+  /** The CanonItem PDA — must be in the `Removed` state. */
+  item: Address;
+}
+
+/** Build `close_item`: permissionless close of a settled (`Removed`) CanonItem.
+ * The PDA is self-seeded on-chain, so no other accounts are needed. */
+export function closeItem(
+  accounts: CloseItemAccounts,
+  programId: Address = CANON_PROGRAM_ID,
+): Instruction {
+  return getCloseItemInstruction(
+    {
+      caller: accounts.caller,
+      item: accounts.item,
     },
     { programAddress: programId },
   );

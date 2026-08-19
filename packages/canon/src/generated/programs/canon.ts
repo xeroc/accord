@@ -45,6 +45,7 @@ import {
   getAdvancePendingInstruction,
   getAdvanceWithdrawalInstructionAsync,
   getChallengeItemInstructionAsync,
+  getCloseItemInstruction,
   getCreateListInstructionAsync,
   getRequestWithdrawalInstruction,
   getSettleItemInstructionAsync,
@@ -52,6 +53,7 @@ import {
   parseAdvancePendingInstruction,
   parseAdvanceWithdrawalInstruction,
   parseChallengeItemInstruction,
+  parseCloseItemInstruction,
   parseCreateListInstruction,
   parseRequestWithdrawalInstruction,
   parseSettleItemInstruction,
@@ -59,10 +61,12 @@ import {
   type AdvancePendingInput,
   type AdvanceWithdrawalAsyncInput,
   type ChallengeItemAsyncInput,
+  type CloseItemInput,
   type CreateListAsyncInput,
   type ParsedAdvancePendingInstruction,
   type ParsedAdvanceWithdrawalInstruction,
   type ParsedChallengeItemInstruction,
+  type ParsedCloseItemInstruction,
   type ParsedCreateListInstruction,
   type ParsedRequestWithdrawalInstruction,
   type ParsedSettleItemInstruction,
@@ -117,6 +121,7 @@ export enum CanonInstruction {
   AdvancePending,
   AdvanceWithdrawal,
   ChallengeItem,
+  CloseItem,
   CreateList,
   RequestWithdrawal,
   SettleItem,
@@ -159,6 +164,17 @@ export function identifyCanonInstruction(
     )
   ) {
     return CanonInstruction.ChallengeItem;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([232, 80, 56, 56, 194, 171, 176, 235]),
+      ),
+      0,
+    )
+  ) {
+    return CanonInstruction.CloseItem;
   }
   if (
     containsBytes(
@@ -223,6 +239,9 @@ export type ParsedCanonInstruction<
       instructionType: CanonInstruction.ChallengeItem;
     } & ParsedChallengeItemInstruction<TProgram>)
   | ({
+      instructionType: CanonInstruction.CloseItem;
+    } & ParsedCloseItemInstruction<TProgram>)
+  | ({
       instructionType: CanonInstruction.CreateList;
     } & ParsedCreateListInstruction<TProgram>)
   | ({
@@ -259,6 +278,13 @@ export function parseCanonInstruction<TProgram extends string>(
       return {
         instructionType: CanonInstruction.ChallengeItem,
         ...parseChallengeItemInstruction(instruction),
+      };
+    }
+    case CanonInstruction.CloseItem: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: CanonInstruction.CloseItem,
+        ...parseCloseItemInstruction(instruction),
       };
     }
     case CanonInstruction.CreateList: {
@@ -326,6 +352,9 @@ export type CanonPluginInstructions = {
     input: ChallengeItemAsyncInput,
   ) => ReturnType<typeof getChallengeItemInstructionAsync> &
     SelfPlanAndSendFunctions;
+  closeItem: (
+    input: CloseItemInput,
+  ) => ReturnType<typeof getCloseItemInstruction> & SelfPlanAndSendFunctions;
   createList: (
     input: CreateListAsyncInput,
   ) => ReturnType<typeof getCreateListInstructionAsync> &
@@ -381,6 +410,8 @@ export function canonProgram() {
               client,
               getChallengeItemInstructionAsync(input),
             ),
+          closeItem: (input) =>
+            addSelfPlanAndSendFunctions(client, getCloseItemInstruction(input)),
           createList: (input) =>
             addSelfPlanAndSendFunctions(
               client,
