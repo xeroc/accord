@@ -88,6 +88,18 @@ impl<'info> CreateSubaccord<'info> {
             reveal_threshold_bps <= 10_000,
             AccordError::InvalidThreshold
         );
+        // SR2-M-1 (security review 2026-08-19): a Median pool with a zero
+        // reveal threshold can finalize zero-reveal rounds — the quorum gate
+        // collapses to `needed = 0` and the median arm would fabricate
+        // `result = 0` from an empty reveal set. Plurality pools are safe at
+        // 0 (an all-zero tally ties, and ADR-0026 routes ties to
+        // RedrawEligible), so the lower bound applies to Median only. The
+        // field is immutable (absent from `UpdatePayload`) — creation is its
+        // only write path.
+        require!(
+            aggregation != Aggregation::Median || reveal_threshold_bps > 0,
+            AccordError::InvalidThreshold
+        );
         require!(
             (1..=MAX_DRAW_ATTEMPTS).contains(&max_draw_attempts),
             AccordError::MaxDrawAttemptsLimitExceeded

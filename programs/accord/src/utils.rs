@@ -41,6 +41,27 @@ pub(crate) fn validate_update_payload(payload: &UpdatePayload) -> Result<()> {
     Ok(())
 }
 
+/// Cross-field validation that needs the live Subaccord (SR2-L-1, shared-base
+/// §28.3 / §29.3): a `MaxAppeals` update must not birth the degenerate appeal
+/// ladder that `create_subaccord` rejects — `(min_jury_size+1)·2^v − 1` must
+/// stay `≤ MAX_JURORS`. `min_jury_size` is immutable (absent from
+/// `UpdatePayload`), so validating against the live pool at BOTH propose and
+/// execute is sound.
+pub(crate) fn validate_update_cross_field(sub: &Subaccord, payload: &UpdatePayload) -> Result<()> {
+    if let UpdatePayload::MaxAppeals(v) = payload {
+        let ladder_top = (sub.min_jury_size as u64)
+            .checked_add(1)
+            .and_then(|x| x.checked_shl(u32::from(*v)))
+            .and_then(|x| x.checked_sub(1))
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        require!(
+            ladder_top <= MAX_JURORS as u64,
+            AccordError::LadderExceedsMaxJurors
+        );
+    }
+    Ok(())
+}
+
 // --- Accumulator MST helpers (ADR-0012) ---------------------------------------
 
 /// Leaf hash: `H(juror || stake_le)`.
@@ -405,11 +426,28 @@ pub(crate) fn settle_round_accounts(
             AccordError::InvalidMembershipProof
         );
 
+        // SR2-L-3 (security review 2026-08-19): the credit pool must equal
+        // the debit pool — cap each juror's contribution at their live
+        // `staked`, exactly as the debit pass below does
+        // (`min(slash_per_juror, staked)`). `draw_seat`'s per-draw free-stake
+        // gate (`free ≥ min_stake + α·min_stake`) makes the cap a no-op
+        // today; keeping the two passes symmetric converts any future
+        // violation into a smaller payout instead of stake_delta rewards
+        // minted from nothing (ledger insolvency).
+        let staked = {
+            const STAKED_OFF: usize = crate::layout::JS_STAKED_OFF;
+            let data = acct.try_borrow_data()?;
+            require!(
+                data.len() >= STAKED_OFF + 8,
+                AccordError::InvalidMembershipProof
+            );
+            u64::from_le_bytes(data[STAKED_OFF..STAKED_OFF + 8].try_into().unwrap())
+        };
         if judge_coherent(round.reveals[i]) {
             coherent_count += 1;
         } else {
             slash_total = slash_total
-                .checked_add(slash_per_juror)
+                .checked_add(slash_per_juror.min(staked))
                 .ok_or(AccordError::ArithmeticOverflow)?;
         }
     }

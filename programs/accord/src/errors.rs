@@ -177,6 +177,10 @@ pub enum AccordError {
     SlotAlreadyReclaimed,
     #[msg("Provided freed-slot account does not match the free-list head.")]
     FreeListHeadMismatch,
+    #[msg(
+        "Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled."
+    )]
+    SlotAwaitingRecycle,
 
     // --- per-Subaccord round-1 panel size (accord-9q3e) ---
     #[msg("Round-1 jury size (min_jury_size) must be odd (tie avoidance).")]

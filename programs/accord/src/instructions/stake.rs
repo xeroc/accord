@@ -132,6 +132,32 @@ impl<'info> Stake<'info> {
         // unstake) already has its `tree_index`.
         let is_new_leaf = js.subaccord == Pubkey::default();
         let old_stake = js.staked;
+        // SR2-M-2 (security review 2026-08-19): a fully-drained juror whose
+        // slot was `reclaim_slot`-ed still holds their JurorStake (kept alive
+        // as the free-list node) with `subaccord` set — the plain top-up path
+        // below would hash the old leaf as `(juror, 0)` against a root that
+        // now contains `(default, 0)` and fail `InvalidMerklePath` forever.
+        // Field-level signals cannot detect this (a reclaimed TAIL node also
+        // carries `next_free == MAX`, identical to an active juror), so
+        // disambiguate cryptographically: the same sibling path authenticates
+        // either leaf — test which one the stored root actually contains. A
+        // blank leaf re-claims its slot when it is the free-list head (O(1)
+        // splice); otherwise `SlotAwaitingRecycle` tells the juror to wait
+        // until the slots ahead of theirs are recycled (or another staker
+        // pops theirs, closing the account for a fresh init).
+        let on_blank_leaf = !is_new_leaf
+            && old_stake == 0
+            && verify_and_recompute(
+                &Pubkey::default(),
+                0,
+                &Pubkey::default(),
+                0,
+                js.tree_index,
+                &path,
+                &sub.root_hash,
+                sub.total_stake,
+            )
+            .is_ok();
         let (index, popped_from_free_list) = if is_new_leaf {
             if sub.free_head != u32::MAX {
                 // --- RECLAIM-LEAF: pop from free list ---
@@ -165,6 +191,18 @@ impl<'info> Stake<'info> {
                         AccordError::FreeListHeadMismatch
                     );
                     require!(freed_js.staked == 0, AccordError::SlotNotDrained);
+                    // SR2-L-4 (security review 2026-08-19, resolved by
+                    // analysis): no explicit "is a live free-list node" check
+                    // is possible here — a reclaimed TAIL node also carries
+                    // `next_free == u32::MAX`, so the sentinel cannot
+                    // distinguish it from an active juror. The invariant is
+                    // held by construction instead: `reclaim_slot` is the only
+                    // head writer and pushes only just-reclaimed nodes, and
+                    // this handler's `verify_and_recompute` below proves the
+                    // head slot's leaf is the blanked `(default, 0)` — a
+                    // never-reclaimed account at the head fails the root
+                    // check and the pop never completes. A tail pop setting
+                    // `free_head = MAX` is the correct terminal state.
                     // H-1 defense-in-depth: the pop CLOSES this account — it
                     // must not custody a banked withdrawal (reclaim_slot gates
                     // this; kept here so a stale free-list entry from a future
@@ -204,15 +242,44 @@ impl<'info> Stake<'info> {
                 );
                 (sub.next_index, false)
             }
+        } else if on_blank_leaf {
+            require!(js.juror == juror_key, AccordError::InvalidMembershipProof);
+            // Only the head splices in O(1); a mid-list slot must wait.
+            require!(
+                sub.free_head == js.tree_index,
+                AccordError::SlotAwaitingRecycle
+            );
+            // Drained-gates mirror `reclaim_slot` (defense-in-depth against a
+            // stale free-list entry from a future bug).
+            require!(
+                js.staked == 0
+                    && js.active_draws == 0
+                    && js.stake_delta == 0
+                    && js.fees_earned == 0
+                    && js.pending_withdrawal == 0,
+                AccordError::SlotNotDrained
+            );
+            // Splice the own slot off the head. The account stays open and
+            // becomes an active leaf again (its subaccord/juror/tree_index/
+            // bump fields are already correct).
+            sub.free_head = js.next_free;
+            js.next_free = u32::MAX;
+            emit!(SlotAllocated {
+                subaccord: sub.key(),
+                juror: juror_key,
+                index: js.tree_index,
+            });
+            (js.tree_index, false)
         } else {
             require!(js.juror == juror_key, AccordError::InvalidMembershipProof);
             (js.tree_index, false)
         };
 
-        // The accumulator leaf currently at `index`: a fresh slot is the
+        // The accumulator leaf currently at `index`: a fresh slot — or a
+        // reclaimed one being re-claimed by its original juror — holds the
         // all-zero leaf `(default, 0)`; an existing juror's slot carries its
         // live `(juror, amount)`.
-        let (old_juror, old_leaf_stake) = if is_new_leaf {
+        let (old_juror, old_leaf_stake) = if is_new_leaf || on_blank_leaf {
             (Pubkey::default(), 0u64)
         } else {
             (juror_key, old_stake)
@@ -227,8 +294,8 @@ impl<'info> Stake<'info> {
         // juror can never be drawn (each draw_seat reserves α·min_stake and
         // requires free stake ≥ min_stake + α·min_stake). Staking exactly
         // min_stake is the footgun this closes. Top-ups are NOT gated: only the
-        // first deposit that opens the JurorStake leaf.
-        if is_new_leaf {
+        // first deposit that opens (or, after a reclaim, re-opens) the leaf.
+        if is_new_leaf || on_blank_leaf {
             let slash_per_juror = (sub.alpha_bps as u64)
                 .checked_mul(sub.min_stake)
                 .and_then(|v| v.checked_div(10_000))

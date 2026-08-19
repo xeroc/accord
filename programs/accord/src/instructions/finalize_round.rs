@@ -96,8 +96,10 @@ impl<'info> FinalizeRound<'info> {
             // are odd by construction (`(J+1)·2^k − 1`), but non-revealers can
             // leave an even reveal count — then `vs[n/2]` picks the UPPER
             // middle element (n=4 → index 2; deterministic, biased high).
-            // `needed ≥ 1` (the quorum gate above) guarantees at least one
-            // reveal, so `n == 0` is unreachable here.
+            // `n == 0` is impossible on a compliant pool: Median subaccords
+            // are created with `reveal_threshold_bps > 0` (SR2-M-1), so
+            // `needed ≥ 1` and the quorum gate above rejects a zero-reveal
+            // round into RedrawEligible before this tally runs.
             Aggregation::Median => {
                 let mut vs = [0u64; MAX_JURORS];
                 let mut n = 0usize;

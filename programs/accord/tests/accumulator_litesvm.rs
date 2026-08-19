@@ -4578,6 +4578,11 @@ fn commit_reveal_votes(
                 .assert_success();
         }
     }
+    // Expire the cached blockhash: a redraw cycle can produce byte-identical
+    // commit/reveal/finalize txs when the fresh seats reproduce the same
+    // juror order — LiteSVM dedups (AlreadyProcessed) unless the recent
+    // blockhash moved.
+    env.ctx.svm.expire_blockhash();
 }
 
 /// Warp past `reveal_end` and run `finalize_round` with the panel's
@@ -4626,6 +4631,8 @@ fn finalize_round_for(
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
         .assert_success();
+    // See commit_reveal_votes: same dedup hazard for repeated finalize_round.
+    env.ctx.svm.expire_blockhash();
 }
 
 /// Drive `redraw` for round 0 (no appeals ⇒ remaining_accounts = panel juror
@@ -5223,6 +5230,7 @@ fn try_create_subaccord(
     max_appeals: u8,
     aggregation: Aggregation,
     appeal_window: u64,
+    reveal_threshold_bps: u16,
 ) -> TransactionResult {
     let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
     let creator = Keypair::new();
@@ -5261,7 +5269,7 @@ fn try_create_subaccord(
                 min_jury_size: 3,
                 aggregation,
                 fee_per_juror: 1_000_000,
-                reveal_threshold_bps: 6_666,
+                reveal_threshold_bps,
                 coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts: 3,
@@ -5307,6 +5315,7 @@ fn create_subaccord_rejects_max_appeals_above_ceiling() {
         4,
         Aggregation::Plurality,
         accord::constants::MIN_APPEAL_WINDOW_SECS,
+        6_666,
     );
     assert!(
         !r.is_success(),
@@ -5323,6 +5332,7 @@ fn create_subaccord_accepts_max_appeals_ladder() {
             ma,
             Aggregation::Plurality,
             accord::constants::MIN_APPEAL_WINDOW_SECS,
+            6_666,
         );
         assert!(
             r.is_success(),
@@ -5364,7 +5374,7 @@ fn create_dispute_freezes_appeal_window_onto_terms() {
 fn create_subaccord_rejects_appeal_window_below_floor() {
     // ADR-0022: appeal_window < MIN_APPEAL_WINDOW_SECS is rejected. A pool that
     // wants no appeals sets `max_appeals == 0` (the explicit knob), not a 0 window.
-    let r = try_create_subaccord(3, Aggregation::Plurality, 0);
+    let r = try_create_subaccord(3, Aggregation::Plurality, 0, 6_666);
     assert!(
         !r.is_success(),
         "appeal_window=0 < MIN_APPEAL_WINDOW_SECS must be rejected; logs={:?}",
@@ -5374,10 +5384,49 @@ fn create_subaccord_rejects_appeal_window_below_floor() {
         3,
         Aggregation::Plurality,
         accord::constants::MIN_APPEAL_WINDOW_SECS - 1,
+        6_666,
     );
     assert!(
         !r.is_success(),
         "appeal_window below floor must be rejected; logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_rejects_median_zero_reveal_threshold() {
+    // SR2-M-1 (security review 2026-08-19): a Median pool with
+    // reveal_threshold_bps = 0 can finalize zero-reveal rounds — the quorum
+    // gate collapses to needed = 0 and the median arm would fabricate
+    // result = 0 from an empty reveal set. Median pools must carry a
+    // non-zero threshold at creation (the field is immutable afterwards).
+    let r = try_create_subaccord(
+        3,
+        Aggregation::Median,
+        accord::constants::MIN_APPEAL_WINDOW_SECS,
+        0,
+    );
+    assert!(
+        !r.is_success(),
+        "Median + reveal_threshold_bps=0 must be rejected; logs={:?}",
+        r.logs()
+    );
+}
+
+#[test]
+fn create_subaccord_accepts_plurality_zero_reveal_threshold() {
+    // SR2-M-1 scope: Plurality stays legal at 0 — an all-zero tally ties and
+    // ADR-0026 routes the tie to RedrawEligible, so zero participation can
+    // never crown a winner on a Plurality pool.
+    let r = try_create_subaccord(
+        3,
+        Aggregation::Plurality,
+        accord::constants::MIN_APPEAL_WINDOW_SECS,
+        0,
+    );
+    assert!(
+        r.is_success(),
+        "Plurality + reveal_threshold_bps=0 must stay accepted; logs={:?}",
         r.logs()
     );
 }
@@ -5498,6 +5547,30 @@ fn propose_update_accepts_valid_params() {
         UpdatePayload::AppealWindow(accord::constants::MIN_APPEAL_WINDOW_SECS),
     );
     r.assert_success();
+}
+
+#[test]
+fn propose_update_rejects_max_appeals_breaking_ladder() {
+    // SR2-L-1: creation rejects a (min_jury_size, max_appeals) pair whose
+    // appeal ladder exceeds MAX_JURORS — an update must not birth the same
+    // degenerate ladder on a live pool. J=5 auto-fits max_appeals=2 at setup
+    // (ladder top 23 ≤ 31); proposing 3 would top at 47 > 31 and must be
+    // rejected, while a ladder-respecting value still passes.
+    let mut env = setup_accumulator_with(6_666, 3, 5);
+
+    let r = do_propose_update(&mut env, 1, UpdatePayload::MaxAppeals(3));
+    assert!(
+        !r.is_success(),
+        "MaxAppeals=3 on a J=5 pool breaks the ladder; logs={:?}",
+        r.logs()
+    );
+
+    let r = do_propose_update(&mut env, 2, UpdatePayload::MaxAppeals(2));
+    assert!(
+        r.is_success(),
+        "MaxAppeals=2 (ladder top 23) must pass; logs={:?}",
+        r.logs()
+    );
 }
 
 // ─── H-2 regression: withdraw_fees vault-balance cap ────────────────────────

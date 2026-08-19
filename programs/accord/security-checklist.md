@@ -44,6 +44,15 @@
 | L-3 | 🟢 Low | No close path for terminal disputes | ⚠️ Accepted — rent locked |
 | L-4 | 🟢 Low | No mint validation at registration | ✅ Fixed — `Account<Mint>` in context |
 | L-5 | 🟢 Low | Legacy Token only (no Token-2022) | ⚠️ Accepted — fails closed |
+| SR2-M-1 | 🟡 Medium | Median pools accept `reveal_threshold_bps = 0` — zero-reveal rounds resolve with a fabricated `final_ruling = 0` (review SR2 2026-08-19) | ✅ Fixed — Median-only creation bound; comment corrected; LiteSVM + e2e tests |
+| SR2-M-2 | 🟡 Medium | `reclaim_slot` bricks the drained juror's re-staking until another staker recycles the slot (review SR2 2026-08-19) | ✅ Fixed — `stake` re-claims own blanked slot at the free-list head (root-based disambiguation); `SlotAwaitingRecycle` mid-list |
+| SR2-L-1 | 🟢 Low | `MaxAppeals` update skips the appeal-ladder cross-field invariant (review SR2) | ✅ Fixed — `validate_update_cross_field` at propose + execute |
+| SR2-L-2 | 🟢 Low | `RedrawEligible` has no `cancel_dispute` timeout escape (review SR2) | Open — hardening |
+| SR2-L-3 | 🟢 Low | Settle credits from uncapped gross slashes; safety rests on `draw_seat`'s free-stake gate (review SR2) | ✅ Fixed — credit pool from capped debits |
+| SR2-L-4 | 🟢 Low | `stake` free-list pop skips `next_free != MAX` liveness check (review SR2) | ✅ Resolved by analysis — check impossible (tail-sentinel ambiguity); pop's root verification is the guard; documented in-code |
+| SR2-L-5 | 🟢 Low | `propose_unpause` repeatable — pushes unpause ETA forward (review SR2) | ✅ Fixed — arms once |
+| SR2-L-6 | 🟢 Low | `attestation_horizon` u64→i64 wrapping cast (review SR2) | Open — checked cast |
+| SR2-I-1..5 | ⚪ Info | AppealBond seed doc mismatch; Token-2022 migration prerequisite (gross-vs-net fees); `Unstaked` event overload; unreachable `Closed` state; VRF window tradeoff (review SR2) | Notes — see `reports/accord/2026-08-19-accord-security-review.md` |
 
 ---
 

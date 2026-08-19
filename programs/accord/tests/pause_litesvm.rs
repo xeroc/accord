@@ -222,3 +222,68 @@ fn propose_unpause_while_unpaused_fails() {
         r.logs()
     );
 }
+
+#[test]
+fn repeated_propose_unpause_keeps_earliest_eta() {
+    // SR2-L-5 (security review 2026-08-19, shared-base §31.7): arm once —
+    // repeated proposals must not keep pushing the executable slot forward.
+    // Warp forward between the two proposals: the second is a no-op and the
+    // armed slot must stay the FIRST proposal's ETA.
+    let (mut svm, authority, _) = setup();
+    let pda = pause_pda();
+    init(&mut svm, &authority);
+
+    // Pause first (propose_unpause requires paused).
+    let ix = svm
+        .program()
+        .accounts(accounts::Pause {
+            authority: authority.pubkey(),
+            accord_state: pda,
+        })
+        .args(instruction::Pause {})
+        .instruction()
+        .unwrap();
+    svm.execute_instruction(ix, &[&authority])
+        .unwrap()
+        .assert_success();
+
+    let propose = |svm: &mut anchor_litesvm::AnchorContext| {
+        let ix = svm
+            .program()
+            .accounts(accounts::ProposeUnpause {
+                authority: authority.pubkey(),
+                accord_state: pda,
+            })
+            .args(instruction::ProposeUnpause {})
+            .instruction()
+            .unwrap();
+        svm.execute_instruction(ix, &[&authority]).unwrap()
+    };
+
+    propose(&mut svm).assert_success();
+    let first = read_pause(&svm).pending_unpause_after.expect("armed");
+
+    // Warp forward, then propose again — the ETA must not move.
+    svm.svm.warp_to_slot(first.saturating_sub(1).max(1));
+    svm.svm.expire_blockhash();
+    propose(&mut svm).assert_success();
+
+    assert_eq!(read_pause(&svm).pending_unpause_after, Some(first),);
+
+    // The earliest ETA is still executable right after it passes.
+    svm.svm.warp_to_slot(first + 1);
+    svm.svm.expire_blockhash();
+    let ix = svm
+        .program()
+        .accounts(accounts::ExecuteUnpause {
+            caller: authority.pubkey(),
+            accord_state: pda,
+        })
+        .args(instruction::ExecuteUnpause {})
+        .instruction()
+        .unwrap();
+    svm.execute_instruction(ix, &[&authority])
+        .unwrap()
+        .assert_success();
+    assert!(!read_pause(&svm).paused);
+}

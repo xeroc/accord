@@ -34,6 +34,11 @@ impl<'info> ExecuteSubaccordUpdate<'info> {
         // H-1: defense-in-depth — re-validate at execute even though propose
         // already checked (§29.3: validate in every write path).
         validate_update_payload(&ctx.accounts.pending_update.proposed)?;
+        // SR2-L-1: re-validate the cross-field bound against the live pool.
+        validate_update_cross_field(
+            &ctx.accounts.subaccord,
+            &ctx.accounts.pending_update.proposed,
+        )?;
 
         let sub = &mut ctx.accounts.subaccord;
         match &ctx.accounts.pending_update.proposed {

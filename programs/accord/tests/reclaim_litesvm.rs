@@ -1064,6 +1064,122 @@ fn re_stake_after_reclaim_gets_fresh_slot() {
 }
 
 #[test]
+fn re_stake_after_reclaim_reclaims_own_head_slot() {
+    // SR2-M-2 (security review 2026-08-19): a drained juror whose slot was
+    // reclaimed keeps their JurorStake (subaccord set, leaf blanked to
+    // (default, 0)) — the top-up path would hash (juror, 0) against that
+    // root and fail InvalidMerklePath forever. When the slot is the
+    // free-list head, `stake` must re-claim it in place: splice off the
+    // head, re-open the leaf, no fresh allocation.
+    let mut env = setup_accumulator();
+    let amount = 5_000;
+
+    // Stake at index 0, then drain fully (two-phase withdraw).
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, amount);
+    let (_, _, path0) = build_root_and_path(&[], TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, amount, path0).assert_success();
+    let post = vec![(juror.pubkey(), amount)];
+    let (_, _, wpath) = build_root_and_path(&post, TEST_DEPTH, 0);
+    do_request_withdraw(&mut env, &juror, amount, wpath).assert_success();
+    warp_seconds(&mut env, WITHDRAWAL_DELAY + 1);
+    do_withdraw(&mut env, &juror).assert_success();
+
+    // Griefer reclaims the drained slot (permissionless) → head = 0. This is
+    // the tail case: the node's next_free is MAX (single-entry list).
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+    let reclaimed = vec![(juror.pubkey(), 0)];
+    let (_, _, rpath) = build_root_and_path(&reclaimed, TEST_DEPTH, 0);
+    do_reclaim_slot(&mut env, &caller, &juror.pubkey(), rpath).assert_success();
+    assert_eq!(read_subaccord(&env).free_head, 0);
+    // Different from the opening amount — after the full drain + reclaim the
+    // tree returns to the empty root, making the re-stake tx byte-identical
+    // to the first stake otherwise (LiteSVM dedups).
+    let restake = 4_000;
+    // The drained juror re-stakes: leaf (default, 0) → (juror, amount).
+    let blanked = vec![(Pubkey::default(), 0)];
+    let (_, _, spath) = build_root_and_path(&blanked, TEST_DEPTH, 0);
+    do_stake(&mut env, &juror, restake, spath).assert_success();
+
+    let js = read_juror_stake(&env, &env.subaccord, &juror.pubkey());
+    assert_eq!(js.tree_index, 0, "own slot re-claimed in place");
+    assert_eq!(js.staked, restake);
+    assert_eq!(js.next_free, u32::MAX, "no longer a free-list node");
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.free_head, u32::MAX, "head spliced off");
+    assert_eq!(sub.next_index, 1, "no fresh allocation");
+    assert_eq!(sub.staker_count, 1);
+    assert_eq!(sub.total_stake, restake, "root sum restored");
+}
+
+#[test]
+fn re_stake_mid_free_list_reverts_with_awaiting_recycle() {
+    // SR2-M-2: when the juror's reclaimed slot sits mid-free-list, `stake`
+    // must revert with SlotAwaitingRecycle (not a misleading
+    // InvalidMerklePath) — the head slot reclaims first and unblocks the
+    // next. A's slot is index 0 (reclaimed first), B's is index 1 (head).
+    let mut env = setup_accumulator();
+    let amount = 5_000;
+
+    let juror_a = Keypair::new();
+    let idx_a = stake_and_drain(&mut env, &juror_a, amount, &[]);
+    assert_eq!(idx_a, 0);
+    let juror_b = Keypair::new();
+    let idx_b = stake_and_drain(&mut env, &juror_b, amount, &[(juror_a.pubkey(), 0)]);
+    assert_eq!(idx_b, 1);
+
+    // Live leaves after both drained: [(A,0), (B,0)].
+    let live = vec![(juror_a.pubkey(), 0), (juror_b.pubkey(), 0)];
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+    // Reclaim A first (head = 0, A is the tail), then B (head = 1, B → A) —
+    // A's slot is now mid-list.
+    let (_, _, rpath_a) = build_root_and_path(&live, TEST_DEPTH, 0);
+    do_reclaim_slot(&mut env, &caller, &juror_a.pubkey(), rpath_a).assert_success();
+    let blanked_a = vec![(Pubkey::default(), 0), (juror_b.pubkey(), 0)];
+    let (_, _, rpath_b) = build_root_and_path(&blanked_a, TEST_DEPTH, 1);
+    do_reclaim_slot(&mut env, &caller, &juror_b.pubkey(), rpath_b).assert_success();
+    assert_eq!(read_subaccord(&env).free_head, 1);
+
+    // A (mid-list) re-stakes → SlotAwaitingRecycle. Both leaves are blanked
+    // now (B was reclaimed too), so the path proves (default, 0) at index 0
+    // against the both-blanked root.
+    let blanked_both = vec![(Pubkey::default(), 0), (Pubkey::default(), 0)];
+    let (_, _, apath) = build_root_and_path(&blanked_both, TEST_DEPTH, 0);
+    let res = do_stake(&mut env, &juror_a, amount - 1_000, apath);
+    assert!(
+        !res.is_success(),
+        "mid-list own slot must revert; logs={:?}",
+        res.logs()
+    );
+    assert!(
+        res.logs().join("\n").contains("SlotAwaitingRecycle"),
+        "expected SlotAwaitingRecycle, got: {:?}",
+        res.logs()
+    );
+
+    // B (head) re-claims their slot; the head advances to A's.
+    let (_, _, bpath) = build_root_and_path(&blanked_both, TEST_DEPTH, 1);
+    do_stake(&mut env, &juror_b, amount, bpath).assert_success();
+    assert_eq!(read_subaccord(&env).free_head, 0, "head advances to A");
+
+    // Unblocked, A re-stakes successfully.
+    let live_after_b = vec![(Pubkey::default(), 0), (juror_b.pubkey(), amount)];
+    let (_, _, apath2) = build_root_and_path(&live_after_b, TEST_DEPTH, 0);
+    do_stake(&mut env, &juror_a, amount, apath2).assert_success();
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.free_head, u32::MAX);
+    assert_eq!(sub.staker_count, 2);
+}
+
+#[test]
 fn create_subaccord_inits_free_head_to_max() {
     let env = setup_accumulator();
     let sub = read_subaccord(&env);

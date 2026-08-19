@@ -148,10 +148,12 @@ export const ACCORD_ERROR__SLOT_NOT_DRAINED = 0x17b0; // 6064
 export const ACCORD_ERROR__SLOT_ALREADY_RECLAIMED = 0x17b1; // 6065
 /** FreeListHeadMismatch: Provided freed-slot account does not match the free-list head. */
 export const ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH = 0x17b2; // 6066
+/** SlotAwaitingRecycle: Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled. */
+export const ACCORD_ERROR__SLOT_AWAITING_RECYCLE = 0x17b3; // 6067
 /** EvenJurySize: Round-1 jury size (min_jury_size) must be odd (tie avoidance). */
-export const ACCORD_ERROR__EVEN_JURY_SIZE = 0x17b3; // 6067
+export const ACCORD_ERROR__EVEN_JURY_SIZE = 0x17b4; // 6068
 /** LadderExceedsMaxJurors: The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round. */
-export const ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS = 0x17b4; // 6068
+export const ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS = 0x17b5; // 6069
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -211,6 +213,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__ROUND_NOT_FINALIZABLE
   | typeof ACCORD_ERROR__ROUND_NOT_SETTLABLE
   | typeof ACCORD_ERROR__SLOT_ALREADY_RECLAIMED
+  | typeof ACCORD_ERROR__SLOT_AWAITING_RECYCLE
   | typeof ACCORD_ERROR__SLOT_NOT_DRAINED
   | typeof ACCORD_ERROR__SORTITION_MISMATCH
   | typeof ACCORD_ERROR__STAKE_LOCKED
@@ -284,6 +287,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__ROUND_NOT_FINALIZABLE]: `Round cannot be finalized yet (window not elapsed).`,
     [ACCORD_ERROR__ROUND_NOT_SETTLABLE]: `Round index out of range for settlement (must be < current_round).`,
     [ACCORD_ERROR__SLOT_ALREADY_RECLAIMED]: `JurorStake slot is already on the free list (next_free != MAX).`,
+    [ACCORD_ERROR__SLOT_AWAITING_RECYCLE]: `Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled.`,
     [ACCORD_ERROR__SLOT_NOT_DRAINED]: `JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0).`,
     [ACCORD_ERROR__SORTITION_MISMATCH]: `Submitted membership does not match the VRF-derived sortition selection (ADR-0009).`,
     [ACCORD_ERROR__STAKE_LOCKED]: `Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle).`,
