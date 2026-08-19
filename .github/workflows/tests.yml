@@ -40,3 +40,6 @@ jobs:
         env:
           ANCHOR_WALLET: /home/runner/work/accord/accord/.github/ci-wallet/id.json
           ACCORD_KEYPAIR_PATH: /home/runner/work/accord/accord/.github/ci-wallet/id.json
+
+      - name: Build Storybook (@useaccord/ui)
+        run: pnpm --filter @useaccord/ui build-storybook

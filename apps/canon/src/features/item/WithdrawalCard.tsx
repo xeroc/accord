@@ -28,7 +28,7 @@ import { useCanon } from "@/shared/rpc";
 import { sendInstruction } from "@/shared/transaction";
 import { describeError } from "@/shared/errors";
 import { formatWindow, timeRemaining } from "@/shared/format";
-import { Button } from "@/components/ui/button";
+import { Button } from "@useaccord/ui";
 import {
   canRequestWithdrawal,
   isWithdrawPending,

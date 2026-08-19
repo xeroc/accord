@@ -5,25 +5,27 @@
  * Tailwind v4 CSS-first config: these @theme vars generate the utilities
  * (bg-ink, text-body, font-mono, text-amber, border-border, …). */
 @import "tailwindcss";
+@import "@useaccord/ui/tokens.css";
 
 @theme {
-  /* Color — brand/DESIGN.md §04 */
-  --color-ink: #0a0e14; /* primary surface (cold near-black) */
-  --color-raised: #11161d; /* cards, code blocks */
-  --color-border: #1f2630; /* hairlines, dividers */
-  --color-muted: #7d8590; /* secondary text, eyebrows-on-dark */
+  /* Color — brand/DESIGN.md §04. Shared values resolve to the canonical
+   * @useaccord/ui tokens; landing-only names stay literal. */
+  --color-ink: var(--accord-ink); /* primary surface (cold near-black) */
+  --color-raised: var(--accord-raised); /* cards, code blocks */
+  --color-border: var(--accord-border); /* hairlines, dividers */
+  --color-muted: var(--accord-muted); /* secondary text, eyebrows-on-dark */
   --color-body: #c9d1d9; /* body text on dark */
   --color-nearwhite: #f0f6fc; /* headlines on dark */
   --color-paper: #f6f7f8; /* rare light surface */
-  --color-amber: #f0a830; /* Verdict Amber — identity accent */
-  --color-confirm: #3fb950; /* state: finalized (GitHub merged-PR green) */
-  --color-slash: #f85149; /* state: slash / antagonist */
+  --color-amber: var(--accord-amber); /* Verdict Amber — identity accent */
+  --color-confirm: var(--accord-confirm); /* state: finalized (GitHub merged-PR green) */
+  --color-slash: var(--accord-slash); /* state: slash / antagonist */
 
   /* Type — brand/DESIGN.md §05 */
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-sans: var(--accord-font-sans);
+  --font-mono: var(--accord-font-mono);
   /* Motion — exponential ease-out (terminal feel). brand/DESIGN.md §08. */
-  --ease-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-expo: var(--accord-ease-expo);
 }
 
 @layer base {

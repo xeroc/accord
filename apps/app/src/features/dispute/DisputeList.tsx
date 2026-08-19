@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { DISPUTE_STATE_LABELS, formatRuling } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
+import { Copyable } from "@useaccord/ui";
 import { useDisputes } from "./useDisputes";
 
 export function DisputeList() {

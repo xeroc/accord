@@ -1,0 +1,13 @@
+/*
+ * Storybook canvas stylesheet — mirrors the app-side wiring from
+ * apps/<app>/src/index.css: the app owns the Tailwind engine, so the
+ * Storybook preview must spin up its own before pulling the kit styles.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../src/styles/styles.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Utilities living in packages/ui source must be discovered by the build. */
+@source "../src";

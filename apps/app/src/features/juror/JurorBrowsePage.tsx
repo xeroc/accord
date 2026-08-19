@@ -22,9 +22,13 @@ import {
 
 import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
-import { Skeleton } from "../../components/Skeleton";
-import { StaggerGroup, StaggerItem, Reveal } from "../../components/motion";
+import {
+  Copyable,
+  Skeleton,
+  StaggerGroup,
+  StaggerItem,
+  Reveal,
+} from "@useaccord/ui";
 
 // --- aggregation types ---
 
@@ -261,12 +265,20 @@ function JurorGridSkeleton() {
     <ul className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading jurors">
       {Array.from({ length: 6 }).map((_, i) => (
         <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
-          <Skeleton style={{ width: "60%", height: "1rem" }} />
           <Skeleton
-            style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
+            className="rounded-sm bg-border"
+            style={{ width: "60%", height: "1rem" }}
+            aria-hidden
           />
           <Skeleton
+            className="rounded-sm bg-border"
+            style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
+            aria-hidden
+          />
+          <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "50%", height: "0.85rem", marginTop: "0.4rem" }}
+            aria-hidden
           />
         </li>
       ))}

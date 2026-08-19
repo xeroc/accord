@@ -19,9 +19,7 @@ import { Aggregation } from "@useaccord/sdk";
 import { useClusterRpc } from "../../shared/rpc";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
 import { formatTokenAmount, formatWindow } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
-import { Skeleton } from "../../components/Skeleton";
-import { Reveal } from "../../components/motion";
+import { Copyable, Skeleton, Reveal } from "@useaccord/ui";
 
 export function SubaccordDetailPage() {
   const rpc = useClusterRpc()?.rpc ?? null;
@@ -266,11 +264,17 @@ function DetailSkeleton() {
     <div className="gap-4 grid [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]" aria-busy aria-label="Loading subaccord">
       {Array.from({ length: 5 }).map((_, i) => (
         <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10" key={i}>
-          <Skeleton style={{ width: "40%", height: "0.8rem" }} />
+          <Skeleton
+            className="rounded-sm bg-border"
+            style={{ width: "40%", height: "0.8rem" }}
+            aria-hidden
+          />
           {Array.from({ length: 4 }).map((_, j) => (
             <Skeleton
               key={j}
+              className="rounded-sm bg-border"
               style={{ width: "90%", height: "0.85rem", marginTop: "0.6rem" }}
+              aria-hidden
             />
           ))}
         </div>

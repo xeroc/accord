@@ -45,7 +45,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { useSigner } from "../../shared/wallet";
-import { ErrorShake } from "../../components/motion";
+import { ErrorShake } from "@useaccord/ui";
 import {
   buildArgs,
   defaultFormState,

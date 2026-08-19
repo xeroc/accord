@@ -1,7 +1,6 @@
 import { Route, Routes, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "motion/react";
 import { Navbar } from "@/components/navbar";
-import { Toaster } from "@/components/ui/sonner";
+import { PageShell, PageTransition, Toaster } from "@useaccord/ui";
 
 import { HomePage } from "./features/home/HomePage";
 import { DisputeDetail } from "./features/dispute/DisputeDetail";
@@ -32,46 +31,32 @@ import { JurorBrowsePage } from "./features/juror/JurorBrowsePage";
 function AnimatedRoutes() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
-        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-        exit={{
-          opacity: 0,
-          y: -12,
-          filter: "blur(4px)",
-          transition: { type: "spring", bounce: 0, duration: 0.3 },
-        }}
-        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-      >
-        <Routes location={location}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/juror" element={<JurorDashboardPage />} />
-          <Route path="/juror/stake" element={<StakePage />} />
-          <Route path="/juror/browse" element={<JurorBrowsePage />} />
-          <Route path="/disputes" element={<DisputeList />} />
-          <Route path="/disputes/new" element={<CreateDispute />} />
-          <Route path="/disputes/:address" element={<DisputeDetail />} />
-          <Route path="/subaccords" element={<SubaccordListPage />} />
-          <Route path="/subaccords/new" element={<SubaccordCreatePage />} />
-          <Route
-            path="/subaccords/:address"
-            element={<SubaccordDetailPage />}
-          />
-        </Routes>
-      </motion.div>
-    </AnimatePresence>
+    <PageTransition transitionKey={location.pathname}>
+      <Routes location={location}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/juror" element={<JurorDashboardPage />} />
+        <Route path="/juror/stake" element={<StakePage />} />
+        <Route path="/juror/browse" element={<JurorBrowsePage />} />
+        <Route path="/disputes" element={<DisputeList />} />
+        <Route path="/disputes/new" element={<CreateDispute />} />
+        <Route path="/disputes/:address" element={<DisputeDetail />} />
+        <Route path="/subaccords" element={<SubaccordListPage />} />
+        <Route path="/subaccords/new" element={<SubaccordCreatePage />} />
+        <Route
+          path="/subaccords/:address"
+          element={<SubaccordDetailPage />}
+        />
+      </Routes>
+    </PageTransition>
   );
 }
 
 export function App() {
   return (
     <>
-      <Navbar />
-      <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
+      <PageShell header={<Navbar />}>
         <AnimatedRoutes />
-      </main>
+      </PageShell>
       <Toaster />
     </>
   );

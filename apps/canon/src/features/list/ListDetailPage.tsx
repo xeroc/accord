@@ -29,8 +29,7 @@ import {
   timeAgo,
   timeRemaining,
 } from "@/shared/format";
-import { Skeleton } from "@/components/Skeleton";
-import { Copyable } from "@/components/Copyable";
+import { Copyable, Skeleton } from "@useaccord/ui";
 
 const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
@@ -419,12 +418,16 @@ function ListParamsSkeleton() {
     <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
       {Array.from({ length: 3 }).map((_, i) => (
         <div key={i} className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-          <Skeleton style={{ width: "60%", height: "0.9rem" }} />
+          <Skeleton className="rounded-sm bg-border" style={{ width: "60%", height: "0.9rem" }} aria-hidden />
           <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "80%", height: "0.85rem", marginTop: "0.5rem" }}
+            aria-hidden
           />
           <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "50%", height: "0.85rem", marginTop: "0.4rem" }}
+            aria-hidden
           />
         </div>
       ))}
@@ -444,11 +447,13 @@ function ItemTableSkeleton() {
           key={i}
           className="flex items-center gap-6 border-b border-border px-4 py-3 last:border-b-0"
         >
-          <Skeleton style={{ width: "26%", height: "0.85rem" }} />
-          <Skeleton style={{ width: "10%", height: "0.85rem" }} />
-          <Skeleton style={{ width: "14%", height: "0.85rem" }} />
+          <Skeleton className="rounded-sm bg-border" style={{ width: "26%", height: "0.85rem" }} aria-hidden />
+          <Skeleton className="rounded-sm bg-border" style={{ width: "10%", height: "0.85rem" }} aria-hidden />
+          <Skeleton className="rounded-sm bg-border" style={{ width: "14%", height: "0.85rem" }} aria-hidden />
           <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "18%", height: "0.85rem", marginLeft: "auto" }}
+            aria-hidden
           />
         </div>
       ))}

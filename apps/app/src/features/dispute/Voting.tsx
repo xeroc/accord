@@ -14,7 +14,7 @@ import {
   NO_VOTE,
 } from "@useaccord/sdk";
 
-import { Copyable } from "../../components/Copyable";
+import { Copyable } from "@useaccord/ui";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";

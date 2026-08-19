@@ -10,9 +10,12 @@ import { Link } from "react-router-dom";
 
 import { useSigner } from "../../shared/wallet";
 import { formatTokenAmount } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
+import {
+  Copyable,
+  StaggerGroup,
+  StaggerItem,
+} from "@useaccord/ui";
 import { useJurorStakes } from "./useJurorStakes";
-import { StaggerGroup, StaggerItem } from "../../components/motion";
 
 export function JurorDashboardPage() {
   const { signer } = useSigner();

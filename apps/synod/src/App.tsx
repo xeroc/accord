@@ -1,6 +1,5 @@
 import { Route, Routes, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "motion/react";
-import { Toaster } from "sonner";
+import { PageShell, PageTransition, Toaster } from "@useaccord/ui";
 
 import { Navbar } from "./components/navbar";
 
@@ -20,37 +19,23 @@ import { CaseDetailPage } from "./features/case/CaseDetailPage";
 function AnimatedRoutes() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
-        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-        exit={{
-          opacity: 0,
-          y: -12,
-          filter: "blur(4px)",
-          transition: { type: "spring", bounce: 0, duration: 0.3 },
-        }}
-        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-      >
-        <Routes location={location}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/cases/new" element={<NewCasePage />} />
-          <Route path="/cases/:address" element={<CaseDetailPage />} />
-        </Routes>
-      </motion.div>
-    </AnimatePresence>
+    <PageTransition transitionKey={location.pathname}>
+      <Routes location={location}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/cases/new" element={<NewCasePage />} />
+        <Route path="/cases/:address" element={<CaseDetailPage />} />
+      </Routes>
+    </PageTransition>
   );
 }
 
 export function App() {
   return (
     <>
-      <Navbar />
-      <main className="mx-auto min-h-screen max-w-6xl px-6 py-8">
+      <PageShell header={<Navbar />}>
         <AnimatedRoutes />
-      </main>
-      <Toaster theme="dark" position="bottom-right" />
+      </PageShell>
+      <Toaster />
     </>
   );
 }

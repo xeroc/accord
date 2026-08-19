@@ -2,16 +2,18 @@
  * DisputeStatusCard — inline, read-only Accord dispute status for a filed
  * Synod case (accord-9aoc; canon's DisputeStatusCard pattern).
  *
- * Decodes the bound Accord `Dispute` PDA (`SynodCase.dispute`) and renders its
- * state + final ruling. Synod option labels are dynamic: `option i` = party i
- * (shortened), the neutral option sits at index `party_count` (SPEC
- * §Invariants 4). Deep-links the full dispute/voting view in the Accord dApp
+ * Thin adapter over the shared pattern (@useaccord/ui): keeps the bound
+ * Accord `Dispute` decode (`SynodCase.dispute`) and Synod's dynamic option
+ * labels — `option i` = party i (shortened), the neutral option sits at
+ * index `party_count` (SPEC §Invariants 4) — plus the deep link to the
+ * full dispute/voting view in the Accord dApp
  * (`VITE_ACCORD_APP_URL/#/disputes/:address`, new tab) — Synod never
  * reimplements voting.
  */
 
 import { type Account, type Address } from "@solana/kit";
 import { DisputeState, type Dispute } from "@useaccord/sdk";
+import { DisputeStatusCard as DisputeStatusCardShell } from "@useaccord/ui";
 import {
   DISPUTE_STATE_LABELS,
   formatRuling,
@@ -38,63 +40,47 @@ export function DisputeStatusCard({
     : "";
 
   return (
-    <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-      <h3
-        className="font-mono text-sm"
-        style={{ color: "var(--amber)", marginBottom: "0.5rem" }}
-      >
-        Backing dispute
-      </h3>
-      <dl className="grid gap-2">
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-muted-foreground">Dispute</dt>
-          <dd className="text-right">
-            {shortenAddress(dispute.address as Address, 6)}
-          </dd>
-        </div>
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-muted-foreground">State</dt>
-          <dd className="text-right">{stateLabel}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-muted-foreground">Round</dt>
-          <dd className="text-right">{d.currentRound}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-muted-foreground">Ruling</dt>
-          <dd className="text-right">
-            {isFinal ? formatRuling(d.finalRuling, optionLabels) : "pending"}
-          </dd>
-        </div>
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <dt className="text-muted-foreground">Filed</dt>
-          <dd className="text-right">{formatTimestamp(d.filedAt)}</dd>
-        </div>
-        {isFinal && (
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <dt className="text-muted-foreground">Finalized</dt>
-            <dd className="text-right">{formatTimestamp(d.finalizedAt)}</dd>
-          </div>
-        )}
-      </dl>
-      {deepLink ? (
-        <a
-          href={deepLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm transition-colors hover:text-foreground"
-          style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--amber)" }}
-        >
-          Open in Accord →
-        </a>
-      ) : (
-        <p
-          className="italic text-muted-foreground"
-          style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}
-        >
-          Set VITE_ACCORD_APP_URL to enable a deep link to the Accord dApp.
-        </p>
-      )}
-    </section>
+    <DisputeStatusCardShell
+      title="Backing dispute"
+      rows={[
+        {
+          label: "Dispute",
+          value: shortenAddress(dispute.address as Address, 6),
+        },
+        { label: "State", value: stateLabel },
+        { label: "Round", value: d.currentRound },
+        {
+          label: "Ruling",
+          value: isFinal ? formatRuling(d.finalRuling, optionLabels) : "pending",
+        },
+        { label: "Filed", value: formatTimestamp(d.filedAt) },
+        ...(isFinal
+          ? [{ label: "Finalized", value: formatTimestamp(d.finalizedAt) }]
+          : []),
+      ]}
+      action={
+        deepLink ? (
+          <a
+            href={deepLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm transition-colors hover:text-foreground"
+            style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--amber)" }}
+          >
+            Open in Accord →
+          </a>
+        ) : undefined
+      }
+      note={
+        !deepLink && (
+          <p
+            className="italic text-muted-foreground"
+            style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}
+          >
+            Set VITE_ACCORD_APP_URL to enable a deep link to the Accord dApp.
+          </p>
+        )
+      }
+    />
   );
 }

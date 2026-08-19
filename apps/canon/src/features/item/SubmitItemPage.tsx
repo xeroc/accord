@@ -31,7 +31,7 @@ import { describeError } from "@/shared/errors";
 import { getAtaAddress } from "@/shared/tokens";
 import { ZERO_ADDRESS } from "@/shared/wallet";
 import { formatTokenAmount, shortAddress } from "@/shared/format";
-import { Button } from "@/components/ui/button";
+import { Button } from "@useaccord/ui";
 
 const ZERO_HASH = "0".repeat(64);
 

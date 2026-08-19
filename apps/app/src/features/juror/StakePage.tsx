@@ -22,7 +22,7 @@ import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { formatTokenAmount } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
+import { Copyable } from "@useaccord/ui";
 import { useSubaccord } from "../dispute/useSubaccord";
 import { useJurorStake } from "./useJurorStakes";
 import { useStakingProof } from "./useStakingProof";

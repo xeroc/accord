@@ -7,7 +7,7 @@
  * a raw UTF-8 string. This component parses the known `accord-evidence/v1`
  * format with a targeted parser — no YAML dependency needed.
  */
-import { Copyable } from "../../../components/Copyable";
+import { Copyable } from "@useaccord/ui";
 import { useManifest } from "./useManifest";
 import { parseManifest, type ParsedManifest } from "@useaccord/sdk/evidence";
 import { MarkdownDescription } from "./MarkdownDescription";
