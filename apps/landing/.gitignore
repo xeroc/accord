@@ -1,7 +1,5 @@
 # build output
 dist/
-# generated types
-.astro/
 # env (the waitlist webhook endpoint is a secret)
 .env
 .env.*

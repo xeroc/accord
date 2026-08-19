@@ -18,6 +18,12 @@
   --color-slash: var(--accord-slash);
   --color-text-primary: var(--accord-text-primary);
   --color-text-secondary: var(--accord-text-secondary);
+  /* Brand palette (marketing names, brand/DESIGN.md §04). */
+  --color-body: var(--accord-body);
+  --color-nearwhite: var(--accord-nearwhite);
+  --color-paper: var(--accord-paper);
+  /* Brand motion curve — exponential ease-out (terminal feel). */
+  --ease-expo: var(--accord-ease-expo);
 }
 
 @theme inline {
