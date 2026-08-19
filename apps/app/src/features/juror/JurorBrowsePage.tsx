@@ -157,7 +157,7 @@ export function JurorBrowsePage() {
         <Link to="/juror" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Juror dashboard.
         </Link>
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Jurors.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Jurors.</h1>
         <p className="mb-4 text-muted-foreground">
           Every active juror across all subaccords. Staked amounts are grouped
           by mint — different pools may use different collateral.

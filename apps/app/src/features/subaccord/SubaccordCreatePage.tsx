@@ -45,7 +45,20 @@ import { useClusterRpc } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { useSigner } from "../../shared/wallet";
-import { ErrorShake } from "@useaccord/ui";
+import {
+  ErrorShake,
+  Field as UiField,
+  FieldControl,
+  FieldDescription,
+  FieldLabel,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@useaccord/ui";
 import {
   buildArgs,
   defaultFormState,
@@ -60,7 +73,7 @@ export function SubaccordCreatePage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Create a subaccord.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Create a subaccord.</h1>
         <p className="mb-4 text-muted-foreground">
           Stake pool adjudicating one class of dispute. Immutable identity.
         </p>
@@ -166,21 +179,31 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
               required
               mono
             />
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-foreground">Aggregation.</span>
-              <select
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
-                value={form.aggregation}
-                onChange={(e) => set("aggregation", e.target.value)}
-              >
-                <option value="plurality">Plurality — pick one of N options</option>
-                <option value="median">Median — scalar ruling (ADR-0025)</option>
-              </select>
-              <span className="text-xs text-muted-foreground">
+            <UiField>
+              <FieldLabel>Aggregation.</FieldLabel>
+              <FieldControl>
+                <Select
+                  value={form.aggregation}
+                  onValueChange={(v) => set("aggregation", v)}
+                >
+                  <SelectTrigger className="w-full" aria-label="Aggregation">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="plurality">
+                      Plurality — pick one of N options
+                    </SelectItem>
+                    <SelectItem value="median">
+                      Median — scalar ruling (ADR-0025)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </FieldControl>
+              <FieldDescription>
                 How revealed votes aggregate into a ruling. Median disputes file
                 without option hashes; the vote is a scalar.
-              </span>
-            </label>
+              </FieldDescription>
+            </UiField>
             {form.aggregation === "median" && (
               <Field
                 label="Coherence tolerance (bps)"
@@ -203,14 +226,14 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
               mono
               disabled={form.immutable}
               action={
-                <label className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-muted-foreground">
+                <Label className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-muted-foreground">
                   <input
                     type="checkbox"
                     checked={form.immutable}
                     onChange={(e) => set("immutable", e.target.checked)}
                   />{" "}
                   Immutable
-                </label>
+                </Label>
               }
             />
           </fieldset>
@@ -372,25 +395,28 @@ function DepthPicker({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-foreground">Pool capacity.</span>
-      <select
-        className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {DEPTH_OPTIONS.map((opt) => (
-          <option key={opt.depth} value={opt.depth}>
-            {opt.note}
-          </option>
-        ))}
-      </select>
-      <span className="text-xs text-muted-foreground">
+    <UiField>
+      <FieldLabel>Pool capacity.</FieldLabel>
+      <FieldControl>
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger className="w-full" aria-label="Pool capacity">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DEPTH_OPTIONS.map((opt) => (
+              <SelectItem key={opt.depth} value={opt.depth.toString()}>
+                {opt.note}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldControl>
+      <FieldDescription>
         Maximum juror seats. Each stake/unstake tx carries a Merkle proof
         proportional to depth — depths beyond {MAX_SAFE_TREE_DEPTH} exceed the
         1232-byte transaction limit in browser wallets.
-      </span>
-    </label>
+      </FieldDescription>
+    </UiField>
   );
 }
 
@@ -418,21 +444,23 @@ function Field({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="flex items-center justify-between text-sm text-foreground">
+    <UiField>
+      <FieldLabel>
         {label}.{required ? " *" : ""}
         {action}
-      </span>
-      <input
-        className={`rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${mono ? "font-mono text-sm text-foreground" : ""}`}
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        disabled={disabled}
-      />
-      {help && <span className="text-xs text-muted-foreground">{help}</span>}
-    </label>
+      </FieldLabel>
+      <FieldControl>
+        <Input
+          className={mono ? "font-mono" : undefined}
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+          disabled={disabled}
+        />
+      </FieldControl>
+      {help && <FieldDescription>{help}</FieldDescription>}
+    </UiField>
   );
 }

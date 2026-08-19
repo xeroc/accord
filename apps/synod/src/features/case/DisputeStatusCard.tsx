@@ -64,8 +64,7 @@ export function DisputeStatusCard({
             href={deepLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm transition-colors hover:text-foreground"
-            style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--amber)" }}
+            className="mt-3 inline-block text-sm text-amber transition-colors hover:opacity-80"
           >
             Open in Accord →
           </a>
@@ -74,8 +73,7 @@ export function DisputeStatusCard({
       note={
         !deepLink && (
           <p
-            className="italic text-muted-foreground"
-            style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}
+            className="mt-3 text-xs italic text-muted-foreground"
           >
             Set VITE_ACCORD_APP_URL to enable a deep link to the Accord dApp.
           </p>

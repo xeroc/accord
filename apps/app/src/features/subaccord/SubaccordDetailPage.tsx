@@ -37,7 +37,7 @@ export function SubaccordDetailPage() {
         <Link to="/subaccords" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Subaccords.
         </Link>
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">
           <Copyable value={address} />
         </h1>
       </header>

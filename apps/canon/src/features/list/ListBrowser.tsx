@@ -212,7 +212,7 @@ function Pagination({
 }) {
   return (
     <>
-      <p className="mt-4 text-center text-[0.82rem] text-muted-foreground">
+      <p className="mt-4 text-center text-xs text-muted-foreground">
         Showing {shown} of {total}.
       </p>
       {hasMore && (

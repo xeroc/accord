@@ -58,8 +58,7 @@ export function DisputeStatusCard({ dispute }: { dispute: Account<Dispute> }) {
             href={deepLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            style={{ display: "inline-block", marginTop: "0.75rem", color: "var(--amber)" }}
+            className="mt-3 inline-block text-sm text-amber transition-colors hover:opacity-80"
           >
             Open in Accord →
           </a>
@@ -68,12 +67,12 @@ export function DisputeStatusCard({ dispute }: { dispute: Account<Dispute> }) {
       note={
         <>
           {!deepLink && (
-            <p className="italic text-muted-foreground" style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}>
+            <p className="mt-3 text-xs italic text-muted-foreground">
               Set VITE_ACCORD_APP_URL to enable a deep link to the Accord dApp.
             </p>
           )}
           {!isFinal && (
-            <p className="italic text-muted-foreground" style={{ margin: "0.5rem 0 0", fontSize: "0.8rem" }}>
+            <p className="mt-2 text-xs italic text-muted-foreground">
               Once final, a cranker&rsquo;s settle_item applies the ruling here.
             </p>
           )}

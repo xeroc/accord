@@ -12,7 +12,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { type Address } from "@solana/kit";
-import { Loader2Icon } from "lucide-react";
 import { Accord, findJurorStakePda, findAccordStatePda } from "@useaccord/sdk";
 import { toast } from "sonner";
 
@@ -22,7 +21,16 @@ import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { formatTokenAmount } from "../../shared/format";
-import { Copyable } from "@useaccord/ui";
+import {
+  Button,
+  Copyable,
+  Field,
+  FieldControl,
+  FieldError,
+  FieldDescription,
+  FieldLabel,
+  Input,
+} from "@useaccord/ui";
 import { useSubaccord } from "../dispute/useSubaccord";
 import { useJurorStake } from "./useJurorStakes";
 import { useStakingProof } from "./useStakingProof";
@@ -54,7 +62,7 @@ export function StakePage() {
         <Link to="/juror" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Juror dashboard.
         </Link>
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Stake & manage.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Stake & manage.</h1>
         <p className="mb-4 text-muted-foreground">
           Deposit collateral. Become eligible for the draw. Earn fees.
         </p>
@@ -71,29 +79,32 @@ export function StakePage() {
         <>
           {/* Subaccord selector */}
           <section className="mb-6">
-            <label className="mb-1 block font-mono text-xs text-text-secondary">
-              Subaccord
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={subaccordInput}
-                onChange={(e) => pickSubaccord(e.target.value.trim())}
-                placeholder="Subaccord address"
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none font-mono text-sm text-foreground flex-1"
-              />
-              {subaccord && (
-                <Link
-                  to={`/subaccords/${subaccord.address}`}
-                  className="inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
-                >
-                  View pool.
-                </Link>
-              )}
-            </div>
-            {subaccordAddr && !subaccord && (
-              <p className="mt-1 text-sm text-slash">Subaccord not found.</p>
-            )}
+            <Field invalid={!!subaccordAddr && !subaccord}>
+              <FieldLabel className="text-xs">Subaccord</FieldLabel>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <FieldControl>
+                    <Input
+                      value={subaccordInput}
+                      onChange={(e) => pickSubaccord(e.target.value.trim())}
+                      placeholder="Subaccord address"
+                      className="font-mono"
+                    />
+                  </FieldControl>
+                </div>
+                {subaccord && (
+                  <Link
+                    to={`/subaccords/${subaccord.address}`}
+                    className="inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
+                  >
+                    View pool.
+                  </Link>
+                )}
+              </div>
+              <FieldError>
+                {subaccordAddr && !subaccord ? "Subaccord not found." : null}
+              </FieldError>
+            </Field>
           </section>
 
           {subaccord && (
@@ -238,38 +249,31 @@ function InitialStakeForm({
           Proof failed: {proof.error.message}
         </p>
       )}
-      <label className="block">
-        <span className="mb-1 block font-mono text-xs text-text-secondary">
-          Amount (atomic units)
-        </span>
-        <input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]+"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
-          placeholder={minInitial.toString()}
-          required
-          className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-        />
-        <span className="mt-1 block text-xs text-text-secondary">
-          Minimum to be draw-eligible: {formatTokenAmount(minInitial)} (min stake{" "}
-          + α·min stake; staking token <Copyable value={subaccord.data.stakingToken} />)
-        </span>
-        {amount && !meetsMin && (
-          <span className="mt-1 block text-xs text-slash">
-            Below the draw-eligibility minimum.
-          </span>
-        )}
-      </label>
-      <button
-        type="submit"
-        disabled={!ready}
-        className="inline-flex items-center gap-2 rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {proofLoading ? <Loader2Icon className="size-4 animate-spin" /> : null}
+      <Field invalid={!!(amount && !meetsMin)}>
+        <FieldLabel className="text-xs">Amount (atomic units)</FieldLabel>
+        <FieldControl>
+          <Input
+            inputMode="numeric"
+            pattern="[0-9]+"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder={minInitial.toString()}
+            required
+            className="font-mono"
+          />
+        </FieldControl>
+        <FieldDescription>
+          Minimum to be draw-eligible: {formatTokenAmount(minInitial)} (min
+          stake + α·min stake; staking token{" "}
+          <Copyable value={subaccord.data.stakingToken} />)
+        </FieldDescription>
+        <FieldError>
+          {amount && !meetsMin ? "Below the draw-eligibility minimum." : null}
+        </FieldError>
+      </Field>
+      <Button type="submit" disabled={!ready} loading={proofLoading}>
         {sending ? "Signing…" : "Stake."}
-      </button>
+      </Button>
     </form>
   );
 }

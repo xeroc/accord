@@ -137,7 +137,7 @@ export function HomePage() {
                 <CaseCard key={c.address} card={c} />
               ))}
             </ul>
-            <p className="mt-4 text-center text-[0.82rem] text-muted-foreground">
+            <p className="mt-4 text-center text-xs text-muted-foreground">
               Showing {visible.length} of {cases?.length}.
             </p>
             {hasMore && (

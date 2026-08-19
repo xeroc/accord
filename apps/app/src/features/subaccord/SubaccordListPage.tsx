@@ -39,7 +39,7 @@ export function SubaccordListPage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Subaccords.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Subaccords.</h1>
         <p className="mb-4 text-muted-foreground">Stake pools adjudicating one class of dispute.</p>
         <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
           Create a subaccord.

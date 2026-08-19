@@ -244,7 +244,7 @@ export function CaseDetailPage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <h1 className="font-mono text-[1.4rem] font-semibold tracking-[-0.01em]">
+        <h1 className="font-mono text-2xl font-semibold tracking-[-0.01em]">
           {shortenAddress(caseAddr, 8)}
         </h1>
         <p className="mb-4 text-muted-foreground">

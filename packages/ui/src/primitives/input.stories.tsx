@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { Input } from "./input";
+import { Field, FieldControl, FieldDescription, FieldLabel } from "./field";
 import { Button } from "./button";
 
 const meta = {
@@ -30,18 +31,18 @@ export const States: Story = {
   ),
 };
 
-/** Inputs inherit form font styles for file inputs; labels stay app-owned. */
+/** Field wires the label, description, and ids — see Primitives/Field. */
 export const WithLabel: Story = {
   render: () => (
-    <div className="flex w-full max-w-sm flex-col gap-2">
-      <label htmlFor="evidence-uri" className="text-sm font-medium">
-        Evidence URI
-      </label>
-      <Input id="evidence-uri" placeholder="ar://… or ipfs://…" />
-      <p className="text-xs text-muted-foreground">
+    <Field className="max-w-sm">
+      <FieldLabel>Evidence URI</FieldLabel>
+      <FieldControl>
+        <Input placeholder="ar://… or ipfs://…" />
+      </FieldControl>
+      <FieldDescription>
         Paste a permanent URI; court members fetch it on-chain.
-      </p>
-    </div>
+      </FieldDescription>
+    </Field>
   ),
 };
 

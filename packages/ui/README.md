@@ -1,8 +1,7 @@
 # @useaccord/ui
 
 Shared design tokens, Tailwind v4 theme, and React UI primitives for the
-Accord applications (`apps/app`, `apps/canon`, `apps/synod`). Landing
-(`apps/landing`) consumes **tokens only**, without React.
+Accord applications (`apps/app`, `apps/canon`, `apps/synod`, `apps/landing`).
 
 Private workspace package, consumed via `"@useaccord/ui": "workspace:*"`.
 Not published — licensing and release strategy are unresolved.
@@ -31,7 +30,7 @@ themselves.
 
 Keep SPA shell rules app-local (`html, body, #root { height: 100% }`).
 
-## Tokens only (Landing / non-React)
+## Tokens only (non-React consumers)
 
 ```css
 @import "@useaccord/ui/tokens.css"; /* raw --accord-* values, no fonts, no base */

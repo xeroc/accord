@@ -100,7 +100,7 @@ export function ListDetailPage() {
         <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Back to lists.
         </Link>
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">List.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">List.</h1>
         {list && <Copyable value={list.address} />}
       </header>
 
@@ -135,7 +135,7 @@ export function ListDetailPage() {
       {list && (
         <section style={{ marginTop: "2.5rem" }}>
           <div className="flex items-center justify-between gap-4" style={{ marginBottom: "1rem" }}>
-            <h2 className="text-[1.6rem] font-semibold tracking-[-0.01em]" style={{ fontSize: "1.2rem" }}>
+            <h2 className="text-xl font-semibold tracking-[-0.01em]">
               Items.{" "}
               <span className="italic text-muted-foreground">
                 ({itemsQuery.data?.length ?? "…"})
@@ -255,7 +255,7 @@ function FilterBar({
   counts?: Account<CanonItem>[];
 }) {
   return (
-    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+    <div className="mb-4 flex flex-wrap gap-2">
       {FILTERS.map((f) => {
         const count =
           f.key === "all"
@@ -265,13 +265,9 @@ function FilterBar({
           <button
             key={f.key}
             type="button"
-            className={
-              current === f.key
-                ? "inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-                : "inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
-            }
-            onClick={() => onSelect(f.key)}
-            style={{ fontSize: "0.8rem", padding: "0.35rem 0.7rem" }}
+            className={current === f.key
+                ? "inline-flex items-center justify-center rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+                : "inline-flex items-center justify-center rounded-md bg-transparent px-2.5 py-1.5 text-xs font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"}
           >
             {f.label}
             {count !== undefined ? ` (${count})` : ""}

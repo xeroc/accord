@@ -20,7 +20,7 @@ export function Nav() {
             </g>
             <circle cx="16" cy="16" r="2.6" fill="currentColor"></circle>
           </svg>
-          <span className="font-mono text-[15px] font-medium tracking-tight text-nearwhite">Accord</span>
+          <span className="font-mono text-sm font-medium tracking-tight text-nearwhite">Accord</span>
           <span className="ml-2 hidden items-center gap-1.5 font-mono text-xs text-muted-foreground sm:inline-flex">
             <span className="h-1.5 w-1.5 rounded-full bg-amber"></span>v1 · build target
           </span>

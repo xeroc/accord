@@ -14,7 +14,19 @@ import {
   NO_VOTE,
 } from "@useaccord/sdk";
 
-import { Copyable } from "@useaccord/ui";
+import {
+  Button,
+  Copyable,
+  Field,
+  FieldControl,
+  FieldLabel,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@useaccord/ui";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
@@ -302,43 +314,50 @@ export function Voting({
           {/* Commit phase */}
           {commitOpen && !hasCommitted && (
             <div className="space-y-3">
-              <label className="block font-mono text-sm text-text-secondary">
-                {isMedian ? "Scalar vote" : "Select option"}
-              </label>
+            <Field>
+              <FieldLabel>{isMedian ? "Scalar vote" : "Select option"}</FieldLabel>
               {isMedian ? (
                 // Median: decimal scalar string (encodeScalarVote scales it).
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="e.g. 123.45"
-                  value={scalar}
-                  onChange={(e) => setScalar(e.target.value)}
-                  className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-                />
+                <FieldControl>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="e.g. 123.45"
+                    value={scalar}
+                    onChange={(e) => setScalar(e.target.value)}
+                    className="font-mono"
+                  />
+                </FieldControl>
               ) : (
-                <select
-                  value={vote}
-                  onChange={(e) => setVote(Number(e.target.value))}
-                  className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-                >
-                  {Array.from({ length: numOptions }, (_, i) => {
-                    const label = manifestLabels[i]?.trim();
-                    if (label) {
-                      return (
-                        <option key={i} value={i}>
-                          {label}
-                        </option>
-                      );
-                    }
-                    const hash = d.options[i] ? hexBytes(d.options[i]) : "";
-                    return (
-                      <option key={i} value={i}>
-                        {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
-                      </option>
-                    );
-                  })}
-                </select>
+                <FieldControl>
+                  <Select
+                    value={vote.toString()}
+                    onValueChange={(v) => setVote(Number(v))}
+                  >
+                    <SelectTrigger className="w-full font-mono" aria-label="Vote option">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: numOptions }, (_, i) => {
+                        const label = manifestLabels[i]?.trim();
+                        if (label) {
+                          return (
+                            <SelectItem key={i} value={i.toString()}>
+                              {label}
+                            </SelectItem>
+                          );
+                        }
+                        const hash = d.options[i] ? hexBytes(d.options[i]) : "";
+                        return (
+                          <SelectItem key={i} value={i.toString()}>
+                            {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </FieldControl>
               )}
+            </Field>
               {!isMedian && (
                 <div className="break-all font-mono text-xs text-text-secondary">
                   {manifestLabels[vote]?.trim()
@@ -347,13 +366,9 @@ export function Voting({
                   {d.options[vote] ? hexBytes(d.options[vote]) : "—"}
                 </div>
               )}
-              <button
-                onClick={handleCommit}
-                disabled={sending}
-                className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button onClick={handleCommit} loading={sending}>
                 {sending ? "Signing…" : "Commit vote"}
-              </button>
+              </Button>
             </div>
           )}
           {commitOpen && hasCommitted && (

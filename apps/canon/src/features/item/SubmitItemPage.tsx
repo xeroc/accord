@@ -31,7 +31,15 @@ import { describeError } from "@/shared/errors";
 import { getAtaAddress } from "@/shared/tokens";
 import { ZERO_ADDRESS } from "@/shared/wallet";
 import { formatTokenAmount, shortAddress } from "@/shared/format";
-import { Button } from "@useaccord/ui";
+import {
+  Button,
+  Field,
+  FieldControl,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  Input,
+} from "@useaccord/ui";
 
 const ZERO_HASH = "0".repeat(64);
 
@@ -148,7 +156,7 @@ export function SubmitItemPage() {
         ← Back
       </Link>
       <div className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em] font-mono text-sm text-foreground">Submit item</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Submit item</h1>
         <p className="mb-4 text-muted-foreground font-mono text-sm text-foreground">to list {shortAddress(list.data.address)}</p>
       </div>
 
@@ -159,24 +167,23 @@ export function SubmitItemPage() {
       )}
 
       <form onSubmit={onSubmit} className="flex flex-col gap-7 rounded-lg bg-card p-4 ring-1 ring-foreground/10" style={{ maxWidth: "560px" }}>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-foreground" htmlFor="account">
-            Account
-          </label>
-          <input
-            id="account"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
-            placeholder="The curated address (base58)"
-            value={account}
-            onChange={(e) => setAccount(e.target.value.trim())}
-          />
-          <span className="text-xs text-muted-foreground">
+        <Field>
+          <FieldLabel>Account</FieldLabel>
+          <FieldControl>
+            <Input
+              className="font-mono"
+              placeholder="The curated address (base58)"
+              value={account}
+              onChange={(e) => setAccount(e.target.value.trim())}
+            />
+          </FieldControl>
+          <FieldDescription>
             {ownershipDisabled
               ? "This list disables the ownership check (curates arbitrary data)."
               : `Must be owned by the list program (${shortAddress(listData!.listProgram)}).`}
-          </span>
+          </FieldDescription>
           {!ownershipDisabled && ownerQuery.data !== undefined && (
-            <span className={ownerMatch ? "text-[0.8rem] text-success" : "text-[0.8rem] text-destructive"}>
+            <span className={ownerMatch ? "text-xs text-success" : "text-xs text-destructive"}>
               {ownerMatch
                 ? "✓ account owner matches the list program."
                 : ownerQuery.data === null
@@ -184,44 +191,42 @@ export function SubmitItemPage() {
                   : "✗ owner mismatch — submit will revert."}
             </span>
           )}
-        </div>
+        </Field>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-foreground" htmlFor="evidence">
-            Evidence hash
-          </label>
-          <input
-            id="evidence"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
-            placeholder={ZERO_HASH}
-            value={evidenceHex}
-            onChange={(e) => setEvidenceHex(e.target.value)}
-          />
-          {evidenceError ? (
-            <p className="text-sm text-destructive">{evidenceError}</p>
-          ) : (
-            <span className="text-xs text-muted-foreground">32-byte sha256 of the off-chain evidence (hex).</span>
+        <Field invalid={!!evidenceError}>
+          <FieldLabel>Evidence hash</FieldLabel>
+          <FieldControl>
+            <Input
+              className="font-mono"
+              placeholder={ZERO_HASH}
+              value={evidenceHex}
+              onChange={(e) => setEvidenceHex(e.target.value)}
+            />
+          </FieldControl>
+          <FieldError>{evidenceError ?? null}</FieldError>
+          {!evidenceError && (
+            <FieldDescription>
+              32-byte sha256 of the off-chain evidence (hex).
+            </FieldDescription>
           )}
-        </div>
+        </Field>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-foreground" htmlFor="deposit">
-            Deposit ({shortAddress(listData!.feeMint)})
-          </label>
-          <input
-            id="deposit"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
-            inputMode="numeric"
-            value={depositValue}
-            onChange={(e) => setDeposit(e.target.value)}
-          />
-          <span className="text-xs text-muted-foreground">
+        <Field>
+          <FieldLabel>Deposit ({shortAddress(listData!.feeMint)})</FieldLabel>
+          <FieldControl>
+            <Input
+              inputMode="numeric"
+              value={depositValue}
+              onChange={(e) => setDeposit(e.target.value)}
+            />
+          </FieldControl>
+          <FieldDescription>
             Locked permanently; recoverable only via withdrawal. Default{" "}
             {formatTokenAmount(listData!.submitDeposit)} (atomic).
-          </span>
-        </div>
+          </FieldDescription>
+        </Field>
 
-        <Button type="submit" disabled={!ready || sending}>
+        <Button type="submit" disabled={!ready} loading={sending}>
           {sending ? "Submitting…" : "Submit item"}
         </Button>
       </form>

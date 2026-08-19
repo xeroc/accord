@@ -37,6 +37,13 @@ import {
   pluralityGate,
   deadlineFromHours,
 } from "./newCaseForm";
+import {
+  Field as UiField,
+  FieldControl,
+  FieldDescription,
+  FieldLabel,
+  Input,
+} from "@useaccord/ui";
 
 /** The picked court — either a browser card or an inline-validated paste. */
 interface Selection {
@@ -178,7 +185,7 @@ export function NewCasePage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">
           Convene a case.
         </h1>
         <p className="mb-4 text-muted-foreground">
@@ -255,17 +262,17 @@ export function NewCasePage() {
               </div>
             )}
 
-            <label className="flex flex-col gap-1">
-              <span className="text-sm text-foreground">
-                …or paste a Subaccord address.
-              </span>
-              <input
-                className="rounded-md border border-input bg-background px-3 py-2 font-mono text-sm text-foreground focus:border-ring focus:outline-none"
-                type="text"
-                value={paste}
-                placeholder="Subaccord address"
-                onChange={(e) => setPaste(e.target.value.trim())}
-              />
+            <UiField>
+              <FieldLabel>…or paste a Subaccord address.</FieldLabel>
+              <FieldControl>
+                <Input
+                  className="font-mono"
+                  type="text"
+                  value={paste}
+                  placeholder="Subaccord address"
+                  onChange={(e) => setPaste(e.target.value.trim())}
+                />
+              </FieldControl>
               {pasteStatus.kind === "checking" && (
                 <span className="text-xs text-muted-foreground">
                   Checking…
@@ -296,7 +303,7 @@ export function NewCasePage() {
                   frozen at open.
                 </span>
               )}
-            </label>
+            </UiField>
           </fieldset>
 
           <fieldset className="grid gap-4 rounded-lg border border-border p-5">
@@ -432,20 +439,22 @@ function Field({
   mono?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-foreground">
+    <UiField>
+      <FieldLabel>
         {label}.{required ? " *" : ""}
-      </span>
-      <input
-        className={`rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none ${mono ? "font-mono text-sm text-foreground" : ""}`}
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-      />
-      {help && <span className="text-xs text-muted-foreground">{help}</span>}
-    </label>
+      </FieldLabel>
+      <FieldControl>
+        <Input
+          className={mono ? "font-mono" : undefined}
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+        />
+      </FieldControl>
+      {help && <FieldDescription>{help}</FieldDescription>}
+    </UiField>
   );
 }
 

@@ -47,18 +47,18 @@ const STATE_HINT: Record<ItemState, string> = {
     "Under Accord adjudication. settle_item applies the ruling here once final (cranker).",
 };
 
-function stateColor(state: ItemState): string {
+function stateClass(state: ItemState): string {
   switch (state) {
     case ItemState.Listed:
-      return "var(--green)";
+      return "text-confirm";
     case ItemState.Removed:
-      return "var(--red)";
+      return "text-slash";
     case ItemState.Disputed:
-      return "var(--red)";
+      return "text-slash";
     case ItemState.WithdrawPending:
-      return "var(--amber)";
+      return "text-amber";
     default:
-      return "var(--muted-foreground)";
+      return "text-muted-foreground";
   }
 }
 
@@ -122,19 +122,18 @@ export function ItemDetailPage() {
         ← Back
       </Link>
       <div className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em] font-mono text-sm text-foreground">Canon item</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Canon item</h1>
         <p className="mb-4 text-muted-foreground font-mono text-sm text-foreground">{shortAddress(item.data.address)}</p>
-        <p className="font-mono text-sm text-foreground" style={{ color: stateColor(state), fontWeight: 650 }}>
+        <p className={`font-mono text-sm font-semibold ${stateClass(state)}`}>
           {stateLabel}
         </p>
-        <p className="italic text-muted-foreground" style={{ margin: "0.35rem 0 0", fontSize: "0.85rem" }}>
+        <p className="mt-1.5 text-xs italic text-muted-foreground">
           {STATE_HINT[state]}
         </p>
         {CHALLENGEABLE_STATES[state] && (
           <Link
             to={`/items/${item.data.address}/challenge`}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-            style={{ marginTop: "1rem" }}
+            className="mt-4 inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
           >
             Challenge this item.
           </Link>
@@ -207,7 +206,7 @@ export function ItemDetailPage() {
       {/* Per-state action / status */}
       {state === ItemState.Pending && (
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-          <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+          <h3 className="mb-2 font-mono text-sm text-amber">
             Listing window
           </h3>
           <dl className="grid gap-2">
@@ -229,7 +228,7 @@ export function ItemDetailPage() {
 
       {state === ItemState.Removed && (
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-          <p className="italic text-muted-foreground" style={{ margin: "0", fontSize: "0.9rem" }}>
+            <p className="m-0 text-xs italic text-muted-foreground">
             This item has been delisted. Stake was either returned to the
             submitter (withdrawal / failed challenge) or paid to the challenger
             (successful removal ruling).
@@ -247,7 +246,7 @@ export function ItemDetailPage() {
           <div className="animate-pulse rounded-sm bg-border" style={{ height: "6rem", width: "100%" }} />
         ) : (
           <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-            <p className="italic text-muted-foreground" style={{ margin: "0", fontSize: "0.9rem" }}>
+              <p className="m-0 text-xs italic text-muted-foreground">
               Dispute account not found at {shortAddress(it.activeDispute)}.
             </p>
           </section>

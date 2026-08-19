@@ -31,6 +31,14 @@ import {
 const EVIDENCE_DAEMON_URL =
   import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
 
+import {
+  Field,
+  FieldControl,
+  FieldLabel,
+  Input,
+  Textarea,
+} from "@useaccord/ui";
+
 export function JoinCard({
   casePda,
   caseData,
@@ -140,45 +148,48 @@ export function JoinCard({
       )}
 
       <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-foreground">Title. *</span>
-          <input
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none"
-            type="text"
-            value={title}
-            placeholder="What is this dispute about?"
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </label>
+        <Field>
+          <FieldLabel>Title. *</FieldLabel>
+          <FieldControl>
+            <Input
+              type="text"
+              value={title}
+              placeholder="What is this dispute about?"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </FieldControl>
+        </Field>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-foreground">Claim (markdown).</span>
-          <textarea
-            className="min-h-24 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:border-ring focus:outline-none"
-            value={description}
-            placeholder="Your statement — jurors read this."
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </label>
+        <Field>
+          <FieldLabel>Claim (markdown).</FieldLabel>
+          <FieldControl>
+            <Textarea
+              className="min-h-24 font-mono"
+              value={description}
+              placeholder="Your statement — jurors read this."
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </FieldControl>
+        </Field>
 
         {entries.map((e, i) => (
           <div key={i} className="flex items-end gap-2">
-            <label className="flex-1">
-              <span className="mb-1 block text-sm text-foreground">
-                Entry {i + 1}.
-              </span>
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:border-ring focus:outline-none"
-                type="text"
-                value={e}
-                placeholder="https://… (evidence reference)"
-                onChange={(ev) =>
-                  setEntries((prev) =>
-                    prev.map((p, j) => (j === i ? ev.target.value : p)),
-                  )
-                }
-              />
-            </label>
+            <Field className="flex-1">
+              <FieldLabel>Entry {i + 1}.</FieldLabel>
+              <FieldControl>
+                <Input
+                  className="font-mono"
+                  type="text"
+                  value={e}
+                  placeholder="https://… (evidence reference)"
+                  onChange={(ev) =>
+                    setEntries((prev) =>
+                      prev.map((p, j) => (j === i ? ev.target.value : p)),
+                    )
+                  }
+                />
+              </FieldControl>
+            </Field>
             {entries.length > 1 && (
               <button
                 type="button"

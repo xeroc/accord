@@ -27,6 +27,31 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "nope" })).toBeDisabled();
   });
 
+  it("shows a spinner and disables itself while loading", () => {
+    render(<Button loading>Sign</Button>);
+    const btn = screen.getByRole("button", { name: "Sign" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("aria-busy", "true");
+    expect(btn.querySelector("[data-slot=spinner]")).not.toBeNull();
+  });
+
+  it("loading spinner is the kit Spinner (animate-spin), visually hidden from the name", () => {
+    render(<Button loading>Publish</Button>);
+    const spinner = screen
+      .getByRole("button", { name: "Publish" })
+      .querySelector("[data-slot=spinner]")!;
+    expect(spinner).toHaveClass("animate-spin");
+    expect(spinner).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("renders no spinner when not loading", () => {
+    render(<Button>Idle</Button>);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Idle" })).not.toHaveAttribute(
+      "aria-busy",
+    );
+  });
+
 
   it("merges variant/size onto the child element with asChild", () => {
     render(

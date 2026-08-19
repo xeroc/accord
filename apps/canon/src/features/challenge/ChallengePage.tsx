@@ -1,3 +1,12 @@
+import {
+  Button,
+  Field,
+  FieldControl,
+  FieldDescription,
+  FieldLabel,
+  Input,
+  Textarea,
+} from "@useaccord/ui";
 /**
  * ChallengePage.tsx — the Canon challenger's evidence authoring + submission UI.
  *
@@ -236,46 +245,42 @@ export function ChallengePage() {
       {signer && (
         <div className="mt-6 space-y-5">
           {/* Title */}
-          <div>
-            <label className="mb-1 block font-mono text-sm text-muted-foreground">
-              Challenge title
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Brief title for this challenge"
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-ring focus:outline-none"
-            />
-          </div>
+          <Field>
+            <FieldLabel>Challenge title</FieldLabel>
+            <FieldControl>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Brief title for this challenge"
+              />
+            </FieldControl>
+          </Field>
 
           {/* Description (markdown claim body) */}
-          <div>
-            <label className="mb-1 block font-mono text-sm text-muted-foreground">
-              Claim body (markdown)
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="## Claim&#10;&#10;This item is fraudulent because…"
-              rows={6}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 font-mono text-sm focus:border-ring focus:outline-none"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
+          <Field>
+            <FieldLabel>Claim body (markdown)</FieldLabel>
+            <FieldControl>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="## Claim&#10;&#10;This item is fraudulent because…"
+                rows={6}
+                className="font-mono"
+              />
+            </FieldControl>
+            <FieldDescription>
               Rendered as sanitized markdown for jurors. Raw bytes are never
               altered — sha256(manifest) is the on-chain commitment.
-            </p>
-          </div>
+            </FieldDescription>
+          </Field>
 
           {/* Evidence entries */}
           <div>
-            <label className="mb-2 block font-mono text-sm text-muted-foreground">
-              Evidence URLs
-            </label>
+            <FieldLabel className="mb-2">Evidence URLs</FieldLabel>
             <div className="space-y-2">
               {entries.map((entry, idx) => (
                 <div key={idx} className="flex items-center gap-2">
-                  <input
+                  <Input
                     type="url"
                     value={entry}
                     onChange={(e) =>
@@ -284,7 +289,7 @@ export function ChallengePage() {
                       )
                     }
                     placeholder="https://example.com/evidence/claim.pdf"
-                    className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-ring focus:outline-none"
+                    className="flex-1"
                   />
                   {entries.length > 1 && (
                     <button
@@ -298,21 +303,20 @@ export function ChallengePage() {
                 </div>
               ))}
             </div>
-            <button
+            <Button
               type="button"
+              variant="link"
+              className="mt-2 w-fit font-mono font-normal"
               onClick={addEntry}
-              className="mt-2 font-mono text-sm text-amber hover:underline"
             >
               + Add URL
-            </button>
+            </Button>
           </div>
 
           {/* YAML preview */}
           {yamlPreview && (
             <div>
-              <label className="mb-1 block font-mono text-sm text-muted-foreground">
-                manifest.yaml preview
-              </label>
+              <FieldLabel>manifest.yaml preview</FieldLabel>
               <pre className="max-h-64 overflow-auto rounded-md border border-border bg-card p-3 font-mono text-xs text-muted-foreground">
                 {yamlPreview}
               </pre>
@@ -329,25 +333,25 @@ export function ChallengePage() {
               <p className="mt-1 break-words font-mono text-xs text-muted-foreground">
                 {publishFail.error}
               </p>
-              <button
+              <Button
                 type="button"
+                variant="link"
+                className="mt-2 w-fit font-mono font-normal"
                 onClick={handleRetryPublish}
-                disabled={submitting}
-                className="mt-2 font-mono text-sm text-amber hover:underline disabled:opacity-50"
+                loading={submitting}
               >
                 {submitting ? "Publishing…" : "Retry evidence publish"}
-              </button>
+              </Button>
             </div>
           )}
-          {/* Submit */}
-          <button
+          <Button
             type="button"
-            disabled={!isValid || submitting}
+            disabled={!isValid}
             onClick={handleSubmit}
-            className="rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-50"
+            loading={submitting}
           >
             {submitting ? "Filing challenge…" : "File challenge"}
-          </button>
+          </Button>
         </div>
       )}
     </div>

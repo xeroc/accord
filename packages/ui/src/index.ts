@@ -34,6 +34,18 @@ export {
   DialogTrigger,
 } from "./primitives/dialog";
 export { Input } from "./primitives/input";
+export { Label } from "./primitives/label";
+export {
+  Field,
+  FieldControl,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  useField,
+} from "./primitives/field";
+export { Spinner } from "./primitives/spinner";
+export { Textarea } from "./primitives/textarea";
 export {
   Select,
   SelectContent,
@@ -60,8 +72,8 @@ export {
   TableCaption,
 } from "./primitives/table";
 
+// Motion — choreographed enter/exit primitives.
 export { StaggerGroup, StaggerItem, Reveal, ErrorShake, EASE_EXPO } from "./motion";
-
 // Composed patterns — slot-based app chrome; still boundary-clean
 // (no router/wallet/SDK/env imports, see header policy).
 export { ProductNavbar } from "./patterns/product-navbar";

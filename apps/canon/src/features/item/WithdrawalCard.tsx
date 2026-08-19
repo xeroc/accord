@@ -86,10 +86,10 @@ export function WithdrawalCard({
     const elapsed = remaining === "expired";
     return (
       <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-        <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+        <h3 className="mb-2 font-mono text-sm text-amber">
           Withdrawal pending
         </h3>
-        <p className="italic text-muted-foreground" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
+        <p className="mb-3 text-xs italic text-muted-foreground">
           Your stake is locked for the {windowLen} fraud-challenge window. It is
           returned once the timelock elapses — no further action from you.
         </p>
@@ -104,7 +104,7 @@ export function WithdrawalCard({
           </div>
         </dl>
         {elapsed && (
-          <p className="italic text-muted-foreground" style={{ margin: "0.75rem 0 0", fontSize: "0.8rem" }}>
+          <p className="mt-3 text-xs italic text-muted-foreground">
             A cranker will return your stake shortly. Anyone may trigger it.
           </p>
         )}
@@ -116,10 +116,10 @@ export function WithdrawalCard({
   if (item.data.state !== undefined && canRequest) {
     return (
       <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-        <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+        <h3 className="mb-2 font-mono text-sm text-amber">
           Withdraw stake
         </h3>
-        <p className="italic text-muted-foreground" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
+        <p className="mb-3 text-xs italic text-muted-foreground">
           Opens a {windowLen} challenge window. Your accumulated stake is returned
           at the end if the item is not challenged.
         </p>
@@ -134,10 +134,10 @@ export function WithdrawalCard({
   if (item.data.state !== undefined) {
     return (
       <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-        <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+        <h3 className="mb-2 font-mono text-sm text-amber">
           Withdraw stake
         </h3>
-        <p className="italic text-muted-foreground" style={{ margin: "0", fontSize: "0.85rem" }}>
+        <p className="m-0 text-xs italic text-muted-foreground">
           Only the item submitter can request a withdrawal.
         </p>
       </section>

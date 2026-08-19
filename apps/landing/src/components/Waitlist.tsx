@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Button } from "@useaccord/ui";
+import { Button, Input } from "@useaccord/ui";
 
 import { submitWaitlist } from "../lib/waitlist";
 
@@ -28,7 +28,7 @@ export function Waitlist() {
   return (
     <form data-waitlist data-endpoint={endpoint} className="flex w-full max-w-md flex-col gap-2" noValidate onSubmit={onSubmit}>
       <div className="flex w-full flex-col gap-2 sm:flex-row">
-        <input
+        <Input
           type="email"
           name="email"
           inputMode="email"
@@ -38,11 +38,11 @@ export function Waitlist() {
           aria-label="Email address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full flex-1 rounded-md border border-border bg-raised px-4 py-3 font-mono text-sm text-nearwhite placeholder:text-muted-foreground/60 focus:border-amber focus:outline-none"
+          className="h-auto w-full flex-1 px-4 py-3 font-mono"
         />
         <Button
           type="submit"
-          disabled={sending}
+          loading={sending}
           className="h-auto rounded-md px-5 py-3 font-sans"
         >
           Join the waitlist
@@ -52,8 +52,9 @@ export function Waitlist() {
         data-waitlist-status
         role="status"
         aria-live="polite"
-        className="w-full text-left text-xs text-muted-foreground"
-        style={status.msg ? { color: status.ok ? "var(--color-confirm)" : "var(--color-slash)" } : undefined}
+        className={`w-full text-left text-xs ${
+          status.msg ? (status.ok ? "text-confirm" : "text-slash") : "text-muted-foreground"
+        }`}
       >
         {status.msg}
       </p>

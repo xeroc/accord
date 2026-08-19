@@ -3,6 +3,17 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import { ChevronRightIcon } from "lucide-react";
 import {
+  Button,
+  Field,
+  FieldControl,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  Input,
+  Label,
+  Textarea,
+} from "@useaccord/ui";
+import {
   Accord,
   INITIAL_NUM_JURORS,
   MAX_OPTIONS,
@@ -434,41 +445,40 @@ export function CreateDispute() {
             Dispute: {publishFail.dispute}
           </p>
           <div className="mt-3 flex gap-2">
-            <button
+            <Button
               type="button"
               onClick={handleRetryPublish}
-              disabled={publishing}
-              className="rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
+              loading={publishing}
             >
               {publishing ? "Publishing…" : "Retry publish"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => navigate(`/disputes/${publishFail.dispute}`)}
-              className="rounded-md border border-border-subtle px-4 py-2 text-sm text-text-secondary hover:text-text-primary"
             >
               View dispute
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Subaccord selector */}
-        <div>
-          <label className="mb-1 block font-mono text-sm text-text-secondary">
-            Subaccord address
-          </label>
-          <input
-            type="text"
-            value={subaccordAddr}
-            onChange={(e) => setSubaccordAddr(e.target.value)}
-            placeholder="Subaccord PDA address"
-            className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-sm text-text-primary placeholder:text-muted-foreground focus:border-amber focus:outline-none"
-          />
-          {subaccordAddr && !subaccord && (
-            <p className="mt-1 text-sm text-slash">Subaccord not found.</p>
-          )}
+        <Field invalid={!!(subaccordAddr && !subaccord)}>
+          <FieldLabel>Subaccord address</FieldLabel>
+          <FieldControl>
+            <Input
+              value={subaccordAddr}
+              onChange={(e) => setSubaccordAddr(e.target.value)}
+              placeholder="Subaccord PDA address"
+              className="font-mono"
+            />
+          </FieldControl>
+          <FieldError>
+            {subaccordAddr && !subaccord ? "Subaccord not found." : null}
+          </FieldError>
+        </Field>
           {subaccord && (
             <div className="mt-2 rounded-md border border-border-subtle bg-raised p-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
@@ -491,7 +501,6 @@ export function CreateDispute() {
               </div>
             </div>
           )}
-        </div>
 
         {/* Fee summary — note only when underfunded */}
         {fee !== null && (
@@ -557,18 +566,17 @@ export function CreateDispute() {
                 {!manual && manifestOutput && (
                   <div>
                     <div className="mb-1 flex items-center justify-between">
-                      <label className="font-mono text-sm text-text-secondary">
-                        manifest.yaml preview
-                      </label>
-                      <button
+                      <FieldLabel>manifest.yaml preview</FieldLabel>
+                      <Button
                         type="button"
+                        variant="link"
+                        className="w-fit font-mono text-xs font-normal"
                         onClick={() =>
                           downloadManifest(manifestOutput.manifest)
                         }
-                        className="font-mono text-xs text-amber hover:underline"
                       >
                         ↓ Download
-                      </button>
+                      </Button>
                     </div>
                     <pre className="max-h-64 overflow-auto rounded-md border border-border-subtle bg-raised p-3 font-mono text-xs text-text-secondary">
                       {new TextDecoder().decode(manifestOutput.manifest)}
@@ -577,7 +585,7 @@ export function CreateDispute() {
                 )}
 
                 {/* Manual manifest */}
-                <label className="flex cursor-pointer items-start gap-2 font-mono text-sm">
+                <Label className="flex cursor-pointer items-start gap-2 font-mono text-sm">
                   <input
                     type="checkbox"
                     className="mt-0.5"
@@ -593,16 +601,16 @@ export function CreateDispute() {
                       authored — no submit-time re-download.
                     </span>
                   </span>
-                </label>
+                </Label>
                 {manual && (
                   <>
                     <div>
                       <div className="mb-1 flex items-center justify-between">
-                        <label className="block font-mono text-sm text-text-secondary">
-                          manifest.yaml
-                        </label>
-                        <button
+                        <FieldLabel>manifest.yaml</FieldLabel>
+                        <Button
                           type="button"
+                          variant="link"
+                          className="w-fit font-mono text-xs font-normal"
                           onClick={insertTemplate}
                           disabled={!manifestCtx}
                           title={
@@ -610,46 +618,43 @@ export function CreateDispute() {
                               ? "Insert a manifest template (live ctx, fresh salt)"
                               : "Connect a wallet and select a subaccord first"
                           }
-                          className="font-mono text-xs text-amber hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Insert template
-                        </button>
+                        </Button>
                       </div>
-                      <textarea
-                        value={manifestText}
-                        onChange={(e) => setManifestText(e.target.value)}
-                        placeholder="Paste the full manifest.yaml here"
-                        rows={8}
-                        spellCheck={false}
-                        className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-xs text-text-primary placeholder:text-muted-foreground focus:border-amber focus:outline-none"
-                      />
-                      <span className="mt-1 block text-xs text-text-secondary">
+                      <FieldControl>
+                        <Textarea
+                          value={manifestText}
+                          onChange={(e) => setManifestText(e.target.value)}
+                          placeholder="Paste the full manifest.yaml here"
+                          rows={8}
+                          spellCheck={false}
+                          className="font-mono text-xs"
+                        />
+                      </FieldControl>
+                      <FieldDescription>
                         Option hashes below auto-derive from this manifest's
                         option_salt + labels — edit a hash to override it.
-                      </span>
+                      </FieldDescription>
                     </div>
                     <div>
-                      <label className="mb-2 block font-mono text-sm text-text-secondary">
+                      <FieldLabel className="mb-2">
                         Option hashes ({validOptions.length}/{MAX_OPTIONS}, min{" "}
                         {MIN_OPTIONS})
-                      </label>
+                      </FieldLabel>
                       <div className="space-y-2">
                         {options.map((opt, idx) => (
                           <div key={idx} className="flex items-center gap-2">
                             <span className="w-6 font-mono text-xs text-text-secondary">
                               {idx}
                             </span>
-                            <input
-                              type="text"
+                            <Input
                               value={opt}
                               onChange={(e) => updateOption(idx, e.target.value)}
                               placeholder={`${"0".repeat(64)} (64 hex chars)`}
-                              className={`flex-1 rounded-md border bg-raised px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus:outline-none ${
-                                opt && !isValidHex32(opt)
-                                  ? "border-slash"
-                                  : isValidHex32(opt)
-                                    ? "border-confirm/50"
-                                    : "border-border-subtle focus:border-amber"
+                              aria-invalid={!!opt && !isValidHex32(opt)}
+                              className={`flex-1 font-mono ${
+                                isValidHex32(opt) ? "border-confirm/50" : ""
                               }`}
                             />
                             {options.length > MIN_OPTIONS && (
@@ -665,13 +670,14 @@ export function CreateDispute() {
                         ))}
                       </div>
                       {options.length < MAX_OPTIONS && (
-                        <button
+                        <Button
                           type="button"
+                          variant="link"
+                          className="mt-2 w-fit font-mono font-normal"
                           onClick={addOption}
-                          className="mt-2 font-mono text-sm text-amber hover:underline"
                         >
                           + Add option
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </>
@@ -679,23 +685,22 @@ export function CreateDispute() {
 
                 {/* Nonce */}
                 <div>
-                  <label className="mb-1 block font-mono text-sm text-text-secondary">
-                    Nonce (dispute namespace)
-                  </label>
+                  <FieldLabel>Nonce (dispute namespace)</FieldLabel>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={nonce}
-                      onChange={(e) => setNonce(e.target.value)}
-                      className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-sm focus:border-amber focus:outline-none"
-                    />
-                    <button
+                    <FieldControl>
+                      <Input
+                        value={nonce}
+                        onChange={(e) => setNonce(e.target.value)}
+                        className="font-mono"
+                      />
+                    </FieldControl>
+                    <Button
                       type="button"
+                      variant="outline"
                       onClick={() => setNonce(randomNonce())}
-                      className="rounded-md border border-border-subtle px-3 py-2 font-mono text-sm text-text-secondary hover:text-text-primary"
                     >
                       Randomize
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -707,13 +712,9 @@ export function CreateDispute() {
         {error && <p className="text-sm text-slash">{error}</p>}
 
         {/* Submit */}
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="w-full rounded-md bg-amber px-4 py-3 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={!canSubmit} loading={submitting} className="w-full">
           {submitting ? "Submitting…" : "File dispute"}
-        </button>
+        </Button>
       </form>
     </div>
   );
