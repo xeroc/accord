@@ -125,11 +125,13 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
   the project's official account + deployer signature"). Canon defines the
   hash's bytes as `sha256(rules_doc)` over the **raw file bytes** and hosts the
   preimage on the evidence daemon's public content-addressed CAS
-  (`PUT`/`GET /domains/{hash}`, ADR-0027): permissionless PUT (preimage
-  resistance is the auth — upload precedes `create_list`, doc-first), `GET`
-  returns the bytes and the client verifies `sha256(bytes) == rules_hash`.
-  Recommended format: markdown with optional YAML frontmatter (`title`,
-  `description`, `version`); the convention's single home is
+  (`PUT`/`GET /domains/{hash}`, ADR-0027 as amended): PUT is chain-anchored
+  and create-first — the daemon resolves the backing Subaccord
+  (`?subaccord=<addr>`, polled ≤ 1 s for commitment lag) and requires
+  `domain_ref == rules_hash` before storing anything; `GET` returns the bytes
+  and the client verifies `sha256(bytes) == rules_hash`. Recommended format:
+  markdown with optional YAML frontmatter (`title`, `description` — no
+  `version`; the hash is the version); the convention's single home is
   `packages/sdk/src/domain.ts` (`hashDomainDoc` / `parseDomainDoc` /
   `verifyDomainDoc` / `fetchDomainDoc`) — no second implementation. Passed to
   Accord as the Subaccord `domain_ref` (opaque bytes there; the sha256-doc
@@ -143,14 +145,14 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
   are a future extension, bean `accord-s72c`).
 
 Because Canon is the filer, item → list → `rules_hash` resolution is trivial.
-Publishing/reading the doc itself is two explicit CLI commands —
-`useaccord domain:put <file>` (hash locally, PUT, print the hash) and
-`domain:get <hash>` (fetch + re-hash verify) — with `--daemon-url` /
-`ACCORD_DAEMON_URL`; create flows do **not** auto-publish. A future
-`canon:create-list --rules <file>` will hash locally and warn (yellow,
-non-fatal) if `GET /domains/{hash}` 404s — the half-state (list live, doc
-missing) must be loud, not impossible. Jurors apply the public rules to the
-juror-only evidence → `keep` / `remove`.
+Publishing is create-first (ADR-0027 amendment): the doc is hashed
+client-side, `create_list` lands with `rules_hash = hash`, and the bytes go to
+`PUT /domains/{hash}?subaccord=<backing Subaccord>` once the create-tx
+confirms — publish failure ≠ creation failure, and the half-state (list live,
+doc missing) stays loud with retry. `useaccord domain:put` / `domain:get`
+(with `--daemon-url` / `ACCORD_DAEMON_URL`) remain the manual publish/verify
+commands; see `.agents/skills/useaccord/` for current flags. Jurors apply the
+public rules to the juror-only evidence → `keep` / `remove`.
 
 ## Edge cases & defaults
 

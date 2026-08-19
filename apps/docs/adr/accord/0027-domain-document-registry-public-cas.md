@@ -114,3 +114,54 @@ Storage: a `DomainStore` seam mirroring `EvidenceStore` (S3 + FS impls), key
   / `ACCORD_DAEMON_URL` (bean `accord-c2i0`).
 - Daemon SPEC domain section + invariant re-scope; canon SPEC "Rules &
   evidence" (this bean, `accord-cqlp`).
+
+## Amendment (2026-08-19 — chain-anchored PUT, create-first; beans `accord-lgof` rewritten scope / `accord-5p9j` / `accord-lbst`)
+
+Three decisions above are superseded. History is preserved; where this section
+conflicts with §Decision rules 1/5/6 and §Protocol, this section wins.
+
+1. **PUT is chain-gated (supersedes rule 1's "must not gate on chain state"
+   and rule 5's "no chain reads in the domain namespace").** The PUT now
+   carries a REQUIRED `?subaccord=<addr>` anchor: the daemon resolves the
+   Subaccord (`fetchSubaccordMaybe`), polling up to 1000 ms to absorb
+   commitment lag, and requires `domain_ref == hash` — anchor missing after
+   the poll ⇒ `404`, `domain_ref` mismatch ⇒ `400`, param absent/malformed ⇒
+   `400`. Preimage resistance remains the _integrity_ layer; the anchor is the
+   _publish authorization_. The **Subaccord is the universal anchor**: canon's
+   `create_list` CPIs a backing Subaccord with `domain_ref := rules_hash`, so
+   any Arbitrable anchors via the same path — no CanonList-specific reads.
+   **GET stays permissionless and ungated.** The store remains a dumb,
+   format-blind CAS; the gate lives in the daemon pipeline, not the storage
+   seam.
+2. **Create-first happy path (supersedes rule 1's doc-first ordering).** The
+   author hashes the doc client-side, submits the create-tx with
+   `domain_ref`/`rules_hash = hash`, waits for confirmation, then
+   `PUT /domains/{hash}?subaccord=<anchor>`. Publish failure ≠ creation
+   failure: the doc stays in a loud missing state with client-side retry
+   (client verifies `sha256(bytes) ==` the on-chain ref before PUT; the daemon
+   re-verifies both hash and anchor).
+3. **Frontmatter drops `version` (amends rule 6).** Recommended frontmatter is
+   `title` / `description` only — the hash **is** the version. The SDK parser
+   ignores a legacy `version` key rather than erroring (old docs stay
+   renderable; their hash was always the identity).
+
+Amended protocol:
+
+```
+PUT  /domains/{64-hex}?subaccord=<addr>   body: arbitrary bytes ≤ 1 MiB
+     hex-shape → 400 · over-cap → 413 (before any store write)
+     sha256(body) == {hash} else 400 · identical bytes → 200 no-op (idempotent)
+     different bytes at same hash → 409 (collision alarm, never overwrite)
+     anchor: fetchSubaccordMaybe(?subaccord) polled ≤ 1000 ms
+       not found after poll → 404 · domain_ref ≠ hash → 400 · param missing → 400
+     Content-Type stored as metadata · NO parse · rate-limited
+
+GET  /domains/{hash}     → bytes + stored Content-Type   (unchanged, ungated)
+     ETag = {hash} · Cache-Control: immutable · no auth
+```
+
+Implementation: daemon gate + poll + route tests in
+`apps/evidence-daemon/src/{pipeline,server}/domain.ts` (bean `accord-lbst`,
+injected reader seam); SDK `putDomainDoc(daemonUrl, bytes, { subaccord })` is
+the single publish client (bean `accord-uecf`); CLI `domain:put` grows a
+REQUIRED `--subaccord` (bean `accord-6kza`).

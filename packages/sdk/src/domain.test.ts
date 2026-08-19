@@ -31,24 +31,23 @@ test("hashDomainDoc is deterministic and 64 hex chars", () => {
   assert.equal(a, b);
   assert.match(a, /^[0-9a-f]{64}$/);
   // and equals plain noble sha256 (no exotic framing)
-  assert.equal(
-    a,
-    Buffer.from(nobleSha256(bytes)).toString("hex"),
-  );
+  assert.equal(a, Buffer.from(nobleSha256(bytes)).toString("hex"));
 });
 
 // ---------------------------------------------------------------------------
 // parseDomainDoc
 // ---------------------------------------------------------------------------
 
-test("parseDomainDoc extracts title/description/version; body excludes frontmatter", () => {
+test("parseDomainDoc extracts title/description; legacy version key is ignored", () => {
   const doc = enc.encode(
     "---\ntitle: Curated Rules\ndescription: The rules\nversion: 2\n---\n# Body\n",
   );
   const parsed = parseDomainDoc(doc);
   assert.equal(parsed.title, "Curated Rules");
   assert.equal(parsed.description, "The rules");
-  assert.equal(parsed.version, 2);
+  // version was dropped from the convention (ADR-0027 amendment — the hash
+  // is the version); a legacy key must not leak into the parse.
+  assert.equal((parsed as Record<string, unknown>).version, undefined);
   assert.equal(parsed.body, "# Body\n");
 });
 
@@ -57,7 +56,6 @@ test("parseDomainDoc: absent frontmatter yields only body", () => {
   assert.equal(parsed.body, "# Just markdown\n");
   assert.equal(parsed.title, undefined);
   assert.equal(parsed.description, undefined);
-  assert.equal(parsed.version, undefined);
 });
 
 test("parseDomainDoc: unterminated frontmatter is treated as body", () => {
@@ -69,17 +67,12 @@ test("parseDomainDoc: unterminated frontmatter is treated as body", () => {
 
 test("parseDomainDoc: quoted values are unquoted", () => {
   const parsed = parseDomainDoc(
-    enc.encode('---\ntitle: "Quoted Title"\ndescription: \'Single\'\n---\nbody'),
+    enc.encode(
+      "---\ntitle: \"Quoted Title\"\ndescription: 'Single'\n---\nbody",
+    ),
   );
   assert.equal(parsed.title, "Quoted Title");
   assert.equal(parsed.description, "Single");
-});
-
-test("parseDomainDoc: non-numeric version is omitted (never NaN)", () => {
-  const parsed = parseDomainDoc(
-    enc.encode("---\nversion: next\n---\nbody"),
-  );
-  assert.equal(parsed.version, undefined);
 });
 
 test("parseDomainDoc: empty frontmatter block yields empty body after it", () => {
@@ -145,13 +138,9 @@ test("fetchDomainDoc fetches, verifies, parses", async () => {
 test("fetchDomainDoc: tampered bytes fail sha256 verification", async () => {
   const hash = hashDomainDoc(enc.encode("real"));
   const orig = globalThis.fetch;
-  stubFetch((async () =>
-    new Response(enc.encode("tampered"))) as typeof fetch);
+  stubFetch((async () => new Response(enc.encode("tampered"))) as typeof fetch);
   try {
-    await assert.rejects(
-      fetchDomainDoc("http://daemon.test", hash),
-      /sha256/i,
-    );
+    await assert.rejects(fetchDomainDoc("http://daemon.test", hash), /sha256/i);
   } finally {
     globalThis.fetch = orig;
   }
@@ -162,10 +151,7 @@ test("fetchDomainDoc: non-200 throws with status", async () => {
   const orig = globalThis.fetch;
   stubFetch((async () => new Response(null, { status: 404 })) as typeof fetch);
   try {
-    await assert.rejects(
-      fetchDomainDoc("http://daemon.test", hash),
-      /404/,
-    );
+    await assert.rejects(fetchDomainDoc("http://daemon.test", hash), /404/);
   } finally {
     globalThis.fetch = orig;
   }
