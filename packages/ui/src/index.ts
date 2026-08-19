@@ -80,3 +80,8 @@ export { ProductNavbar } from "./patterns/product-navbar";
 export { PageTransition } from "./patterns/page-transition";
 export { PageShell } from "./patterns/page-shell";
 export { DisputeStatusCard } from "./patterns/dispute-status-card";
+export {
+  DomainDocCard,
+  DOMAIN_DOC_TEMPLATE,
+  type DomainDoc,
+} from "./patterns/domain-doc-card";
