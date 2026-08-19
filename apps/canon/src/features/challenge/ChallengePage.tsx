@@ -21,7 +21,10 @@ import { fetchCanonItem, fetchCanonList } from "../../shared/fetch";
 import { buildManifest } from "@useaccord/sdk/evidence";
 import { useSigner } from "../../shared/rpc";
 import { useClusterRpc } from "../../shared/rpc";
-import { sendInstruction, TransactionSendError } from "../../shared/transaction";
+import {
+  sendInstruction,
+  TransactionSendError,
+} from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import {
   buildChallengeEvidence,
@@ -29,6 +32,7 @@ import {
   publishChallengeEvidence,
   type ChallengeOnChainContext,
 } from "./challengeFlow";
+import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
 
 const EVIDENCE_DAEMON_URL =
   import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
@@ -159,7 +163,12 @@ export function ChallengePage() {
         toast.success(`Challenge filed! Signature: ${sig.slice(0, 8)}…`);
       } catch (publishErr) {
         // Dispute exists on-chain — hold the manifest for a POST-only retry.
-        setPublishFail({ error: describeError(publishErr), ctx, dispute, manifest });
+        setPublishFail({
+          error: describeError(publishErr),
+          ctx,
+          dispute,
+          manifest,
+        });
         toast.error(
           `Dispute filed (${sig.slice(0, 8)}…) but evidence publish failed — retry below`,
         );
@@ -222,10 +231,15 @@ export function ChallengePage() {
         <span className="font-mono text-slash">remove</span>.
       </p>
 
+      {/* Rules document (ADR-0027): the rules this challenge is judged under */}
+      {previewCtx?.listData && (
+        <div className="mt-6">
+          <DomainDocPanel hash={hexIfSet(previewCtx.listData.rulesHash)} />
+        </div>
+      )}
+
       {!ready && (
-        <p className="mt-6 text-sm text-muted-foreground">
-          Connecting wallet…
-        </p>
+        <p className="mt-6 text-sm text-muted-foreground">Connecting wallet…</p>
       )}
       {ready && !signer && (
         <p className="mt-6 text-sm text-amber">
@@ -280,7 +294,9 @@ export function ChallengePage() {
                     value={entry}
                     onChange={(e) =>
                       setEntries(
-                        entries.map((en, i) => (i === idx ? e.target.value : en)),
+                        entries.map((en, i) =>
+                          i === idx ? e.target.value : en,
+                        ),
                       )
                     }
                     placeholder="https://example.com/evidence/claim.pdf"
@@ -318,7 +334,6 @@ export function ChallengePage() {
               </pre>
             </div>
           )}
-
 
           {/* Publish failure — dispute is on-chain; retry POSTs the same manifest */}
           {publishFail && (

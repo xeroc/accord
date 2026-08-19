@@ -39,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@useaccord/ui";
+import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
 
 const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
@@ -97,17 +98,24 @@ export function ListDetailPage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link
+          to="/"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← Back to lists.
         </Link>
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">List.</h1>
+        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">
+          List.
+        </h1>
         {list && <Copyable value={list.address} />}
       </header>
 
       {listError && (
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
           <p className="mb-2 text-lg font-semibold">Read failed.</p>
-          <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">{listError}</p>
+          <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">
+            {listError}
+          </p>
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
@@ -131,11 +139,24 @@ export function ListDetailPage() {
 
       {list && <ListParams list={list} />}
 
+      {/* Rules document (ADR-0027): the bytes behind the list's rules_hash */}
+      {list && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <DomainDocPanel hash={hexIfSet(list.data.rulesHash)} />
+        </div>
+      )}
+
       {/* --- Items --- */}
       {list && (
         <section style={{ marginTop: "2.5rem" }}>
-          <div className="flex items-center justify-between gap-4" style={{ marginBottom: "1rem" }}>
-            <h2 className="text-[1.6rem] font-semibold tracking-[-0.01em]" style={{ fontSize: "1.2rem" }}>
+          <div
+            className="flex items-center justify-between gap-4"
+            style={{ marginBottom: "1rem" }}
+          >
+            <h2
+              className="text-[1.6rem] font-semibold tracking-[-0.01em]"
+              style={{ fontSize: "1.2rem" }}
+            >
               Items.{" "}
               <span className="italic text-muted-foreground">
                 ({itemsQuery.data?.length ?? "…"})
@@ -192,7 +213,10 @@ function ListParams({ list }: { list: Account<CanonList> }) {
           <Row label="Creator" value={<Copyable value={d.creator} />} />
           <Row label="Stake mint" value={<Copyable value={d.stakeMint} />} />
           <Row label="Fee mint" value={<Copyable value={d.feeMint} />} />
-          <Row label="List program" value={<Copyable value={d.listProgram} />} />
+          <Row
+            label="List program"
+            value={<Copyable value={d.listProgram} />}
+          />
         </dl>
       </div>
       <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
@@ -200,7 +224,10 @@ function ListParams({ list }: { list: Account<CanonList> }) {
           <Row
             label="Rules hash"
             value={
-              <span className="font-mono text-sm text-foreground" title={formatHash(d.rulesHash, false)}>
+              <span
+                className="font-mono text-sm text-foreground"
+                title={formatHash(d.rulesHash, false)}
+              >
                 {formatHash(d.rulesHash)}
               </span>
             }
@@ -216,14 +243,8 @@ function ListParams({ list }: { list: Account<CanonList> }) {
             label="Submit deposit"
             value={formatTokenAmount(d.submitDeposit)}
           />
-          <Row
-            label="Challenge pct"
-            value={`${d.challengePct} bps`}
-          />
-          <Row
-            label="Listing window"
-            value={formatWindow(d.listingWindow)}
-          />
+          <Row label="Challenge pct" value={`${d.challengePct} bps`} />
+          <Row label="Listing window" value={formatWindow(d.listingWindow)} />
           <Row
             label="Withdrawal timelock"
             value={formatWindow(d.withdrawalTimelock)}
@@ -255,7 +276,14 @@ function FilterBar({
   counts?: Account<CanonItem>[];
 }) {
   return (
-    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: "0.5rem",
+        marginBottom: "1rem",
+        flexWrap: "wrap",
+      }}
+    >
       {FILTERS.map((f) => {
         const count =
           f.key === "all"
@@ -376,7 +404,9 @@ function ItemRow({
       <TableCell className="px-4 py-2.5">
         <Copyable value={d.submitter} />
       </TableCell>
-      <TableCell className="px-4 py-2.5">{d.challengeCount.toString()}</TableCell>
+      <TableCell className="px-4 py-2.5">
+        {d.challengeCount.toString()}
+      </TableCell>
       <TableCell className="px-4 py-2.5 text-right">
         {CHALLENGEABLE_STATES[d.state] && (
           <Link
@@ -438,8 +468,15 @@ function ListParamsSkeleton() {
   return (
     <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-          <Skeleton className="rounded-sm bg-border" style={{ width: "60%", height: "0.9rem" }} aria-hidden />
+        <div
+          key={i}
+          className="rounded-lg bg-card p-4 ring-1 ring-foreground/10"
+        >
+          <Skeleton
+            className="rounded-sm bg-border"
+            style={{ width: "60%", height: "0.9rem" }}
+            aria-hidden
+          />
           <Skeleton
             className="rounded-sm bg-border"
             style={{ width: "80%", height: "0.85rem", marginTop: "0.5rem" }}
@@ -468,9 +505,21 @@ function ItemTableSkeleton() {
           key={i}
           className="flex items-center gap-6 border-b border-border px-4 py-3 last:border-b-0"
         >
-          <Skeleton className="rounded-sm bg-border" style={{ width: "26%", height: "0.85rem" }} aria-hidden />
-          <Skeleton className="rounded-sm bg-border" style={{ width: "10%", height: "0.85rem" }} aria-hidden />
-          <Skeleton className="rounded-sm bg-border" style={{ width: "14%", height: "0.85rem" }} aria-hidden />
+          <Skeleton
+            className="rounded-sm bg-border"
+            style={{ width: "26%", height: "0.85rem" }}
+            aria-hidden
+          />
+          <Skeleton
+            className="rounded-sm bg-border"
+            style={{ width: "10%", height: "0.85rem" }}
+            aria-hidden
+          />
+          <Skeleton
+            className="rounded-sm bg-border"
+            style={{ width: "14%", height: "0.85rem" }}
+            aria-hidden
+          />
           <Skeleton
             className="rounded-sm bg-border"
             style={{ width: "18%", height: "0.85rem", marginLeft: "auto" }}

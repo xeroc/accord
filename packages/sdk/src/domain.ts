@@ -10,9 +10,10 @@
  * module does.
  *
  * Recommended format: markdown with optional YAML frontmatter carrying
- * `title` / `description`; the body is the rules (`version` was dropped — the
- * hash is the version, ADR-0027 amendment). Any other bytes are valid opaque
- * content — hash-verified, `body`-only.
+ * `title` / `description`; the body is the rules. There is no `version`
+ * key: the doc is content-addressed and immutable, so the hash IS the
+ * version (ADR-0027 amendment). Any other bytes are valid opaque content —
+ * hash-verified, `body`-only.
  */
 import { sha256 } from "@noble/hashes/sha256";
 import { bytesToHex } from "@noble/hashes/utils";
@@ -98,7 +99,8 @@ export function verifyDomainDoc(
  * Parse a domain doc: optional `---`-delimited frontmatter with `title` /
  * `description` (single-line `key: value`, surrounding quotes stripped),
  * everything after the closing delimiter is `body`. Absent or unterminated
- * frontmatter ⇒ the whole text is `body`.
+ * frontmatter ⇒ the whole text is `body`. Unknown keys (including any
+ * `version`) are ignored.
  */
 export function parseDomainDoc(bytes: Uint8Array): ParsedDomainDoc {
   const text = new TextDecoder().decode(bytes);

@@ -5,14 +5,12 @@
  *
  * The manifest is YAML (produced by `buildManifest`); the daemon returns it as
  * a raw UTF-8 string or parsed JSON. The description field is rendered as
- * sanitized markdown via `react-markdown` + `remark-gfm` — no raw HTML, links
- * open in a new tab with `rel=noopener`. Committed manifest bytes are NEVER
- * altered (sha256 is over the raw YAML).
+ * sanitized markdown via the shared `MarkdownText` (@useaccord/ui). Committed
+ * manifest bytes are NEVER altered (sha256 is over the raw YAML).
  *
  * Authority: milestone §6 (description renders as markdown), ADR-0015.
  */
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownText } from "@useaccord/ui";
 import { parseManifest, type ParsedManifest } from "@useaccord/sdk/evidence";
 import { useManifest } from "./useManifest";
 
@@ -66,17 +64,7 @@ export function EvidenceManifest({
       {/* Description (sanitized markdown) */}
       {manifest.description && (
         <div className="prose prose-invert max-w-none text-sm text-foreground">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a: ({ node, ...props }) => (
-                <a {...props} target="_blank" rel="noopener noreferrer" />
-              ),
-            }}
-            skipHtml
-          >
-            {manifest.description}
-          </ReactMarkdown>
+          <MarkdownText source={manifest.description} />
         </div>
       )}
 

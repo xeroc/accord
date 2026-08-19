@@ -1,10 +1,11 @@
 ---
 # accord-zcjj
 title: UI — DomainDocCard + consistent presentation (read path)
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-19T20:35:23Z
-updated_at: 2026-08-19T20:35:23Z
+updated_at: 2026-08-19T23:16:45Z
 parent: accord-lgof
 ---
 

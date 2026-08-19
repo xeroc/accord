@@ -72,5 +72,6 @@ read-only.
 | `domain:get` | `fetchDomainDoc`                                |
 
 Recommended doc format: markdown with optional YAML frontmatter (`title`,
-`description` — no `version`; the hash is the version); the body is the rules.
-The hash covers the raw file bytes — frontmatter included.
+`description`); the body is the rules. There is no `version` key — the doc is
+content-addressed and immutable, so the hash IS the version. The hash covers
+the raw file bytes — frontmatter included.

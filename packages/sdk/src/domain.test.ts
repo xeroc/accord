@@ -3,7 +3,7 @@
 //
 // Proves the public surface of src/domain.ts: sha256 CAS hashing (RFC 6234
 // known-answer), the zero-dep frontmatter parser (present / absent /
-// unterminated / quoted values), verifyDomainDoc against both the string
+// unterminated / quoted values / unknown keys ignored), verifyDomainDoc against both the string
 // (64-hex) and Uint8Array (32-byte) domain_ref shapes, and fetchDomainDoc's
 // fetch → verify → parse pipeline (including tampered-bytes and non-200
 // failures).
@@ -40,7 +40,7 @@ test("hashDomainDoc is deterministic and 64 hex chars", () => {
 // parseDomainDoc
 // ---------------------------------------------------------------------------
 
-test("parseDomainDoc extracts title/description; legacy version key is ignored", () => {
+test("parseDomainDoc extracts title/description; body excludes frontmatter", () => {
   const doc = enc.encode(
     "---\ntitle: Curated Rules\ndescription: The rules\nversion: 2\n---\n# Body\n",
   );
@@ -51,6 +51,12 @@ test("parseDomainDoc extracts title/description; legacy version key is ignored",
   // is the version); a legacy key must not leak into the parse.
   assert.equal((parsed as Record<string, unknown>).version, undefined);
   assert.equal(parsed.body, "# Body\n");
+  // `version` is not part of the surface — the hash IS the version
+  assert.deepEqual(Object.keys(parsed).sort(), [
+    "body",
+    "description",
+    "title",
+  ]);
 });
 
 test("parseDomainDoc: absent frontmatter yields only body", () => {
@@ -75,6 +81,14 @@ test("parseDomainDoc: quoted values are unquoted", () => {
   );
   assert.equal(parsed.title, "Quoted Title");
   assert.equal(parsed.description, "Single");
+});
+
+test("parseDomainDoc: unknown keys (incl. version) are ignored", () => {
+  const parsed = parseDomainDoc(
+    enc.encode("---\nversion: next\nauthor: x\n---\nbody"),
+  );
+  assert.equal(parsed.body, "body");
+  assert.deepEqual(Object.keys(parsed), ["body"]);
 });
 
 test("parseDomainDoc: empty frontmatter block yields empty body after it", () => {
@@ -170,14 +184,14 @@ test("putDomainDoc PUTs to /domains/{sha256(bytes)}?subaccord= with text/markdow
   const hash = hashDomainDoc(bytes);
   const orig = globalThis.fetch;
   let seen: Request | null = null;
-  stubFetch(
-    (async (input: RequestInfo | URL, init?: RequestInit) => {
-      seen = new Request(input, init);
-      return new Response(null, { status: 201 });
-    }) as typeof fetch,
-  );
+  stubFetch((async (input: RequestInfo | URL, init?: RequestInit) => {
+    seen = new Request(input, init);
+    return new Response(null, { status: 201 });
+  }) as typeof fetch);
   try {
-    const out = await putDomainDoc("http://daemon.test/", bytes, { subaccord: SUB });
+    const out = await putDomainDoc("http://daemon.test/", bytes, {
+      subaccord: SUB,
+    });
     assert.equal(out.status, 201);
     assert.equal(out.hash, hash);
     assert.equal(
@@ -196,12 +210,10 @@ test("putDomainDoc: contentType override is passed through", async () => {
   const bytes = enc.encode("binary-ish");
   const orig = globalThis.fetch;
   let ct: string | null = null;
-  stubFetch(
-    (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      ct = new Headers(init!.headers).get("content-type");
-      return new Response(null, { status: 201 });
-    }) as typeof fetch,
-  );
+  stubFetch((async (_input: RequestInfo | URL, init?: RequestInit) => {
+    ct = new Headers(init!.headers).get("content-type");
+    return new Response(null, { status: 201 });
+  }) as typeof fetch);
   try {
     await putDomainDoc("http://daemon.test", bytes, {
       subaccord: SUB,
@@ -219,7 +231,9 @@ test("putDomainDoc: 200 idempotent no-op resolves ok alongside 201", async () =>
   const orig = globalThis.fetch;
   stubFetch((async () => new Response(null, { status: 200 })) as typeof fetch);
   try {
-    const out = await putDomainDoc("http://daemon.test", bytes, { subaccord: SUB });
+    const out = await putDomainDoc("http://daemon.test", bytes, {
+      subaccord: SUB,
+    });
     assert.equal(out.status, 200);
     assert.equal(out.hash, hash);
   } finally {
@@ -254,7 +268,9 @@ test("putDomainDoc: 400/404/409/413 throw DomainPublishError with status + body"
 test("putDomainDoc: non-error body (unparseable) still surfaces in the error", async () => {
   const bytes = enc.encode("doc");
   const orig = globalThis.fetch;
-  stubFetch((async () => new Response("gateway junk", { status: 502 })) as typeof fetch);
+  stubFetch(
+    (async () => new Response("gateway junk", { status: 502 })) as typeof fetch,
+  );
   try {
     await assert.rejects(
       putDomainDoc("http://daemon.test", bytes, { subaccord: SUB }),
