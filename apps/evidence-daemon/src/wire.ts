@@ -34,14 +34,18 @@ import {
   synodManifest as synodManifestPipeline,
   type BundleDecryptor,
 } from "./pipeline/synod-manifest";
+import { getDomain, putDomain } from "./pipeline/domain";
 import {
   base64ToBytes,
   bytesToBase64,
   type EvidenceStore,
   type EvidenceBundle as StoreBundle,
 } from "./store/store";
+import type { DomainStore } from "./store/domain";
 import type {
   DeliverHandler,
+  DomainGetHandler,
+  DomainPutHandler,
   IngestHandler,
   ManifestHandler,
   ServerDeps,
@@ -104,6 +108,10 @@ function fromStoreBundle(b: StoreBundle): EvidenceBundle {
 export interface WireDeps {
   /** Ciphertext store (v1: S3Store). Address-typed. */
   readonly store: EvidenceStore;
+  /** Public domain-doc CAS (ADR-0027) — same backend selection as `store`. */
+  readonly domainStore: DomainStore;
+  /** PUT /domains/{hash} body cap in bytes (default 1 MiB, config.ts). */
+  readonly maxDomainBytes: number;
   /** Read-only RPC client (the chain reader functions close over this). */
   readonly accord: Accord;
   /** Per-Subaccord operator keyring (v1: EnvKeyring). */
@@ -468,8 +476,34 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     return { ok: true, status: 200, body };
   };
 
+  // --- Domain CAS handlers (ADR-0027 as amended): outcome → handler result ---
+  // PUT anchor gate: resolve the ?subaccord anchor's on-chain domain_ref via
+  // the chain reader (create-first — the pipeline polls for commitment lag).
+  const domainPutHandler: DomainPutHandler = async (hash, bytes, contentType, subaccordStr) => {
+    const out = await putDomain(hash, bytes, contentType, subaccordStr, {
+      store: deps.domainStore,
+      maxBytes: deps.maxDomainBytes,
+      sha256,
+      readAnchor: async (sa) => {
+        const v = await readSubaccord(accord, address(sa));
+        return v === null ? null : new Uint8Array(v.domainRef);
+      },
+    });
+    return out.status === 200 || out.status === 201
+      ? { ok: true, status: out.status }
+      : { ok: false, status: out.status, error: out.reason };
+  };
+  const domainGetHandler: DomainGetHandler = async (hash) => {
+    const out = await getDomain(hash, { store: deps.domainStore });
+    return out.status === 200
+      ? { ok: true, status: 200, bytes: out.bytes, contentType: out.contentType }
+      : { ok: false, status: out.status, error: out.reason };
+  };
+
   return {
     ingest: ingestHandler,
+    domainPut: domainPutHandler,
+    domainGet: domainGetHandler,
     synodIngest: synodIngestHandler,
     synodManifest: synodManifestHandler,
     deliver: deliverHandler,

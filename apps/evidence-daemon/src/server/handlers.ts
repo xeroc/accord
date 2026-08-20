@@ -127,6 +127,36 @@ export type SynodIngestHandler = (
 export type SynodManifestHandler = (casePda: string) => Promise<ManifestResult>;
 
 /**
+ * Domain CAS = PUT/GET /domains/{hash} (ADR-0027). Content-addressed PUBLIC
+ * documents; preimage resistance is the auth. PUT is chain-anchored
+ * (create-first): the ?subaccord anchor must exist on-chain with
+ * domain_ref == hash. GET is ungated.
+ */
+export type DomainPutResult =
+  | { readonly ok: true; readonly status: 200 | 201 }
+  | { readonly ok: false; readonly status: 400 | 404 | 409 | 413; readonly error: string };
+
+export type DomainGetResult =
+  | {
+      readonly ok: true;
+      readonly status: 200;
+      readonly bytes: Uint8Array;
+      readonly contentType: string;
+    }
+  | { readonly ok: false; readonly status: 400 | 404; readonly error: string };
+
+/** PUT /domains/{hash}?subaccord={addr} — bytes + Content-Type (default text/markdown) + anchor. */
+export type DomainPutHandler = (
+  hash: string,
+  bytes: Uint8Array,
+  contentType: string,
+  subaccord: string,
+) => Promise<DomainPutResult>;
+
+/** GET /domains/{hash} — the stored bytes + stored Content-Type. */
+export type DomainGetHandler = (hash: string) => Promise<DomainGetResult>;
+
+/**
  * Liveness/readiness = GET /healthz. ok iff Storage + RPC reachable; LB drains
  * on a non-ok result. (Bean accord-u1pu implements the real probe; the server
  * boots with a stub until then.)
@@ -139,6 +169,8 @@ export type HealthProbe = () => Promise<
 
 export interface ServerDeps {
   readonly ingest: IngestHandler;
+  readonly domainPut: DomainPutHandler;
+  readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;
   readonly deliver: DeliverHandler;
   readonly manifest: ManifestHandler;

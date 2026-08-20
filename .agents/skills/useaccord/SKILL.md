@@ -1,7 +1,7 @@
 ---
 name: useaccord
-description: Work with the Accord arbitration protocol — create Subaccords, stake jurors, file disputes, draw panels, vote, appeal, and settle rulings via the `useaccord` CLI and `@useaccord/sdk`. Covers the full dispute lifecycle, the two-phase withdraw, MST accumulator proofs, and the cranker service.
-when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point or scalar (median) voting, attestation-gated / credential-gated juror pools, the useaccord CLI, or any instruction in the Accord program (create_subaccord, stake, prune_juror, reclaim_slot, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
+description: Work with the Accord arbitration protocol — create Subaccords, stake jurors, file disputes, draw panels, vote, appeal, and settle rulings via the `useaccord` CLI and `@useaccord/sdk`. Covers the full dispute lifecycle, the two-phase withdraw, MST accumulator proofs, the cranker service, and the domain rules-doc registry (domain:put / domain:get, ADR-0027).
+when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point or scalar (median) voting, attestation-gated / credential-gated juror pools, the useaccord CLI, domain rules documents / rules_hash / domain_ref publishing, or any instruction in the Accord program (create_subaccord, stake, prune_juror, reclaim_slot, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
 version: 0.1.0
 ---
 
@@ -13,19 +13,20 @@ commit-reveal votes, and emits a Ruling.
 
 ## Quick routing
 
-| Task                            | CLI command                                          | Reference                                         |
-| ------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
-| Create a Subaccord (juror pool) | `useaccord lifecycle:create-subaccord`               | [01-lifecycle.md](references/01-lifecycle.md)     |
-| Stake juror capital             | `useaccord staking:stake`                            | [02-staking.md](references/02-staking.md)         |
+| Task                               | CLI command                                          | Reference                                         |
+| ---------------------------------- | ---------------------------------------------------- | ------------------------------------------------- |
+| Create a Subaccord (juror pool)    | `useaccord lifecycle:create-subaccord`               | [01-lifecycle.md](references/01-lifecycle.md)     |
+| Stake juror capital                | `useaccord staking:stake`                            | [02-staking.md](references/02-staking.md)         |
 | Evict an attestation-expired juror | `useaccord staking:prune-juror`                      | [02-staking.md](references/02-staking.md)         |
-| Recycle a drained juror slot    | `useaccord staking:reclaim-slot`                     | [02-staking.md](references/02-staking.md)         |
-| File a dispute                  | `useaccord dispute:create`                           | [04-dispute.md](references/04-dispute.md)         |
-| Draw jurors (VRF + per-seat)    | `useaccord draw:resolve-panel` + `draw:submit-panel` | [05-vrf-draw.md](references/05-vrf-draw.md)       |
-| Commit / reveal votes           | `useaccord vote:commit` + `vote:reveal`              | [06-voting.md](references/06-voting.md)           |
-| Appeal a ruling                 | `useaccord appeal:open`                              | [07-appeal.md](references/07-appeal.md)           |
-| Finalize / settle               | **Cranker automates** (or manual CLI)                | [08-settlement.md](references/08-settlement.md)   |
-| Read account state              | `useaccord read:*`                                   | [09-reads.md](references/09-reads.md)             |
-| Build MST proofs offline        | `useaccord accumulator:*`                            | [03-accumulator.md](references/03-accumulator.md) |
+| Recycle a drained juror slot       | `useaccord staking:reclaim-slot`                     | [02-staking.md](references/02-staking.md)         |
+| File a dispute                     | `useaccord dispute:create`                           | [04-dispute.md](references/04-dispute.md)         |
+| Draw jurors (VRF + per-seat)       | `useaccord draw:resolve-panel` + `draw:submit-panel` | [05-vrf-draw.md](references/05-vrf-draw.md)       |
+| Commit / reveal votes              | `useaccord vote:commit` + `vote:reveal`              | [06-voting.md](references/06-voting.md)           |
+| Appeal a ruling                    | `useaccord appeal:open`                              | [07-appeal.md](references/07-appeal.md)           |
+| Finalize / settle                  | **Cranker automates** (or manual CLI)                | [08-settlement.md](references/08-settlement.md)   |
+| Read account state                 | `useaccord read:*`                                   | [09-reads.md](references/09-reads.md)             |
+| Build MST proofs offline           | `useaccord accumulator:*`                            | [03-accumulator.md](references/03-accumulator.md) |
+| Publish / fetch a domain rules doc | `useaccord domain:put` / `domain:get`                | [10-domains.md](references/10-domains.md)         |
 
 ## Key concepts
 
@@ -73,4 +74,4 @@ pnpm add -g @useaccord/cli
 useaccord config          # verify rpc + keypair + balance
 ```
 
-Env vars: `ACCORD_RPC_URL`, `ACCORD_WS_URL`, `ACCORD_KEYPAIR_PATH`.
+Env vars: `ACCORD_RPC_URL`, `ACCORD_WS_URL`, `ACCORD_KEYPAIR_PATH`, `ACCORD_DAEMON_URL`.

@@ -39,9 +39,10 @@ status banner is annotated.
 | [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md)                   | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx`                         | Accepted             |
 | [0022](0022-per-subaccord-configurable-appeal-window.md)                      | Per-Subaccord configurable appeal window                                                            | Accepted             |
 | [0023](0023-per-round-evidence-hashes.md)                                     | Per-round evidence hashes — evidence-on-appeal                                                      | Accepted             |
-| [0024](0024-attestation-gated-subaccords.md)                                     | Attestation-gated Subaccords — optional SAS credential gate, `prune_juror` crank                      | Accepted             |
-| [0025](0025-scalar-voting.md)                                               | Scalar voting — u64 votes, Median aggregation, bps coherence band                                  | Accepted             |
-| [0026](0026-plurality-tie-non-decisive-redraw.md)                            | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner         | Accepted             |
+| [0024](0024-attestation-gated-subaccords.md)                                  | Attestation-gated Subaccords — optional SAS credential gate, `prune_juror` crank                    | Accepted             |
+| [0025](0025-scalar-voting.md)                                                 | Scalar voting — u64 votes, Median aggregation, bps coherence band                                   | Accepted             |
+| [0026](0026-plurality-tie-non-decisive-redraw.md)                             | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner         | Accepted             |
+| [0027](0027-domain-document-registry-public-cas.md)                           | Domain document registry — public content-addressed CAS on the evidence daemon (amends 0011)        | Accepted             |
 
 ### Supersession map
 
@@ -67,6 +68,10 @@ status banner is annotated.
   file with zero options, votes/results/rulings widen u8→u64 with `u64::MAX` sentinels, and
   coherence gains a per-Subaccord `coherence_tol_bps` band frozen onto `CaseTerms`;
   `Plurality` semantics unchanged).
+- **0027** amends **0011** (the daemon additionally hosts a public, plaintext, permissionless
+  domain-doc CAS under `domains/`; ADR-0011's encrypted-at-rest invariant is re-scoped to
+  evidence objects). Zero on-chain change — `domain_ref`/`rules_hash` stay opaque bytes that
+  canon now defines as `sha256(doc)`.
 
 ## How to read them
 
@@ -82,7 +87,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0027**).
+1. Number = next sequential (currently **0028**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

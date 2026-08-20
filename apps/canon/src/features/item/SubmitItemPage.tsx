@@ -40,6 +40,7 @@ import {
   FieldLabel,
   Input,
 } from "@useaccord/ui";
+import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
 
 const ZERO_HASH = "0".repeat(64);
 
@@ -48,7 +49,8 @@ function parseHash32(input: string): Uint8Array | null {
   const hex = input.trim().replace(/^0x/, "").toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(hex)) return null;
   const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  for (let i = 0; i < 32; i++)
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return out;
 }
 
@@ -68,7 +70,8 @@ export function SubmitItemPage() {
   const [sending, setSending] = useState(false);
 
   // Default the deposit to the list's submit_deposit once loaded.
-  const depositValue = deposit || (listData ? listData.submitDeposit.toString() : "");
+  const depositValue =
+    deposit || (listData ? listData.submitDeposit.toString() : "");
 
   // Reactive owner preview (milestone §3: validate client-side where feasible).
   const ownerQuery = useQuery({
@@ -86,7 +89,9 @@ export function SubmitItemPage() {
 
   const evidence = evidenceHex.trim() ? parseHash32(evidenceHex) : null;
   const evidenceError =
-    evidenceHex.trim() && !evidence ? "Enter a 32-byte hex hash (64 chars)." : "";
+    evidenceHex.trim() && !evidence
+      ? "Enter a 32-byte hex hash (64 chars)."
+      : "";
 
   const ownerMatch =
     ownerQuery.data !== undefined && !!listData
@@ -106,7 +111,10 @@ export function SubmitItemPage() {
     setSending(true);
     try {
       const feeMint = listData.feeMint;
-      const submitterTokenAccount = await getAtaAddress(env.signer.address, feeMint);
+      const submitterTokenAccount = await getAtaAddress(
+        env.signer.address,
+        feeMint,
+      );
       const vault = await getAtaAddress(list.data!.address as Address, feeMint);
       const { instruction, item } = await submitItem(
         {
@@ -119,7 +127,12 @@ export function SubmitItemPage() {
         },
         { evidence, deposit: BigInt(depositValue) },
       );
-      await sendInstruction(env.rpc, env.rpcSubscriptions, env.signer, instruction);
+      await sendInstruction(
+        env.rpc,
+        env.rpcSubscriptions,
+        env.signer,
+        instruction,
+      );
       toast.success("Item submitted — pending listing window.");
       navigate(`/items/${item}`);
     } catch (err) {
@@ -132,19 +145,27 @@ export function SubmitItemPage() {
   if (list.isLoading) {
     return (
       <div className="mx-auto max-w-[1100px] px-6 py-10">
-        <div className="animate-pulse rounded-sm bg-border" style={{ height: "1.5rem", width: "10rem" }} />
+        <div
+          className="animate-pulse rounded-sm bg-border"
+          style={{ height: "1.5rem", width: "10rem" }}
+        />
       </div>
     );
   }
   if (!list.data) {
     return (
       <div className="mx-auto max-w-[1100px] px-6 py-10">
-        <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link
+          to="/"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← Back
         </Link>
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
           <p className="mb-2 text-lg font-semibold">List not found</p>
-          <p className="mb-5 text-muted-foreground">No CanonList at {shortAddress(address)}.</p>
+          <p className="mb-5 text-muted-foreground">
+            No CanonList at {shortAddress(address)}.
+          </p>
         </div>
       </div>
     );
@@ -152,7 +173,10 @@ export function SubmitItemPage() {
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-10">
-      <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+      <Link
+        to="/"
+        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
         ← Back
       </Link>
       <div className="mb-8">
@@ -161,9 +185,19 @@ export function SubmitItemPage() {
       </div>
 
       {!env && (
-        <p className="italic text-muted-foreground" style={{ marginBottom: "1rem" }}>
+        <p
+          className="italic text-muted-foreground"
+          style={{ marginBottom: "1rem" }}
+        >
           Connect a wallet to submit.
         </p>
+      )}
+
+      {/* Rules document (ADR-0027): what submitters agree to */}
+      {listData && (
+        <div style={{ marginBottom: "1.5rem", maxWidth: "560px" }}>
+          <DomainDocPanel hash={hexIfSet(listData.rulesHash)} />
+        </div>
       )}
 
       <form onSubmit={onSubmit} className="flex flex-col gap-7 rounded-lg bg-card p-4 ring-1 ring-foreground/10" style={{ maxWidth: "560px" }}>

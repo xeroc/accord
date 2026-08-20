@@ -1,11 +1,11 @@
 ---
 # accord-lgof
 title: Domain document registry — public CAS on the evidence daemon
-status: todo
+status: completed
 type: milestone
 priority: normal
 created_at: 2026-08-18T22:59:47Z
-updated_at: 2026-08-18T22:59:47Z
+updated_at: 2026-08-20T00:20:16Z
 ---
 
 ## Scope
@@ -125,3 +125,15 @@ return obj.bytes, Content-Type: obj.contentType, ETag: hash, Cache-Control: immu
 
 - fs backend content-type storage mechanism (sidecar file vs suffix) — implementer's choice; constraint: must round-trip.
 - Whether daemon health check should stat the `domains/` dir too (cheap; implementer's call).
+
+### Rewritten scope (2026-08-19 — extension epics A + B; decisions below supersede conflicting items 1/5/7 above)
+
+1. CREATE-FIRST + chain-anchored PUT: publish AFTER the create-tx confirms; `PUT /domains/{hash}?subaccord=<addr>` gates on `fetchSubaccordMaybe(anchor).domain_ref == hash` (poll ≤1000 ms). Reverses "upload precedes create" and "no chain reads in the domain namespace". GET stays permissionless. Subaccord is the universal anchor (canon create_list CPIs a backing Subaccord with domain_ref := rules_hash).
+2. `DomainDocCard` (packages/ui): read-only on detail surfaces; editable (single raw-doc textarea, frontmatter emphasized) ONLY pre-publish / in retry; locks on submit. Editing post-publish is impossible — domain_ref seeds the PDA.
+3. Frontmatter = title + description; `version` dropped (the hash is the version).
+4. Markdown rendering consolidates into packages/ui `MarkdownText`; both apps' MarkdownDescription copies migrate onto it.
+5. Surfaces: apps/app SubaccordDetailPage + Voting; apps/canon ListDetailPage + ItemDetailPage + ChallengePage + SubmitItemPage.
+6. Create forms: template-prefilled editor default + paste-existing-hash advanced (live verify preview); random domain_ref generator deleted.
+7. Publish failure leaves the loud missing state with retry (paste/file; client + daemon hash verification). Publish failure ≠ creation failure.
+
+Epics: UI read path + creation-flow write path (children of this milestone). HANDOFF §1 happy path is superseded by: author in form → hash client-side → create tx → confirm → PUT (daemon anchor-verifies) → card renders from CAS; retry covers PUT failure.

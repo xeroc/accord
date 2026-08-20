@@ -21,11 +21,11 @@ arbitrary registry.
 
 ## Account / PDA model
 
-| Account | Seeds | Key fields |
-| --- | --- | --- |
+| Account     | Seeds                            | Key fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `domain_ref`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
-| `CanonItem` | `["canon-item", list, account]` | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`. |
-| token vault | `CanonList`-PDA-owned SPL | deposit pool (`fee_mint`) |
+| `CanonItem` | `["canon-item", list, account]`  | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`.                                                                                                                                                                                                                                                                       |
+| token vault | `CanonList`-PDA-owned SPL        | deposit pool (`fee_mint`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Canon **reuses** Accord's `Dispute`, `Round`, `JurorStake`, and the per-list
 backing `Subaccord`. It does **not** reimplement voting, the draw, or juror
@@ -75,12 +75,12 @@ challengers each round). Durable history lives in events (`ItemSettled` /
 - **Permanent deposit.** `submit_item` locks `submit_deposit`; not refundable
   except via the withdrawal path. Skin-in-the-game cannot be yanked to escape a
   live challenge.
-- **Progressive protection.** Each *failed* challenge (ruling `keep`) adds the
+- **Progressive protection.** Each _failed_ challenge (ruling `keep`) adds the
   challenger's forfeited `challenge_stake` to `item.accumulated_stake`.
   Dislodging a long-standing, many-times-defended item costs proportionally
   more — vetting effort concentrates on new items (where fraud lives).
 - **Challenger accountability.** `challenge_stake = challenge_pct ×
-  item.accumulated_stake` (forfeited on a failed challenge).
+item.accumulated_stake` (forfeited on a failed challenge).
 - **Bounty = full accumulated.** On `remove`, the challenger receives the item's
   full `accumulated_stake` (original deposit + all prior forfeited challenge
   stakes). The reward scales with how established the item was — the harder it
@@ -101,20 +101,20 @@ retuning instruction (not yet implemented) that CPIs
 `propose/execute_subaccord_update` with the list PDA as `invoke_signed`
 signer.
 
-| param | v1 value | notes |
-| --- | --- | --- |
-| `initial_num_jurors` | 3 | ADR-0019 default; round-1 panel |
-| `aggregation` | `Plurality` | Canon files 2-option `[keep, remove]` disputes only (ADR-0019/0025) |
-| `coherence_tol_bps` | 0 | Inert on a `Plurality` pool — zero keeps coherence exact (ADR-0025) |
-| `max_appeals` | 3 | 3 → 7 → 15 → 31 ladder |
-| `alpha_bps` | 1000 (10%) | Accord v1 slash default |
-| review / commit / reveal | 7d / 2d / 2d | Accord v1 defaults |
-| `evidence_operator` | creator-supplied (deployment-configured; dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`) | must be a real key held by the daemon's keyring (ADR-0006/0011) — a zero key can never be an ECIES target |
-| `fee_per_juror` | 10 | in `fee_mint`; round-1 ≈ 30 |
-| `submit_deposit` | 500 | in `fee_mint`; base skin (recoverable via withdrawal) |
-| `challenge_pct` | 50% (5000 bps) | challenger stakes half the accumulated stake |
-| `listing_window` | 5 days | watcher time to catch a scam before auto-list |
-| `withdrawal_timelock` | 5 days | final fraud-challenge window (matches listing_window) |
+| param                    | v1 value                                                                         | notes                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `initial_num_jurors`     | 3                                                                                | ADR-0019 default; round-1 panel                                                                           |
+| `aggregation`            | `Plurality`                                                                      | Canon files 2-option `[keep, remove]` disputes only (ADR-0019/0025)                                       |
+| `coherence_tol_bps`      | 0                                                                                | Inert on a `Plurality` pool — zero keeps coherence exact (ADR-0025)                                       |
+| `max_appeals`            | 3                                                                                | 3 → 7 → 15 → 31 ladder                                                                                    |
+| `alpha_bps`              | 1000 (10%)                                                                       | Accord v1 slash default                                                                                   |
+| review / commit / reveal | 7d / 2d / 2d                                                                     | Accord v1 defaults                                                                                        |
+| `evidence_operator`      | creator-supplied (deployment-configured; dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`) | must be a real key held by the daemon's keyring (ADR-0006/0011) — a zero key can never be an ECIES target |
+| `fee_per_juror`          | 10                                                                               | in `fee_mint`; round-1 ≈ 30                                                                               |
+| `submit_deposit`         | 500                                                                              | in `fee_mint`; base skin (recoverable via withdrawal)                                                     |
+| `challenge_pct`          | 50% (5000 bps)                                                                   | challenger stakes half the accumulated stake                                                              |
+| `listing_window`         | 5 days                                                                           | watcher time to catch a scam before auto-list                                                             |
+| `withdrawal_timelock`    | 5 days                                                                           | final fraud-challenge window (matches listing_window)                                                     |
 
 ## Token model
 
@@ -131,10 +131,20 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
 
 - **Rules (public, list-level, stable).** `CanonList.rules_hash` anchors an
   off-chain rules doc — the listing criteria (e.g. "canonical mint verified by
-  the project's official account + deployer signature"). Public by nature
-  (transparent criteria ⇒ consistent, auditable rulings); anyone reads and
-  verifies it against the on-chain hash. Passed to Accord as the Subaccord
-  `domain_ref`.
+  the project's official account + deployer signature"). Canon defines the
+  hash's bytes as `sha256(rules_doc)` over the **raw file bytes** and hosts the
+  preimage on the evidence daemon's public content-addressed CAS
+  (`PUT`/`GET /domains/{hash}`, ADR-0027 as amended): PUT is chain-anchored
+  and create-first — the daemon resolves the backing Subaccord
+  (`?subaccord=<addr>`, polled ≤ 1 s for commitment lag) and requires
+  `domain_ref == rules_hash` before storing anything; `GET` returns the bytes
+  and the client verifies `sha256(bytes) == rules_hash`. Recommended format:
+  markdown with optional YAML frontmatter (`title`, `description` — no
+  `version`; the hash is the version); the convention's single home is
+  `packages/sdk/src/domain.ts` (`hashDomainDoc` / `parseDomainDoc` /
+  `verifyDomainDoc` / `fetchDomainDoc`) — no second implementation. Passed to
+  Accord as the Subaccord `domain_ref` (opaque bytes there; the sha256-doc
+  definition is canon's).
 - **Evidence (juror-only, dispute-level, single-party).** The per-dispute
   manifest (`evidence_hash`, `accord-evidence/v1`) carries the `item` reference
   plus the **challenger's** claim and proof — the challenger files via Canon
@@ -143,10 +153,15 @@ Each dispute's ruling applies the **list's rules** to the **item's evidence**:
   wrong `remove` is the permissionless appeal ladder (two-party Accord disputes
   are a future extension, bean `accord-s72c`).
 
-Because Canon is the filer, item → list → `rules_hash` resolution is trivial;
-because the rules are public, the evidence operator needs no extension (it only
-ever re-encrypts the per-dispute evidence). Jurors apply the public rules to the
-juror-only evidence → `keep` / `remove`.
+Because Canon is the filer, item → list → `rules_hash` resolution is trivial.
+Publishing is create-first (ADR-0027 amendment): the doc is hashed
+client-side, `create_list` lands with `rules_hash = hash`, and the bytes go to
+`PUT /domains/{hash}?subaccord=<backing Subaccord>` once the create-tx
+confirms — publish failure ≠ creation failure, and the half-state (list live,
+doc missing) stays loud with retry. `useaccord domain:put` / `domain:get`
+(with `--daemon-url` / `ACCORD_DAEMON_URL`) remain the manual publish/verify
+commands; see `.agents/skills/useaccord/` for current flags. Jurors apply the
+public rules to the juror-only evidence → `keep` / `remove`.
 
 ## Edge cases & defaults
 
@@ -181,11 +196,11 @@ juror-only evidence → `keep` / `remove`.
 
 ## Out of scope (v2+)
 
-ATQ "code-as-item" scaling (curate tagging *modules*, not individual items) ·
+ATQ "code-as-item" scaling (curate tagging _modules_, not individual items) ·
 multi-surface distribution (wallet snap / explorer / DEX) · per-list custom
 dispute-param tiers · badges/tiers as separate Canon lists.
 
 ## Authority
 
 `canon-0001` · `CURATED-LIST.md` · `programs/accord/SPEC.md` · Accord ADR-0001 /
-0002 / 0004 / 0019 · `CONTEXT.md` · `BRAND.md`.
+0002 / 0004 / 0019 / 0027 · `CONTEXT.md` · `BRAND.md`.

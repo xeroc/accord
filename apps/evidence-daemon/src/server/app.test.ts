@@ -42,6 +42,13 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
       body: { rounds: [{ round: 0, out: "b3V0", operator_ephem_pub: "cHVi" }] },
     }),
     manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
+    domainPut: async () => ({ ok: true, status: 201 }),
+    domainGet: async () => ({
+      ok: true,
+      status: 200,
+      bytes: new TextEncoder().encode("# rules"),
+      contentType: "text/markdown",
+    }),
     health: async () => ({ ok: true }),
     publicKeys: STUB_PUBLIC_KEYS,
     ...overrides,

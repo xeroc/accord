@@ -8,7 +8,12 @@
  * Boundary rules (enforced by review + grep, see README):
  * no Solana, no router, no query client, no SDK types, no import.meta.env.
  */
-export { Alert, AlertTitle, AlertDescription, AlertAction } from "./primitives/alert";
+export {
+  Alert,
+  AlertTitle,
+  AlertDescription,
+  AlertAction,
+} from "./primitives/alert";
 export { Badge } from "./primitives/badge";
 export { Button } from "./primitives/button";
 export {
@@ -46,6 +51,7 @@ export {
 } from "./primitives/field";
 export { Spinner } from "./primitives/spinner";
 export { Textarea } from "./primitives/textarea";
+export { MarkdownText } from "./primitives/markdown-text";
 export {
   Select,
   SelectContent,
@@ -80,3 +86,8 @@ export { ProductNavbar } from "./patterns/product-navbar";
 export { PageTransition } from "./patterns/page-transition";
 export { PageShell } from "./patterns/page-shell";
 export { DisputeStatusCard } from "./patterns/dispute-status-card";
+export {
+  DomainDocCard,
+  DOMAIN_DOC_TEMPLATE,
+  type DomainDoc,
+} from "./patterns/domain-doc-card";

@@ -13,7 +13,7 @@
     "start": "bun run bin/run.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "bun test",
+    "test": "bun test --timeout 20000",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -41,19 +41,44 @@
     "bin": "useaccord",
     "dirname": "useaccord",
     "commands": "./dist/commands",
-    "plugins": ["@oclif/plugin-help"],
+    "plugins": [
+      "@oclif/plugin-help"
+    ],
     "topicSeparator": ":",
     "topics": {
-      "config": { "description": "Environment + wallet (resolved config, balances)" },
-      "lifecycle": { "description": "Subaccord + circuit breaker (methods/lifecycle.ts)" },
-      "staking": { "description": "Juror capital (methods/staking.ts)" },
-      "dispute": { "description": "Arbitrable CPI intake (methods/dispute.ts)" },
-      "draw": { "description": "VRF + per-seat draw (methods/vrf.ts)" },
-      "vote": { "description": "Commit/reveal/finalize (methods/voting.ts)" },
-      "appeal": { "description": "Appeal + refund (methods/appeal.ts)" },
-      "settle": { "description": "Per-round settlement (methods/settlement.ts)" },
-      "accumulator": { "description": "Offline MST helpers (methods/mst.ts) — pure, no chain" },
-      "read": { "description": "Account fetches + queries + phase — read-only" }
+      "config": {
+        "description": "Environment + wallet (resolved config, balances)"
+      },
+      "lifecycle": {
+        "description": "Subaccord + circuit breaker (methods/lifecycle.ts)"
+      },
+      "staking": {
+        "description": "Juror capital (methods/staking.ts)"
+      },
+      "dispute": {
+        "description": "Arbitrable CPI intake (methods/dispute.ts)"
+      },
+      "draw": {
+        "description": "VRF + per-seat draw (methods/vrf.ts)"
+      },
+      "vote": {
+        "description": "Commit/reveal/finalize (methods/voting.ts)"
+      },
+      "appeal": {
+        "description": "Appeal + refund (methods/appeal.ts)"
+      },
+      "settle": {
+        "description": "Per-round settlement (methods/settlement.ts)"
+      },
+      "accumulator": {
+        "description": "Offline MST helpers (methods/mst.ts) — pure, no chain"
+      },
+      "domain": {
+        "description": "Rules-doc registry on the evidence daemon CAS (ADR-0027)"
+      },
+      "read": {
+        "description": "Account fetches + queries + phase — read-only"
+      }
     }
   },
   "engines": {

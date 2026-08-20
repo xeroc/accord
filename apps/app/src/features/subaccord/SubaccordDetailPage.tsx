@@ -20,6 +20,7 @@ import { useClusterRpc } from "../../shared/rpc";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
 import { formatTokenAmount, formatWindow } from "../../shared/format";
 import { Copyable, Skeleton, Reveal } from "@useaccord/ui";
+import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
 
 export function SubaccordDetailPage() {
   const rpc = useClusterRpc()?.rpc ?? null;
@@ -34,7 +35,10 @@ export function SubaccordDetailPage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <Link to="/subaccords" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link
+          to="/subaccords"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← Subaccords.
         </Link>
         <h1 className="text-2xl font-semibold tracking-[-0.01em]">
@@ -42,7 +46,17 @@ export function SubaccordDetailPage() {
         </h1>
       </header>
 
-      <Reveal state={isLoading ? "skeleton" : isError ? "error" : !data ? "empty" : "content"}>
+      <Reveal
+        state={
+          isLoading
+            ? "skeleton"
+            : isError
+              ? "error"
+              : !data
+                ? "empty"
+                : "content"
+        }
+      >
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (
@@ -51,17 +65,26 @@ export function SubaccordDetailPage() {
             <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">
               {error instanceof Error ? error.message : "RPC error."}
             </p>
-            <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={() => void refetch()}>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+              onClick={() => void refetch()}
+            >
               Retry.
             </button>
           </div>
         ) : !data ? (
           <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="mb-2 text-lg font-semibold">No subaccord at this address.</p>
+            <p className="mb-2 text-lg font-semibold">
+              No subaccord at this address.
+            </p>
             <p className="mb-5 text-muted-foreground">
               Check the address or create a new subaccord.
             </p>
-            <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
+            <Link
+              to="/subaccords/new"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+            >
               Create a subaccord.
             </Link>
           </div>
@@ -83,7 +106,10 @@ function SubaccordDetail({
   return (
     <>
       <nav className="mb-8 flex flex-wrap gap-3">
-        <Link to={`/juror/stake?subaccord=${address}`} className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
+        <Link
+          to={`/juror/stake?subaccord=${address}`}
+          className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+        >
           Stake as juror.
         </Link>
         <Link
@@ -98,21 +124,35 @@ function SubaccordDetail({
         <Group head="Pool.">
           <Row
             label="Stakers"
-            value={<span className="font-mono text-sm text-foreground">{d.stakerCount}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.stakerCount}
+              </span>
+            }
           />
           <Row
             label="Total stake"
             value={
-              <span className="font-mono text-sm text-foreground">{formatTokenAmount(d.totalStake)}</span>
+              <span className="font-mono text-sm text-foreground">
+                {formatTokenAmount(d.totalStake)}
+              </span>
             }
           />
           <Row
             label="Next index"
-            value={<span className="font-mono text-sm text-foreground">{d.nextIndex}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.nextIndex}
+              </span>
+            }
           />
           <Row
             label="Tree depth"
-            value={<span className="font-mono text-sm text-foreground">{d.depth}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.depth}
+              </span>
+            }
           />
           <Row
             label="Root hash"
@@ -129,13 +169,17 @@ function SubaccordDetail({
           <Row
             label="Min stake"
             value={
-              <span className="font-mono text-sm text-foreground">{formatTokenAmount(d.minStake)}</span>
+              <span className="font-mono text-sm text-foreground">
+                {formatTokenAmount(d.minStake)}
+              </span>
             }
           />
           <Row
             label="Fee per juror"
             value={
-              <span className="font-mono text-sm text-foreground">{formatTokenAmount(d.feePerJuror)}</span>
+              <span className="font-mono text-sm text-foreground">
+                {formatTokenAmount(d.feePerJuror)}
+              </span>
             }
           />
           <Row
@@ -151,26 +195,46 @@ function SubaccordDetail({
         <Group head="Windows.">
           <Row
             label="Review"
-            value={<span className="font-mono text-sm text-foreground">{formatWindow(d.reviewWindow)}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {formatWindow(d.reviewWindow)}
+              </span>
+            }
           />
           <Row
             label="Commit"
-            value={<span className="font-mono text-sm text-foreground">{formatWindow(d.commitWindow)}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {formatWindow(d.commitWindow)}
+              </span>
+            }
           />
           <Row
             label="Reveal"
-            value={<span className="font-mono text-sm text-foreground">{formatWindow(d.revealWindow)}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {formatWindow(d.revealWindow)}
+              </span>
+            }
           />
           <Row
             label="Appeal"
-            value={<span className="font-mono text-sm text-foreground">{formatWindow(d.appealWindow)}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {formatWindow(d.appealWindow)}
+              </span>
+            }
           />
         </Group>
 
         <Group head="Panel.">
           <Row
             label="Max appeals"
-            value={<span className="font-mono text-sm text-foreground">{d.maxAppeals}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.maxAppeals}
+              </span>
+            }
           />
           <Row
             label="Reveal threshold"
@@ -183,11 +247,19 @@ function SubaccordDetail({
           />
           <Row
             label="Shortfall"
-            value={<span className="font-mono text-sm text-foreground">{d.shortfallPolicy}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.shortfallPolicy}
+              </span>
+            }
           />
           <Row
             label="Max draw attempts"
-            value={<span className="font-mono text-sm text-foreground">{d.maxDrawAttempts}</span>}
+            value={
+              <span className="font-mono text-sm text-foreground">
+                {d.maxDrawAttempts}
+              </span>
+            }
           />
           <Row
             label="Aggregation"
@@ -225,13 +297,19 @@ function SubaccordDetail({
           />
         </Group>
       </section>
+
+      {/* Domain document (ADR-0027): the rules this subaccord arbitrates under */}
+      <DomainDocPanel hash={hexIfSet(d.domainRef)} />
     </>
   );
 }
 
 function Authority({ value }: { value: Address }) {
   const zero = "11111111111111111111111111111111";
-  if (value === zero) return <span className="italic text-muted-foreground">None (immutable).</span>;
+  if (value === zero)
+    return (
+      <span className="italic text-muted-foreground">None (immutable).</span>
+    );
   return <Copyable value={value} />;
 }
 
@@ -244,7 +322,9 @@ function Group({
 }) {
   return (
     <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-      <h2 className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">{head}</h2>
+      <h2 className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+        {head}
+      </h2>
       <dl className="gap-2 grid">{children}</dl>
     </div>
   );
@@ -261,9 +341,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 function DetailSkeleton() {
   return (
-    <div className="gap-4 grid [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]" aria-busy aria-label="Loading subaccord">
+    <div
+      className="gap-4 grid [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]"
+      aria-busy
+      aria-label="Loading subaccord"
+    >
       {Array.from({ length: 5 }).map((_, i) => (
-        <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10" key={i}>
+        <div
+          className="rounded-lg bg-card p-4 ring-1 ring-foreground/10"
+          key={i}
+        >
           <Skeleton
             className="rounded-sm bg-border"
             style={{ width: "40%", height: "0.8rem" }}
