@@ -87,6 +87,7 @@ export { PageTransition } from "./patterns/page-transition";
 export { EmptyState } from "./patterns/empty-state";
 export { PageShell } from "./patterns/page-shell";
 export { ErrorState } from "./patterns/error-state";
+export { DepthPicker } from "./patterns/depth-picker";
 export { DisputeStatusCard } from "./patterns/dispute-status-card";
 export {
   DomainDocCard,

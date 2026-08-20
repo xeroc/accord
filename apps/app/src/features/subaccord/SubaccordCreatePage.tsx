@@ -56,6 +56,7 @@ import {
 } from "@useaccord/sdk";
 import {
   Button,
+  DepthPicker,
   DomainDocCard,
   ErrorShake,
   Field as UiField,
@@ -253,6 +254,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
             <DomainDocCard
               doc={{ status: "missing" }}
               hash={onChainRef ?? refHex}
+              raw={form.domainDoc}
               retry={
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -527,6 +529,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
                   <DepthPicker
                     value={form.depth}
                     onChange={(v) => set("depth", v)}
+                    maxDepth={MAX_SAFE_TREE_DEPTH}
                   />
                 </fieldset>
               </div>
@@ -552,51 +555,6 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
   );
 }
 
-// --- depth picker (pool capacity) -------------------------------------------
-
-/** Curated depth options — capped at MAX_SAFE_TREE_DEPTH (browser tx limit). */
-const DEPTH_OPTIONS = [
-  { depth: 4, note: "16 seats — testing" },
-  { depth: 6, note: "64 seats — small pool" },
-  { depth: 8, note: "256 seats" },
-  { depth: 10, note: "1,024 seats" },
-  { depth: 12, note: "4,096 seats — recommended" },
-  { depth: 14, note: "16,384 seats — large" },
-  { depth: MAX_SAFE_TREE_DEPTH, note: "65,536 seats — max" },
-] as const;
-
-function DepthPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <UiField>
-      <FieldLabel>Pool capacity.</FieldLabel>
-      <FieldControl>
-        <Select value={value} onValueChange={onChange}>
-          <SelectTrigger className="w-full" aria-label="Pool capacity">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {DEPTH_OPTIONS.map((opt) => (
-              <SelectItem key={opt.depth} value={opt.depth.toString()}>
-                {opt.note}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FieldControl>
-      <FieldDescription>
-        Maximum juror seats. Each stake/unstake tx carries a Merkle proof
-        proportional to depth — depths beyond {MAX_SAFE_TREE_DEPTH} exceed the
-        1232-byte transaction limit in browser wallets.
-      </FieldDescription>
-    </UiField>
-  );
-}
 
 // --- field primitive --------------------------------------------------------
 
