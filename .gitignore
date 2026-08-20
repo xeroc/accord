@@ -40,3 +40,4 @@ meta
 
 # Remotion (apps/remotion) — local videos, generated manifest, renders
 apps/remotion/out/
+apps/remotion/public/audio/

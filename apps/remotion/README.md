@@ -29,6 +29,50 @@ apps/remotion/
   public/                   static assets (staticFile("...") targets)
 ```
 
+## Score-driven audio — no audio binaries in the repo
+
+Background music is authored as Strudel code and prebaked to a wav **build
+artifact** (gitignored, like `out/`) before rendering. The artifact is
+strudel's own output, relayed verbatim — mix level, headroom and any fades
+are authored in the score (`.gain`, `.release`), never post-processed. The
+CLI warns when the direct render peaks at full scale (clipping).
+
+```
+audio/<name>.strudel            the score — pasteable into https://strudel.cc
+public/audio/<name>.wav         artifact — regenerated, never committed
+src/cli/score.ts                `score` command: offline-render + relay verbatim
+```
+
+```bash
+pnpm --filter @useaccord/remotion score my-score 30   # name + seconds
+pnpm --filter @useaccord/remotion score --stale       # re-render only changed scores
+```
+
+`render` and `studio` chain `score --stale` automatically: after editing a
+score, the next render/studio run re-bakes it (needs network); unchanged
+scores are skipped in under a second.
+
+In a video (Html5Audio = the plain HTML5-element path; needs remotion ≥
+4.0.514, which introduced the export):
+
+```tsx
+import { Html5Audio, staticFile } from "remotion";
+
+<Html5Audio src={staticFile("audio/my-score.wav")} volume={0.1} />
+```
+
+- The score's `setcpm` is parsed by the command; pass the composition length
+  in seconds as the second argument (defaults to 30).
+- Sync is time-based by construction: score grid (e.g. 30 cpm → 2s bars) ↔
+  composition seconds ↔ frames.
+- Runs entirely in Node (`node-web-audio-api` backs the engine's WebAudio
+  calls; no browser involved). Needs network once per render: sample
+  manifests load from raw.githubusercontent.com. Silence-guarded — a failed
+  render errors loudly instead of producing a muted wav.
+- `@strudel/web` is AGPL-3.0: fine for internal build tooling, and the
+  wav/mp4 output is your own music — revisit before distributing this
+  package's code.
+
 ## Commands
 
 ```bash
