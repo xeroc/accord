@@ -158,18 +158,18 @@ fn setup() -> TestEnv {
     // Accord Subaccord.
     let domain_ref = RULES_HASH;
     let (sub_addr, sub_bump) = subaccord_pda(&creator.pubkey(), &domain_ref);
-    let fee_per_juror = DEFAULT_FEE_PER_JUROR;
+    let fee_per_juror = 10;
     let sub = accord::Subaccord {
         creator: creator.pubkey(),
         staking_token: mint,
         fee_token: mint,
         min_stake: 1_000,
-        alpha_bps: DEFAULT_ALPHA_BPS,
-        review_window: DEFAULT_REVIEW_WINDOW_SECS,
-        commit_window: DEFAULT_COMMIT_WINDOW_SECS,
-        reveal_window: DEFAULT_REVEAL_WINDOW_SECS,
-        appeal_window: DEFAULT_APPEAL_WINDOW_SECS,
-        max_appeals: DEFAULT_MAX_APPEALS,
+        alpha_bps: accord::constants::DEFAULT_ALPHA_BPS,
+        review_window: accord::constants::DEFAULT_REVIEW_WINDOW_SECS,
+        commit_window: accord::constants::DEFAULT_COMMIT_WINDOW_SECS,
+        reveal_window: accord::constants::DEFAULT_REVEAL_WINDOW_SECS,
+        appeal_window: accord::constants::DEFAULT_APPEAL_WINDOW_SECS,
+        max_appeals: accord::constants::DEFAULT_MAX_APPEALS,
         min_jury_size: 3,
         aggregation: accord::state::Aggregation::Plurality,
         fee_per_juror,

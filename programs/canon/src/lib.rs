@@ -85,7 +85,11 @@ pub mod canon {
     }
 
     /// Permissionless creation of a Canon curated list + its backing Accord
-    /// Subaccord. See `instructions::create_list` for the full doc.
+    /// Subaccord. `court` is the creator-supplied dispute-mechanism profile
+    /// (see `CourtParams`); the handler pins `aggregation = Plurality`,
+    /// `shortfall_policy = Redraw`, `coherence_tol_bps = 0`, `authority` =
+    /// the CanonList PDA and the attestation pair before the CPI. See
+    /// `instructions::create_list` for the full doc.
     #[allow(clippy::too_many_arguments)]
     pub fn create_list(
         ctx: Context<CreateList>,
@@ -96,6 +100,7 @@ pub mod canon {
         listing_window: u64,
         withdrawal_timelock: u64,
         evidence_operator: Pubkey,
+        court: CourtParams,
     ) -> Result<()> {
         instructions::create_list::create_list_handler(
             ctx,
@@ -106,6 +111,7 @@ pub mod canon {
             listing_window,
             withdrawal_timelock,
             evidence_operator,
+            court,
         )
     }
 

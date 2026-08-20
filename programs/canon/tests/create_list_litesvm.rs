@@ -3,8 +3,8 @@
 //!
 //! Coverage (safe-solana-builder matrix, instruction subset):
 //! - happy: create_list inits CanonList with all fields + CPI-creates the
-//!   backing Subaccord with the Canon canonical defaults (incl. the passed
-//!   evidence_operator)
+//!   backing Subaccord with the passed court profile (canonical or custom;
+//!   incl. the passed evidence_operator)
 //! - auth: (permissionless — no auth-fail case; any signer works)
 //! - reinit: double create_list on the same PDA -> must fail (account in use)
 //! - args: zero rules_hash -> InvalidRulesHash
@@ -115,9 +115,10 @@ fn create_mint(svm: &mut anchor_litesvm::AnchorContext, mint: &Pubkey) {
         .unwrap();
 }
 
-/// Build + send a `create_list` instruction. Returns the transaction result
-/// plus the (stake, fee) mints it created, so callers can assert they land on
-/// `CanonList` — the mint is referenced once, as the validated Mint account.
+/// Build + send a `create_list` instruction with the canonical court profile
+/// (see `canonical_court`). Returns the transaction result plus the (stake,
+/// fee) mints it created, so callers can assert they land on `CanonList` —
+/// the mint is referenced once, as the validated Mint account.
 fn do_create_list(
     ctx: &mut anchor_litesvm::AnchorContext,
     creator: &Keypair,
@@ -125,38 +126,18 @@ fn do_create_list(
     challenge_pct: u16,
     evidence_operator: Pubkey,
 ) -> (TransactionResult, Pubkey, Pubkey) {
-    let stake_mint = Pubkey::new_unique();
-    let fee_mint = Pubkey::new_unique();
-    create_mint(ctx, &stake_mint);
-    create_mint(ctx, &fee_mint);
-    let ix = ctx
-        .program()
-        .accounts(accounts::CreateList {
-            creator: creator.pubkey(),
-            stake_mint,
-            fee_mint,
-            list: canon_list_pda(&creator.pubkey(), &rules),
-            subaccord: subaccord_pda(&creator.pubkey(), &rules),
-            accord_program: ACCORD_ID,
-            system_program: anchor_lang::system_program::ID,
-        })
-        .args(instruction::CreateList {
-            list_program: Pubkey::default(),
-            rules_hash: rules,
-            submit_deposit: DEFAULT_SUBMIT_DEPOSIT,
-            challenge_pct,
-            listing_window: DEFAULT_LISTING_WINDOW_SECS,
-            withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
-            evidence_operator,
-        })
-        .instruction()
-        .expect("build create_list instruction");
-    let result = ctx.execute_instruction(ix, &[creator]).unwrap();
-    (result, stake_mint, fee_mint)
+    do_create_list_court(
+        ctx,
+        creator,
+        rules,
+        challenge_pct,
+        evidence_operator,
+        canonical_court(),
+    )
 }
 
 /// Happy path: CanonList inits all fields + backing Subaccord gets the
-/// canonical dispute-mechanism defaults.
+/// canonical court profile verbatim.
 #[test]
 fn create_list_inits_canon_list_and_subaccord() {
     let (mut ctx, creator) = setup();
@@ -193,31 +174,32 @@ fn create_list_inits_canon_list_and_subaccord() {
     );
     assert!(list.bump > 0);
 
-    // --- Verify backing Subaccord has canonical defaults ---
+    // --- Verify backing Subaccord has the canonical court profile verbatim ---
     let sub = read_subaccord(&ctx, &sub_pda);
     assert_eq!(sub.creator, creator.pubkey());
     assert_eq!(sub.domain_ref, rules);
     assert_eq!(sub.evidence_spec, [0u8; 32]);
     assert_eq!(sub.staking_token, stake_mint);
     assert_eq!(sub.fee_token, fee_mint);
-    assert_eq!(sub.min_stake, DEFAULT_MIN_STAKE);
-    assert_eq!(sub.alpha_bps, DEFAULT_ALPHA_BPS);
-    assert_eq!(sub.review_window, DEFAULT_REVIEW_WINDOW_SECS);
-    assert_eq!(sub.commit_window, DEFAULT_COMMIT_WINDOW_SECS);
-    assert_eq!(sub.reveal_window, DEFAULT_REVEAL_WINDOW_SECS);
-    assert_eq!(sub.appeal_window, DEFAULT_APPEAL_WINDOW_SECS);
-    assert_eq!(sub.max_appeals, DEFAULT_MAX_APPEALS);
+    let court = canonical_court();
+    assert_eq!(sub.min_stake, court.min_stake);
+    assert_eq!(sub.alpha_bps, court.alpha_bps);
+    assert_eq!(sub.review_window, court.review_window);
+    assert_eq!(sub.commit_window, court.commit_window);
+    assert_eq!(sub.reveal_window, court.reveal_window);
+    assert_eq!(sub.appeal_window, court.appeal_window);
+    assert_eq!(sub.max_appeals, court.max_appeals);
     assert_eq!(sub.aggregation, Aggregation::Plurality);
-    assert_eq!(sub.fee_per_juror, DEFAULT_FEE_PER_JUROR);
-    assert_eq!(sub.reveal_threshold_bps, DEFAULT_REVEAL_THRESHOLD_BPS);
+    assert_eq!(sub.fee_per_juror, court.fee_per_juror);
+    assert_eq!(sub.reveal_threshold_bps, court.reveal_threshold_bps);
     assert_eq!(sub.shortfall_policy, ShortfallPolicy::Redraw);
-    assert_eq!(sub.max_draw_attempts, DEFAULT_MAX_DRAW_ATTEMPTS);
+    assert_eq!(sub.max_draw_attempts, court.max_draw_attempts);
     // The CanonList PDA is the court's authority: retuning must flow through
     // canon (a future gated instruction CPIs propose_subaccord_update with the
     // list PDA as signer). No external key, no burned upgrade path.
     assert_eq!(sub.authority, list_pda);
     assert_eq!(sub.evidence_operator, evidence_operator);
-    assert_eq!(sub.depth, DEFAULT_TREE_DEPTH);
+    assert_eq!(sub.depth, court.depth);
 }
 
 /// Double create on the same PDA must fail (account in use).
@@ -333,13 +315,32 @@ fn court_params() -> CourtParams {
     }
 }
 
-/// `do_create_list` variant taking an explicit `court` profile. Once GREEN
-/// lands this collapses into `do_create_list` (the `court` arg becomes
-/// mandatory for every caller).
+/// Canonical court profile — the values the SDK's `defaultCourtParams()`
+/// ships (former `constants.rs` DEFAULT_* court constants, accord-qz7d).
+fn canonical_court() -> CourtParams {
+    CourtParams {
+        min_stake: 1_000,
+        alpha_bps: 1_000,
+        review_window: 7 * 24 * 60 * 60,
+        commit_window: 2 * 24 * 60 * 60,
+        reveal_window: 2 * 24 * 60 * 60,
+        appeal_window: 3 * 24 * 60 * 60,
+        max_appeals: 3,
+        min_jury_size: 3,
+        fee_per_juror: 10,
+        reveal_threshold_bps: 6_666,
+        max_draw_attempts: 3,
+        depth: 8,
+    }
+}
+
+/// Build + send a `create_list` instruction with an explicit court profile.
+/// `do_create_list` (canonical profile) delegates here.
 fn do_create_list_court(
     ctx: &mut anchor_litesvm::AnchorContext,
     creator: &Keypair,
     rules: [u8; 32],
+    challenge_pct: u16,
     evidence_operator: Pubkey,
     court: CourtParams,
 ) -> (TransactionResult, Pubkey, Pubkey) {
@@ -362,7 +363,7 @@ fn do_create_list_court(
             list_program: Pubkey::default(),
             rules_hash: rules,
             submit_deposit: DEFAULT_SUBMIT_DEPOSIT,
-            challenge_pct: DEFAULT_CHALLENGE_PCT_BPS,
+            challenge_pct,
             listing_window: DEFAULT_LISTING_WINDOW_SECS,
             withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
             evidence_operator,
@@ -386,8 +387,14 @@ fn create_list_custom_court_params_land_verbatim() {
     let sub_pda = subaccord_pda(&creator.pubkey(), &rules);
     let evidence_operator = Pubkey::new_unique();
     let court = court_params();
-    let (r, stake_mint, fee_mint) =
-        do_create_list_court(&mut ctx, &creator, rules, evidence_operator, court.clone());
+    let (r, stake_mint, fee_mint) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules,
+        DEFAULT_CHALLENGE_PCT_BPS,
+        evidence_operator,
+        court.clone(),
+    );
     r.assert_success();
 
     let sub = read_subaccord(&ctx, &sub_pda);
@@ -428,6 +435,7 @@ fn create_list_alpha_bps_above_cap_fails() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );
@@ -454,6 +462,7 @@ fn create_list_zero_review_window_fails() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );
@@ -479,6 +488,7 @@ fn create_list_zero_commit_window_fails() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );
@@ -504,6 +514,7 @@ fn create_list_zero_reveal_window_fails() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );
@@ -531,6 +542,7 @@ fn create_list_depth_above_cap_fails() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );
@@ -557,6 +569,7 @@ fn create_list_even_jury_size_propagates_from_accord() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );
@@ -585,6 +598,7 @@ fn create_list_ladder_overflow_propagates_from_accord() {
         &mut ctx,
         &creator,
         rules_hash(),
+        DEFAULT_CHALLENGE_PCT_BPS,
         Pubkey::new_unique(),
         court,
     );

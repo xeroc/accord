@@ -53,4 +53,10 @@ pub enum CanonError {
     NotRemoved,
     #[msg("Removed item still holds accumulated_stake (invariant breach).")]
     StakeOutstanding,
+    #[msg("court.alpha_bps exceeds 10_000 (100%).")]
+    AlphaTooHigh,
+    #[msg("court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits.")]
+    WindowTooShort,
+    #[msg("court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget.")]
+    TreeDepthTooDeep,
 }
