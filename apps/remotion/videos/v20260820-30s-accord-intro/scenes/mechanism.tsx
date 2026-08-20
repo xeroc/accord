@@ -6,11 +6,12 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import type { FC, ReactNode } from "react";
+import type { FC } from "react";
 
 import { EASE_EXPO } from "../../../src/shell/presets";
-import { Backdrop } from "../../../src/shell/backdrop";
-import { enterAt } from "./anim";
+import { clamp, enterAt } from "../../../src/shell/anim";
+import { Beat, Scene } from "../../../src/shell/scene";
+import { StepRail } from "../../../src/shell/rail";
 
 /** Beat lengths sum to 330 (11s @ 30fps). */
 const BEATS = [
@@ -20,40 +21,6 @@ const BEATS = [
   { key: "rule", frames: 82, label: "04 · rule" },
 ] as const;
 
-/**
- * Shared beat chrome: visual center, copy bottom. The step label lives in
- * the progress rail up top — one label per step, not two.
- */
-const Beat: FC<{
-  copy: string;
-  sub: string;
-  copyClass?: string;
-  children: ReactNode;
-}> = ({ copy, sub, copyClass, children }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-12 p-16">
-      <div className="flex h-[380px] items-center justify-center">
-        {children}
-      </div>
-      <div className="flex flex-col items-center gap-4">
-        <h2
-          className={`font-heading font-bold text-nearwhite ${copyClass ?? "text-5xl"}`}
-          style={{ opacity: enterAt(frame, fps, 0.05, 0.4) }}
-        >
-          {copy}
-        </h2>
-        <p
-          className="font-mono text-2xl text-text-secondary"
-          style={{ opacity: enterAt(frame, fps, 0.25, 0.4) }}
-        >
-          {sub}
-        </p>
-      </div>
-    </div>
-  );
-};
 
 /** 01 · file — the dispute dossier slides in; anyone can file it. */
 const FileBeat: FC = () => {
@@ -73,8 +40,7 @@ const FileBeat: FC = () => {
               ["-180px 0px", "0px 0px"],
               {
                 easing: EASE_EXPO,
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
+                ...clamp,
               },
             ),
           }}
@@ -135,8 +101,7 @@ const DrawBeat: FC = () => {
               ["0px 30px", "0px 0px"],
               {
                 easing: EASE_EXPO,
-                extrapolateLeft: "clamp",
-                extrapolateRight: "clamp",
+                ...clamp,
               },
             ),
           }}
@@ -289,56 +254,30 @@ const BEAT_SCENES: Record<(typeof BEATS)[number]["key"], FC> = {
  * local frame timings stay simple. One Backdrop runs behind all beats.
  */
 export function MechanismScene() {
-  const frame = useCurrentFrame();
   const starts = BEATS.reduce<number[]>(
     (acc, beat, i) => [...acc, (acc[i - 1] ?? 0) + (BEATS[i - 1]?.frames ?? 0)],
     [],
   );
 
   return (
-    <div className="relative h-full w-full">
-      <Backdrop seed="intro-mechanism" />
+    <Scene seed="intro-mechanism">
       <div className="relative flex h-full flex-col p-16">
-        <div className="mx-auto flex items-center gap-10">
-          {BEATS.map((beat, i) => {
-            const start = starts[i] ?? 0;
-            const past = frame >= start + beat.frames;
-            const active = !past && frame >= start;
-            const fill = past ? 1 : active ? (frame - start) / beat.frames : 0;
-            return (
-              <div key={beat.key} className="flex flex-col items-center gap-2">
-                <span
-                  className={`font-mono text-lg ${
-                    active || past ? "text-amber" : "text-text-secondary"
-                  }`}
-                >
-                  {beat.label}
-                </span>
-                <div className="h-[3px] w-28 overflow-hidden rounded-full bg-raised">
-                  <div
-                    className="h-full bg-amber"
-                    style={{ width: `${fill * 100}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <StepRail steps={BEATS.map(({ frames, label }) => ({ frames, label }))} />
         <div className="relative flex-1">
           {BEATS.map((beat, i) => {
-            const Scene = BEAT_SCENES[beat.key];
+            const BeatScene = BEAT_SCENES[beat.key];
             return (
               <Sequence
                 key={beat.key}
                 from={starts[i]}
                 durationInFrames={beat.frames}
               >
-                <Scene />
+                <BeatScene />
               </Sequence>
             );
           })}
         </div>
       </div>
-    </div>
+    </Scene>
   );
 }

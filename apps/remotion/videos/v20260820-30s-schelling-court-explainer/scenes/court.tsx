@@ -1,8 +1,9 @@
 import { EASE_EXPO } from "../../../src/shell/presets";
+import { clamp } from "../../../src/shell/anim";
+import { Backdrop } from "../../../src/shell/backdrop";
+import { Coin, type Pt } from "../../../src/pieces/tally";
 import { interpolate, useCurrentFrame } from "remotion";
 
-
-import { Backdrop } from "./backdrop";
 import {
   BEAT,
   JURORS,
@@ -11,7 +12,6 @@ import {
   cardCenterX,
 } from "./timeline";
 import {
-  Coin,
   Headline,
   JurorCard,
   Pool,
@@ -19,7 +19,6 @@ import {
   Stamp,
   Tally,
   Vault,
-  type Pt,
 } from "./pieces";
 
 /**
@@ -37,8 +36,7 @@ export function CourtScene() {
   const frame = useCurrentFrame();
   const zoom = interpolate(frame, [BEAT.zoomAt, BEAT.zoomAt + 24], [0.85, 1.12], {
     easing: EASE_EXPO,
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
+    ...clamp,
   });
 
   const vaultPt: Pt = { x: 960, y: LAYOUT.vaultY + 24 };

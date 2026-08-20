@@ -1,86 +1,35 @@
-import { Interactive, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { Interactive, useCurrentFrame, useVideoConfig } from "remotion";
 
-import { EASE_EXPO } from "../../../src/shell/presets";
-import { Backdrop } from "../../../src/shell/backdrop";
-import { ConvergenceGlyph } from "./glyph";
+import { enterAt } from "../../../src/shell/anim";
+import { AccordMark, AmberRule, Wordmark } from "../../../src/shell/brand";
+import { Scene } from "../../../src/shell/scene";
 
-/** S3 · REVEAL — the wordmark. Glyph converges, name lands, tagline follows. */
+/** S3 · REVEAL — the wordmark. Mark converges, name lands, tagline follows. */
 export function RevealScene() {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   return (
-    <div className="relative h-full w-full">
-      <Backdrop seed="intro-reveal" />
-      <div className="relative flex h-full flex-col items-center justify-center gap-9 p-16">
-        <Interactive.Div
-          name="Convergence glyph"
-          style={{
-            opacity: interpolate(frame, [0.15 * fps, 0.85 * fps], [0, 1], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-          }}
-        >
-          <ConvergenceGlyph
-            size={120}
-            progress={interpolate(frame, [0.15 * fps, 0.85 * fps], [0, 1], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            })}
-            dot={interpolate(frame, [0.8 * fps, 1.1 * fps], [0, 1], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            })}
-            className="text-amber"
-          />
-        </Interactive.Div>
-        <Interactive.Div
-          name="Reveal wordmark"
-          className="font-heading text-9xl font-bold tracking-tight text-nearwhite"
-          style={{
-            opacity: interpolate(frame, [0, 0.6 * fps], [0, 1], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-            translate: interpolate(frame, [0, 0.6 * fps], ["0px 40px", "0px 0px"], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-          }}
-        >
-          Accord
-        </Interactive.Div>
-        <Interactive.Div
-          name="Reveal rule"
-          className="h-1 w-48 origin-center rounded-full bg-amber"
-          style={{
-            scale: interpolate(frame, [0.55 * fps, 0.95 * fps], ["0 1", "1 1"], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-          }}
+    <Scene seed="intro-reveal" stack className="gap-9">
+      <Interactive.Div name="Convergence mark" style={{ opacity: enterAt(frame, fps, 0.15, 0.7) }}>
+        <AccordMark
+          size={120}
+          progress={enterAt(frame, fps, 0.15, 0.7)}
+          dot={enterAt(frame, fps, 0.8, 0.3)}
+          className="text-amber"
         />
-        <Interactive.Div
-          name="Reveal tagline"
-          className="font-mono text-3xl text-text-secondary"
-          style={{
-            opacity: interpolate(frame, [0.8 * fps, 1.3 * fps], [0, 1], {
-              easing: EASE_EXPO,
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-          }}
-        >
-          dispute resolution on solana.
-        </Interactive.Div>
-      </div>
-    </div>
+      </Interactive.Div>
+      <Interactive.Div name="Reveal wordmark">
+        <Wordmark enter={enterAt(frame, fps, 0, 0.6)} className="text-9xl" />
+      </Interactive.Div>
+      <AmberRule enter={enterAt(frame, fps, 0.55, 0.4)} />
+      <Interactive.Div
+        name="Reveal tagline"
+        className="font-mono text-3xl text-text-secondary"
+        style={{ opacity: enterAt(frame, fps, 0.8, 0.5) }}
+      >
+        dispute resolution on solana.
+      </Interactive.Div>
+    </Scene>
   );
 }

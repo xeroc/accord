@@ -1,29 +1,24 @@
-import { interpolate, useCurrentFrame, useVideoConfig } from "remotion";
+import { useCurrentFrame, useVideoConfig } from "remotion";
 
-import { EASE_EXPO } from "../../../src/shell/presets";
+import { enterAt } from "../../../src/shell/anim";
+import { AmberRule, Wordmark } from "../../../src/shell/brand";
+import { Scene } from "../../../src/shell/scene";
 
 export function TitleScene({ subtitle }: { subtitle?: string }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const opacity = interpolate(frame, [0, fps * 0.6], [0, 1], {
-    easing: EASE_EXPO,
-    extrapolateRight: "clamp",
-  });
-  const y = interpolate(frame, [0, fps * 0.6], [24, 0], {
-    easing: EASE_EXPO,
-    extrapolateRight: "clamp",
-  });
   return (
-    <div
-      className="flex h-full flex-col items-center justify-center gap-6"
-      style={{ opacity, transform: `translateY(${y}px)` }}
-    >
-      <h1 className="font-heading text-8xl font-bold text-nearwhite">
-        __SLUG__
-      </h1>
+    <Scene seed="__SLUG__-title" stack className="gap-8">
+      <Wordmark enter={enterAt(frame, fps, 0)} className="text-8xl" />
+      <AmberRule enter={enterAt(frame, fps, 0.5)} />
       {subtitle ? (
-        <p className="font-mono text-2xl text-text-secondary">{subtitle}</p>
+        <p
+          className="font-mono text-2xl text-text-secondary"
+          style={{ opacity: enterAt(frame, fps, 0.7) }}
+        >
+          {subtitle}
+        </p>
       ) : null}
-    </div>
+    </Scene>
   );
 }
