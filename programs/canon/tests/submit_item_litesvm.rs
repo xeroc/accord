@@ -228,7 +228,6 @@ fn do_submit(
     env: &mut TestEnv,
     submitter: &Keypair,
     account: &Pubkey,
-    evidence: [u8; 32],
     deposit: u64,
 ) -> anchor_litesvm::TransactionResult {
     let item = item_pda(&env.list, account);
@@ -249,7 +248,7 @@ fn do_submit(
             associated_token_program: spl_associated_token_account::ID,
             system_program: SYS_PROGRAM_ID,
         })
-        .args(instruction::SubmitItem { evidence, deposit })
+        .args(instruction::SubmitItem { deposit })
         .instruction()
         .unwrap();
     env.ctx.execute_instruction(ix, &[submitter]).unwrap()
@@ -289,9 +288,8 @@ fn submit_item_happy_locks_deposit_and_inits_pending() {
     let curated = Pubkey::new_unique();
     create_token_account(&mut env.ctx, &curated, &env.mint, &submitter.pubkey(), 0);
 
-    let evidence = [0xAA; 32];
     let deposit = env.deposit;
-    do_submit(&mut env, &submitter, &curated, evidence, deposit).assert_success();
+    do_submit(&mut env, &submitter, &curated, deposit).assert_success();
 
     let item = read_item(&env, &curated);
     assert_eq!(item.account, curated);
@@ -324,7 +322,7 @@ fn submit_item_sentinel_accepts_arbitrary_account() {
     create_system_account(&mut env.ctx, &curated, LAMPORTS_PER_SOL);
 
     let deposit = env.deposit;
-    do_submit(&mut env, &submitter, &curated, [0xBB; 32], deposit).assert_success();
+    do_submit(&mut env, &submitter, &curated, deposit).assert_success();
 
     let item = read_item(&env, &curated);
     assert_eq!(item.state, ItemState::Pending);
@@ -346,7 +344,7 @@ fn submit_item_reverts_on_owner_mismatch() {
     create_system_account(&mut env.ctx, &curated, LAMPORTS_PER_SOL);
 
     let deposit = env.deposit;
-    let r = do_submit(&mut env, &submitter, &curated, [0xCC; 32], deposit);
+    let r = do_submit(&mut env, &submitter, &curated, deposit);
     assert!(
         !r.is_success(),
         "owner mismatch must revert; logs={:?}",
@@ -372,10 +370,10 @@ fn submit_item_reverts_on_duplicate() {
 
     let deposit = env.deposit;
     // First submit succeeds.
-    do_submit(&mut env, &submitter, &curated, [0xDD; 32], deposit).assert_success();
+    do_submit(&mut env, &submitter, &curated, deposit).assert_success();
 
     // Second submit collides on the PDA.
-    let r = do_submit(&mut env, &submitter, &curated, [0xEE; 32], deposit);
+    let r = do_submit(&mut env, &submitter, &curated, deposit);
     assert!(
         !r.is_success(),
         "duplicate item must revert; logs={:?}",

@@ -13,8 +13,6 @@ pub struct ItemSubmitted {
     pub submitter: Pubkey,
     /// Actual deposit locked (fee-on-transfer safe).
     pub deposit: u64,
-    /// Submitter's evidence commitment for this item.
-    pub evidence: [u8; 32],
 }
 
 /// Emitted by `advance_pending` when an unchallenged item auto-lists.
