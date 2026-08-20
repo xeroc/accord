@@ -1,11 +1,11 @@
 ---
 # accord-5p9j
 title: Creation flows — domain-doc authoring + chain-anchored publish (write path)
-status: todo
+status: completed
 type: epic
 priority: high
 created_at: 2026-08-19T20:35:24Z
-updated_at: 2026-08-19T20:36:13Z
+updated_at: 2026-08-20T00:19:21Z
 parent: accord-lgof
 ---
 
