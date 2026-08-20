@@ -1,14 +1,14 @@
 ---
 # accord-ofli
 title: Canon — drop dead evidence arg from submit_item (program+SDK+CLI+dApp+e2e+docs)
-status: todo
+status: completed
 type: milestone
 priority: normal
 tags:
     - canon
     - breaking-change
 created_at: 2026-08-20T17:21:41Z
-updated_at: 2026-08-20T17:21:41Z
+updated_at: 2026-08-20T18:55:00Z
 ---
 
 Drop the vestigial `evidence: [u8; 32]` arg from canon `submit_item` end-to-end: program (instruction arg + `ItemSubmitted` event field), LiteSVM tests, Codama codegen, SDK facade, CLI `--evidence` flag, dApp zero-evidence constant, e2e call sites, SPEC + agent-skill docs. Nothing else.
@@ -36,13 +36,13 @@ Drop the vestigial `evidence: [u8; 32]` arg from canon `submit_item` end-to-end:
 
 ## Tasks
 
-1. [ ] **Program**: `submit_item(ctx, deposit)` — drop arg in `lib.rs:41` dispatcher + `instructions/submit_item.rs:62` handler; drop `evidence` from `emit!` (`submit_item.rs:121`); drop `ItemSubmitted.evidence` field (`src/events.rs:16-17` + doc comment).
-2. [ ] **LiteSVM**: update 5 files constructing `instruction::SubmitItem { evidence, deposit }` → `{ deposit }`: `submit_item_litesvm.rs` (incl. `do_submit` helper signature), `advance_pending_litesvm.rs:221`, `challenge_item_litesvm.rs:319`, `settle_item_litesvm.rs:219`, `withdrawal_litesvm.rs:209`. Drop now-unused `evidence` locals.
-3. [ ] **Codegen + SDK**: `anchor build --ignore-keys` → canon codama regen (`cd packages/canon && pnpm exec codama run js`); facade `submitItem(accounts, { evidence, deposit })` → `{ deposit }` (`packages/canon/src/methods.ts:184`); `packages/canon/README.md:64` signature line.
-4. [ ] **CLI**: `apps/cli/src/commands/canon/submit.ts` — drop `--evidence` flag, `ZERO_EVIDENCE`, the second example, and the now-unused `parseHash32` import.
-5. [ ] **dApp**: `apps/canon/src/features/item/SubmitItemPage.tsx` — drop `ZERO_EVIDENCE` + stale header comment lines about the zero-hash contract.
-6. [ ] **e2e**: drop `evidence:` from the 6 `submitItem` args objects — `tests/src/canon.spec.ts:181,324,382` + `tests/src/canon.challenge.spec.ts:137,321,407`. Leave all `challengeItem` evidence args alone.
-7. [ ] **Docs**: `programs/canon/SPEC.md:39` instruction-table row (`submit_item(list, account, deposit = submit_deposit)`); `.agents/skills/useaccord/references/11-canon.md` — `canon:submit` flags/examples + SDK signature line 80. Grep `grep -rn "evidence" programs/canon packages/canon apps/cli/src/commands/canon apps/canon tests/src/canon*.spec.ts .agents/skills/useaccord/references/11-canon.md` to confirm only challenge/operator refs remain.
+1. [x] **Program**: `submit_item(ctx, deposit)` — drop arg in `lib.rs:41` dispatcher + `instructions/submit_item.rs:62` handler; drop `evidence` from `emit!` (`submit_item.rs:121`); drop `ItemSubmitted.evidence` field (`src/events.rs:16-17` + doc comment).
+2. [x] **LiteSVM**: update 5 files constructing `instruction::SubmitItem { evidence, deposit }` → `{ deposit }`: `submit_item_litesvm.rs` (incl. `do_submit` helper signature), `advance_pending_litesvm.rs:221`, `challenge_item_litesvm.rs:319`, `settle_item_litesvm.rs:219`, `withdrawal_litesvm.rs:209`. Drop now-unused `evidence` locals.
+3. [x] **Codegen + SDK**: `anchor build --ignore-keys` → canon codama regen (`cd packages/canon && pnpm exec codama run js`); facade `submitItem(accounts, { evidence, deposit })` → `{ deposit }` (`packages/canon/src/methods.ts:184`); `packages/canon/README.md:64` signature line.
+4. [x] **CLI**: `apps/cli/src/commands/canon/submit.ts` — drop `--evidence` flag, `ZERO_EVIDENCE`, the second example, and the now-unused `parseHash32` import.
+5. [x] **dApp**: `apps/canon/src/features/item/SubmitItemPage.tsx` — drop the evidence form field, `ZERO_HASH` + `parseHash32` helper, `evidenceHex` state/validation, and the header line (the page had grown a full evidence input past the zero-hash constant the bean was written against).
+6. [x] **e2e**: drop `evidence:` from the 6 `submitItem` args objects — `tests/src/canon.spec.ts:181,324,382` + `tests/src/canon.challenge.spec.ts:137,321,407`. Leave all `challengeItem` evidence args alone.
+7. [x] **Docs**: `programs/canon/SPEC.md:39` instruction-table row (`submit_item(list, account, deposit = submit_deposit)`); `.agents/skills/useaccord/references/11-canon.md` — `canon:submit` flags/examples + SDK signature line 80. Grep confirms only challenge/operator refs remain.
 
 ## HANDOFF
 
@@ -105,12 +105,12 @@ export async function submitItem(
 
 ### 5. Definition of Done
 
-- [ ] `cargo test -p canon --features no-entrypoint` green (all 5 LiteSVM files updated)
-- [ ] `anchor build --ignore-keys` emits canon.so; canon codama regen committed (no hand edits in `generated/`)
-- [ ] `make codegen && pnpm -r run build` green workspace-wide (catches every TS consumer)
-- [ ] `make test` green on Surfpool — canon.spec + canon.challenge.spec pass with `{ deposit }`-only submits
-- [ ] Task-7 grep shows zero submit-evidence references outside challenge/operator surfaces; SPEC.md + 11-canon.md + README lines updated
-- [ ] This bean's summary section updated on completion
+- [x] `cargo test -p canon --features no-entrypoint` green (47/47, all 5 LiteSVM files updated)
+- [x] `anchor build --ignore-keys` emits canon.so; canon codama regen committed (no hand edits in `generated/` — only `submitItem.ts` changed, −9 lines)
+- [x] `make codegen` green; every consumer of the changed signature builds (sdk, canon, synod, ui, cli + cli lint, cranker, evidence-daemon, synod-app; `SubmitItemPage.tsx` typechecks). Pre-existing unrelated failures remain at `apps/landing` (`Backdrop` missing from ui) and `apps/app`/`apps/canon` `CreateListPage` (`DomainDocPanel raw` prop) — verified identical on stashed HEAD, none in this change's blast radius.
+- [x] `make test` green on Surfpool — 25/25 suites, 108/108 tests; canon.spec + canon.challenge.spec pass with `{ deposit }`-only submits
+- [x] Task-7 grep shows zero submit-evidence references outside challenge/operator surfaces; SPEC.md + 11-canon.md + README lines updated
+- [x] This bean's summary section updated on completion
 
 ### 6. Test Matrix (Given / When / Then)
 
@@ -123,3 +123,17 @@ export async function submitItem(
 ### 7. Open Questions
 
 - None — removal is mechanical; no semantic surface changes.
+
+## Summary of Changes
+
+Dropped the vestigial `evidence: [u8; 32]` from canon `submit_item` end-to-end (18 files):
+
+- **Program**: dispatcher + handler now `submit_item(ctx, deposit)`; `ItemSubmitted` event field removed (discriminator unchanged, trailing-field layout only; `CanonItem` layout untouched — no migration).
+- **LiteSVM**: all 5 test files + `do_submit` helper signature updated; 47/47 green.
+- **SDK**: canon codama regenerated from the new IDL (`generated/instructions/submitItem.ts` only); facade `submitItem(accounts, { deposit })`; README signature lines.
+- **CLI**: `--evidence` flag, `ZERO_EVIDENCE`, second example, `parseHash32` import removed; eslint/prettier clean.
+- **dApp**: `SubmitItemPage` evidence input field, state, validation, `ZERO_HASH`, local `parseHash32` removed — the page had evolved a full evidence form past the all-zeros constant; `ready` gate and `onSubmit` args now deposit-only.
+- **e2e**: 6 `submitItem` call sites deposit-only; all `challengeItem` evidence args and `Dispute.evidence_hashes` assertions untouched and passing.
+- **Docs**: SPEC instruction row, `11-canon.md` flag table + example + SDK line.
+
+Verification: `cargo test -p canon --features no-entrypoint` 47/47; `anchor build --ignore-keys`; `make codegen`; consumer builds + `make lint` (only pre-existing `apps/landing` Backdrop failure remains, identical on HEAD); `make test` 25/25 suites / 108/108 tests green on Surfpool.
