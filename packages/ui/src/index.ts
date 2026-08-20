@@ -109,3 +109,16 @@ export { SealedVote } from "./mechanism/sealed-vote";
 export { RulingStamp } from "./mechanism/ruling-stamp";
 export { MonoChip, DeltaChip, type ChipTone } from "./mechanism/chips";
 export { TallyBar } from "./mechanism/tally";
+// Mechanism additions — the concept-illustration vocabulary (groups
+// A–F): ledger strip, subaccord container, vaults, counters, ladder,
+// lifecycle, accumulator, sortition. Same frame contract; see
+// concept-illustrations/ui-kit-additions.md for the full reference.
+export { TokenBadge, TOKEN_TONE, type TokenTone } from "./mechanism/token-tone";
+export { ChainStrip } from "./mechanism/chain-strip";
+export { SubaccordCard, SUBACCORD_INTERNALS } from "./mechanism/subaccord-card";
+export { VaultBox } from "./mechanism/vault-box";
+export { LedgerCounter, type LedgerTone } from "./mechanism/ledger-counter";
+export { PanelLadder, PANEL_LADDER } from "./mechanism/panel-ladder";
+export { StateNode } from "./mechanism/state-node";
+export { MerkleSumTree } from "./mechanism/merkle-sum-tree";
+export { SortitionRuler } from "./mechanism/sortition-ruler";
