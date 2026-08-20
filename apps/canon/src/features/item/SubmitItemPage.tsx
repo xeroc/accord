@@ -4,8 +4,10 @@
  * The Item Submitter form (milestone §1 path (b)): submits a curated account
  * to a Canon list. Fields:
  *  - account   — the curated address (a PDA owned by `CanonList.list_program`)
- *  - evidence  — 32-byte evidence hash (hex); references off-chain evidence
  *  - deposit   — fee_mint deposit (defaults to the list's `submit_deposit`)
+ *
+ * The contract requires a 32-byte evidence hash; until evidence authoring is
+ * wired, the form submits an all-zero hash (no evidence attached).
  *
  * Client-side validation (milestone §3): resolves the account's owner via RPC
  * and previews whether it matches `list.list_program` (skipped when the list
@@ -36,23 +38,14 @@ import {
   Field,
   FieldControl,
   FieldDescription,
-  FieldError,
   FieldLabel,
   Input,
 } from "@useaccord/ui";
 import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
 
-const ZERO_HASH = "0".repeat(64);
-
-/** Parse a 32-byte hash from hex (optional 0x prefix) → Uint8Array, or null. */
-function parseHash32(input: string): Uint8Array | null {
-  const hex = input.trim().replace(/^0x/, "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(hex)) return null;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++)
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  return out;
-}
+/** All-zero evidence hash — "no evidence attached" until the evidence flow
+ * is wired into this form. */
+const ZERO_EVIDENCE = new Uint8Array(32);
 
 export function SubmitItemPage() {
   const { address = "" } = useParams<{ address: string }>();
@@ -65,7 +58,6 @@ export function SubmitItemPage() {
   const ownershipDisabled = listData?.listProgram === ZERO_ADDRESS;
 
   const [account, setAccount] = useState("");
-  const [evidenceHex, setEvidenceHex] = useState("");
   const [deposit, setDeposit] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -87,27 +79,16 @@ export function SubmitItemPage() {
     staleTime: 30_000,
   });
 
-  const evidence = evidenceHex.trim() ? parseHash32(evidenceHex) : null;
-  const evidenceError =
-    evidenceHex.trim() && !evidence
-      ? "Enter a 32-byte hex hash (64 chars)."
-      : "";
-
   const ownerMatch =
     ownerQuery.data !== undefined && !!listData
       ? ownerQuery.data === listData.listProgram
       : null;
 
-  const ready =
-    !!env &&
-    !!listData &&
-    account.length > 30 &&
-    evidence !== null &&
-    !evidenceError;
+  const ready = !!env && !!listData && account.length > 30;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!env || !listData || !evidence) return;
+    if (!env || !listData) return;
     setSending(true);
     try {
       const feeMint = listData.feeMint;
@@ -125,7 +106,7 @@ export function SubmitItemPage() {
           submitterTokenAccount,
           vault,
         },
-        { evidence, deposit: BigInt(depositValue) },
+        { evidence: ZERO_EVIDENCE, deposit: BigInt(depositValue) },
       );
       await sendInstruction(
         env.rpc,
@@ -227,24 +208,6 @@ export function SubmitItemPage() {
           )}
         </Field>
 
-        <Field invalid={!!evidenceError}>
-          <FieldLabel>Evidence hash</FieldLabel>
-          <FieldControl>
-            <Input
-              className="font-mono"
-              placeholder={ZERO_HASH}
-              value={evidenceHex}
-              onChange={(e) => setEvidenceHex(e.target.value)}
-            />
-          </FieldControl>
-          <FieldError>{evidenceError ?? null}</FieldError>
-          {!evidenceError && (
-            <FieldDescription>
-              32-byte sha256 of the off-chain evidence (hex).
-            </FieldDescription>
-          )}
-        </Field>
-
         <Field>
           <FieldLabel>Deposit ({shortAddress(listData!.feeMint)})</FieldLabel>
           <FieldControl>
@@ -261,7 +224,11 @@ export function SubmitItemPage() {
         </Field>
 
         <Button type="submit" disabled={!ready} loading={sending}>
-          {sending ? "Submitting…" : "Submit item"}
+          {sending
+            ? "Submitting…"
+            : !env
+              ? "Connect a wallet to submit."
+              : "Submit item"}
         </Button>
       </form>
     </div>
