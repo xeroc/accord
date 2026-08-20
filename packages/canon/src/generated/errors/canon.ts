@@ -62,8 +62,15 @@ export const CANON_ERROR__INVALID_EVIDENCE_OPERATOR = 0x1785; // 6021
 export const CANON_ERROR__NOT_REMOVED = 0x1786; // 6022
 /** StakeOutstanding: Removed item still holds accumulated_stake (invariant breach). */
 export const CANON_ERROR__STAKE_OUTSTANDING = 0x1787; // 6023
+/** AlphaTooHigh: court.alpha_bps exceeds 10_000 (100%). */
+export const CANON_ERROR__ALPHA_TOO_HIGH = 0x1788; // 6024
+/** WindowTooShort: court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits. */
+export const CANON_ERROR__WINDOW_TOO_SHORT = 0x1789; // 6025
+/** TreeDepthTooDeep: court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget. */
+export const CANON_ERROR__TREE_DEPTH_TOO_DEEP = 0x178a; // 6026
 
 export type CanonError =
+  | typeof CANON_ERROR__ALPHA_TOO_HIGH
   | typeof CANON_ERROR__ALREADY_DISPUTED
   | typeof CANON_ERROR__ARITHMETIC_OVERFLOW
   | typeof CANON_ERROR__CHALLENGE_PCT_TOO_HIGH
@@ -86,12 +93,15 @@ export type CanonError =
   | typeof CANON_ERROR__OWNER_MISMATCH
   | typeof CANON_ERROR__STAKE_OUTSTANDING
   | typeof CANON_ERROR__SUBACCORD_MISMATCH
+  | typeof CANON_ERROR__TREE_DEPTH_TOO_DEEP
+  | typeof CANON_ERROR__WINDOW_TOO_SHORT
   | typeof CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN
   | typeof CANON_ERROR__WRONG_ACCORD_PROGRAM;
 
 let canonErrorMessages: Record<CanonError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
   canonErrorMessages = {
+    [CANON_ERROR__ALPHA_TOO_HIGH]: `court.alpha_bps exceeds 10_000 (100%).`,
     [CANON_ERROR__ALREADY_DISPUTED]: `Item is already Disputed.`,
     [CANON_ERROR__ARITHMETIC_OVERFLOW]: `Arithmetic overflow.`,
     [CANON_ERROR__CHALLENGE_PCT_TOO_HIGH]: `challenge_pct exceeds MAX_CHALLENGE_PCT_BPS.`,
@@ -114,6 +124,8 @@ if (process.env["NODE_ENV"] !== "production") {
     [CANON_ERROR__OWNER_MISMATCH]: `Curated account is not owned by the list's list_program.`,
     [CANON_ERROR__STAKE_OUTSTANDING]: `Removed item still holds accumulated_stake (invariant breach).`,
     [CANON_ERROR__SUBACCORD_MISMATCH]: `Provided Subaccord does not match the list's backing Subaccord.`,
+    [CANON_ERROR__TREE_DEPTH_TOO_DEEP]: `court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget.`,
+    [CANON_ERROR__WINDOW_TOO_SHORT]: `court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits.`,
     [CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN]: `Withdrawal timelock has not elapsed yet.`,
     [CANON_ERROR__WRONG_ACCORD_PROGRAM]: `Wrong Accord program account.`,
   };

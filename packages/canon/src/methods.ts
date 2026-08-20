@@ -49,6 +49,58 @@ export interface CreateListAccounts {
   feeMint: Address;
 }
 
+/** Creator-configurable court profile for the list's backing Subaccord
+ * (milestone accord-qz7d / ADR canon/0002). Pinned by the program — never
+ * caller-settable here: `aggregation=Plurality`, `shortfallPolicy=Redraw`,
+ * `coherenceTolBps=0`, `authority=CanonList PDA`, default credentials.
+ * `minJurySize` and `depth` are immutable on the Subaccord (set-once). */
+export interface CourtParams {
+  /** Draw eligibility threshold, in the staking mint. */
+  minStake: bigint;
+  /** Slash factor in bps (10% = 1000). Guard: <= 10_000. */
+  alphaBps: number; // u16
+  /** Seconds a round spends in review. Guard: > 0. */
+  reviewWindow: bigint; // seconds
+  /** Seconds jurors get to commit. Guard: > 0. */
+  commitWindow: bigint; // seconds
+  /** Seconds jurors get to reveal. Guard: > 0. */
+  revealWindow: bigint; // seconds
+  /** Appeal window after a round resolves (Accord floor: 1h). */
+  appealWindow: bigint; // seconds
+  /** Max appeals per dispute; ladder `(J+1)·2^k − 1` must fit MAX_JURORS. */
+  maxAppeals: number; // u8
+  /** Round-1 juror panel size; must be odd. Immutable on the Subaccord. */
+  minJurySize: number; // u32, odd
+  /** Per-juror fee, in the fee mint. */
+  feePerJuror: bigint;
+  /** Reveal-quorum fraction in bps (ADR-0021). Guard: <= 10_000. */
+  revealThresholdBps: number; // u16
+  /** Max same-size redraws per round (ADR-0021). */
+  maxDrawAttempts: number; // u8
+  /** MST accumulator depth. Guard: <= MAX_LIST_TREE_DEPTH (8). Immutable. */
+  depth: number; // u8
+}
+
+/** Canonical default court profile — the court defaults Canon used to pin
+ * on-chain, now applied at the call site. Spread-and-override for custom
+ * lists: `{ ...defaultCourtParams(), alphaBps: 500 }`. */
+export function defaultCourtParams(): CourtParams {
+  return {
+    minStake: 1_000n,
+    alphaBps: 1_000,
+    reviewWindow: 7n * 24n * 60n * 60n,
+    commitWindow: 2n * 24n * 60n * 60n,
+    revealWindow: 2n * 24n * 60n * 60n,
+    appealWindow: 3n * 24n * 60n * 60n,
+    maxAppeals: 3,
+    minJurySize: 3,
+    feePerJuror: 10n,
+    revealThresholdBps: 6_666,
+    maxDrawAttempts: 3,
+    depth: 8,
+  };
+}
+
 export interface CreateListArgs {
   /** The program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check off. */
   listProgram: Address;
@@ -64,10 +116,12 @@ export interface CreateListArgs {
    * default pubkey — the program rejects it (a zero key can never be an ECIES
    * target). Deployment-configured; the dApp passes VITE_EVIDENCE_OPERATOR_ADDRESS. */
   evidenceOperator: Address;
+  /** Backing court profile; lands verbatim on the Subaccord. */
+  court: CourtParams;
 }
 
 /** Build `create_list`: derives the CanonList + backing Subaccord PDAs and CPIs
- * Accord `create_subaccord` (1:1 backing court, canon canonical defaults). */
+ * Accord `create_subaccord` (1:1 backing court, creator-configured profile). */
 export async function createList(
   accounts: CreateListAccounts,
   args: CreateListArgs,
@@ -97,6 +151,7 @@ export async function createList(
       listingWindow: args.listingWindow,
       withdrawalTimelock: args.withdrawalTimelock,
       evidenceOperator: args.evidenceOperator,
+      ...args.court,
     },
     { programAddress: programId },
   );

@@ -26,6 +26,7 @@ import {
   advanceWithdrawal,
   closeItem,
   createList,
+  defaultCourtParams,
   challengeItem,
   settleItem,
   getCanonListEncoder,
@@ -354,6 +355,7 @@ describe("Canon lifecycle (Surfpool)", () => {
         challengePct: 5_000, // 50%
         listingWindow: LISTING_WINDOW,
         withdrawalTimelock: WITHDRAWAL_TIMELOCK,
+        court: defaultCourtParams(),
       },
       CANON_PROGRAM_ID,
     );

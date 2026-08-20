@@ -68,8 +68,8 @@ export function rulesHashHex(form: FormState): string {
 }
 
 /** Parsed create-list args (the canon-SDK `CreateListArgs` shape minus the
- * deployment-configured evidence operator, which the page supplies). Throws
- * on bad input — the submit handler surfaces the message. */
+ * deployment-configured evidence operator and court profile, which the page
+ * supplies). Throws on bad input — the submit handler surfaces the message. */
 export function buildArgs(form: FormState): {
   listProgram: Address;
   rulesHash: Uint8Array;

@@ -26,6 +26,7 @@ import {
 } from "@useaccord/sdk";
 import {
   createList,
+  defaultCourtParams,
   challengeItem,
   settleItem,
   submitItem,
@@ -78,7 +79,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
   it("files a dispute via Canon's CPI and settles a keep ruling", async () => {
     if (!env.up) return; // offline CI lane
 
-    // --- create_list: CPIs Accord create_subaccord (depth 20, fee_per_juror 10) ---
+    // --- create_list: CPIs Accord create_subaccord (defaultCourtParams: depth 8, fee_per_juror 10) ---
     const accordState = await ensurePause(env);
     const { mint } = await createMint(env, 6);
     const rulesHash = crypto.getRandomValues(new Uint8Array(32));
@@ -96,6 +97,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         challengePct: 5_000, // 50%
         listingWindow: 5n * 24n * 60n * 60n,
         withdrawalTimelock: 5n * 24n * 60n * 60n,
+        court: defaultCourtParams(),
       },
       CANON_PROGRAM_ID,
     );
@@ -364,6 +366,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         challengePct: 5_000, // 50%
         listingWindow: 5n * 24n * 60n * 60n,
         withdrawalTimelock: 5n * 24n * 60n * 60n,
+        court: defaultCourtParams(),
       },
       CANON_PROGRAM_ID,
     );

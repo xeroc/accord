@@ -31,7 +31,7 @@
  */
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createList } from "@useaccord/canon";
+import { createList, defaultCourtParams } from "@useaccord/canon";
 import { putDomainDoc, verifyDomainDoc } from "@useaccord/sdk";
 import { Button, DomainDocCard } from "@useaccord/ui";
 import { toast } from "sonner";
@@ -120,6 +120,8 @@ export function CreateListPage() {
             EVIDENCE_OPERATOR,
             "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS in .env)",
           ),
+          // canonical court profile until the advanced court-params UI ships
+          court: defaultCourtParams(),
         },
       );
       await sendInstruction(
