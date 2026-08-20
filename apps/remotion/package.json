@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@remotion/cli": "4.0.513",
+    "@remotion/three": "4.0.513",
     "@solana/connector": "^0.2.6",
     "@solana/kit": "^7.0.0",
     "@tanstack/react-query": "^5.62.0",

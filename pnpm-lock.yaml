@@ -355,6 +355,9 @@ importers:
       '@remotion/cli':
         specifier: 4.0.513
         version: 4.0.513(@swc/helpers@0.5.23)(bufferutil@4.1.0)(lightningcss@1.32.0)(postcss@8.5.25)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
+      '@remotion/three':
+        specifier: 4.0.513
+        version: 4.0.513(@react-three/fiber@9.7.0(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@18.3.31)(bufferutil@4.1.0)(react@18.3.1))(react@18.3.1)(three@0.185.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(remotion@4.0.513(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(three@0.185.1)
       '@solana/connector':
         specifier: ^0.2.6
         version: 0.2.6(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(react-native@0.86.2(@babel/core@7.29.7)(@types/react@18.3.31)(bufferutil@4.1.0)(react@18.3.1))(react@18.3.1)(typescript@5.9.3)
@@ -415,7 +418,7 @@ importers:
         version: 8.5.25
       postcss-loader:
         specifier: ^8.2.0
-        version: 8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
+        version: 8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -2979,6 +2982,31 @@ packages:
       '@types/react':
         optional: true
 
+  '@react-three/fiber@9.7.0':
+    resolution: {integrity: sha512-EWm9FwcaOZQu/ExFW5rggoCMM1NJet5YbxVxKaOE+KSncrjU0Wx7017qSyGFvupviK89nMYGCWU3BIK4dI1clw==}
+    peerDependencies:
+      expo: '>=43.0'
+      expo-asset: '>=8.4'
+      expo-file-system: '>=11.0'
+      expo-gl: '>=11.0'
+      react: '>=19 <19.3'
+      react-dom: '>=19 <19.3'
+      react-native: '>=0.78'
+      three: '>=0.156'
+    peerDependenciesMeta:
+      expo:
+        optional: true
+      expo-asset:
+        optional: true
+      expo-file-system:
+        optional: true
+      expo-gl:
+        optional: true
+      react-dom:
+        optional: true
+      react-native:
+        optional: true
+
   '@remix-run/router@1.23.3':
     resolution: {integrity: sha512-4An71tdz9X8+3sI4Qqqd2LWd9vS39J7sqd9EU4Scw7TJE/qB10Flv/UuqbPVgfQV9XoK8Np6jNquZitnZq5i+Q==}
     engines: {node: '>=14.0.0'}
@@ -3078,6 +3106,15 @@ packages:
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
+
+  '@remotion/three@4.0.513':
+    resolution: {integrity: sha512-GiHsuErQDAvH7NweFLJCPDerQp/BdOoeg32dxwlWiE/adjeayBeP/5C1NhCPbqm20BB4/3IeiRTtNPssfPAV/w==}
+    peerDependencies:
+      '@react-three/fiber': '>=8.0.0'
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+      remotion: 4.0.513
+      three: '>=0.137.0'
 
   '@remotion/timeline-utils@4.0.513':
     resolution: {integrity: sha512-PYpK/VRh1kdrjE4kcNkatsLBeVa1yL+tTqoj0lRVW2N/5NXP9PNTwXF5/CsTZyjGPz01FF0lj+mOW2J8ECCdDg==}
@@ -4817,6 +4854,11 @@ packages:
     peerDependencies:
       '@types/react': ^18.0.0
 
+  '@types/react-reconciler@0.28.9':
+    resolution: {integrity: sha512-HHM3nxyUZ3zAylX8ZEyrDNd2XZOnQ0D5XfunJF5FLQnZbHHYq4UWvW1QfelQNXv1ICNkwYhfxjwfnqivYB6bFg==}
+    peerDependencies:
+      '@types/react': '*'
+
   '@types/react@18.3.31':
     resolution: {integrity: sha512-vfEqpXTvwT91yhmwdfouStN2hSKwTvyRs8qpLfADyrq/kxDw0hZM7Wk9Ug1FELj8hIby+S/+kQCSRFF32nv2Qw==}
 
@@ -4834,6 +4876,9 @@ packages:
 
   '@types/uuid@10.0.0':
     resolution: {integrity: sha512-7gqG38EyHgyP1S+7+xomFtL+ZNHcKv6DwNaCZmJmo1vgMugyF3TCnXVg4t1uk89mLNwnLtnY3TpOpCOyp1/xHQ==}
+
+  '@types/webxr@0.5.24':
+    resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
 
   '@types/ws@7.4.7':
     resolution: {integrity: sha512-JQbbmxZTZehdc2iszGKs5oC3NFnjeay7mtAWrdt7qNtAVK0g19muApzAy4bm9byz79xa2ZnO/BOBC2R8RC5Lww==}
@@ -6329,6 +6374,11 @@ packages:
     resolution: {integrity: sha512-HGYWWS/ehqTV3xN10i23tkPkpH46MLCIMFNCaaKNavAXTF1RkqxawEPtnjnGZ6XKSInBKkiOA5BKS+aZiY3AvA==}
     engines: {node: '>=8'}
 
+  its-fine@2.0.0:
+    resolution: {integrity: sha512-KLViCmWx94zOvpLwSlsx6yOCeMhZYaxrJV87Po5k/FoZzcPSahvK5qJ7fYhS61sZi5ikmh2S3Hz55A2l3U69ng==}
+    peerDependencies:
+      react: ^19.0.0
+
   jake@10.9.4:
     resolution: {integrity: sha512-wpHYzhxiVQL+IV05BLE2Xn34zW1S223hvjtqk0+gsPrwd/8JNLXJgZZM/iPFsYc1xyphF+6M6EvdE5E9MBGkDA==}
     engines: {node: '>=10'}
@@ -7480,6 +7530,15 @@ packages:
       '@types/react':
         optional: true
 
+  react-use-measure@2.1.7:
+    resolution: {integrity: sha512-KrvcAo13I/60HpwGO5jpW7E9DfusKyLPLvuHlUyP5zqnmAPhNc6qTRjUQrdTADl0lpPpDVU2/Gg51UlOGHXbdg==}
+    peerDependencies:
+      react: '>=16.13'
+      react-dom: '>=16.13'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+
   react@18.3.1:
     resolution: {integrity: sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==}
     engines: {node: '>=0.10.0'}
@@ -7818,6 +7877,11 @@ packages:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
 
+  suspend-react@0.1.3:
+    resolution: {integrity: sha512-aqldKgX9aZqpoDp3e8/BZ8Dm7x1pJl+qI3ZKxDN0i/IQTWUwBx/ManmlVJ3wowqbno6c2bmiIfs+Um6LbsjJyQ==}
+    peerDependencies:
+      react: '>=17.0'
+
   svg-parser@2.0.5:
     resolution: {integrity: sha512-FuT74puvVMJQ8sgFxgOKPex5MbxPeltqCXJV3wR9Xq+vPHaF+tTdE1lhJcwspUxjtjvXy1NwqcSLZx9UNwHawg==}
     engines: {node: '>=8'}
@@ -7900,6 +7964,9 @@ packages:
 
   thenify@3.3.1:
     resolution: {integrity: sha512-RVZSIV5IG10Hk3enotrhvz0T9em6cyHBLkH/YAZuKqd8hRkKhSfCGIcP2KUY0EPxndzANBmNllzWPwak+bheSw==}
+
+  three@0.185.1:
+    resolution: {integrity: sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg==}
 
   throat@5.0.0:
     resolution: {integrity: sha512-fcwX4mndzpLQKBS1DVYhGAcYaYt7vsHNIvQV+WXMvnow5cgjPphq5CaayLaGsjRdSCKZFNGt7/GYAuXaNOiYCA==}
@@ -8480,6 +8547,24 @@ packages:
 
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
+  zustand@5.0.15:
+    resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -10673,6 +10758,27 @@ snapshots:
     optionalDependencies:
       '@types/react': 18.3.31
 
+  '@react-three/fiber@9.7.0(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@18.3.31)(bufferutil@4.1.0)(react@18.3.1))(react@18.3.1)(three@0.185.1)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      '@types/webxr': 0.5.24
+      base64-js: 1.5.1
+      buffer: 6.0.3
+      its-fine: 2.0.0(@types/react@18.3.31)(react@18.3.1)
+      react: 18.3.1
+      react-use-measure: 2.1.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      scheduler: 0.27.0
+      suspend-react: 0.1.3(react@18.3.1)
+      three: 0.185.1
+      use-sync-external-store: 1.6.0(react@18.3.1)
+      zustand: 5.0.15(@types/react@18.3.31)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
+    optionalDependencies:
+      react-dom: 18.3.1(react@18.3.1)
+      react-native: 0.86.2(@babel/core@7.29.7)(@types/react@18.3.31)(bufferutil@4.1.0)(react@18.3.1)
+    transitivePeerDependencies:
+      - '@types/react'
+      - immer
+
   '@remix-run/router@1.23.3': {}
 
   '@remotion/bundler@4.0.513(@swc/helpers@0.5.23)(bufferutil@4.1.0)(lightningcss@1.32.0)(postcss@8.5.25)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
@@ -10683,13 +10789,13 @@ snapshots:
       '@remotion/timeline-utils': 4.0.513
       '@rspack/core': 1.7.11(@swc/helpers@0.5.23)
       '@rspack/plugin-react-refresh': 1.6.1(react-refresh@0.18.0)
-      css-loader: 7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
+      css-loader: 7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
       esbuild: 0.28.1
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       react-refresh: 0.18.0
       remotion: 4.0.513(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      style-loader: 4.0.0(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
+      style-loader: 4.0.0(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
       webpack: 5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)
     transitivePeerDependencies:
       - '@minify-html/node'
@@ -10896,6 +11002,14 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@remotion/three@4.0.513(@react-three/fiber@9.7.0(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@18.3.31)(bufferutil@4.1.0)(react@18.3.1))(react@18.3.1)(three@0.185.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(remotion@4.0.513(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(three@0.185.1)':
+    dependencies:
+      '@react-three/fiber': 9.7.0(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react-native@0.86.2(@babel/core@7.29.7)(@types/react@18.3.31)(bufferutil@4.1.0)(react@18.3.1))(react@18.3.1)(three@0.185.1)
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      remotion: 4.0.513(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      three: 0.185.1
 
   '@remotion/timeline-utils@4.0.513':
     dependencies:
@@ -12873,6 +12987,10 @@ snapshots:
     dependencies:
       '@types/react': 18.3.31
 
+  '@types/react-reconciler@0.28.9(@types/react@18.3.31)':
+    dependencies:
+      '@types/react': 18.3.31
+
   '@types/react@18.3.31':
     dependencies:
       '@types/prop-types': 15.7.15
@@ -12887,6 +13005,8 @@ snapshots:
   '@types/unist@3.0.3': {}
 
   '@types/uuid@10.0.0': {}
+
+  '@types/webxr@0.5.24': {}
 
   '@types/ws@7.4.7':
     dependencies:
@@ -13713,7 +13833,7 @@ snapshots:
       shebang-command: 2.0.0
       which: 2.0.2
 
-  css-loader@7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
+  css-loader@7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       icss-utils: 5.1.0(postcss@8.5.25)
       postcss: 8.5.25
@@ -14552,6 +14672,13 @@ snapshots:
     dependencies:
       html-escaper: 2.0.2
       istanbul-lib-report: 3.0.1
+
+  its-fine@2.0.0(@types/react@18.3.31)(react@18.3.1):
+    dependencies:
+      '@types/react-reconciler': 0.28.9(@types/react@18.3.31)
+      react: 18.3.1
+    transitivePeerDependencies:
+      - '@types/react'
 
   jake@10.9.4:
     dependencies:
@@ -15960,7 +16087,7 @@ snapshots:
       tsx: 4.23.11
       yaml: 2.9.0
 
-  postcss-loader@8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
+  postcss-loader@8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       cosmiconfig: 9.0.2(typescript@5.9.3)
       jiti: 2.7.0
@@ -16268,6 +16395,12 @@ snapshots:
       tslib: 2.8.1
     optionalDependencies:
       '@types/react': 18.3.31
+
+  react-use-measure@2.1.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+    optionalDependencies:
+      react-dom: 18.3.1(react@18.3.1)
 
   react@18.3.1:
     dependencies:
@@ -16627,7 +16760,7 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  style-loader@4.0.0(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
+  style-loader@4.0.0(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       webpack: 5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)
 
@@ -16661,6 +16794,10 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
+  suspend-react@0.1.3(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+
   svg-parser@2.0.5: {}
 
   symbol-tree@3.2.4: {}
@@ -16675,7 +16812,7 @@ snapshots:
 
   tapable@2.3.3: {}
 
-  terser-webpack-plugin@5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
+  terser-webpack-plugin@5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
@@ -16722,6 +16859,8 @@ snapshots:
   thenify@3.3.1:
     dependencies:
       any-promise: 1.3.0
+
+  three@0.185.1: {}
 
   throat@5.0.0: {}
 
@@ -17250,7 +17389,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
+      terser-webpack-plugin: 5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
       watchpack: 2.5.2
       webpack-sources: 3.5.1
     transitivePeerDependencies:
@@ -17433,5 +17572,11 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   zod@4.4.3: {}
+
+  zustand@5.0.15(@types/react@18.3.31)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1)):
+    optionalDependencies:
+      '@types/react': 18.3.31
+      react: 18.3.1
+      use-sync-external-store: 1.6.0(react@18.3.1)
 
   zwitch@2.0.4: {}

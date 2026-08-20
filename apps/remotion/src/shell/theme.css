@@ -21,6 +21,15 @@
 @import "@useaccord/ui/styles.css";
 
 @source "../../../../packages/ui/src";
+/* Local video sources live under videos/, which is gitignored (only
+ * _example/_template are tracked), so automatic source detection never
+ * scans them. Register them explicitly or every class unique to a local
+ * video silently falls back to browser defaults (16px text, no colors).
+ * The /* glob is load-bearing: pointing at videos/ itself lets the
+ * scanner prune the walk at the gitignored boundary, while one level of
+ * glob puts each video directory inside the ignored region where the
+ * scan actually runs. */
+@source "../../videos/*";
 
 
 /* Remotion mounts into its own container; keep the page dark + full-size. */
