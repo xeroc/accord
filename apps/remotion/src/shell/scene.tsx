@@ -44,8 +44,8 @@ export const Beat: FC<{
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-12 p-16">
-      <div className="flex h-[380px] items-center justify-center">
+    <div className="relative flex h-full w-full flex-col items-center justify-center gap-12 p-16">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
         {children}
       </div>
       <div className="flex flex-col items-center gap-4">
