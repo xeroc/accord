@@ -33,7 +33,6 @@ Thumbs.db
 # Logs
 *.log
 context
-brand
 apps/docs/pitch
 **/.cache
 target/
