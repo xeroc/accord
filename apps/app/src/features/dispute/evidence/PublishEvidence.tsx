@@ -31,7 +31,9 @@ import {
   publishEvidence,
   verifyManifestHash,
 } from "@useaccord/sdk/evidence";
+
 import { EVIDENCE_DAEMON_URL } from "./config";
+ import { queryClient } from "../../../shared/queryClient";
 
 function isZeroHash(h: ReadonlyUint8Array): boolean {
   return h.every((b) => b === 0);
@@ -78,7 +80,10 @@ export function PublishEvidence({
           getAddressEncoder().encode(subaccord.data.evidenceOperator),
         ),
       });
-      setResult({ kind: "ok", fileName: file.name });
+      // The manifest query is cached (staleTime 60s) with data null — drop
+      // it so the EvidenceManifest card above flips without a remount.
+      void queryClient.invalidateQueries({ queryKey: ["manifest"] });
+       setResult({ kind: "ok", fileName: file.name });
     } catch (err) {
       setResult({ kind: "err", msg: describeError(err) });
     } finally {

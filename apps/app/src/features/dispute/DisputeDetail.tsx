@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { isSome, type ReadonlyUint8Array } from "@solana/kit";
 import {
@@ -15,7 +15,7 @@ import {
   formatRuling,
   timeRemaining,
 } from "../../shared/format";
-import { Copyable } from "@useaccord/ui";
+import { Button, Copyable, useNow } from "@useaccord/ui";
 import { useAccord } from "../../shared/rpc";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
@@ -65,12 +65,10 @@ export function DisputeDetail() {
   const [appealSending, setAppealSending] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
 
-  // Re-render every minute so the appeal-window countdown stays fresh.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
+  // Appeal-window countdown — 1s tick while the dispute is round-resolved
+  // (state 5), so eligibility and "time left" track the on-chain window
+  // instead of drifting up to a minute stale (apple-design audit H4).
+  const now = useNow(dispute?.data.state === 5);
 
   if (isLoading) {
     return <p className="text-text-secondary">Loading dispute…</p>;
@@ -162,7 +160,7 @@ export function DisputeDetail() {
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-xl font-semibold">
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">
           Dispute <Copyable value={dispute.address} head={6} tail={6} />
         </h1>
       </div>
@@ -506,9 +504,9 @@ export function DisputeDetail() {
             : undefined;
           const remaining =
             appealWindowEnd !== undefined
-              ? timeRemaining(Number(appealWindowEnd))
+              ? timeRemaining(Number(appealWindowEnd), now)
               : "";
-          const info = getAppealInfo(dispute, appealWindowEnd);
+          const info = getAppealInfo(dispute, appealWindowEnd, now);
           if (!info) return null;
           return (
             <div
@@ -574,17 +572,17 @@ export function DisputeDetail() {
                   {appealError && (
                     <p className="mb-3 text-sm text-slash">{appealError}</p>
                   )}
-                  <button
+                  <Button
                     onClick={handleAppeal}
-                    disabled={!env || !subaccord || appealSending}
-                    className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!env || !subaccord}
+                    loading={appealSending}
                   >
                     {!env
                       ? "Appeal — connect wallet"
                       : appealSending
                         ? "Signing…"
                         : "Appeal"}
-                  </button>
+                  </Button>
                 </>
               ) : (
                 <p className="text-sm text-slash">{info.reason}</p>

@@ -430,7 +430,7 @@ export function CreateDispute() {
         </Link>
       </div>
 
-      <h1 className="text-xl font-semibold">File a dispute.</h1>
+      <h1 className="text-2xl font-semibold tracking-[-0.01em]">File a dispute.</h1>
 
       {/* Publish-failure recovery banner */}
       {publishFail && (
