@@ -1,11 +1,11 @@
 ---
 # accord-lgof
 title: Domain document registry — public CAS on the evidence daemon
-status: in-progress
+status: completed
 type: milestone
 priority: normal
 created_at: 2026-08-18T22:59:47Z
-updated_at: 2026-08-19T20:36:05Z
+updated_at: 2026-08-20T00:20:16Z
 ---
 
 ## Scope
