@@ -19,6 +19,7 @@ import {
  *
  * Authority: SPEC §Instructions #4, ADR-0015 (evidence → SDK).
  */
+import { ExternalLink } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -26,6 +27,7 @@ import { toast } from "sonner";
 import type { Address } from "@solana/kit";
 import { getBase64Encoder, getAddressEncoder } from "@solana/kit";
 import { getSubaccordDecoder, findDisputePda } from "@useaccord/sdk";
+import { fetchSubaccordRaw } from "../../shared/rpc";
 import { fetchCanonItem, fetchCanonList } from "../../shared/fetch";
 import { buildManifest } from "@useaccord/sdk/evidence";
 import { useSigner } from "../../shared/rpc";
@@ -42,6 +44,8 @@ import {
   type ChallengeOnChainContext,
 } from "./challengeFlow";
 import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
+import { explorerAccountUrl } from "../../shared/explorer";
+import { formatBps, formatTokenAmount } from "../../shared/format";
 
 const EVIDENCE_DAEMON_URL =
   import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
@@ -65,9 +69,10 @@ export function ChallengePage() {
   const validEntries = entries.filter((e) => e.trim().length > 0);
   const isValid = title.trim().length > 0 && validEntries.length >= 1;
 
-  // On-chain context for the preview: item → list → the dispute PDA the next
-  // challenge will use (["dispute", list, list.dispute_count]). Fetched at page
-  // load so the preview shows REAL values; submit re-fetches for freshness.
+  // On-chain context for the preview: item → list → backing court (economics)
+  // → the dispute PDA the next challenge will use (["dispute", list,
+  // list.dispute_count]). Fetched at page load so the preview + the cost
+  // breakdown show REAL values; submit re-fetches for freshness.
   const { data: previewCtx } = useQuery({
     queryKey: ["challenge-ctx", address],
     queryFn: async () => {
@@ -76,17 +81,49 @@ export function ChallengePage() {
       if (!itemData) return null;
       const listData = await fetchCanonList(clusterRpc.rpc, itemData.list);
       if (!listData) return null;
+      const subaccord = await fetchSubaccordRaw(
+        clusterRpc.rpc,
+        listData.subaccord,
+      );
+      if (!subaccord) return null;
       const [dispute] = await findDisputePda({
         filer: itemData.list,
         nonce: listData.disputeCount,
       });
-      return { list: itemData.list, listData, dispute };
+      return {
+        list: itemData.list,
+        listData,
+        itemData,
+        court: subaccord.data,
+        dispute,
+      };
     },
     enabled: !!address && !!clusterRpc,
     retry: false,
     staleTime: 30_000,
   });
 
+  // --- Challenge economics (mirrors on-chain math exactly) ---
+  // challenge_item: stake = challenge_pct × accumulated_stake / 10_000, plus
+  // Accord filing_fee = min_jury_size × fee_per_juror (jury pay). settle_item:
+  // remove pays the challenger the whole pot (accumulated + own stake back);
+  // keep forfeits the stake into the item's accumulated protection.
+  const econ = useMemo(() => {
+    if (!previewCtx) return null;
+    const { listData, itemData, court } = previewCtx;
+    const stake =
+      (BigInt(listData.challengePct) * itemData.accumulatedStake) / 10_000n;
+    const juryFee = BigInt(court.minJurySize) * court.feePerJuror;
+    return {
+      stake,
+      juryFee,
+      total: stake + juryFee,
+      pot: itemData.accumulatedStake,
+      jurySize: court.minJurySize,
+      feePerJuror: court.feePerJuror,
+      challengePct: listData.challengePct,
+    };
+  }, [previewCtx]);
   // YAML preview (real ctx; salt + entry sha256 zeroed — minted at submit).
   const yamlPreview = useMemo(() => {
     if (!isValid || !previewCtx) return "";
@@ -240,6 +277,74 @@ export function ChallengePage() {
         <span className="font-mono text-slash">remove</span>.
       </p>
 
+      {/* The item being challenged — the curated account itself */}
+      {previewCtx && (
+        <div className="mt-6 rounded-lg bg-card p-5 ring-1 ring-foreground/10">
+          <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+            The item being challenged
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="break-all font-mono text-base text-foreground">
+              {previewCtx.itemData.account}
+            </span>
+            <a
+              href={explorerAccountUrl(previewCtx.itemData.account)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View on explorer"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="size-4" aria-hidden />
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Challenge economics — mirrors on-chain math (challenge_item + filing_fee) */}
+      {econ && (
+        <div className="mt-4 rounded-lg bg-card p-5 ring-1 ring-foreground/10">
+          <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+            What this challenge costs
+          </p>
+          <dl className="mt-3 grid gap-2">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <dt className="text-muted-foreground">
+                Challenge stake ({formatBps(econ.challengePct, 0)} of the pot)
+              </dt>
+              <dd className="text-right font-mono">
+                {formatTokenAmount(econ.stake)}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <dt className="text-muted-foreground">
+                Juror fees ({econ.jurySize} jurors ×{" "}
+                {formatTokenAmount(econ.feePerJuror)})
+              </dt>
+              <dd className="text-right font-mono">
+                {formatTokenAmount(econ.juryFee)}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-sm font-semibold">
+              <dt>Total locked from your wallet</dt>
+              <dd className="text-right font-mono">
+                {formatTokenAmount(econ.total)}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <dt className="text-muted-foreground">
+                Pot if jurors rule remove — yours (your stake returns with it)
+              </dt>
+              <dd className="text-right font-mono">
+                {formatTokenAmount(econ.pot)}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs italic text-muted-foreground">
+            If jurors rule keep, your stake is forfeited and added to the
+            item's protection — later challenges must then post a larger stake.
+          </p>
+        </div>
+      )}
       {/* Rules document (ADR-0027): the rules this challenge is judged under */}
       {previewCtx?.listData && (
         <div className="mt-6">
