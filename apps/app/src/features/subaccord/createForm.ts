@@ -2,8 +2,11 @@
  * createForm.ts — pure logic for the create-subaccord form (SubaccordCreatePage).
  *
  * Extracted from the page so it is node-testable: string-valued form state,
- * defaults (authority pre-filled with the signer, random domain ref, 4,096-seat
- * pool), the env-constant evidence operator, and `CreateSubaccordArgs` building
+ * defaults (authority pre-filled with the signer, template-prefilled domain
+ * doc, 4,096-seat pool), the env-constant evidence operator, doc→hash→args
+ * (ADR-0027 amendment: `domain_ref = sha256(doc)`, hashed client-side — no
+ * random generator; a random ref can never have a doc), and the post-confirm
+ * publish state machine (pending/published/failed→retry). Form convention
  * (decision #8: no zod, no react-hook-form — parse on submit, throw on bad
  * input; the page surfaces the message).
  */
@@ -24,8 +27,10 @@ import {
   DEFAULT_COHERENCE_TOL_BPS,
   MAX_APPEALS,
   MAX_DRAW_ATTEMPTS,
+  hashDomainDoc,
   type CreateSubaccordArgs,
 } from "@useaccord/sdk";
+import { DOMAIN_DOC_TEMPLATE } from "@useaccord/ui";
 
 /** `Pubkey::default()` — on-chain sentinel for "no authority" / "no operator".
  * Local copy so this module stays importable from node tests (shared/wallet
@@ -42,9 +47,17 @@ export const EVIDENCE_OPERATOR: Address = (import.meta.env
 /** Pool capacity default: 4,096 juror seats (2^12). */
 export const DEFAULT_POOL_DEPTH = 12;
 
+/** How the form sources the domain identity (ADR-0027 amendment). */
+export type DomainMode = "author" | "reference";
+
 /** String-valued form state — every input is text; parsed on submit. */
 export interface FormState {
-  domainRef: string; // 64 hex chars
+  /** author: write the doc in-form (template prefill) → hash client-side.
+   * reference: paste an existing doc's 64-hex hash (`domainRef`). */
+  domainMode: DomainMode;
+  /** Raw domain-doc text (author mode) — frontmatter + markdown rules. */
+  domainDoc: string;
+  domainRef: string; // reference mode: pasted 64-hex hash
   evidenceSpec: string; // 64 hex chars, empty → [0;32]
   stakingToken: string;
   feeToken: string;
@@ -65,18 +78,26 @@ export interface FormState {
   immutable: boolean; // authority = ZERO_ADDRESS when true
 }
 
-/** 32 random bytes as 64 lowercase hex chars (`crypto.getRandomValues`). */
-export function randomHex32(): string {
-  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
-  let out = "";
-  for (const b of bytes) out += b.toString(16).padStart(2, "0");
-  return out;
+/** Doc bytes hashed/published for the form (author mode): UTF-8 of the text. */
+export function docBytes(form: FormState): Uint8Array {
+  return new TextEncoder().encode(form.domainDoc);
 }
 
-/** Fresh form state: authority pre-filled with the signer, domain ref random. */
+/** The domain-ref hex the form will put on chain: `sha256(doc)` in author
+ * mode (live — recomputed as the doc is edited), the pasted hash in
+ * reference mode (validated at `buildArgs`). */
+export function domainRefHex(form: FormState): string {
+  if (form.domainMode === "reference") return form.domainRef.trim();
+  return hashDomainDoc(docBytes(form));
+}
+
+/** Fresh form state: authority pre-filled with the signer, author mode with
+ * the template-prefilled domain doc. Deterministic — no random generator. */
 export function defaultFormState(signerAddress: Address): FormState {
   return {
-    domainRef: randomHex32(),
+    domainMode: "author",
+    domainDoc: DOMAIN_DOC_TEMPLATE,
+    domainRef: "",
     evidenceSpec: "",
     stakingToken: "",
     feeToken: "",
@@ -105,7 +126,7 @@ export function buildArgs(
   signerAddress: Address,
 ): CreateSubaccordArgs {
   return {
-    domainRef: parseHex32(form.domainRef, "Domain Ref"),
+    domainRef: parseHex32(domainRefHex(form), "Domain Ref"),
     evidenceSpec: form.evidenceSpec
       ? parseHex32(form.evidenceSpec, "Evidence spec")
       : new Uint8Array(32),
@@ -120,7 +141,9 @@ export function buildArgs(
     maxAppeals: parseBoundedInt(form.maxAppeals, "Max appeals", 0, MAX_APPEALS),
     minJurySize: 3, // accord-9q3e: default round-1 panel (form field TODO)
     aggregation:
-      form.aggregation === "median" ? Aggregation.Median : Aggregation.Plurality,
+      form.aggregation === "median"
+        ? Aggregation.Median
+        : Aggregation.Plurality,
     coherenceTolBps: parseBoundedInt(
       form.coherenceTolBps,
       "Coherence tolerance",
@@ -192,4 +215,43 @@ function requireAddress(input: string, label: string): Address {
   const v = input.trim();
   if (!v) throw new Error(`${label}: address required.`);
   return v as Address;
+}
+
+// --- post-confirm publish state machine (ADR-0027 amendment) -----------------
+
+/**
+ * Publish lifecycle after the create-tx CONFIRMS (create-first): the
+ * subaccord exists on-chain with `domain_ref = sha256(doc)`; the doc bytes
+ * still have to reach the daemon's CAS. Publish failure ≠ creation failure —
+ * `failed` keeps the card in missing state with retry.
+ */
+export type PublishState =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { status: "published" }
+  | { status: "failed"; error: string };
+
+export type PublishEvent =
+  | { type: "tx-confirmed" }
+  | { type: "published" }
+  | { type: "failed"; error: string }
+  | { type: "retry" };
+
+/** Advance the publish state machine; invalid transitions are no-ops. */
+export function nextPublish(
+  state: PublishState,
+  event: PublishEvent,
+): PublishState {
+  switch (event.type) {
+    case "tx-confirmed":
+      return state.status === "idle" ? { status: "pending" } : state;
+    case "published":
+      return state.status === "pending" ? { status: "published" } : state;
+    case "failed":
+      return state.status === "pending"
+        ? { status: "failed", error: event.error }
+        : state;
+    case "retry":
+      return state.status === "failed" ? { status: "pending" } : state;
+  }
 }
