@@ -15,14 +15,17 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { Account, Address } from "@solana/kit";
 import { ItemState, type CanonItem, type CanonList } from "@useaccord/canon";
+import type { Subaccord } from "@useaccord/sdk";
 
 import {
   useClusterRpc,
   fetchCanonListRaw,
+  fetchSubaccordRaw,
   findAllCanonItemsByList,
 } from "@/shared/rpc";
 import {
   CHALLENGEABLE_STATES,
+  formatBps,
   formatHash,
   formatTokenAmount,
   formatWindow,
@@ -71,11 +74,20 @@ export function ListDetailPage() {
     enabled: Boolean(rpc && address),
     staleTime: 30_000,
   });
-
   const itemsQuery = useQuery({
     queryKey: ["canon-items", rpc, address],
     queryFn: () => findAllCanonItemsByList(rpc!, address! as Address),
     enabled: Boolean(rpc && address),
+    staleTime: 30_000,
+  });
+
+  // The list's court profile lives on the backing Subaccord (per-list,
+  // accord-qz7d / ADR canon/0002) — read it to render the Court card.
+  const courtQuery = useQuery({
+    queryKey: ["canon-court", rpc, listQuery.data?.data.subaccord],
+    queryFn: () =>
+      fetchSubaccordRaw(rpc!, listQuery.data!.data.subaccord),
+    enabled: Boolean(rpc && listQuery.data),
     staleTime: 30_000,
   });
 
@@ -136,6 +148,13 @@ export function ListDetailPage() {
       {listQuery.isLoading && <ListParamsSkeleton />}
 
       {list && <ListParams list={list} />}
+
+      {/* Court profile — per-list, lives on the backing Subaccord */}
+      {list && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <CourtPanel court={courtQuery.data} loading={courtQuery.isLoading} />
+        </div>
+      )}
 
       {/* Rules document (ADR-0027): the bytes behind the list's rules_hash */}
       {list && (
@@ -252,6 +271,106 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-center justify-between gap-3 text-sm">
       <dt className="text-muted-foreground">{label}.</dt>
       <dd className="text-right">{value}</dd>
+    </div>
+  );
+}
+
+// --- Court params (backing Subaccord) ----------------------------------------
+
+/** The list's dispute-mechanism profile — customized per list at creation
+ * (accord-qz7d / ADR canon/0002) and stored on the backing Subaccord. */
+function CourtPanel({
+  court,
+  loading,
+}: {
+  court: Account<Subaccord> | null | undefined;
+  loading: boolean;
+}) {
+  return (
+    <section>
+      <h2 className="mb-4 text-xl font-semibold tracking-[-0.01em]">
+        Court.{" "}
+        <span className="italic text-muted-foreground">
+          (backing Subaccord profile)
+        </span>
+      </h2>
+      {loading ? (
+        <CourtSkeleton />
+      ) : !court ? (
+        <p className="text-sm text-muted-foreground">
+          Backing Subaccord not found on the active cluster.
+        </p>
+      ) : (
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
+          <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+            <dl className="grid gap-2">
+              <Row label="Min stake" value={formatTokenAmount(court.data.minStake)} />
+              <Row label="Alpha" value={formatBps(court.data.alphaBps)} />
+              <Row
+                label="Fee per juror"
+                value={formatTokenAmount(court.data.feePerJuror)}
+              />
+            </dl>
+          </div>
+          <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+            <dl className="grid gap-2">
+              <Row
+                label="Min jury size"
+                value={`${court.data.minJurySize} (irreversible)`}
+              />
+              <Row label="Max appeals" value={court.data.maxAppeals.toString()} />
+              <Row
+                label="Reveal threshold"
+                value={formatBps(court.data.revealThresholdBps)}
+              />
+              <Row
+                label="Max draw attempts"
+                value={court.data.maxDrawAttempts.toString()}
+              />
+              <Row
+                label="Tree depth"
+                value={`${court.data.depth} (irreversible)`}
+              />
+            </dl>
+          </div>
+          <div className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+            <dl className="grid gap-2">
+              <Row
+                label="Review window"
+                value={formatWindow(court.data.reviewWindow)}
+              />
+              <Row
+                label="Commit window"
+                value={formatWindow(court.data.commitWindow)}
+              />
+              <Row
+                label="Reveal window"
+                value={formatWindow(court.data.revealWindow)}
+              />
+              <Row
+                label="Appeal window"
+                value={formatWindow(court.data.appealWindow)}
+              />
+            </dl>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CourtSkeleton() {
+  return (
+    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
+          <div className="grid gap-2">
+            {[0, 1, 2].map((j) => (
+              <Skeleton key={j} className="h-4 w-full" />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

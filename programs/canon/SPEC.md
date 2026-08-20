@@ -95,8 +95,9 @@ Each Canon list's court params live on its 1:1 backing Subaccord (per-list, not
 global). Since canon/0002 the list creator sets them at `create_list` via the
 grouped `court: CourtParams` argument; the table below is the canonical
 default profile, returned by `defaultCourtParams()` in `@useaccord/canon` (the
-dApp and tests call the helper; power users spread-and-override individual
-fields). The program itself pins what is protocol identity rather than taste:
+dApp create form pre-fills every court field from the helper; the e2e tests
+call it directly; power users spread-and-override individual fields). The
+program itself pins what is protocol identity rather than taste:
 `aggregation = Plurality` (Canon files 2-option `[keep, remove]` disputes
 only, ADR-0019/0025), `shortfall_policy = Redraw`, `coherence_tol_bps = 0`
 (inert under Plurality), `authority` = the CanonList PDA, and
@@ -237,8 +238,10 @@ public rules to the juror-only evidence → `keep` / `remove`.
 
 ATQ "code-as-item" scaling (curate tagging _modules_, not individual items) ·
 multi-surface distribution (wallet snap / explorer / DEX) · advanced
-court-params editing UI in the dApp (the per-list on-chain params themselves
-shipped with canon/0002; v1's create flow passes `defaultCourtParams()`) ·
+court-params editing UI in the dApp (the per-list on-chain params shipped
+with canon/0002; the create flow exposes the full `CourtParams` profile —
+essential fields inline, advanced ones collapsed; post-creation retuning UI
+remains future) ·
 badges/tiers as separate Canon lists.
 
 ## Authority

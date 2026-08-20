@@ -58,6 +58,7 @@ export {
   requestWithdrawal,
   advanceWithdrawal,
   closeItem,
+  MAX_LIST_TREE_DEPTH,
   defaultCourtParams,
   type CreateListAccounts,
   type CreateListArgs,

@@ -10,14 +10,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { hashDomainDoc } from "@useaccord/sdk";
+import { defaultCourtParams } from "@useaccord/canon";
 import { DOMAIN_DOC_TEMPLATE } from "@useaccord/ui";
 
 import {
   DEFAULTS,
   buildArgs,
+  buildCourt,
   docBytes,
   nextPublish,
   rulesHashHex,
+  type FormState,
   type PublishState,
 } from "./createForm";
 
@@ -29,6 +32,11 @@ const FILLED = () => ({
   feeMint: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
   listProgram: "",
 });
+
+/** Form with court fields overridden — one place to tweak per-test. */
+function court(overrides: Partial<FormState["court"]>): FormState {
+  return { ...FILLED(), court: { ...DEFAULTS.court, ...overrides } };
+}
 
 test("defaults: author mode, template-prefilled doc, empty pasted hash", () => {
   assert.equal(DEFAULTS.domainMode, "author");
@@ -68,6 +76,73 @@ test("docBytes: UTF-8 bytes of the doc text", () => {
   const form = FILLED();
   form.rulesDoc = "règles";
   assert.deepEqual(docBytes(form), new TextEncoder().encode("règles"));
+});
+
+// --- court params (accord-qz7d / ADR canon/0002) -----------------------------
+
+test("court defaults: string mirror of the SDK canonical profile", () => {
+  const d = defaultCourtParams();
+  assert.equal(DEFAULTS.court.minStake, d.minStake.toString());
+  assert.equal(DEFAULTS.court.alphaBps, d.alphaBps.toString());
+  assert.equal(DEFAULTS.court.reviewWindow, d.reviewWindow.toString());
+  assert.equal(DEFAULTS.court.commitWindow, d.commitWindow.toString());
+  assert.equal(DEFAULTS.court.revealWindow, d.revealWindow.toString());
+  assert.equal(DEFAULTS.court.appealWindow, d.appealWindow.toString());
+  assert.equal(DEFAULTS.court.maxAppeals, d.maxAppeals.toString());
+  assert.equal(DEFAULTS.court.minJurySize, d.minJurySize.toString());
+  assert.equal(DEFAULTS.court.feePerJuror, d.feePerJuror.toString());
+  assert.equal(DEFAULTS.court.revealThresholdBps, d.revealThresholdBps.toString());
+  assert.equal(DEFAULTS.court.maxDrawAttempts, d.maxDrawAttempts.toString());
+  assert.equal(DEFAULTS.court.depth, d.depth.toString());
+});
+
+test("buildCourt: defaults land verbatim as CourtParams", () => {
+  const p = buildCourt(FILLED());
+  const d = defaultCourtParams();
+  assert.deepEqual(p, d);
+});
+
+test("buildCourt: custom profile round-trips", () => {
+  const p = buildCourt(
+    court({ minStake: "250000", minJurySize: "5", maxAppeals: "1", alphaBps: "500" }),
+  );
+  assert.equal(p.minStake, 250_000n);
+  assert.equal(p.minJurySize, 5);
+  assert.equal(p.maxAppeals, 1);
+  assert.equal(p.alphaBps, 500);
+});
+
+test("buildCourt: even jury size throws (Accord EvenJurySize mirror)", () => {
+  assert.throws(() => buildCourt(court({ minJurySize: "4" })), /odd/);
+});
+
+test("buildCourt: appeal ladder overflow throws (LadderExceedsMaxJurors mirror)", () => {
+  // (5+1)·2³−1 = 47 > MAX_JURORS (31)
+  assert.throws(() => buildCourt(court({ minJurySize: "5", maxAppeals: "3" })), /ladder|MAX_JURORS/);
+});
+
+test("buildCourt: alpha over 10_000 throws (canon AlphaTooHigh mirror)", () => {
+  assert.throws(() => buildCourt(court({ alphaBps: "10001" })), /Alpha/);
+});
+
+test("buildCourt: zero review/commit/reveal window throws (canon WindowTooShort mirror)", () => {
+  assert.throws(() => buildCourt(court({ commitWindow: "0" })), /Commit window/);
+  assert.throws(() => buildCourt(court({ reviewWindow: "0" })), /Review window/);
+  assert.throws(() => buildCourt(court({ revealWindow: "0" })), /Reveal window/);
+});
+
+test("buildCourt: appeal window below the 1h floor throws (Accord floor mirror)", () => {
+  assert.throws(() => buildCourt(court({ appealWindow: "3599" })), /Appeal window/);
+});
+
+test("buildCourt: depth over MAX_LIST_TREE_DEPTH throws (canon TreeDepthTooDeep mirror)", () => {
+  assert.throws(() => buildCourt(court({ depth: "9" })), /depth/i);
+});
+
+test("buildCourt: reveal threshold + draw attempts bounds", () => {
+  assert.throws(() => buildCourt(court({ revealThresholdBps: "10001" })), /Reveal threshold/);
+  assert.throws(() => buildCourt(court({ maxDrawAttempts: "0" })), /Max draw attempts/);
+  assert.throws(() => buildCourt(court({ maxDrawAttempts: "11" })), /Max draw attempts/);
 });
 
 // --- publish state machine ---------------------------------------------------

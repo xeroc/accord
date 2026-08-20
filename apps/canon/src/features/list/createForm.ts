@@ -12,7 +12,18 @@
  * confirms, anchored on the backing Subaccord (`domain_ref := rules_hash`).
  */
 import type { Address } from "@solana/kit";
-import { hashDomainDoc } from "@useaccord/sdk";
+import {
+  MAX_LIST_TREE_DEPTH,
+  defaultCourtParams,
+  type CourtParams,
+} from "@useaccord/canon";
+import {
+  MAX_APPEALS,
+  MAX_DRAW_ATTEMPTS,
+  MAX_JURORS,
+  MIN_APPEAL_WINDOW_SECS,
+  hashDomainDoc,
+} from "@useaccord/sdk";
 import { DOMAIN_DOC_TEMPLATE } from "@useaccord/ui";
 
 /** How the form sources the rules identity (ADR-0027 amendment). */
@@ -33,13 +44,25 @@ export interface FormState {
   challengePct: string;
   listingWindow: string;
   withdrawalTimelock: string;
+  /** Backing-court profile (accord-qz7d / ADR canon/0002) — one text input
+   * per `CourtParams` field, defaults pre-filled from the canonical profile. */
+  court: CourtFormState;
 }
+
+/** String-valued court state — parsed by {@link buildCourt} on submit. */
+export type CourtFormState = { [K in keyof CourtParams]: string };
 
 /** Canon canonical defaults (mirror programs/canon/constants.rs). */
 export const DEFAULT_SUBMIT_DEPOSIT = "500";
 export const DEFAULT_CHALLENGE_PCT_BPS = "5000";
 export const FIVE_DAYS_SECS = (5 * 24 * 60 * 60).toString();
 export const MAX_CHALLENGE_PCT_BPS = 10_000;
+
+/** Canonical court profile rendered as form strings — the "advanced"
+ * section shows these until edited. */
+export const DEFAULT_COURT: CourtFormState = Object.fromEntries(
+  Object.entries(defaultCourtParams()).map(([k, v]) => [k, v.toString()]),
+) as CourtFormState;
 
 export const DEFAULTS: FormState = {
   domainMode: "author",
@@ -52,6 +75,7 @@ export const DEFAULTS: FormState = {
   challengePct: DEFAULT_CHALLENGE_PCT_BPS,
   listingWindow: FIVE_DAYS_SECS,
   withdrawalTimelock: FIVE_DAYS_SECS,
+  court: DEFAULT_COURT,
 };
 
 /** Doc bytes hashed/published for the form (author mode): UTF-8 of the text. */
@@ -94,6 +118,73 @@ export function buildArgs(form: FormState): {
       "Withdrawal timelock",
     ),
   };
+}
+
+/** Parse the court section into the SDK `CourtParams` (milestone
+ * accord-qz7d / ADR canon/0002). Client-side guards mirror the on-chain
+ * checks for fast feedback — the program stays the authority. Throws with
+ * the field label; the submit handler surfaces the message. */
+export function buildCourt(form: FormState): CourtParams {
+  const c = form.court;
+  const minJurySize = parseBoundedInt(c.minJurySize, "Min jury size", 1, MAX_JURORS);
+  const maxAppeals = parseBoundedInt(c.maxAppeals, "Max appeals", 0, MAX_APPEALS);
+  if (minJurySize % 2 === 0) {
+    throw new Error(
+      `Min jury size: must be odd (tie avoidance), got ${minJurySize}.`,
+    );
+  }
+  // Appeal-ladder top panel `(J+1)·2^maxAppeals − 1` must fit MAX_JURORS.
+  const topPanel = (minJurySize + 1) * 2 ** maxAppeals - 1;
+  if (topPanel > MAX_JURORS) {
+    throw new Error(
+      `Appeal ladder: top panel ${topPanel} exceeds MAX_JURORS (${MAX_JURORS}) — lower min jury size or max appeals.`,
+    );
+  }
+  return {
+    minStake: parseBigint(c.minStake, "Min stake"),
+    alphaBps: parseBoundedInt(c.alphaBps, "Alpha (bps)", 0, 10_000),
+    reviewWindow: parseWindowSecs(c.reviewWindow, "Review window"),
+    commitWindow: parseWindowSecs(c.commitWindow, "Commit window"),
+    revealWindow: parseWindowSecs(c.revealWindow, "Reveal window"),
+    appealWindow: parseFloorSecs(
+      c.appealWindow,
+      "Appeal window",
+      MIN_APPEAL_WINDOW_SECS,
+    ),
+    maxAppeals,
+    minJurySize,
+    feePerJuror: parseBigint(c.feePerJuror, "Fee per juror"),
+    revealThresholdBps: parseBoundedInt(
+      c.revealThresholdBps,
+      "Reveal threshold",
+      0,
+      10_000,
+    ),
+    maxDrawAttempts: parseBoundedInt(
+      c.maxDrawAttempts,
+      "Max draw attempts",
+      1,
+      MAX_DRAW_ATTEMPTS,
+    ),
+    depth: parseBoundedInt(c.depth, "Tree depth", 1, MAX_LIST_TREE_DEPTH),
+  };
+}
+
+/** Positive-seconds window (canon `WindowTooShort` mirror — a zero window
+ * bricks disputes forever). */
+function parseWindowSecs(input: string, label: string): bigint {
+  const secs = parseBigint(input, label);
+  if (secs <= 0n) throw new Error(`${label}: must be greater than zero.`);
+  return secs;
+}
+
+/** Seconds window with an inclusive floor (e.g. Accord's 1h appeal floor). */
+function parseFloorSecs(input: string, label: string, floor: bigint): bigint {
+  const secs = parseBigint(input, label);
+  if (secs < floor) {
+    throw new Error(`${label}: must be at least ${floor} seconds.`);
+  }
+  return secs;
 }
 
 // --- parse + validate ---------------------------------------------------------

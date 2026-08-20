@@ -44,6 +44,11 @@ import {
   type CanonList,
   type CanonItem,
 } from "@useaccord/canon";
+import {
+  ACCORD_PROGRAM_ID,
+  getSubaccordDecoder,
+  type Subaccord,
+} from "@useaccord/sdk";
 
 // --- Signer seam (ConnectorKit) --------------------------------------------
 
@@ -248,4 +253,23 @@ export async function fetchCanonListRaw(
     programAddress: CANON_PROGRAM_ID,
     data: getCanonListDecoder().decode(getBase64Encoder().encode(data)),
   } as Account<CanonList>;
+}
+
+/**
+ * Decoded backing Subaccord at `address` (the list's court — its params are
+ * per-list, accord-qz7d / ADR canon/0002), or `null` if it doesn't exist.
+ */
+export async function fetchSubaccordRaw(
+  rpc: Rpc<SolanaRpcApi>,
+  address: Address,
+): Promise<Account<Subaccord> | null> {
+  const res = await rpc.getAccountInfo(address, { encoding: "base64" }).send();
+  if (!res.value) return null;
+  const [data] = res.value.data;
+  return {
+    ...res.value,
+    address,
+    programAddress: ACCORD_PROGRAM_ID,
+    data: getSubaccordDecoder().decode(getBase64Encoder().encode(data)),
+  } as Account<Subaccord>;
 }

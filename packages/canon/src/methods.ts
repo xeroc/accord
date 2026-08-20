@@ -54,6 +54,11 @@ export interface CreateListAccounts {
  * caller-settable here: `aggregation=Plurality`, `shortfallPolicy=Redraw`,
  * `coherenceTolBps=0`, `authority=CanonList PDA`, default credentials.
  * `minJurySize` and `depth` are immutable on the Subaccord (set-once). */
+/** Ceiling on `court.depth` — `MAX_LIST_TREE_DEPTH` in
+ * `programs/canon/src/constants.rs`: the MST membership path in every stake /
+ * draw tx grows with depth and must fit the packet budget. */
+export const MAX_LIST_TREE_DEPTH = 8;
+
 export interface CourtParams {
   /** Draw eligibility threshold, in the staking mint. */
   minStake: bigint;

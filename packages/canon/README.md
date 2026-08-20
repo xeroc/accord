@@ -59,6 +59,8 @@ const { instruction, item } = await submitItem(
   alphaBps 1_000, 7d/2d/2d/3d windows, maxAppeals 3, minJurySize 3,
   feePerJuror 10, revealThresholdBps 6_666, maxDrawAttempts 3, depth 8);
   spread-and-override: `{ ...defaultCourtParams(), alphaBps: 500 }`
+- `MAX_LIST_TREE_DEPTH` — ceiling on `court.depth` (8), mirroring the
+  program constant; consumers (dApp form) bound the depth input with it.
 - `submitItem(accounts, { evidence, deposit })` — permissionless item submission
 - `advancePending({ caller, list, item })` — crank: Pending → Listed
 - `challengeItem(accounts, { evidence }, extras)` — lock stake + fee, CPI Accord

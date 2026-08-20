@@ -31,7 +31,7 @@
  */
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createList, defaultCourtParams } from "@useaccord/canon";
+import { createList, MAX_LIST_TREE_DEPTH } from "@useaccord/canon";
 import { putDomainDoc, verifyDomainDoc } from "@useaccord/sdk";
 import { Button, DomainDocCard } from "@useaccord/ui";
 import { toast } from "sonner";
@@ -54,10 +54,12 @@ import {
   DEFAULT_SUBMIT_DEPOSIT,
   MAX_CHALLENGE_PCT_BPS,
   buildArgs,
+  buildCourt,
   docBytes,
   nextPublish,
   requireAddress,
   rulesHashHex,
+  type CourtFormState,
   type FormState,
   type PublishState,
 } from "./createForm";
@@ -97,6 +99,10 @@ export function CreateListPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function setCourt<K extends keyof CourtFormState>(key: K, value: string) {
+    setForm((f) => ({ ...f, court: { ...f.court, [key]: value } }));
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -116,7 +122,7 @@ export function CreateListPage() {
         },
         {
           ...args,
-          court: defaultCourtParams(), // canonical profile until a court-params UI ships
+          court: buildCourt(form), // parsed + client-guarded; program stays authority
           evidenceOperator: requireAddress(
             EVIDENCE_OPERATOR,
             "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS in .env)",
@@ -391,6 +397,33 @@ export function CreateListPage() {
             />
           </fieldset>
 
+          <fieldset className="grid gap-4 rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Court.
+            </legend>
+            <p className="text-xs text-muted-foreground">
+              Profile of the backing Accord court that adjudicates item
+              disputes — lands verbatim on the Subaccord (ADR canon/0002).
+              Canonical defaults pre-filled; tune what you care about.
+            </p>
+            {ESSENTIAL_COURT.map((f) => (
+              <CourtField key={f.k} {...f} court={form.court} onChange={setCourt} />
+            ))}
+            <details className="group rounded-lg border border-border open:pb-1">
+              <summary className="cursor-pointer select-none px-5 py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:text-foreground">
+                Advanced court parameters.
+                <span className="ml-1.5 font-normal normal-case tracking-normal">
+                  ({ADVANCED_COURT.length} fields, defaults pre-filled)
+                </span>
+              </summary>
+              <div className="grid gap-4 border-t border-border p-5">
+                {ADVANCED_COURT.map((f) => (
+                  <CourtField key={f.k} {...f} court={form.court} onChange={setCourt} />
+                ))}
+              </div>
+            </details>
+          </fieldset>
+
           {error && (
             <p
               className="text-sm text-destructive font-mono text-sm text-foreground"
@@ -455,3 +488,100 @@ function Field({
     </UiField>
   );
 }
+
+// --- court fields -------------------------------------------------------------
+
+/** One court form input, bound to a `CourtFormState` key. */
+function CourtField({
+  k,
+  label,
+  help,
+  court,
+  onChange,
+}: {
+  k: keyof CourtFormState;
+  label: string;
+  help: string;
+  court: CourtFormState;
+  onChange: <K extends keyof CourtFormState>(key: K, value: string) => void;
+}) {
+  return (
+    <Field
+      label={label}
+      help={help}
+      value={court[k]}
+      onChange={(v) => onChange(k, v)}
+      required
+      mono
+    />
+  );
+}
+
+/** Essential court fields — the economics a list creator actively decides.
+ * Everything else hides collapsed behind "Advanced". */
+const ESSENTIAL_COURT: { k: keyof CourtFormState; label: string; help: string }[] = [
+  {
+    k: "minStake",
+    label: "Min stake",
+    help: "Juror draw-eligibility threshold, atomic units in the stake mint. Default 1000.",
+  },
+  {
+    k: "minJurySize",
+    label: "Min jury size",
+    help: "Round-1 juror panel; must be odd. Irreversible — set once at creation. Default 3.",
+  },
+  {
+    k: "maxAppeals",
+    label: "Max appeals",
+    help: "Appeal rounds; each appeal grows the panel to (J+1)·2^k − 1, capped at 31. Default 3.",
+  },
+  {
+    k: "feePerJuror",
+    label: "Fee per juror",
+    help: "Per-juror dispute cost, atomic units in the fee mint. Default 10.",
+  },
+];
+
+/** Advanced court fields — sane defaults; collapsed unless deliberately tuned. */
+const ADVANCED_COURT: { k: keyof CourtFormState; label: string; help: string }[] = [
+  {
+    k: "alphaBps",
+    label: "Alpha (bps)",
+    help: "Slash factor for incoherent jurors (1000 = 10%). Max 10_000. Default 1000.",
+  },
+  {
+    k: "reviewWindow",
+    label: "Review window (seconds)",
+    help: "Evidence review before the draw. Must be > 0. Default 604800 (7d).",
+  },
+  {
+    k: "commitWindow",
+    label: "Commit window (seconds)",
+    help: "Time jurors get to commit votes. Must be > 0. Default 172800 (2d).",
+  },
+  {
+    k: "revealWindow",
+    label: "Reveal window (seconds)",
+    help: "Time jurors get to reveal commitments. Must be > 0. Default 172800 (2d).",
+  },
+  {
+    k: "appealWindow",
+    label: "Appeal window (seconds)",
+    help: "Window to appeal a ruling; floor 3600 (1h). Default 259200 (3d).",
+  },
+  {
+    k: "revealThresholdBps",
+    label: "Reveal threshold (bps)",
+    help: "Quorum making a round authoritative (6666 ≈ 2/3). Max 10_000.",
+  },
+  {
+    k: "maxDrawAttempts",
+    label: "Max draw attempts",
+    help: "Same-size redraws per round before the dispute fails. 1–10. Default 3.",
+  },
+  {
+    k: "depth",
+    label: "Tree depth",
+    help: `Juror-seat accumulator depth (2^depth seats). Irreversible — set once. Max ${MAX_LIST_TREE_DEPTH} (tx-size bound). Default 8.`,
+  },
+];
