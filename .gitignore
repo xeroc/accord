@@ -38,3 +38,5 @@ apps/docs/pitch
 **/.cache
 target/
 meta
+.omp
+.claude
