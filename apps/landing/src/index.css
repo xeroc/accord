@@ -56,16 +56,8 @@ body {
   }
 }
 
-/* The signature faint wireframe grid — structural texture, not decoration
-   (DESIGN.md §06: "abstract technical texture, sparingly"). */
-.grid-texture {
-  background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--color-border) 55%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--color-border) 55%, transparent) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 35%, #000 30%, transparent 75%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 35%, #000 30%, transparent 75%);
-}
+/* (The old static .grid-texture was replaced by the kit Backdrop —
+   the living version of the same idea — in the Hero.) */
 
 /* Hero prologue one-shot → settle (from Hero.astro <style is:global>).
    No-flash: <html class="js"> boots the prologue state before paint (inline

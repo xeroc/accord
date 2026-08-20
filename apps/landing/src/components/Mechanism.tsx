@@ -1,3 +1,5 @@
+import { MechanismStrip } from "./MechanismStrip";
+
 // §3 — The mechanism (Minimal: the two calls only). brand/DESIGN.md §08 website.
 export function Mechanism() {
   return (
@@ -22,6 +24,8 @@ export function Mechanism() {
           <code className="font-mono text-muted-foreground">create_subaccord → stake → draw → commit → reveal → appeal → finalize</code>{" "}
           — lives in the <a href="https://docs.useaccord.xyz" className="text-amber underline-offset-4 hover:underline">docs</a>.
         </p>
+
+        <MechanismStrip />
       </div>
     </section>
   );

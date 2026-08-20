@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Backdrop, useWallClockFrame } from "@useaccord/ui";
 
 import { Waitlist } from "./Waitlist";
 
@@ -107,6 +108,8 @@ export function Hero() {
     };
   }, []);
 
+  const backdropFrame = useWallClockFrame({ fps: 30 });
+
   return (
     <section
       id="hero"
@@ -114,8 +117,10 @@ export function Hero() {
       data-hero
       className="relative isolate flex min-h-[100svh] flex-col justify-center overflow-hidden"
     >
-      <div aria-hidden="true" className="grid-texture pointer-events-none absolute inset-0 -z-10"></div>
-
+      {/* The shared ambient canvas (ledger grid · juror field · verdict
+          glow · vignette) — the same Backdrop the videos run on,
+          wall-clock driven; frozen for reduced-motion visitors. */}
+      <Backdrop frame={backdropFrame} seed="landing-hero" className="-z-10" aria-hidden={true} />
       {/* Prologue stage: animated, visual-only. CSS shows it while .js && !.is-settled. */}
       <div data-prologue-stage aria-hidden="true">
         {beats.map((b, i) => (

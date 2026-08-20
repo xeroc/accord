@@ -1,3 +1,4 @@
+import { AccordMark } from "@useaccord/ui";
 const year = new Date().getFullYear();
 
 export function Footer() {
@@ -7,14 +8,7 @@ export function Footer() {
         <div className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-xs">
             <a href="/#hero" className="flex items-center gap-2.5" aria-label="Accord — home">
-              <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true" className="text-amber">
-                <g stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" fill="none">
-                  <line x1="7.5" y1="8.5" x2="16" y2="16"></line>
-                  <line x1="24.5" y1="8.5" x2="16" y2="16"></line>
-                  <line x1="16" y1="25" x2="16" y2="16"></line>
-                </g>
-                <circle cx="16" cy="16" r="2.6" fill="currentColor"></circle>
-              </svg>
+              <AccordMark size={20} />
               <span className="font-mono text-sm font-medium tracking-tight text-nearwhite">Accord</span>
             </a>
             <p className="mt-3 font-sans text-lg font-medium text-nearwhite">Mechanize the verdict.</p>

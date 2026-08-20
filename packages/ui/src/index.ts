@@ -91,3 +91,21 @@ export {
   DOMAIN_DOC_TEMPLATE,
   type DomainDoc,
 } from "./patterns/domain-doc-card";
+
+// Brand — the house identity: the Accord mark and wordmark lockup.
+// Progress-driven (0→1), static-capable defaults.
+export { AccordMark } from "./brand/accord-mark";
+export { Wordmark } from "./brand/wordmark";
+export { AmberRule } from "./brand/amber-rule";
+
+// Mechanism — the frame-contract vocabulary: everything that renders
+// as a pure function of a `frame` counter (caller owns time). Remotion
+// feeds useCurrentFrame(); browsers useWallClockFrame(). Includes the
+// ambient Backdrop and the wall-clock driver.
+export { Backdrop } from "./mechanism/backdrop";
+export { useWallClockFrame } from "./mechanism/clock";
+export { JurorPool } from "./mechanism/juror-pool";
+export { SealedVote } from "./mechanism/sealed-vote";
+export { RulingStamp } from "./mechanism/ruling-stamp";
+export { MonoChip, DeltaChip, type ChipTone } from "./mechanism/chips";
+export { TallyBar } from "./mechanism/tally";

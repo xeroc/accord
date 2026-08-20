@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@useaccord/ui";
 import { shortenAddress } from "@/shared/format";
+import { AccordMark } from "@useaccord/ui";
 
 export function Navbar() {
   const { cluster, clusters, setCluster } = useCluster();
@@ -52,25 +53,7 @@ export function Navbar() {
     <ProductNavbar
       brand={
         <Link to="/" className="flex items-center gap-2 text-foreground">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 32 32"
-            aria-hidden="true"
-            className="text-amber"
-          >
-            <g
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="square"
-              fill="none"
-            >
-              <line x1="7.5" y1="8.5" x2="16" y2="16" />
-              <line x1="24.5" y1="8.5" x2="16" y2="16" />
-              <line x1="16" y1="25" x2="16" y2="16" />
-            </g>
-            <circle cx="16" cy="16" r="2.6" fill="currentColor" />
-          </svg>
+          <AccordMark size={20} />
           <span className="text-lg font-bold tracking-tight">ACCORD</span>
         </Link>
       }

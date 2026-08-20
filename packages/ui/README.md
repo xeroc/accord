@@ -90,8 +90,9 @@ no runtime theming (see UI-KIT-PLAN.md §7).
 
 ## Patterns (composed, slot-based)
 
-`src/patterns/` holds proven cross-app compositions. Interfaces stay
-domain-neutral — apps supply meaning via slots:
+`src/patterns/` holds proven cross-app app-chrome compositions with
+slot interfaces (apps supply routes, links, wallet controls through
+the slots):
 
 - `ProductNavbar` — sticky header shell (`brand`, `navigation?`,
   `accountControls?`, `mobileNavigation?`). Wallet/cluster controls stay
@@ -101,6 +102,32 @@ domain-neutral — apps supply meaning via slots:
   imports the router.
 - `DisputeStatusCard` — display-only `{ title?, rows, action?, note? }`.
   Apps keep SDK decode, formatting, and the `VITE_ACCORD_APP_URL` deep link.
+
+### Brand (`src/brand/`) — the house identity
+
+- `AccordMark` — **the** 3-line Accord house mark (one geometry
+  everywhere: app navbar, landing, videos; never redraw it). Product
+  marks (Canon, Synod) stay app-local.
+- `Wordmark`, `AmberRule` — lockup pieces; progress-driven (0→1),
+  static-capable defaults for app/landing use.
+
+### Mechanism (`src/mechanism/`) — the frame-contract vocabulary
+
+Everything that renders as a pure function of a `frame` counter — the
+caller owns time. That one contract lets the same components run in
+deterministic Remotion renders (`useCurrentFrame()`) and on a live
+page (`useWallClockFrame()`):
+
+- `Backdrop` — the ambient canvas (ledger grid · juror field · verdict
+  glow · vignette). The seeded PRNG is a verbatim port of Remotion's
+  `random()`, so node fields are identical across runtimes.
+- `JurorPool`, `SealedVote`, `RulingStamp`, `MonoChip`/`DeltaChip`,
+  `TallyBar` — the draw/commit/reveal/rule illustration vocabulary.
+
+**Frame-prop contract:** these components render exactly what the
+frame says — the caller owns time. That is what lets one
+implementation run in deterministic video renders and on a live
+landing page.
 
 ## Recorded decisions
 
@@ -115,6 +142,13 @@ domain-neutral — apps supply meaning via slots:
   sites use them. Re-export deliberately if that changes.
 - **Fonts** — `@useaccord/ui` owns the Fontsource imports via `styles.css`;
   `tokens.css` stays font-asset-free for non-React consumers.
+- **AccordMark in the kit** — recorded exception to "apps own logos":
+  the *house* mark is shared identity with real consumers in the app
+  navbar, the landing Nav/Footer, and the Remotion videos; product
+  marks remain per-app. One geometry, defined once.
+- **Frame-driven display components** — Backdrop + mechanism pieces
+  take an explicit `frame` prop instead of hooks, so Remotion and the
+  web share them without the kit depending on Remotion.
 
 ## Deferred work (do NOT smuggle into this package)
 
