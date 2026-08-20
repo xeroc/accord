@@ -1,0 +1,60 @@
+// canon-challenge-30s — "passive pulse", canon family (Strudel score)
+//
+// Prebaked to public/audio/canon-challenge-30s.wav (gitignored artifact) by:
+//   pnpm --filter @useaccord/remotion score canon-challenge-30s 30
+// This exact file is also pasteable into https://strudel.cc (add
+// `._punchcard()` to the last line there if you want the visualizer).
+//
+// 120 BPM grid: cpm 30 → 1 bar = 2.000s = 60 frames @30fps.
+// bed runs the whole 30s; soft markers land on storyboard beats:
+//   capital 2.0 · stake 3.5 · case 9.5 · verdict 17.0 · stamp 19.0 ·
+//   takeaway 23.5 · self-executing 24.5 · wordmark 27.0
+setcpm(30)
+
+// ── bed ──
+const kick = s("bd ~ bd ~").bank("RolandTR909").gain(.45) // pulse on 1 & 3
+const tick = s("~ hh ~ hh").gain(.09).hpf(9000)           // whisper hats
+const rimt = s("~ [~ rim] ~ ~").gain(.13)                 // one wooden tick per bar, and-of-2
+// chord loop (one chord per bar): Ebmaj9 · Cm9 · Abmaj9 · Gm7
+const arpA = note("eb3 [g3 bb3] [d4 f4] ~").s("piano").gain(.34).room(.35)
+const arpB = note("c3 [g3 bb3] [d4 eb4] ~").s("piano").gain(.32).room(.35)
+const arpC = note("ab2 [c3 eb3] [g3 bb3] ~").s("piano").gain(.32).room(.35)
+const arpD = note("g2 [d3 f3] [bb3 d4] ~").s("piano").gain(.32).room(.35)
+const pad = x => note(x).s("triangle").fm("<0 2 4>").clip(1).attack(.8).release(1.2).gain(.22).room(.4)
+const hum = x => note(x).s("pluck").lpf(2600).sustain(.2).release(.8).gain(.2).room(.4) // canon accent: LPF'd harp, damped like a fingered string
+
+// ── S1 hook · 0–3.5s — almost nothing ──
+const b1 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.45), pad("eb2"))
+const b2 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.45),
+  note("[eb4,bb4] ~ ~ ~").s("piano").gain(.22).room(.45),             // "capital" @2.0
+  pad("eb2"),
+  note("~ ~ ~ [g4 bb4]").s("piano").gain(.16).room(.5))               // 01 stake @3.5 — rise into the mechanism
+
+// ── S2 mechanism · 3.5–23.5s — arps enter hushed, loop steady ──
+const b3 = stack(kick, arpA, tick, rimt, pad("eb2"))
+const b4 = stack(kick, arpB, tick, rimt, hum("d5"), pad("c2"))
+const b5 = stack(kick, arpC, tick, rimt, pad("ab2"),
+  s("~ ~ ~ rim").gain(.17))                                          // 02 case @9.5 — wood tick on the cut
+const b6 = stack(kick, arpD, tick, rimt, pad("g2"))
+const b7 = stack(kick, arpA, tick, rimt, hum("f5"), pad("eb2"))
+const b8 = stack(kick, arpB, tick, rimt, pad("c2"))
+const b9 = stack(kick, arpC, tick, rimt, pad("ab2"),
+  note("~ ~ eb4 ~").s("piano").gain(.18).room(.5))                   // 03 verdict @17.0 — the court takes the case
+const b10 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.42), arpD, tick, rimt, pad("g2"),
+  note("~ ~ g3 ~").s("piano").gain(.18).room(.5).release(2))         // ruling stamp @19.0 — a shadow, ring damped
+const b11 = stack(kick, arpA, tick, rimt, hum("g5"), pad("eb2"))     // bounty walks @20.6 — bed alone carries it
+
+// ── S3 takeaway · 23.5–27s — bed thins so the text reads ──
+const b12 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), arpD.release(1.5), pad("g2"),
+  note("~ ~ ~ [bb4 d5]").s("piano").gain(.15).room(.5))              // takeaway @23.5 — rise on "a challenge is a case"
+const b13 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), pad("eb2"),
+  note("~ [eb4,g4,bb4,d5,f5] ~ ~").s("piano").gain(.3).room(.5).release(1.5)) // Ebmaj9 bloom @24.5 — "self-executing"
+
+// ── S4 endcard · 27–30s — home ──
+const b14 = stack(kick, arpA.release(.6), pad("eb2").release(.5),
+  note("~ ~ [eb4,eb5] ~").s("piano").gain(.24).room(.45).release(.5)) // wordmark button @27.0 — piano ring damped
+const b15 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.4),
+  note("[eb3,g3,bb3,f4]").s("piano").sustain(.2).release(.6).gain(.3).room(.5)) // fades out by 28.8 — silent before 29
+
+cat(b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15)
+  .gain(.55)

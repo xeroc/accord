@@ -1,0 +1,71 @@
+// canon-intro-30s — "passive pulse", canon family (Strudel score)
+//
+// Prebaked to public/audio/canon-intro-30s.wav (gitignored artifact) by:
+//   pnpm --filter @useaccord/remotion score canon-intro-30s 30
+// This exact file is also pasteable into https://strudel.cc (add
+// `._punchcard()` to the last line there if you want the visualizer).
+//
+// 120 BPM grid: cpm 30 → 1 bar = 2.000s = 60 frames @30fps.
+// bed runs the whole 30s; soft markers land on storyboard beats:
+//   fakes 2.0 · question 4.25 · private list 7.25 · submit 10.0 ·
+//   item 11.0 · challenge 13.5 · strike 14.25 · rule 17.0 ·
+//   ruling 19.0 · payoff 21.0 · wallet reads list 23.75 ·
+//   listed 25.0 · endcard button 26.0
+setcpm(30)
+
+// ── bed ──
+const kick = s("bd ~ bd ~").bank("RolandTR909").gain(.45) // pulse on 1 & 3
+const tick = s("~ hh ~ hh").gain(.09).hpf(9000)           // whisper hats
+const rimt = s("~ ~ rim ~").gain(.13)                     // one wooden tick per bar
+// chord loop (one chord per bar): Ebmaj9 · Cm9 · Abmaj9 · Gm7
+const arpEb = note("eb3 [g3 bb3] [d4 f4] ~").s("piano").gain(.34).room(.35)
+const arpCm = note("c3 [eb3 g3] [bb3 d4] ~").s("piano").gain(.32).room(.35)
+const arpAb = note("ab2 [c3 eb3] [g3 bb3] ~").s("piano").gain(.32).room(.35)
+const arpGm = note("g2 [d3 f3] [bb3 d4] ~").s("piano").gain(.32).room(.35)
+const pad = x => note(x).s("triangle").fm("<0 2 4>").clip(1).attack(.8).release(1.2).gain(.22).room(.4)
+const hum = x => note(x).s("pluck").lpf(2600).gain(.18).room(.4) // canon accent: LPF'd harp top line
+
+// ── S1 hook · 0–4s — almost nothing ──
+const b1 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.45), pad("eb2"))
+const b2 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.45),
+  note("[eb4,bb4] ~ ~ ~").s("piano").gain(.2).room(.45), pad("eb2")) // "fakes arrive" @2.0
+
+// ── S2 question · 4–7s — arps enter, hushed ──
+const b3 = stack(kick, arpEb, tick, pad("eb2"),
+  note("~ [bb4 d5] ~ ~ ~ ~ ~ ~").s("piano").gain(.16).room(.5))      // question reveal @4.25 — rise
+const b4 = stack(kick, arpCm, tick, pad("c2"),
+  hum("~ ~ ~ ~ d5 ~ ~ ~"),                                           // antagonist card @7.0
+  note("~ ~ ~ ~ ~ c3 ~ ~").s("piano").gain(.2).room(.5).release(2))  // "private list" @7.25 — shadow, damped
+
+// ── S3 antagonist · 7–10s — bed darkens, hum holds ──
+const b5 = stack(kick, arpAb, tick, pad("ab2"), hum("eb5 ~ ~ ~"))    // "a gate. an api key." @8.75 nearby
+
+// ── S4 mechanism · 10–21s — loop steady, markers whisper ──
+const b6 = stack(kick, arpGm, tick, pad("g2"),
+  hum("f5 ~ ~ ~"),                                                   // 01 submit @10.0
+  note("~ ~ [bb4 d5] ~").s("piano").gain(.16).room(.5))              // item drops in @11.0 — rise
+const b7 = stack(kick, arpEb, tick, pad("eb2"),
+  note("~ ~ ~ eb5").s("piano").gain(.18).room(.5))                   // 02 challenge @13.5 — wood tick
+const b8 = stack(kick, arpCm, tick, pad("c2"),
+  note("~ c3 ~ ~ ~ ~ ~ ~").s("piano").gain(.18).room(.5).release(1.5)) // strike lands @14.25 — shadow, damped
+const b9 = stack(kick, arpAb, tick, pad("ab2"),
+  note("~ ~ c5 ~").s("piano").gain(.18).room(.5))                    // 03 rule @17.0 — wood tick
+const b10 = stack(kick, arpGm, tick, pad("g2"),
+  note("~ ~ d3 ~").s("piano").gain(.2).room(.5).release(1.5))        // ruling descends @19.0 — shadow, damped
+const b11 = stack(kick, arpEb, tick, pad("eb2"),
+  note("~ ~ [f5 g5] ~").s("piano").gain(.16).room(.5))               // payoff reveal @21.0 — rise
+
+// ── S5 payoff · 21–26s — bed thins so the text reads ──
+const b12 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), arpCm.release(1.5), pad("c2"),
+  note("~ ~ ~ ~ ~ ~ ~ [eb4,g4,bb4,d5,g5]").s("piano").gain(.3).room(.5).release(1.5)) // the wallet reads the list @23.75 — Cm9 bloom
+const b13 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), pad("eb2"),
+  note("g5 ~ ~ ~").s("piano").gain(.2).room(.5))                     // LISTED ✓ @25.0
+
+// ── S6 endcard · 26–30s — home ──
+const b14 = stack(kick, arpEb.release(.6), pad("eb2"),
+  note("[eb4,eb5] ~ ~ ~").s("piano").gain(.24).room(.45).release(.5)) // wordmark button @26.0 — piano ring damped
+const b15 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.4),
+  note("[eb3,g3,bb3,d4]").s("piano").sustain(.2).release(.8).gain(.3).room(.5)) // fades out by 29.0 — silent before 30
+
+cat(b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15)
+  .gain(.55)

@@ -1,4 +1,4 @@
-import { Sequence } from "remotion";
+import { Sequence, staticFile } from "remotion";
 
 import { defineVideo } from "../../src/framework/video";
 import { Stage } from "../../src/shell/stage";
@@ -25,6 +25,11 @@ export const video = defineVideo({
   width: 1920,
   height: 1080,
   durationInFrames: 30 * FPS,
+  music: {
+    // rendered once by `pnpm --filter @useaccord/remotion score canon-challenge-30s`
+    src: staticFile("audio/canon-challenge-30s.wav"),
+    volume: 0.25,
+  },
 });
 
 function CanonChallenge30s() {

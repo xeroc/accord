@@ -9,7 +9,8 @@ declare module "@strudel/web/dist/index.mjs" {
   /** Evaluate REPL-style code (double quotes = mini-notation); resolves to the pattern. */
   export const evaluate: (code: string, asPattern?: boolean) => Promise<object>;
   export const aliasBank: (manifestUrl: string) => Promise<unknown>;
-  export const samples: (manifestUrl: string) => Promise<unknown>;
+  /** Accepts a manifest URL or an inline map ({ _base?, sound: { NOTE: path } }). */
+  export const samples: (manifest: string | Record<string, unknown>) => Promise<unknown>;
   export const registerSynthSounds: () => Promise<unknown>;
   export const renderPatternAudio: (
     pattern: object,

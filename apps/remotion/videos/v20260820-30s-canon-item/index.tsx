@@ -1,4 +1,4 @@
-import { Sequence } from "remotion";
+import { Sequence, staticFile } from "remotion";
 
 import { defineVideo } from "../../src/framework/video";
 import { Stage } from "../../src/shell/stage";
@@ -26,11 +26,17 @@ export const video = defineVideo({
   width: 1920,
   height: 1080,
   durationInFrames: 30 * FPS,
+  music: {
+    // rendered once by `pnpm --filter @useaccord/remotion score canon-item-30s`
+    src: staticFile("audio/canon-item-30s.wav"),
+    volume: 0.25,
+  },
 });
 
 function CanonItem30s() {
   return (
     <Stage>
+      {/* music is mounted by Root from the `music` field above */}
       <Sequence durationInFrames={105}>
         <HookScene />
       </Sequence>

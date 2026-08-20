@@ -111,6 +111,38 @@ export async function renderScore(
         samples("https://raw.githubusercontent.com/tidalcycles/uzu-drumkit/main/strudel.json"), // bd hh rim cp …
         samples(`${DOUGH_SAMPLES}/tidal-drum-machines.json`), // .bank("RolandTR909")
         samples(`${DOUGH_SAMPLES}/piano.json`), // s("piano")
+        samples({
+          // canon-family accent "pluck" — VCSL concert harp (sgossner),
+          // the closest plucked string to the REPL's default pluck, which
+          // dough-samples does not mirror (Dirt-Samples.json has none).
+          // Note map verbatim from dough-samples vcsl.json, spaces %20-encoded.
+          _base: "https://raw.githubusercontent.com/sgossner/VCSL/master/",
+          pluck: {
+            A2: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_A2_mf1.wav",
+            A4: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_A4_mf1.wav",
+            A6: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_A6_mf1.wav",
+            B1: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_B1_mf1.wav",
+            B3: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_B3_mf1.wav",
+            B5: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_B5_mf1.wav",
+            B6: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_B6_mf1.wav",
+            C3: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_C3_mf3.wav",
+            C5: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_C5_mf1.wav",
+            D2: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_D2_mf1.wav",
+            D4: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_D4_mf1.wav",
+            D6: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_D6_mf1.wav",
+            D7: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_D7_p1.wav",
+            E1: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_E1_f1.wav",
+            E3: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_E3_mf1.wav",
+            E5: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_E5_mf1.wav",
+            F2: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_F2_mf1.wav",
+            F4: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_F4_mf1.wav",
+            F6: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_F6_mf1.wav",
+            F7: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_F7_p1.wav",
+            G1: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_G1_mp1.wav",
+            G3: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_G3_mf1.wav",
+            G5: "Chordophones/Composite%20Chordophones/Concert%20Harp/KSHarp_G5_mf1.wav",
+          },
+        }), // s("pluck")
       ]),
   });
   const pattern = await evaluate(score, false);
