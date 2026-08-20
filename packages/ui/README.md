@@ -123,13 +123,6 @@ page (`useWallClockFrame()`):
   `random()`, so node fields are identical across runtimes.
 - `JurorPool`, `SealedVote`, `RulingStamp`, `MonoChip`/`DeltaChip`,
   `TallyBar` — the draw/commit/reveal/rule illustration vocabulary.
-- `ChainStrip`, `SubaccordCard`, `VaultBox`, `LedgerCounter`,
-  `PanelLadder`, `StateNode`, `MerkleSumTree`, `SortitionRuler`,
-  `TokenBadge`/`TokenTone` — the concept-illustration vocabulary
-  (ledger strip, containers, vaults, counters, appeal ladder,
-  lifecycle stations, MST accumulator, sortition ruler, two-mint
-  color convention). Full reference:
-  `concept-illustrations/ui-kit-additions.md`.
 
 **Frame-prop contract:** these components render exactly what the
 frame says — the caller owns time. That is what lets one
@@ -150,7 +143,7 @@ landing page.
 - **Fonts** — `@useaccord/ui` owns the Fontsource imports via `styles.css`;
   `tokens.css` stays font-asset-free for non-React consumers.
 - **AccordMark in the kit** — recorded exception to "apps own logos":
-  the *house* mark is shared identity with real consumers in the app
+  the _house_ mark is shared identity with real consumers in the app
   navbar, the landing Nav/Footer, and the Remotion videos; product
   marks remain per-app. One geometry, defined once.
 - **Frame-driven display components** — Backdrop + mechanism pieces
