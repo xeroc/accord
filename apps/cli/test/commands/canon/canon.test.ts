@@ -30,6 +30,10 @@ describe("useaccord canon:* (help surface)", () => {
     expect(stdout).toContain("--listing-window");
     expect(stdout).toContain("--withdrawal-timelock");
     expect(stdout).toContain("--evidence-operator");
+    expect(stdout).toContain("--min-stake");
+    expect(stdout).toContain("--min-jury-size");
+    expect(stdout).toContain("--alpha-bps");
+    expect(stdout).toContain("--depth");
   });
 
   it("canon:submit renders usage with --list, --account, --evidence", async () => {

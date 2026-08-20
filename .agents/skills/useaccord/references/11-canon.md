@@ -27,6 +27,20 @@ Permissionless. Inits CanonList `["canon", creator, rules_hash]` and CPIs Accord
 | `--listing-window <secs>` | u64 | Pending → Listed auto-promotion window |
 | `--withdrawal-timelock <secs>` | u64 | WithdrawPending challenge window |
 | `--evidence-operator <addr>` | address | Backing court's Ed25519 operator; `≠ Pubkey::default()` (on-chain guard) |
+| `--min-stake <units>` | u64 | Court: juror draw threshold (stake-mint units). Default: canonical profile |
+| `--alpha-bps <bps>` | u16 | Court: slash factor; `≤ 10_000`. Default 1000 |
+| `--review-window <secs>` | u64 | Court: round review window; `> 0`. Default 7d |
+| `--commit-window <secs>` | u64 | Court: juror commit window; `> 0`. Default 2d |
+| `--reveal-window <secs>` | u64 | Court: juror reveal window; `> 0`. Default 2d |
+| `--appeal-window <secs>` | u64 | Court: appeal window; Accord floor 1h. Default 3d |
+| `--max-appeals <n>` | u8 | Court: appeal cap; ladder `(J+1)·2^k − 1 ≤ MAX_JURORS`. Default 3 |
+| `--min-jury-size <n>` | u32 | Court: round-1 panel size; odd; **immutable**. Default 3 |
+| `--fee-per-juror <units>` | u64 | Court: per-juror fee (fee-mint units). Default 10 |
+| `--reveal-threshold-bps <bps>` | u16 | Court: reveal quorum (ADR-0021); `≤ 10_000`. Default 6666 |
+| `--max-draw-attempts <n>` | u8 | Court: same-size redraw cap (ADR-0021). Default 3 |
+| `--depth <n>` | u8 | Court: MST accumulator depth; `≤ 8`; **immutable**. Default 8 |
+
+Court flags override the SDK canonical profile (`defaultCourtParams()` — ADR `canon/0002`); unset flags keep the canonical value. Validation is on-chain (`AlphaTooHigh` / `WindowTooShort` / `TreeDepthTooDeep` + Accord CPI guards).
 
 ```bash
 useaccord canon:create-list --random-rules-hash \
@@ -35,6 +49,15 @@ useaccord canon:create-list --random-rules-hash \
   --listing-window 432000 --withdrawal-timelock 432000 \
   --evidence-operator 9a1K…mQp
 # → { signature, list, subaccord }
+```
+
+```bash
+useaccord canon:create-list --random-rules-hash \
+  --stake-mint EPjFW…e4U --fee-mint EPjFW…e4U \
+  --submit-deposit 500 --challenge-pct 5000 \
+  --listing-window 432000 --withdrawal-timelock 432000 \
+  --evidence-operator 9a1K…mQp \
+  --min-jury-size 5 --fee-per-juror 25  # court override; rest canonical
 ```
 
 SDK: `createList(accounts, args)` → `{ instruction, list, subaccord }`.
