@@ -33,5 +33,18 @@
       <p class="body">This page doesn't exist. The primitive does.</p>
       <a class="link" href="/">← Back to useaccord.xyz</a>
     </section>
-  </body>
+  <script>
+    // GitHub Pages SPA recovery for the How it Rules routes: bank the
+    // attempted path and bounce to / — the app restores it from
+    // sessionStorage before first render (see src/App.tsx). Every other
+    // path keeps this styled 404.
+    (function () {
+      if (window.location.pathname.indexOf("/how-it-rules") === 0) {
+        try {
+          window.sessionStorage.setItem("how-it-rules-path", window.location.pathname);
+        } catch (e) {}
+        window.location.replace("/");
+      }
+    })();
+  </script>
 </html>

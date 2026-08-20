@@ -3,6 +3,7 @@ import { AccordMark } from "@useaccord/ui";
 // Wordmark + convergence glyph + status chip left; links in Plex Mono right.
 // No CTA-right SaaS nav.
 const links = [
+  { href: "/how-it-rules", label: "How it Rules" },
   { href: "https://docs.useaccord.xyz", label: "Docs" },
   { href: "https://github.com/xeroc/accord", label: "GitHub" },
   { href: "https://app.useaccord.xyz", label: "Open App" },
