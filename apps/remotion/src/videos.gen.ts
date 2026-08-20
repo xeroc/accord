@@ -6,10 +6,22 @@ import { video as video__example } from "../videos/_example/index";
 import { video as video_v20260820_30s_accord_intro } from "../videos/v20260820-30s-accord-intro/index";
 import { video as video_v20260820_30s_accord_intro_2 } from "../videos/v20260820-30s-accord-intro-2/index";
 import { video as video_v20260820_30s_schelling_court_explainer } from "../videos/v20260820-30s-schelling-court-explainer/index";
+import { video as video_v20260829_dispute_lifecycle } from "../videos/v20260829-dispute-lifecycle/index";
+import { video as video_v20260829_draw_and_sortition } from "../videos/v20260829-draw-and-sortition/index";
+import { video as video_v20260829_economics } from "../videos/v20260829-economics/index";
+import { video as video_v20260829_evidence } from "../videos/v20260829-evidence/index";
+import { video as video_v20260829_orientation } from "../videos/v20260829-orientation/index";
+import { video as video_v20260829_robustness } from "../videos/v20260829-robustness/index";
 
 export const videos: VideoDefinition[] = [
   video__example,
   video_v20260820_30s_accord_intro,
   video_v20260820_30s_accord_intro_2,
   video_v20260820_30s_schelling_court_explainer,
+  video_v20260829_dispute_lifecycle,
+  video_v20260829_draw_and_sortition,
+  video_v20260829_economics,
+  video_v20260829_evidence,
+  video_v20260829_orientation,
+  video_v20260829_robustness,
 ];

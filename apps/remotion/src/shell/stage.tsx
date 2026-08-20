@@ -36,10 +36,10 @@ export const Stage: FC<{ children: ReactNode; className?: string }> = ({
   useFontsReady();
   return (
     <AbsoluteFill
-      className={["bg-background text-foreground", className]
-        .filter(Boolean)
-        .join(" ")}
-    >
+  className={["bg-background text-foreground", className]
+    .filter(Boolean)
+    .join(" ")}
+  from={48}>
       {children}
     </AbsoluteFill>
   );

@@ -1,9 +1,10 @@
 /**
  * timeline.ts — the single source of truth for the schelling-court
- * choreography. Illustration-only cut (rev 2): no title slide, no end
- * card, no chrome — one beat word above the stage; the pool pops its
- * five jurors (no scan/shimmer), fades away, and the camera zooms into
- * the jury; the incoherent vote is crossed out (no falling shards).
+ * choreography. Illustration-only cut (rev 2): no title slide, no chrome —
+ * one beat word above the stage; the pool pops its five jurors (no
+ * scan/shimmer), fades away, and the camera zooms into the jury; the
+ * incoherent vote is crossed out (no falling shards). Rev 3 appends a 3s
+ * domain endcard (mark · wordmark · useaccord.xyz) after the take.
  *
  * Phases (30fps):
  *   draw   0    – 105   pool pops five jurors; pool fades; zoom in
@@ -16,7 +17,9 @@
  */
 
 export const FPS = 30;
-export const DURATION_IN_FRAMES = 750; // 25s
+export const COURT_FRAMES = 750; // 25s — the continuous take
+export const ENDCARD_FRAMES = 90; // 3s — the domain sign-off
+export const DURATION_IN_FRAMES = COURT_FRAMES + ENDCARD_FRAMES; // 28s
 
 export const T = {
   draw: 0,

@@ -6,7 +6,7 @@ import { Scene } from "../../../src/shell/scene";
 
 /**
  * Scene 5 — close (27s-30s).
- * Wordmark, amber rule, the thesis line, the program id. Fades to ink.
+ * Wordmark, amber rule, the thesis line, the program id, the domain. Fades to ink.
  */
 export function CloseScene() {
   const frame = useCurrentFrame();
@@ -48,6 +48,14 @@ export function CloseScene() {
           style={{ opacity: enterAt(frame, fps, 0.6, 0.4) }}
         >
           cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed
+        </Interactive.Div>
+
+        <Interactive.Div
+          name="Domain"
+          className="font-mono text-3xl text-amber"
+          style={{ opacity: enterAt(frame, fps, 0.8, 0.4) }}
+        >
+          useaccord.xyz
         </Interactive.Div>
       </Interactive.Div>
     </Scene>
