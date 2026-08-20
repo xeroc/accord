@@ -64,6 +64,7 @@ import {
   FieldLabel,
   Input,
   Label,
+  EmptyState,
   Select,
   SelectContent,
   SelectItem,
@@ -92,7 +93,7 @@ export function SubaccordCreatePage() {
   const { signer } = useSigner();
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+    <>
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-[-0.01em]">Create a subaccord.</h1>
         <p className="mb-4 text-muted-foreground">
@@ -107,18 +108,16 @@ export function SubaccordCreatePage() {
       </header>
 
       {!signer ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">Connect a wallet.</p>
-          <p className="mb-5 text-muted-foreground">
-            Creating a subaccord signs with your wallet as the creator.
-          </p>
-        </div>
+        <EmptyState
+          title="Connect a wallet."
+          description="Creating a subaccord signs with your wallet as the creator."
+        />
       ) : (
         /* key: (re)mount on connect/switch → fresh defaults (template doc,
            authority re-prefilled with the active wallet) */
         <CreateForm key={signer.address} signer={signer} />
       )}
-    </main>
+    </>
   );
 }
 
@@ -541,17 +540,13 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
           </p>
         )}
 
-        <button
-          type="submit"
-          className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-          disabled={signingOrPublishing}
-        >
+        <Button type="submit" loading={signingOrPublishing}>
           {publish.status === "pending"
             ? "Publishing domain document…"
             : sending
               ? "Signing…"
               : "Create subaccord."}
-        </button>
+        </Button>
       </form>
     </ErrorShake>
   );

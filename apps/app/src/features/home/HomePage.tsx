@@ -81,7 +81,7 @@ export function HomePage() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Accord.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Accord.</h1>
         <p className="mt-1 text-text-secondary">
           Schelling-point arbitration on Solana. Pick where to go.
         </p>

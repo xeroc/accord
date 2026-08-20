@@ -24,6 +24,7 @@ import { formatTokenAmount } from "../../shared/format";
 import {
   Button,
   Copyable,
+  EmptyState,
   Field,
   FieldControl,
   FieldError,
@@ -57,7 +58,7 @@ export function StakePage() {
   }
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+    <>
       <header className="mb-8">
         <Link to="/juror" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Juror dashboard.
@@ -69,12 +70,10 @@ export function StakePage() {
       </header>
 
       {!signer ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">Connect a wallet.</p>
-          <p className="mb-5 text-muted-foreground">
-            Staking signs with your wallet as the juror.
-          </p>
-        </div>
+        <EmptyState
+          title="Connect a wallet."
+          description="Staking signs with your wallet as the juror."
+        />
       ) : (
         <>
           {/* Subaccord selector */}
@@ -93,12 +92,11 @@ export function StakePage() {
                   </FieldControl>
                 </div>
                 {subaccord && (
-                  <Link
-                    to={`/subaccords/${subaccord.address}`}
-                    className="inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
-                  >
-                    View pool.
-                  </Link>
+                  <Button variant="outline" asChild>
+                    <Link to={`/subaccords/${subaccord.address}`}>
+                      View pool.
+                    </Link>
+                  </Button>
                 )}
               </div>
               <FieldError>
@@ -130,7 +128,7 @@ export function StakePage() {
           )}
         </>
       )}
-    </main>
+    </>
   );
 }
 

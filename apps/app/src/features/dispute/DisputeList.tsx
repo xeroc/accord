@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import {
+  Button,
   Copyable,
   Table,
   TableBody,
@@ -29,12 +30,9 @@ export function DisputeList() {
     return (
       <div>
         <p className="text-text-secondary">No disputes found.</p>
-        <Link
-          to="/disputes/new"
-          className="mt-4 inline-block rounded-md bg-amber px-4 py-2 font-medium text-ink"
-        >
-          File a dispute.
-        </Link>
+        <Button asChild className="mt-4">
+          <Link to="/disputes/new">File a dispute.</Link>
+        </Button>
       </div>
     );
   }
