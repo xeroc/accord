@@ -9,6 +9,10 @@
 //! - reinit: double create_list on the same PDA -> must fail (account in use)
 //! - args: zero rules_hash -> InvalidRulesHash
 //! - args: challenge_pct > MAX -> ChallengePctTooHigh
+//! - args: court.alpha_bps > 10_000 -> AlphaTooHigh; zero review/commit/reveal
+//!   window -> WindowTooShort; court.depth > MAX_LIST_TREE_DEPTH ->
+//!   TreeDepthTooDeep; Accord CPI rejections propagate (EvenJurySize,
+//!   LadderExceedsMaxJurors)
 //! - args: evidence_operator = Pubkey::default -> InvalidEvidenceOperator
 //!
 //! Run via `make test_unit` (builds .so then `cargo test --features
@@ -19,7 +23,7 @@ use accord::ID as ACCORD_ID;
 use anchor_lang::AccountDeserialize;
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
 use canon::constants::*;
-use canon::state::CanonList;
+use canon::state::{CanonList, CourtParams};
 use canon::{accounts, instruction, ID as CANON_ID};
 use solana_program::pubkey::Pubkey;
 use solana_sdk::account::Account as SvmAccount;
@@ -303,6 +307,295 @@ fn create_list_default_evidence_operator_fails() {
     assert!(
         !r.is_success(),
         "default evidence_operator must fail (InvalidEvidenceOperator); logs={:?}",
+        r.logs()
+    );
+}
+
+// --- court: creator-configurable dispute-mechanism profile (accord-qz7d) -----
+
+/// Custom (non-canonical) court profile. Every value deliberately differs from
+/// the canonical defaults so a handler that ignores `court` and forwards the
+/// old hardcoded constants cannot pass the verbatim assertions below.
+fn court_params() -> CourtParams {
+    CourtParams {
+        min_stake: 7_777,
+        alpha_bps: 2_500,
+        review_window: 11 * 24 * 60 * 60,
+        commit_window: 3 * 24 * 60 * 60,
+        reveal_window: 4 * 24 * 60 * 60,
+        appeal_window: 2 * 24 * 60 * 60, // above Accord's 1h floor
+        max_appeals: 1,
+        min_jury_size: 5, // odd; ladder top (5+1)·2¹−1 = 11 ≤ MAX_JURORS
+        fee_per_juror: 42,
+        reveal_threshold_bps: 5_000,
+        max_draw_attempts: 2,
+        depth: 6,
+    }
+}
+
+/// `do_create_list` variant taking an explicit `court` profile. Once GREEN
+/// lands this collapses into `do_create_list` (the `court` arg becomes
+/// mandatory for every caller).
+fn do_create_list_court(
+    ctx: &mut anchor_litesvm::AnchorContext,
+    creator: &Keypair,
+    rules: [u8; 32],
+    evidence_operator: Pubkey,
+    court: CourtParams,
+) -> (TransactionResult, Pubkey, Pubkey) {
+    let stake_mint = Pubkey::new_unique();
+    let fee_mint = Pubkey::new_unique();
+    create_mint(ctx, &stake_mint);
+    create_mint(ctx, &fee_mint);
+    let ix = ctx
+        .program()
+        .accounts(accounts::CreateList {
+            creator: creator.pubkey(),
+            stake_mint,
+            fee_mint,
+            list: canon_list_pda(&creator.pubkey(), &rules),
+            subaccord: subaccord_pda(&creator.pubkey(), &rules),
+            accord_program: ACCORD_ID,
+            system_program: anchor_lang::system_program::ID,
+        })
+        .args(instruction::CreateList {
+            list_program: Pubkey::default(),
+            rules_hash: rules,
+            submit_deposit: DEFAULT_SUBMIT_DEPOSIT,
+            challenge_pct: DEFAULT_CHALLENGE_PCT_BPS,
+            listing_window: DEFAULT_LISTING_WINDOW_SECS,
+            withdrawal_timelock: DEFAULT_WITHDRAWAL_TIMELOCK_SECS,
+            evidence_operator,
+            court,
+        })
+        .instruction()
+        .expect("build create_list instruction");
+    let result = ctx.execute_instruction(ix, &[creator]).unwrap();
+    (result, stake_mint, fee_mint)
+}
+
+/// Happy: every `CourtParams` field lands verbatim on the backing Subaccord,
+/// and the handler-pinned fields are NOT creator-settable: `aggregation` =
+/// Plurality, `shortfall_policy` = Redraw, `coherence_tol_bps` = 0,
+/// `authority` = the CanonList PDA, attestation pair default.
+#[test]
+fn create_list_custom_court_params_land_verbatim() {
+    let (mut ctx, creator) = setup();
+    let rules = rules_hash();
+    let list_pda = canon_list_pda(&creator.pubkey(), &rules);
+    let sub_pda = subaccord_pda(&creator.pubkey(), &rules);
+    let evidence_operator = Pubkey::new_unique();
+    let court = court_params();
+    let (r, stake_mint, fee_mint) =
+        do_create_list_court(&mut ctx, &creator, rules, evidence_operator, court.clone());
+    r.assert_success();
+
+    let sub = read_subaccord(&ctx, &sub_pda);
+    assert_eq!(sub.staking_token, stake_mint);
+    assert_eq!(sub.fee_token, fee_mint);
+    assert_eq!(sub.evidence_operator, evidence_operator);
+    // Creator-settable: land verbatim (values differ from every canonical
+    // default — see court_params()).
+    assert_eq!(sub.min_stake, court.min_stake);
+    assert_eq!(sub.alpha_bps, court.alpha_bps);
+    assert_eq!(sub.review_window, court.review_window);
+    assert_eq!(sub.commit_window, court.commit_window);
+    assert_eq!(sub.reveal_window, court.reveal_window);
+    assert_eq!(sub.appeal_window, court.appeal_window);
+    assert_eq!(sub.max_appeals, court.max_appeals);
+    assert_eq!(sub.min_jury_size, court.min_jury_size);
+    assert_eq!(sub.fee_per_juror, court.fee_per_juror);
+    assert_eq!(sub.reveal_threshold_bps, court.reveal_threshold_bps);
+    assert_eq!(sub.max_draw_attempts, court.max_draw_attempts);
+    assert_eq!(sub.depth, court.depth);
+    // Pinned by the handler — never creator-settable.
+    assert_eq!(sub.aggregation, Aggregation::Plurality);
+    assert_eq!(sub.shortfall_policy, ShortfallPolicy::Redraw);
+    assert_eq!(sub.coherence_tol_bps, 0);
+    assert_eq!(sub.authority, list_pda, "court authority is the list PDA");
+    assert_eq!(sub.juror_credential, Pubkey::default());
+    assert_eq!(sub.juror_schema, Pubkey::default());
+}
+
+/// alpha_bps above 10_000 must fail at the canon guard (AlphaTooHigh) —
+/// Accord's `create_subaccord` has no alpha check of its own.
+#[test]
+fn create_list_alpha_bps_above_cap_fails() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.alpha_bps = 10_001;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "alpha_bps > 10_000 must fail; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("AlphaTooHigh"),
+        "must fail with AlphaTooHigh; logs={:?}",
+        r.logs()
+    );
+}
+
+/// A zero review window bricks every dispute forever (commit never opens) —
+/// third-party item deposits would be stuck, not just creator self-harm.
+#[test]
+fn create_list_zero_review_window_fails() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.review_window = 0;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "zero review_window must fail; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("WindowTooShort"),
+        "must fail with WindowTooShort; logs={:?}",
+        r.logs()
+    );
+}
+
+/// Zero commit window → same anti-brick invariant as review.
+#[test]
+fn create_list_zero_commit_window_fails() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.commit_window = 0;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "zero commit_window must fail; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("WindowTooShort"),
+        "must fail with WindowTooShort; logs={:?}",
+        r.logs()
+    );
+}
+
+/// Zero reveal window → same anti-brick invariant as review.
+#[test]
+fn create_list_zero_reveal_window_fails() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.reveal_window = 0;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "zero reveal_window must fail; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("WindowTooShort"),
+        "must fail with WindowTooShort; logs={:?}",
+        r.logs()
+    );
+}
+
+/// depth > MAX_LIST_TREE_DEPTH (8) must fail at the canon guard
+/// (TreeDepthTooDeep): each stake/draw tx carries a depth-length MST path
+/// (~40 B/level); beyond 8 the draw tx blows the 1232-byte packet budget.
+#[test]
+fn create_list_depth_above_cap_fails() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.depth = MAX_LIST_TREE_DEPTH + 1;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "depth > MAX_LIST_TREE_DEPTH must fail; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("TreeDepthTooDeep"),
+        "must fail with TreeDepthTooDeep; logs={:?}",
+        r.logs()
+    );
+}
+
+/// Even min_jury_size passes every canon guard and must be rejected by the
+/// Accord CPI itself (EvenJurySize propagates through canon, unchecked here).
+#[test]
+fn create_list_even_jury_size_propagates_from_accord() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.min_jury_size = 4;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "even min_jury_size must fail via the CPI; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("EvenJurySize"),
+        "Accord's EvenJurySize must propagate through canon; logs={:?}",
+        r.logs()
+    );
+}
+
+/// min_jury_size = 9 with max_appeals = 3 → ladder top (9+1)·2³−1 = 79 >
+/// MAX_JURORS (31). Canon adds no jury validation of its own; Accord's
+/// LadderExceedsMaxJurors must propagate through the CPI.
+#[test]
+fn create_list_ladder_overflow_propagates_from_accord() {
+    let (mut ctx, creator) = setup();
+    let mut court = court_params();
+    court.min_jury_size = 9;
+    court.max_appeals = 3;
+    let (r, ..) = do_create_list_court(
+        &mut ctx,
+        &creator,
+        rules_hash(),
+        Pubkey::new_unique(),
+        court,
+    );
+    assert!(
+        !r.is_success(),
+        "ladder overflow must fail via the CPI; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.has_log("LadderExceedsMaxJurors"),
+        "Accord's LadderExceedsMaxJurors must propagate; logs={:?}",
         r.logs()
     );
 }
