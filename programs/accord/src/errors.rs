@@ -150,7 +150,7 @@ pub enum AccordError {
     NotRedrawEligible,
     #[msg("Subaccord max_draw_attempts exceeds the program ceiling.")]
     MaxDrawAttemptsLimitExceeded,
-    #[msg("Reveal threshold (bps) must be <= 10_000.")]
+    #[msg("Basis-point value out of range (must be <= 10_000; reveal threshold or alpha).")]
     InvalidThreshold,
     // --- attestation-gated Subaccords (PROG-ATTESTTION) ---
     #[msg("Subaccord is credential-gated but no attestation account was provided.")]
@@ -177,6 +177,10 @@ pub enum AccordError {
     SlotAlreadyReclaimed,
     #[msg("Provided freed-slot account does not match the free-list head.")]
     FreeListHeadMismatch,
+    #[msg(
+        "Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled."
+    )]
+    SlotAwaitingRecycle,
 
     // --- per-Subaccord round-1 panel size (accord-9q3e) ---
     #[msg("Round-1 jury size (min_jury_size) must be odd (tie avoidance).")]

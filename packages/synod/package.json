@@ -1,0 +1,37 @@
+{
+  "name": "@useaccord/synod",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Accord Synod N-party dispute-escrow Arbitrable on Solana",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.json --emitDeclarationOnly",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsup && tsc -p tsconfig.json --emitDeclarationOnly && node --test src/**/*.test.ts",
+    "codegen": "codama run js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@solana/kit": "^7.0.0",
+    "@useaccord/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@codama/nodes-from-anchor": "^1.5.3",
+    "@codama/renderers-js": "^2.3.1",
+    "codama": "^1.10.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.5.0"
+  }
+}

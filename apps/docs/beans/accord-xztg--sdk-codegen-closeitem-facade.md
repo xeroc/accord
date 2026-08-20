@@ -1,10 +1,11 @@
 ---
 # accord-xztg
 title: SDK — codegen + closeItem facade
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-14T19:06:10Z
-updated_at: 2026-08-14T19:06:10Z
+updated_at: 2026-08-19T18:59:50Z
 parent: accord-clfq
 ---
 

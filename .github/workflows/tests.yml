@@ -34,9 +34,14 @@ jobs:
 
       - name: Run linter
         run: pnpm run -r --filter "./packages/*" --filter "./apps/*" lint
+      - name: Install Playwright browsers (@useaccord/ui story tests)
+        run: pnpm --filter @useaccord/ui exec playwright install chromium --with-deps
 
       - name: Run tests
         run: pnpm run -r --filter "./packages/*" --filter "./apps/*" test
         env:
           ANCHOR_WALLET: /home/runner/work/accord/accord/.github/ci-wallet/id.json
           ACCORD_KEYPAIR_PATH: /home/runner/work/accord/accord/.github/ci-wallet/id.json
+
+      - name: Build Storybook (@useaccord/ui)
+        run: pnpm --filter @useaccord/ui build-storybook

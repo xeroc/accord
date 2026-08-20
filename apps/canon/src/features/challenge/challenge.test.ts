@@ -6,6 +6,8 @@
  *   - evidence_hash matches sha256(manifest)
  *   - description changes → different hash (committed bytes integrity)
  *   - Canon options are always [keep, remove]
+ *   - flow order: build is offline (no fetch), publish POSTs to the daemon
+ *     only after the dispute exists (ingest 404s on an absent dispute)
  *
  * Uses node:test (Node ≥ 18 built-in). No framework deps.
  */
@@ -29,7 +31,7 @@ const CTX: ManifestCtx = {
 
 const CANON_OPTIONS = ["keep", "remove"];
 
-test("challenge manifest: description emitted as YAML literal block", () => {
+test("challenge manifest: description JSON-escaped on one logical line", () => {
   const buf = buildManifest(
     {
       salt: generateSalt(),
@@ -41,8 +43,12 @@ test("challenge manifest: description emitted as YAML literal block", () => {
     CTX,
   );
   const yaml = new TextDecoder().decode(buf);
-  assert.ok(yaml.includes("description: |"), "should emit literal block scalar");
-  assert.ok(yaml.includes("  This item is a scam."), "should indent body");
+  // SDK contract (manifest.ts): description is JSON-escaped so multi-line
+  // markdown stays on one logical line — no YAML block-scalar parsing needed.
+  assert.ok(
+    yaml.includes('description: "This item is a scam.\\nSee evidence below."'),
+    "should JSON-escape the description",
+  );
 });
 
 test("challenge manifest: evidence_hash matches sha256(manifest)", async () => {
@@ -127,4 +133,77 @@ test("challenge manifest: committed bytes are never altered by rendering", async
   );
   assert.deepEqual(manifest, manifest2, "identical input → byte-identical manifest");
   assert.deepEqual(hash, await sha256(manifest2), "sha256 stable");
+});
+
+// ---------------------------------------------------------------------------
+// Flow order: build offline → tx creates the dispute → publish to the daemon
+// (the daemon's ingest reads the dispute on-chain and 404s "dispute not found"
+// if it does not exist yet — evidence must never be POSTed first).
+// ---------------------------------------------------------------------------
+
+import {
+  buildChallengeEvidence,
+  publishChallengeEvidence,
+  type ChallengeOnChainContext,
+} from "./challengeFlow.ts";
+import type { CanonItem, CanonList } from "@useaccord/canon";
+import { findDisputePda } from "@useaccord/sdk";
+import { ed25519PublicKeyFromSeed } from "@useaccord/sdk/evidence";
+
+const LIST = "11111111111111111111111111111111" as Address;
+const SUBACCORD = "4zvwRjXUKGfvwnParsHAS3HuSVzV5cA4McphgmoCtajS" as Address;
+const ITEM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
+const DISPUTE = "9dPv2DhzYDjc5stCbh6FSzhgdvLvEcrRWAZzHKLt7jPc" as Address;
+
+const CTX_ONCHAIN: ChallengeOnChainContext = {
+  list: LIST,
+  item: ITEM,
+  listData: { disputeCount: 1n, subaccord: SUBACCORD } as unknown as CanonList,
+  itemData: {} as CanonItem,
+  operatorPub: ed25519PublicKeyFromSeed(crypto.getRandomValues(new Uint8Array(32))),
+};
+
+test("buildChallengeEvidence is offline — no fetch before the dispute exists", async () => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (() => {
+    throw new Error("network call during build");
+  }) as typeof fetch;
+  try {
+    const out = await buildChallengeEvidence(
+      {
+        title: "Mint operated by Circle",
+        description: "Low faucet output",
+        entries: [{ path: "https://faucet.circle.com" }],
+      },
+      CTX_ONCHAIN,
+    );
+    // Hash commits to the exact manifest bytes.
+    assert.deepEqual(out.evidenceHash, await sha256(out.manifest));
+    // Dispute PDA derived list-scoped (filer = list, nonce = dispute_count).
+    const [expected] = await findDisputePda({ filer: LIST, nonce: 1n });
+    assert.equal(out.dispute, expected);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test("publishChallengeEvidence POSTs to the daemon (fetch-only, retry-safe)", async () => {
+  const origFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (url: unknown) => {
+    calls.push(String(url));
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+  try {
+    await publishChallengeEvidence(
+      new Uint8Array(32),
+      DISPUTE,
+      CTX_ONCHAIN,
+      { evidenceDaemonUrl: "http://daemon.test:8080" },
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!, /daemon\.test:8080\/evidence\/.+\/.+/);
 });

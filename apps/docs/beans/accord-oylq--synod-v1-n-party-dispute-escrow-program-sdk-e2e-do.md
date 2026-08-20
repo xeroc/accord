@@ -1,10 +1,11 @@
 ---
 # accord-oylq
 title: Synod v1 — N-party dispute escrow (program + SDK + e2e + docs)
-status: todo
+status: completed
 type: milestone
+priority: normal
 created_at: 2026-08-18T05:27:40Z
-updated_at: 2026-08-18T05:27:40Z
+updated_at: 2026-08-18T17:25:29Z
 ---
 
 Ship Synod per programs/synod/SPEC.md: the N-party dispute-escrow Arbitrable — program (TDD), @useaccord/synod SDK (Codama), Surfpool e2e, docs. CONSISTENCY IS LOAD-BEARING: mirror Anchor 1.0.2 patterns and the canon crate/package/e2e conventions everywhere (canon is the reference Arbitrable; accord is the Core). Design authority: SPEC.md + ADRs synod/0001-0002 + meta/specs/PROG-MULTI-PARTY.md (decision ledger).

@@ -475,6 +475,7 @@ describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
       await accord.methods.createDispute(
         {
           filer: payer.address,
+          rentPayer: payer.address,
           subaccord,
           stakingToken,
           filerTokenAccount: filerAta,

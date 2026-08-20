@@ -209,8 +209,11 @@ pub mod accord {
     /// grows and can be exhausted by a griefing attacker.
     ///
     /// Preconditions: the juror must be fully drained (`staked == 0`,
-    /// `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`). A double
-    /// reclaim is prevented by root verification (see handler comment).
+    /// `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`,
+    /// `pending_withdrawal == 0` — the last because the slot pop closes the
+    /// account that custodies the banked withdrawal; H-1, security review
+    /// 2026-08-19). A double reclaim is prevented by root verification (see
+    /// handler comment).
     ///
     /// Any caller may trigger this — no tokens move, it's pure ledger + root
     /// accounting. The cranker supplies the juror's Merkle path.
@@ -351,16 +354,19 @@ pub mod accord {
     /// Permissionless crank: once the reveal window elapses **or every juror
     /// has revealed** (early resolve — all votes are bound, nothing left to
     /// wait for), tallies the round. ADR-0021 gates the tally on a reveal
-    /// quorum:
+    /// quorum; ADR-0026 gates it on decisiveness:
     ///
-    /// - **Quorum met** (`reveal_count >= ceil(panel × threshold_bps / 10_000)`):
-    ///   credits each revealer's `fees_earned` (ADR-0020), sets the tally
-    ///   result per `terms.aggregation` — the plurality winner (option index)
-    ///   or the **median** of the revealed scalar votes (ADR-0025) — and
-    ///   transitions to `RoundResolved` (appeal window / final).
-    /// - **Quorum not met**: no credits, no result — transitions to
-    ///   `RedrawEligible` so the `redraw` crank can reconvene the panel (or, on
-    ///   `max_draw_attempts` exhaustion, fail the dispute).
+    /// - **Quorum met** (`reveal_count >= ceil(panel × threshold_bps / 10_000)`)
+    ///   **and decisive**: credits each revealer's `fees_earned` (ADR-0020),
+    ///   sets the tally result per `terms.aggregation` — the plurality winner
+    ///   (option index; a top-count tie is non-decisive, see below) or the
+    ///   **median** of the revealed scalar votes (ADR-0025) — and transitions
+    ///   to `RoundResolved` (appeal window / final).
+    /// - **Quorum not met, or a Plurality top-count tie** (≥2 options share the
+    ///   max count — odd panels only prevent binary full-reveal ties):
+    ///   no credits, no result — transitions to `RedrawEligible` so the
+    ///   `redraw` crank can reconvene the panel (or, on `max_draw_attempts`
+    ///   exhaustion, fail the dispute).
     ///
     /// The drawn `JurorStake` PDAs are `remaining_accounts` (mut), verified
     /// against the round's juror list + PDA derivation; they are only consumed
@@ -458,6 +464,11 @@ pub mod accord {
     /// for the dispute's life trivially — stronger than a `CaseTerms` field):
     /// - **Pre-draw** (`Created`): cancelable once
     ///   `now > filed_at + PRE_DRAW_CANCEL_TIMEOUT_SECS` — covers a VRF oracle
+    ///   that never lands. If any seats already landed (`drawn_seats > 0`,
+    ///   mirrored by `draw_seat`), the current `Round` + its drawn
+    ///   `JurorStake` PDAs are REQUIRED up front (`[0]`, `[1..=seats]`) — a
+    ///   cancel that omits them reverts rather than stranding the partial
+    ///   jurors' `active_draws` forever (H-2, security review 2026-08-19).
     /// - **Post-draw** (`Drawn`/`Commit`/`Reveal`/`RoundResolved`): cancelable
     ///   once `now > round.reveal_end + terms.appeal_window +
     ///   POST_DRAW_CANCEL_GRACE_SECS` — covers a round no cranker ever

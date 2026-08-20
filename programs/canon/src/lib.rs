@@ -77,12 +77,19 @@ pub mod canon {
     /// (challenge_stake folds into accumulated_stake, → Listed). `remove` →
     /// bounty to challenger (→ Removed). Withdrawal-challenge: item Removed
     /// either way; `keep` → submitter gets stake (frivolous-block penalty).
+    /// A terminal `Failed` dispute (cancel / redraw exhaustion) has no ruling:
+    /// submitter and challenger are each refunded their own stake (no bounty)
+    /// and the item is `Removed`.
     pub fn settle_item(ctx: Context<SettleItem>) -> Result<()> {
         instructions::settle_item::handler(ctx)
     }
 
     /// Permissionless creation of a Canon curated list + its backing Accord
-    /// Subaccord. See `instructions::create_list` for the full doc.
+    /// Subaccord. `court` is the creator-supplied dispute-mechanism profile
+    /// (see `CourtParams`); the handler pins `aggregation = Plurality`,
+    /// `shortfall_policy = Redraw`, `coherence_tol_bps = 0`, `authority` =
+    /// the CanonList PDA and the attestation pair before the CPI. See
+    /// `instructions::create_list` for the full doc.
     #[allow(clippy::too_many_arguments)]
     pub fn create_list(
         ctx: Context<CreateList>,
@@ -92,6 +99,8 @@ pub mod canon {
         challenge_pct: u16,
         listing_window: u64,
         withdrawal_timelock: u64,
+        evidence_operator: Pubkey,
+        court: CourtParams,
     ) -> Result<()> {
         instructions::create_list::create_list_handler(
             ctx,
@@ -101,6 +110,17 @@ pub mod canon {
             challenge_pct,
             listing_window,
             withdrawal_timelock,
+            evidence_operator,
+            court,
         )
+    }
+
+    /// Permissionless PDA close (SPEC §Instructions #8): closes a settled
+    /// (`Removed`) `CanonItem` and drains its rent to the caller. Guards the
+    /// terminal invariants (`state == Removed`, no outstanding stake, no live
+    /// dispute) and emits `ItemClosed` before the drain. Closing frees the
+    /// seed — the same `account` may be re-submitted fresh afterwards.
+    pub fn close_item(ctx: Context<CloseItem>) -> Result<()> {
+        instructions::close_item::handler(ctx)
     }
 }

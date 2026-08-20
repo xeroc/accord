@@ -60,6 +60,7 @@ export function getCreateDisputeDiscriminatorBytes(): ReadonlyUint8Array {
 export type CreateDisputeInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountFiler extends string | AccountMeta<string> = string,
+  TAccountRentPayer extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountAccordState extends string | AccountMeta<string> = string,
   TAccountDispute extends string | AccountMeta<string> = string,
@@ -81,6 +82,10 @@ export type CreateDisputeInstruction<
         ? WritableSignerAccount<TAccountFiler> &
             AccountSignerMeta<TAccountFiler>
         : TAccountFiler,
+      TAccountRentPayer extends string
+        ? WritableSignerAccount<TAccountRentPayer> &
+            AccountSignerMeta<TAccountRentPayer>
+        : TAccountRentPayer,
       TAccountSubaccord extends string
         ? WritableAccount<TAccountSubaccord>
         : TAccountSubaccord,
@@ -162,6 +167,7 @@ export function getCreateDisputeInstructionDataCodec(): Codec<
 
 export type CreateDisputeAsyncInput<
   TAccountFiler extends string = string,
+  TAccountRentPayer extends string = string,
   TAccountSubaccord extends string = string,
   TAccountAccordState extends string = string,
   TAccountDispute extends string = string,
@@ -173,6 +179,15 @@ export type CreateDisputeAsyncInput<
   TAccountSystemProgram extends string = string,
 > = {
   filer: TransactionSigner<TAccountFiler>;
+  /**
+   * Rent payer for the dispute `init` + fee_vault `init_if_needed`. MUST be
+   * data-free (the system program rejects lamport transfers from
+   * data-carrying accounts), so Arbitrables whose filer is a data-carrying
+   * PDA pass their crank caller here; wallet filers pass themselves. The
+   * dispute-fee itself still flows from `filer_token_account` — this
+   * account only carries rent lamports (canon.challenge.spec BLOCKER fix).
+   */
+  rentPayer: TransactionSigner<TAccountRentPayer>;
   subaccord: Address<TAccountSubaccord>;
   accordState?: Address<TAccountAccordState>;
   dispute?: Address<TAccountDispute>;
@@ -194,6 +209,7 @@ export type CreateDisputeAsyncInput<
 
 export async function getCreateDisputeInstructionAsync<
   TAccountFiler extends string,
+  TAccountRentPayer extends string,
   TAccountSubaccord extends string,
   TAccountAccordState extends string,
   TAccountDispute extends string,
@@ -207,6 +223,7 @@ export async function getCreateDisputeInstructionAsync<
 >(
   input: CreateDisputeAsyncInput<
     TAccountFiler,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountAccordState,
     TAccountDispute,
@@ -222,6 +239,7 @@ export async function getCreateDisputeInstructionAsync<
   CreateDisputeInstruction<
     TProgramAddress,
     TAccountFiler,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountAccordState,
     TAccountDispute,
@@ -239,6 +257,7 @@ export async function getCreateDisputeInstructionAsync<
   // Original accounts.
   const originalAccounts = {
     filer: { value: input.filer ?? null, isWritable: true },
+    rentPayer: { value: input.rentPayer ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
     accordState: { value: input.accordState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
@@ -347,6 +366,7 @@ export async function getCreateDisputeInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta("filer", accounts.filer),
+      getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("dispute", accounts.dispute),
@@ -364,6 +384,7 @@ export async function getCreateDisputeInstructionAsync<
   } as CreateDisputeInstruction<
     TProgramAddress,
     TAccountFiler,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountAccordState,
     TAccountDispute,
@@ -378,6 +399,7 @@ export async function getCreateDisputeInstructionAsync<
 
 export type CreateDisputeInput<
   TAccountFiler extends string = string,
+  TAccountRentPayer extends string = string,
   TAccountSubaccord extends string = string,
   TAccountAccordState extends string = string,
   TAccountDispute extends string = string,
@@ -389,6 +411,15 @@ export type CreateDisputeInput<
   TAccountSystemProgram extends string = string,
 > = {
   filer: TransactionSigner<TAccountFiler>;
+  /**
+   * Rent payer for the dispute `init` + fee_vault `init_if_needed`. MUST be
+   * data-free (the system program rejects lamport transfers from
+   * data-carrying accounts), so Arbitrables whose filer is a data-carrying
+   * PDA pass their crank caller here; wallet filers pass themselves. The
+   * dispute-fee itself still flows from `filer_token_account` — this
+   * account only carries rent lamports (canon.challenge.spec BLOCKER fix).
+   */
+  rentPayer: TransactionSigner<TAccountRentPayer>;
   subaccord: Address<TAccountSubaccord>;
   accordState: Address<TAccountAccordState>;
   dispute: Address<TAccountDispute>;
@@ -410,6 +441,7 @@ export type CreateDisputeInput<
 
 export function getCreateDisputeInstruction<
   TAccountFiler extends string,
+  TAccountRentPayer extends string,
   TAccountSubaccord extends string,
   TAccountAccordState extends string,
   TAccountDispute extends string,
@@ -423,6 +455,7 @@ export function getCreateDisputeInstruction<
 >(
   input: CreateDisputeInput<
     TAccountFiler,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountAccordState,
     TAccountDispute,
@@ -437,6 +470,7 @@ export function getCreateDisputeInstruction<
 ): CreateDisputeInstruction<
   TProgramAddress,
   TAccountFiler,
+  TAccountRentPayer,
   TAccountSubaccord,
   TAccountAccordState,
   TAccountDispute,
@@ -453,6 +487,7 @@ export function getCreateDisputeInstruction<
   // Original accounts.
   const originalAccounts = {
     filer: { value: input.filer ?? null, isWritable: true },
+    rentPayer: { value: input.rentPayer ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: true },
     accordState: { value: input.accordState ?? null, isWritable: false },
     dispute: { value: input.dispute ?? null, isWritable: true },
@@ -495,6 +530,7 @@ export function getCreateDisputeInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("filer", accounts.filer),
+      getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("accordState", accounts.accordState),
       getAccountMeta("dispute", accounts.dispute),
@@ -512,6 +548,7 @@ export function getCreateDisputeInstruction<
   } as CreateDisputeInstruction<
     TProgramAddress,
     TAccountFiler,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountAccordState,
     TAccountDispute,
@@ -531,19 +568,28 @@ export type ParsedCreateDisputeInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     filer: TAccountMetas[0];
-    subaccord: TAccountMetas[1];
-    accordState: TAccountMetas[2];
-    dispute: TAccountMetas[3];
-    feeToken: TAccountMetas[4];
-    filerTokenAccount: TAccountMetas[5];
+    /**
+     * Rent payer for the dispute `init` + fee_vault `init_if_needed`. MUST be
+     * data-free (the system program rejects lamport transfers from
+     * data-carrying accounts), so Arbitrables whose filer is a data-carrying
+     * PDA pass their crank caller here; wallet filers pass themselves. The
+     * dispute-fee itself still flows from `filer_token_account` — this
+     * account only carries rent lamports (canon.challenge.spec BLOCKER fix).
+     */
+    rentPayer: TAccountMetas[1];
+    subaccord: TAccountMetas[2];
+    accordState: TAccountMetas[3];
+    dispute: TAccountMetas[4];
+    feeToken: TAccountMetas[5];
+    filerTokenAccount: TAccountMetas[6];
     /**
      * Subaccord PDA's fee_vault ATA (ADR-0020). Created on first dispute if
      * it doesn't exist yet.
      */
-    feeVault: TAccountMetas[6];
-    tokenProgram: TAccountMetas[7];
-    associatedTokenProgram: TAccountMetas[8];
-    systemProgram: TAccountMetas[9];
+    feeVault: TAccountMetas[7];
+    tokenProgram: TAccountMetas[8];
+    associatedTokenProgram: TAccountMetas[9];
+    systemProgram: TAccountMetas[10];
   };
   data: CreateDisputeInstructionData;
 };
@@ -556,12 +602,12 @@ export function parseCreateDisputeInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCreateDisputeInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 10) {
+  if (instruction.accounts.length < 11) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 10,
+        expectedAccountMetas: 11,
       },
     );
   }
@@ -575,6 +621,7 @@ export function parseCreateDisputeInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       filer: getNextAccount(),
+      rentPayer: getNextAccount(),
       subaccord: getNextAccount(),
       accordState: getNextAccount(),
       dispute: getNextAccount(),

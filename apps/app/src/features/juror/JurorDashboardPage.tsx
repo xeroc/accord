@@ -10,9 +10,12 @@ import { Link } from "react-router-dom";
 
 import { useSigner } from "../../shared/wallet";
 import { formatTokenAmount } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
+import {
+  Copyable,
+  StaggerGroup,
+  StaggerItem,
+} from "@useaccord/ui";
 import { useJurorStakes } from "./useJurorStakes";
-import { StaggerGroup, StaggerItem } from "../../components/motion";
 
 export function JurorDashboardPage() {
   const { signer } = useSigner();
@@ -32,7 +35,7 @@ export function JurorDashboardPage() {
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Juror.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Juror.</h1>
         <p className="mb-4 text-muted-foreground">
           Your capital, your draws, your earned fees — across every subaccord.
         </p>

@@ -31,10 +31,11 @@ import type {
 /**
  * Every crank kind, program-qualified by prefix: Accord cranks (the host
  * program — beans accord-g5lm / accord-7sky) are bare instruction names; Canon
- * cranks (the Arbitrable guest program, bean accord-7fj6) carry the `canon_`
- * prefix. Executors live in `./cranks/accord/` and `./cranks/canon/`
- * respectively, so the kind prefix, the filesystem, and every log line
- * (`crank <kind>`) all name the program.
+ * and Synod cranks (the Arbitrable guest programs — beans accord-7fj6 /
+ * accord-i1mp) carry the `canon_` / `synod_` prefixes. Executors live in
+ * `./cranks/accord/`, `./cranks/canon/`, and `./cranks/synod/` respectively,
+ * so the kind prefix, the filesystem, and every log line (`crank <kind>`) all
+ * name the program.
  */
 export type CrankKind =
   | "request_vrf"
@@ -50,12 +51,17 @@ export type CrankKind =
   | "reclaim_slot"
   | "canon_advance_pending"
   | "canon_settle_item"
-  | "canon_advance_withdrawal";
+  | "canon_advance_withdrawal"
+  | "canon_close_item"
+  | "synod_file_dispute"
+  | "synod_refund_roster_miss"
+  | "synod_claim";
 
 /**
- * Discriminated action payload. `draw_seat.seat`, `settle_round.roundIdx`, and
- * `claim_refund.roundIdx` are the only non-`kind` discriminators — the resolver
- * picks WHICH seat / prior round / appeal; the rest the executor derives.
+ * Discriminated action payload. `draw_seat.seat`, `settle_round.roundIdx`,
+ * `claim_refund.roundIdx`, and the synod `partyIndex` are the only non-`kind`
+ * discriminators — the resolver picks WHICH seat / prior round / appeal /
+ * roster slot; the rest the executor derives.
  *
  * The state resolver (state.ts) emits the lifecycle subset
  * (request_vrf/draw_seat/finalize_round/finalize_dispute/settle_round/
@@ -64,7 +70,9 @@ export type CrankKind =
  * claim_refund) are emitted by their own resolvers over different account
  * families (PendingUpdate / AccordState / AppealBond). The Canon cranks
  * (canon-state.ts) key off the item PDA — every other account (list, dispute,
- * vault, payee ATAs) is derived from on-chain state by the executor.
+ * vault, payee ATAs) is derived from on-chain state by the executor. The Synod
+ * cranks (synod-state.ts) key off the case PDA + the roster slot the sweep is
+ * on; the parties, vault, and dispute PDA are derived by the executor.
  */
 export type CrankAction =
   | { kind: "request_vrf"; dispute: Address }
@@ -80,7 +88,11 @@ export type CrankAction =
   | { kind: "reclaim_slot"; subaccord: Address; jurorStake: Address }
   | { kind: "canon_advance_pending"; item: Address }
   | { kind: "canon_settle_item"; item: Address }
-  | { kind: "canon_advance_withdrawal"; item: Address };
+  | { kind: "canon_advance_withdrawal"; item: Address }
+  | { kind: "canon_close_item"; item: Address }
+  | { kind: "synod_file_dispute"; case: Address }
+  | { kind: "synod_refund_roster_miss"; case: Address; partyIndex: number }
+  | { kind: "synod_claim"; case: Address; partyIndex: number };
 
 /** Extract a single crank action variant by kind (for executor signatures). */
 export type ActionOf<K extends CrankKind> = Extract<CrankAction, { kind: K }>;
@@ -127,6 +139,12 @@ export interface CrankContext {
   /** Live RPC + subscriptions (TreeCache, send). */
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /**
+   * Canon program id the canon cranks build instructions against. Defaults to
+   * the SDK's canonical `CANON_PROGRAM_ID`; overridden when the cranker runs
+   * against a relocated canon program (bean accord-m5fd).
+   */
+  readonly canonProgramId?: Address;
 }
 
 /** Outcome of one crank attempt. */

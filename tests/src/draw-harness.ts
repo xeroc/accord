@@ -112,7 +112,7 @@ export function roleAccord(env: TestEnv, signer: KeyPairSigner): Accord {
 // Off-chain accumulator tree tracker
 // ---------------------------------------------------------------------------
 
-class TreeTracker {
+export class TreeTracker {
   tree!: MerkleAccumulator;
   depth: number;
 
@@ -284,8 +284,8 @@ export async function armSubaccordAndJurors(
  * **already-existing** Subaccord (one created by Canon's `create_list` CPI, not
  * a direct `create_subaccord`). Same accumulator/stake plumbing; the Subaccord
  * PDA + mint come from the caller. `depth` MUST match the Subaccord's tree
- * depth (Canon uses 20, not the harness's default 4) so the Merkle paths line
- * up with the on-chain root.
+ * depth (canon lists default to 8 — `defaultCourtParams()` — not the
+ * harness's default 4) so the Merkle paths line up with the on-chain root.
  */
 export async function armCanonJurors(
   env: TestEnv,
@@ -367,6 +367,7 @@ export async function armDispute(
     env.accord.adapter,
     {
       filer: env.payer.address,
+      rentPayer: env.payer.address,
       subaccord,
       feeToken: mint,
       filerTokenAccount: filerAta,

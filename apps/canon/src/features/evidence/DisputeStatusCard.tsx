@@ -7,7 +7,7 @@
  * Canon never reimplements voting — this card is read-only (milestone §7).
  */
 import { useQuery } from "@tanstack/react-query";
-import type { Address } from "@solana/kit";
+import { getBase64Encoder, type Address } from "@solana/kit";
 import { getDisputeDecoder, DisputeState } from "@useaccord/sdk";
 import { useClusterRpc } from "../../shared/rpc";
 
@@ -52,7 +52,7 @@ export function DisputeStatusCard({
         .send();
       if (!res.value) return null;
       return getDisputeDecoder().decode(
-        new Uint8Array(Buffer.from(res.value.data[0]!, "base64")),
+        getBase64Encoder().encode(res.value.data[0]!),
       );
     },
     enabled: !!clusterRpc,

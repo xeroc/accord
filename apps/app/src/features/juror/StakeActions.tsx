@@ -36,7 +36,15 @@ import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { getAtaAddress } from "../../shared/tokens";
 import { formatTokenAmount } from "../../shared/format";
-import { Copyable } from "../../components/Copyable";
+import {
+  Button,
+  Copyable,
+  Field,
+  FieldControl,
+  FieldDescription,
+  FieldLabel,
+  Input,
+} from "@useaccord/ui";
 import { useSubaccord } from "../dispute/useSubaccord";
 import { useStakingProof } from "./useStakingProof";
 
@@ -563,24 +571,21 @@ function AmountInput({
   help?: React.ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1 block font-mono text-xs text-text-secondary">
-        {label}
-      </span>
-      <input
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]+"
-        value={value}
-        onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))}
-        placeholder="0"
-        required
-        className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-      />
-      {help && (
-        <span className="mt-1 block text-xs text-text-secondary">{help}</span>
-      )}
-    </label>
+    <Field>
+      <FieldLabel className="text-xs">{label}</FieldLabel>
+      <FieldControl>
+        <Input
+          inputMode="numeric"
+          pattern="[0-9]+"
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ""))}
+          placeholder="0"
+          required
+          className="font-mono"
+        />
+      </FieldControl>
+      {help && <FieldDescription>{help}</FieldDescription>}
+    </Field>
   );
 }
 
@@ -595,20 +600,12 @@ function SubmitRow({
 }) {
   return (
     <div className="flex gap-2">
-      <button
-        type="submit"
-        disabled={sending}
-        className="rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
-      >
+      <Button type="submit" loading={sending}>
         {sending ? "Signing…" : label}
-      </button>
-      <button
-        type="button"
-        onClick={onClose}
-        className="rounded-md border border-border-subtle px-4 py-2 text-sm text-text-secondary hover:text-text-primary"
-      >
+      </Button>
+      <Button type="button" variant="outline" onClick={onClose}>
         Cancel
-      </button>
+      </Button>
     </div>
   );
 }

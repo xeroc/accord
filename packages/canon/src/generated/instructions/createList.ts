@@ -19,8 +19,12 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU32Decoder,
+  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
+  getU8Decoder,
+  getU8Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -106,6 +110,34 @@ export type CreateListInstructionData = {
   challengePct: number;
   listingWindow: bigint;
   withdrawalTimelock: bigint;
+  evidenceOperator: Address;
+  /** Draw eligibility threshold, in `staking_token`. */
+  minStake: bigint;
+  /** Slash factor in basis points (10% = 1000). Canon guard: <= 10_000. */
+  alphaBps: number;
+  /** Seconds a round spends in review. Canon guard: > 0. */
+  reviewWindow: bigint;
+  /** Seconds jurors get to commit. Canon guard: > 0. */
+  commitWindow: bigint;
+  /** Seconds jurors get to reveal. Canon guard: > 0. */
+  revealWindow: bigint;
+  /** Appeal window after a round resolves (Accord floor: >= 1h). */
+  appealWindow: bigint;
+  /** Max appeals per dispute; ladder `(J+1)·2^k − 1` must fit MAX_JURORS. */
+  maxAppeals: number;
+  /** Round-1 juror panel size; must be odd. Immutable on the Subaccord. */
+  minJurySize: number;
+  /** Per-juror fee, in `fee_mint`. */
+  feePerJuror: bigint;
+  /** Reveal-quorum fraction in bps (ADR-0021). */
+  revealThresholdBps: number;
+  /** Max same-size redraws per round (ADR-0021). */
+  maxDrawAttempts: number;
+  /**
+   * MST accumulator depth. Canon guard: <= `MAX_LIST_TREE_DEPTH` (8).
+   * Immutable on the Subaccord.
+   */
+  depth: number;
 };
 
 export type CreateListInstructionDataArgs = {
@@ -115,6 +147,34 @@ export type CreateListInstructionDataArgs = {
   challengePct: number;
   listingWindow: number | bigint;
   withdrawalTimelock: number | bigint;
+  evidenceOperator: Address;
+  /** Draw eligibility threshold, in `staking_token`. */
+  minStake: number | bigint;
+  /** Slash factor in basis points (10% = 1000). Canon guard: <= 10_000. */
+  alphaBps: number;
+  /** Seconds a round spends in review. Canon guard: > 0. */
+  reviewWindow: number | bigint;
+  /** Seconds jurors get to commit. Canon guard: > 0. */
+  commitWindow: number | bigint;
+  /** Seconds jurors get to reveal. Canon guard: > 0. */
+  revealWindow: number | bigint;
+  /** Appeal window after a round resolves (Accord floor: >= 1h). */
+  appealWindow: number | bigint;
+  /** Max appeals per dispute; ladder `(J+1)·2^k − 1` must fit MAX_JURORS. */
+  maxAppeals: number;
+  /** Round-1 juror panel size; must be odd. Immutable on the Subaccord. */
+  minJurySize: number;
+  /** Per-juror fee, in `fee_mint`. */
+  feePerJuror: number | bigint;
+  /** Reveal-quorum fraction in bps (ADR-0021). */
+  revealThresholdBps: number;
+  /** Max same-size redraws per round (ADR-0021). */
+  maxDrawAttempts: number;
+  /**
+   * MST accumulator depth. Canon guard: <= `MAX_LIST_TREE_DEPTH` (8).
+   * Immutable on the Subaccord.
+   */
+  depth: number;
 };
 
 export function getCreateListInstructionDataEncoder(): FixedSizeEncoder<CreateListInstructionDataArgs> {
@@ -127,6 +187,19 @@ export function getCreateListInstructionDataEncoder(): FixedSizeEncoder<CreateLi
       ["challengePct", getU16Encoder()],
       ["listingWindow", getU64Encoder()],
       ["withdrawalTimelock", getU64Encoder()],
+      ["evidenceOperator", getAddressEncoder()],
+      ["minStake", getU64Encoder()],
+      ["alphaBps", getU16Encoder()],
+      ["reviewWindow", getU64Encoder()],
+      ["commitWindow", getU64Encoder()],
+      ["revealWindow", getU64Encoder()],
+      ["appealWindow", getU64Encoder()],
+      ["maxAppeals", getU8Encoder()],
+      ["minJurySize", getU32Encoder()],
+      ["feePerJuror", getU64Encoder()],
+      ["revealThresholdBps", getU16Encoder()],
+      ["maxDrawAttempts", getU8Encoder()],
+      ["depth", getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CREATE_LIST_DISCRIMINATOR }),
   );
@@ -141,6 +214,19 @@ export function getCreateListInstructionDataDecoder(): FixedSizeDecoder<CreateLi
     ["challengePct", getU16Decoder()],
     ["listingWindow", getU64Decoder()],
     ["withdrawalTimelock", getU64Decoder()],
+    ["evidenceOperator", getAddressDecoder()],
+    ["minStake", getU64Decoder()],
+    ["alphaBps", getU16Decoder()],
+    ["reviewWindow", getU64Decoder()],
+    ["commitWindow", getU64Decoder()],
+    ["revealWindow", getU64Decoder()],
+    ["appealWindow", getU64Decoder()],
+    ["maxAppeals", getU8Decoder()],
+    ["minJurySize", getU32Decoder()],
+    ["feePerJuror", getU64Decoder()],
+    ["revealThresholdBps", getU16Decoder()],
+    ["maxDrawAttempts", getU8Decoder()],
+    ["depth", getU8Decoder()],
   ]);
 }
 
@@ -195,6 +281,19 @@ export type CreateListAsyncInput<
   challengePct: CreateListInstructionDataArgs["challengePct"];
   listingWindow: CreateListInstructionDataArgs["listingWindow"];
   withdrawalTimelock: CreateListInstructionDataArgs["withdrawalTimelock"];
+  evidenceOperator: CreateListInstructionDataArgs["evidenceOperator"];
+  minStake: CreateListInstructionDataArgs["minStake"];
+  alphaBps: CreateListInstructionDataArgs["alphaBps"];
+  reviewWindow: CreateListInstructionDataArgs["reviewWindow"];
+  commitWindow: CreateListInstructionDataArgs["commitWindow"];
+  revealWindow: CreateListInstructionDataArgs["revealWindow"];
+  appealWindow: CreateListInstructionDataArgs["appealWindow"];
+  maxAppeals: CreateListInstructionDataArgs["maxAppeals"];
+  minJurySize: CreateListInstructionDataArgs["minJurySize"];
+  feePerJuror: CreateListInstructionDataArgs["feePerJuror"];
+  revealThresholdBps: CreateListInstructionDataArgs["revealThresholdBps"];
+  maxDrawAttempts: CreateListInstructionDataArgs["maxDrawAttempts"];
+  depth: CreateListInstructionDataArgs["depth"];
 };
 
 export async function getCreateListInstructionAsync<
@@ -360,6 +459,19 @@ export type CreateListInput<
   challengePct: CreateListInstructionDataArgs["challengePct"];
   listingWindow: CreateListInstructionDataArgs["listingWindow"];
   withdrawalTimelock: CreateListInstructionDataArgs["withdrawalTimelock"];
+  evidenceOperator: CreateListInstructionDataArgs["evidenceOperator"];
+  minStake: CreateListInstructionDataArgs["minStake"];
+  alphaBps: CreateListInstructionDataArgs["alphaBps"];
+  reviewWindow: CreateListInstructionDataArgs["reviewWindow"];
+  commitWindow: CreateListInstructionDataArgs["commitWindow"];
+  revealWindow: CreateListInstructionDataArgs["revealWindow"];
+  appealWindow: CreateListInstructionDataArgs["appealWindow"];
+  maxAppeals: CreateListInstructionDataArgs["maxAppeals"];
+  minJurySize: CreateListInstructionDataArgs["minJurySize"];
+  feePerJuror: CreateListInstructionDataArgs["feePerJuror"];
+  revealThresholdBps: CreateListInstructionDataArgs["revealThresholdBps"];
+  maxDrawAttempts: CreateListInstructionDataArgs["maxDrawAttempts"];
+  depth: CreateListInstructionDataArgs["depth"];
 };
 
 export function getCreateListInstruction<

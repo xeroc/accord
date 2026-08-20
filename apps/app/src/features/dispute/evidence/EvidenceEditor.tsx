@@ -1,12 +1,21 @@
+import {
+  Button,
+  Field,
+  FieldControl,
+  FieldLabel,
+  Input,
+} from "@useaccord/ui";
+
 /**
  * EvidenceEditor.tsx — structured form for authoring the `accord-evidence/v1`
- * manifest in format mode. Collects title, option labels, and URL entries;
- * builds the manifest buffer (single serialization); shows a read-only YAML
- * preview; provides a manual Download button.
+ * manifest. Collects title, option labels, and URL entries; builds the
+ * manifest buffer (single serialization) and propagates it via onChange.
+ * The YAML preview + download button live in CreateDispute's advanced
+ * settings, not here — this component is the essentials-only authoring surface.
  *
- * Authority: milestone accord-ebel §1 (format-mode submit), §2 (module contract),
+ * Authority: milestone accord-ebel §1 (manifest submit), §2 (module contract),
  * §3 (single-buffer invariant — buildManifest runs once in useMemo, that same
- * Uint8Array feeds preview + hash + encrypt downstream).
+ * Uint8Array feeds hash + encrypt downstream).
  */
 import { useMemo, useEffect, useRef, useState } from "react";
 
@@ -92,8 +101,6 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manifest, isValid]);
 
-  const yamlPreview = manifest ? new TextDecoder().decode(manifest) : "";
-
   function addLabel() {
     if (labels.length < MAX_OPTIONS) setLabels([...labels, ""]);
   }
@@ -112,32 +119,29 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
   return (
     <div className="space-y-4">
       {/* Title */}
-      <div>
-        <label className="mb-1 block font-mono text-sm text-text-secondary">
-          Dispute title
-        </label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Dispute title"
-          className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
-        />
-      </div>
+      <Field>
+        <FieldLabel>Dispute title</FieldLabel>
+        <FieldControl>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Dispute title"
+          />
+        </FieldControl>
+      </Field>
 
       {/* Option labels */}
       <div>
-        <label className="mb-2 block font-mono text-sm text-text-secondary">
+        <FieldLabel className="mb-2">
           Option labels ({validLabels.length}/{MAX_OPTIONS}, min {MIN_OPTIONS})
-        </label>
+        </FieldLabel>
         <div className="space-y-2">
           {labels.map((label, idx) => (
             <div key={idx} className="flex items-center gap-2">
               <span className="w-6 font-mono text-xs text-text-secondary">
                 {idx}
               </span>
-              <input
-                type="text"
+              <Input
                 value={label}
                 onChange={(e) =>
                   setLabels(
@@ -145,7 +149,7 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
                   )
                 }
                 placeholder={`Option ${idx} label (e.g. ${idx === 0 ? "Not delivered" : "Delivered"})`}
-                className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
+                className="flex-1"
               />
               {labels.length > MIN_OPTIONS && (
                 <button
@@ -160,25 +164,24 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
           ))}
         </div>
         {labels.length < MAX_OPTIONS && (
-          <button
+          <Button
             type="button"
+            variant="link"
+            className="mt-2 w-fit font-mono font-normal"
             onClick={addLabel}
-            className="mt-2 font-mono text-sm text-amber hover:underline"
           >
             + Add option
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Evidence entries (URLs) */}
       <div>
-        <label className="mb-2 block font-mono text-sm text-text-secondary">
-          Evidence URLs
-        </label>
+        <FieldLabel className="mb-2">Evidence URLs</FieldLabel>
         <div className="space-y-2">
           {entries.map((entry, idx) => (
             <div key={idx} className="flex items-center gap-2">
-              <input
+              <Input
                 type="url"
                 value={entry}
                 onChange={(e) =>
@@ -187,7 +190,7 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
                   )
                 }
                 placeholder="https://example.com/evidence/claim.pdf"
-                className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 text-sm focus:border-amber focus:outline-none"
+                className="flex-1"
               />
               {entries.length > MIN_ENTRIES && (
                 <button
@@ -201,35 +204,15 @@ export function EvidenceEditor({ ctx, onChange }: EvidenceEditorProps) {
             </div>
           ))}
         </div>
-        <button
+        <Button
           type="button"
+          variant="link"
+          className="mt-2 w-fit font-mono font-normal"
           onClick={addEntry}
-          className="mt-2 font-mono text-sm text-amber hover:underline"
         >
           + Add URL
-        </button>
+        </Button>
       </div>
-
-      {/* YAML preview + download */}
-      {yamlPreview && (
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="font-mono text-sm text-text-secondary">
-              manifest.yaml preview
-            </label>
-            <button
-              type="button"
-              onClick={() => manifest && downloadManifest(manifest)}
-              className="font-mono text-xs text-amber hover:underline"
-            >
-              ↓ Download
-            </button>
-          </div>
-          <pre className="max-h-64 overflow-auto rounded-md border border-border-subtle bg-raised p-3 font-mono text-xs text-text-secondary">
-            {yamlPreview}
-          </pre>
-        </div>
-      )}
     </div>
   );
 }

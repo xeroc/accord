@@ -15,12 +15,16 @@ const STUB_PUBLIC_KEYS: KeyringPublicKeys = { operators: [] };
 function okDeps(health: ServerDeps["health"]): ServerDeps {
   return {
     ingest: async () => ({ ok: true, status: 201, location: "/evidence/x/y" }),
+    synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/x/0" }),
+    synodManifest: async () => ({ ok: true, status: 200, body: {} }),
     deliver: async () => ({
       ok: true,
       status: 200,
       body: { rounds: [{ round: 0, out: "b3V0", operator_ephem_pub: "cHVi" }] },
     }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
+    domainPut: async () => ({ ok: true, status: 201 }),
+    domainGet: async () => ({ ok: false, status: 404, error: "stub" }),
     health,
     publicKeys: STUB_PUBLIC_KEYS,
   };

@@ -49,7 +49,18 @@ const { instruction, item } = await submitItem(
 - `createList(accounts, args)` — permissionless list creation; CPIs Accord
   `create_subaccord` for the 1:1 backing court. `accounts`:
   `{ creator, stakeMint, feeMint }`; `args`: `{ listProgram, rulesHash,
-  submitDeposit, challengePct, listingWindow, withdrawalTimelock }`
+  submitDeposit, challengePct, listingWindow, withdrawalTimelock,
+  evidenceOperator, court }`. `court: CourtParams` is the creator-configurable
+  profile of the backing court (ADR canon/0002) — the program pins
+  `aggregation=Plurality`, `shortfallPolicy=Redraw`, `coherenceTolBps=0`,
+  `authority=CanonList PDA`; `minJurySize` and `depth` are set-once
+  (immutable on the Subaccord).
+- `defaultCourtParams()` — the canonical default profile (minStake 1_000,
+  alphaBps 1_000, 7d/2d/2d/3d windows, maxAppeals 3, minJurySize 3,
+  feePerJuror 10, revealThresholdBps 6_666, maxDrawAttempts 3, depth 8);
+  spread-and-override: `{ ...defaultCourtParams(), alphaBps: 500 }`
+- `MAX_LIST_TREE_DEPTH` — ceiling on `court.depth` (8), mirroring the
+  program constant; consumers (dApp form) bound the depth input with it.
 - `submitItem(accounts, { evidence, deposit })` — permissionless item submission
 - `advancePending({ caller, list, item })` — crank: Pending → Listed
 - `challengeItem(accounts, { evidence }, extras)` — lock stake + fee, CPI Accord

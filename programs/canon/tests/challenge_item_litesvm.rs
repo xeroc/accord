@@ -1,14 +1,10 @@
 #![cfg(feature = "no-entrypoint")]
 //! LiteSVM tests for `challenge_item` (bean accord-04m9).
 //!
-//! The SBPF v0 stack-frame limit is resolved (Solana 3.1.10 / SBPF v3). Two
-//! happy-path tests remain `#[ignore]`'d for a DIFFERENT, real reason: Accord's
-//! `create_dispute` inits the dispute PDA with the filer (the CanonList PDA,
-//! which carries data) as rent-payer. LiteSVM surfaces writable accounts
-//! rent-exempt, forcing Anchor's `init` into the allocate+assign+transfer path,
-//! and `system::transfer` rejects a data-carrying `from`. On real Solana the
-//! fresh PDA is 0-lamport ⇒ `create_account` (which permits a data-carrying
-//! payer), so the path is sound — validate via the Surfpool e2e suite.
+//! The SBPF v0 stack-frame limit is resolved (Solana 3.1.10 / SBPF v3), and
+//! the earlier LiteSVM rent-payer limitation (data-carrying filer as
+//! `init` rent-payer rejected by `system::transfer`) is gone too — the full
+//! challenge CPI now succeeds in LiteSVM, so all tests run un-ignored.
 //!
 //! Coverage (TDD acceptance matrix from the bean):
 //!   - happy path (Pending item): locks stake+fee, item → Disputed,
@@ -162,24 +158,25 @@ fn setup() -> TestEnv {
     // Accord Subaccord.
     let domain_ref = RULES_HASH;
     let (sub_addr, sub_bump) = subaccord_pda(&creator.pubkey(), &domain_ref);
-    let fee_per_juror = DEFAULT_FEE_PER_JUROR;
+    let fee_per_juror = 10;
     let sub = accord::Subaccord {
         creator: creator.pubkey(),
         staking_token: mint,
         fee_token: mint,
         min_stake: 1_000,
-        alpha_bps: DEFAULT_ALPHA_BPS,
-        review_window: DEFAULT_REVIEW_WINDOW_SECS,
-        commit_window: DEFAULT_COMMIT_WINDOW_SECS,
-        reveal_window: DEFAULT_REVEAL_WINDOW_SECS,
-        appeal_window: DEFAULT_APPEAL_WINDOW_SECS,
-        max_appeals: DEFAULT_MAX_APPEALS,
+        alpha_bps: accord::constants::DEFAULT_ALPHA_BPS,
+        review_window: accord::constants::DEFAULT_REVIEW_WINDOW_SECS,
+        commit_window: accord::constants::DEFAULT_COMMIT_WINDOW_SECS,
+        reveal_window: accord::constants::DEFAULT_REVEAL_WINDOW_SECS,
+        appeal_window: accord::constants::DEFAULT_APPEAL_WINDOW_SECS,
+        max_appeals: accord::constants::DEFAULT_MAX_APPEALS,
         min_jury_size: 3,
         aggregation: accord::state::Aggregation::Plurality,
         fee_per_juror,
         reveal_threshold_bps: 6_666,
         shortfall_policy: accord::state::ShortfallPolicy::Redraw,
         max_draw_attempts: 3,
+        coherence_tol_bps: 0,
         authority: Pubkey::default(),
         evidence_operator: Pubkey::default(),
         domain_ref,
@@ -197,6 +194,7 @@ fn setup() -> TestEnv {
         stake_vault_withdrawn: 0,
         free_head: u32::MAX,
         bump: sub_bump,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     sub.try_serialize(&mut buf).unwrap();
@@ -220,6 +218,7 @@ fn setup() -> TestEnv {
         paused: false,
         pending_unpause_after: None,
         bump: accord::accord_state_pda().1,
+        padding: [0; 64],
     };
     let mut buf = Vec::new();
     ps.try_serialize(&mut buf).unwrap();
@@ -403,7 +402,6 @@ fn set_list_dispute_count(env: &mut TestEnv, count: u64) {
 /// Happy path: challenge a Pending item. Locks stake + fee, item → Disputed,
 /// dispute created on Accord.
 #[test]
-#[ignore = "LiteSVM: Accord inits the dispute PDA from the data-carrying filer (CanonList PDA); LiteSVM rent-exempts writable accounts → Anchor init takes system::transfer, which rejects a data-carrying `from`. Validate via Surfpool e2e."]
 fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -446,7 +444,6 @@ fn challenge_item_happy_locks_stake_fee_and_creates_dispute() {
 
 /// Revert: item already Disputed.
 #[test]
-#[ignore = "LiteSVM: same data-carrying filer rent-payer limitation as the happy path; first challenge must succeed to test the revert."]
 fn challenge_item_reverts_if_already_disputed() {
     let mut env = setup();
     let submitter = Keypair::new();
@@ -485,9 +482,8 @@ fn challenge_item_reverts_on_insufficient_funds() {
 /// `dispute_count = 1` (one dispute already filed), then challenge a
 /// never-challenged item (`challenge_count = 0`):
 ///   - the old per-item derivation (`nonce = 0`) must fail the PDA check;
-///   - the list-scoped derivation (`nonce = 1`) must pass it (the tx still
-///     fails at the known LiteSVM rent-payer CPI limitation — a later,
-///     different failure).
+///   - the list-scoped derivation (`nonce = 1`) must be accepted (the full
+///     CPI succeeds in LiteSVM).
 #[test]
 fn challenge_item_nonces_disputes_per_list_not_per_item() {
     let mut env = setup();
@@ -511,14 +507,11 @@ fn challenge_item_nonces_disputes_per_list_not_per_item() {
         r.logs()
     );
 
-    // List-scoped derivation → passes the check (fails later, elsewhere).
+    // List-scoped derivation → the whole challenge CPI succeeds (the old
+    // LiteSVM rent-payer limitation no longer applies).
     let per_list = dispute_pda(&env.list, 1);
     let r = do_challenge(&mut env, &challenger, &curated, [0xEF; 32], per_list);
-    assert!(!r.is_success());
-    assert!(
-        !r.has_log("DisputePdaMismatch"),
-        "list-scoped nonce must pass the PDA check"
-    );
-    // Atomic revert: nothing stuck.
-    assert_eq!(read_item(&env, &curated).state, ItemState::Pending);
+    r.assert_success();
+    // The nonce regression's teeth: the per-list derivation is the accepted one.
+    assert_eq!(read_item(&env, &curated).state, ItemState::Disputed);
 }

@@ -2,8 +2,12 @@
  * challengeFlow.ts — orchestrates the Canon challenge evidence + transaction flow.
  *
  * The challenger authors an evidence manifest (title + description markdown +
- * entries), hashes it → evidence_hash, publishes the encrypted bundle to the
- * evidence daemon, and builds the `challengeItem` instruction.
+ * entries), hashes it → evidence_hash, and builds the `challengeItem`
+ * instruction. ORDER MATTERS: the daemon's ingest reads the dispute on-chain
+ * and 404s ("dispute not found") when it does not exist yet — so the caller
+ * must send the challengeItem transaction (which CPIs create_dispute) BEFORE
+ * {@link publishChallengeEvidence}. Mirrors the Accord app's CreateDispute
+ * spine: tx first, then publish, with a publish-only retry on POST failure.
  *
  * Canon dispute options are FIXED (`[keep, remove]`) — the challenger does NOT
  * author option labels; the description field IS the claim (milestone §1(c),
@@ -53,24 +57,22 @@ export interface ChallengeConfig {
 }
 
 /**
- * Build the evidence manifest, hash it, publish to the daemon, and return the
- * evidence_hash + manifest bytes.
+ * Build the evidence manifest + hash + dispute PDA. Fully offline — no
+ * network, no daemon. The bytes returned here are the commitment: the
+ * evidence_hash goes on-chain via `challengeItem`, and the SAME manifest must
+ * be published afterwards (a rebuild would mint a new salt + filedAt and
+ * break the hash).
  *
- * Step 1: derive the dispute PDA (`["dispute", list, nonce]` where
- *         `nonce = list.dispute_count` — the filer-nonce, unique across all
- *         disputes the list files; NOT the per-item challengeCount).
- * Step 2: build the manifest with Canon-fixed options [keep, remove].
- * Step 3: hash the manifest → evidence_hash (the on-chain commitment).
- * Step 4: publish the encrypted manifest to the evidence daemon.
- *
- * Returns the evidence_hash (32 bytes) for the caller to pass to
- * `challengeItem(accounts, { evidence: evidenceHash }, extras)`.
+ * - dispute PDA: `["dispute", list, nonce]` where `nonce =
+ *   list.dispute_count` — the filer-nonce, unique across all disputes the
+ * list files; NOT the per-item challengeCount.
+ * - options: Canon-fixed [keep, remove].
+ * - evidence_hash = sha256(manifest).
  */
-export async function prepareChallengeEvidence(
+export async function buildChallengeEvidence(
   input: ChallengeEvidenceInput,
   ctx: ChallengeOnChainContext,
-  config: ChallengeConfig,
-): Promise<{ evidenceHash: Uint8Array; manifest: Uint8Array }> {
+): Promise<{ evidenceHash: Uint8Array; manifest: Uint8Array; dispute: Address }> {
   const nonce = ctx.listData.disputeCount;
 
   // Derive the dispute PDA before building the manifest (it's in the YAML ctx).
@@ -102,17 +104,29 @@ export async function prepareChallengeEvidence(
   );
 
   const evidenceHash = await sha256(manifest);
+  return { evidenceHash, manifest, dispute: disputeAddress };
+}
 
-  // Publish the encrypted manifest to the evidence daemon.
+/**
+ * POST the encrypted manifest to the evidence daemon. Fetch-only — never
+ * touches the chain — so retrying with the SAME manifest after a POST failure
+ * is safe (and idempotent server-side). MUST be called only after the
+ * `challengeItem` transaction landed: the daemon reads the dispute on-chain
+ * and rejects evidence for a non-existent dispute with 404.
+ */
+export async function publishChallengeEvidence(
+  manifest: Uint8Array,
+  dispute: Address,
+  ctx: ChallengeOnChainContext,
+  config: ChallengeConfig,
+): Promise<void> {
   await publishEvidence({
     endpoint: config.evidenceDaemonUrl,
-    subaccord,
-    dispute: disputeAddress,
+    subaccord: ctx.listData.subaccord,
+    dispute,
     manifest,
     operatorPub: ctx.operatorPub,
   });
-
-  return { evidenceHash, manifest };
 }
 
 /**
@@ -132,7 +146,7 @@ export async function buildChallengeInstruction(
     filer: ctx.list,
     nonce,
   });
-  const [pauseState] = await findAccordStatePda();
+  const [accordState] = await findAccordStatePda();
 
   // Derive ATAs (Kit-native, no web3.js v1).
   const challengerTokenAccount = await ataAddress(challenger.address, feeMint);
@@ -151,7 +165,7 @@ export async function buildChallengeInstruction(
 
   const extras: ChallengeItemExtras = {
     accordDispute: disputeAddress,
-    accordState: pauseState,
+    accordState,
     accordFeeVault,
     accordProgram: ACCORD_PROGRAM_ID,
   };

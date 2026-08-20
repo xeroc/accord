@@ -1,0 +1,18 @@
+/*
+ * @useaccord/ui — opt-in global base rules for React apps.
+ *
+ * SPA root sizing (html/body/#root { height: 100% }) is intentionally NOT
+ * here: Landing has no #root and different page-level behavior. Apps keep
+ * that rule locally.
+ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

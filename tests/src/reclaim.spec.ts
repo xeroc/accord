@@ -361,6 +361,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
       env.accord.adapter,
       {
         filer: env.payer.address,
+        rentPayer: env.payer.address,
         subaccord,
         accordState,
         feeToken: mint,
@@ -529,6 +530,46 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
     expect(final!.freeHead).toBe(UINT32_MAX); // all slots re-occupied
     expect(final!.stakerCount).toBe(4); // all new jurors active
     expect(new Uint8Array(final!.rootHash)).toEqual(tree2.rootHash);
+  });
+
+  it("re-stakes the drained juror into their own reclaimed head slot (SR2-M2)", async () => {
+    if (!env.up) return;
+
+    // Main subaccord state here: B@0, C@1, D@2 active (test 3), nextIndex 3.
+    // Stake juror E at index 3, drain, reclaim → E's slot is the head.
+    const e = await stakeJuror();
+    expect(e.index).toBe(3);
+    await drainJuror(e);
+
+    const reclaimPath = await tree.pathFor(e.index);
+    await env.sendIx(
+      reclaimSlot(
+        env.accord.adapter,
+        env.programId,
+        { subaccord, jurorStake: e.jurorStake },
+        reclaimPath,
+      ),
+    );
+    await tree.blankLeaf(e.index);
+    expect((await readSubaccord())!.freeHead).toBe(e.index);
+
+    // E re-stakes with the SAME PDA: the slot is the free-list head, so
+    // `stake` splices it off in place and re-opens the leaf — the pre-SR2-M2
+    // top-up path would fail InvalidMerklePath here forever.
+    const path = await tree.pathFor(e.index);
+    await env.sendIx(
+      stake(e.facade.adapter, env.programId, e.accounts, STAKE_AMT, path),
+    );
+    await tree.updateLeaf(e.index, e.juror.address, STAKE_AMT);
+
+    const sub = await readSubaccord();
+    expect(sub!.freeHead).toBe(UINT32_MAX);
+    expect(sub!.nextIndex).toBe(4); // no fresh allocation
+    const eStake = await readStake(e.jurorStake);
+    expect(eStake!.treeIndex).toBe(e.index); // own slot re-claimed
+    expect(eStake!.staked).toBe(STAKE_AMT);
+    expect(eStake!.nextFree).toBe(UINT32_MAX); // no longer a free-list node
+    expect(new Uint8Array(sub!.rootHash)).toEqual(tree.rootHash);
   });
 });
 

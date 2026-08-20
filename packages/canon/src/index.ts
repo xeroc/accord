@@ -44,7 +44,11 @@ export {
   fetchMaybeCanonList,
   fetchMaybeCanonItem,
 } from "./generated/accounts/index.js";
-export { findAllCanonLists, findAllCanonItems, type QueryConfig } from "./queries.js";
+export {
+  findAllCanonLists,
+  findAllCanonItems,
+  type QueryConfig,
+} from "./queries.js";
 export {
   createList,
   submitItem,
@@ -53,8 +57,12 @@ export {
   settleItem,
   requestWithdrawal,
   advanceWithdrawal,
+  closeItem,
+  MAX_LIST_TREE_DEPTH,
+  defaultCourtParams,
   type CreateListAccounts,
   type CreateListArgs,
+  type CourtParams,
   type SubmitItemAccounts,
   type AdvancePendingAccounts,
   type ChallengeItemAccounts,
@@ -62,6 +70,7 @@ export {
   type SettleItemAccounts,
   type RequestWithdrawalAccounts,
   type AdvanceWithdrawalAccounts,
+  type CloseItemAccounts,
 } from "./methods.js";
 
 // Account codecs + decoders — exposed for advanced/test use (decode raw

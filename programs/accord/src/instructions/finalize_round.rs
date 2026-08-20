@@ -74,31 +74,32 @@ impl<'info> FinalizeRound<'info> {
                         counts[v as usize] += 1;
                     }
                 }
-                let n = dispute.num_options as usize;
-                let max = counts[..n].iter().copied().max().unwrap_or(0);
-                // Literal tie — the argmax is not unique (quorum met, e.g.
-                // 1-1 on a 2-of-3 reveal, or 3-3-1 on a full 7-panel): the
-                // round carries no plurality signal. Route through the
-                // ADR-0021 shortfall seam (RedrawEligible) rather than
-                // `max_by_key`'s last-index pick — a list-position coin
-                // flip the filer orders. Revealers are neither slashed nor
-                // credited (fee_paid funds exactly one authoritative
-                // panel); `redraw` slashes non-revealers and re-keys the
-                // sortition seed via draw_attempt (no new VRF). Odd panels
-                // prevent only two-bloc full-panel splits — N>2 options
-                // and partial reveals still tie.
-                if counts[..n].iter().filter(|&&c| c == max).count() > 1 {
+                let live = &counts[..dispute.num_options as usize];
+                // ADR-0026: a top-count tie (≥2 options sharing the max) is a
+                // NON-DECISIVE round — identical in kind to the ADR-0021
+                // reveal-quorum shortfall. No credits, no result; `redraw`
+                // reconvenes the panel (or the dispute fails on
+                // `max_draw_attempts` exhaustion). Odd panels only prevent
+                // ties for binary full-reveal rounds — ≥3 options (2-2-1)
+                // and non-reveals (2-2 of 5) still deadlock, and the old
+                // `.max_by_key` crowned the highest tied index arbitrarily.
+                // This also covers the degenerate zero-reveal round (all
+                // options tied at 0): redraw instead of a fabricated winner.
+                let max = *live.iter().max().unwrap_or(&0);
+                if live.iter().filter(|&&c| c == max).count() > 1 {
                     dispute.state = DisputeState::RedrawEligible;
                     return Ok(());
                 }
-                (0..n).max_by_key(|&i| counts[i]).unwrap_or(0) as u64
+                live.iter().position(|&c| c == max).unwrap_or(0) as u64
             }
             // Scalar tally (ADR-0025): median of the revealed values. Panels
             // are odd by construction (`(J+1)·2^k − 1`), but non-revealers can
             // leave an even reveal count — then `vs[n/2]` picks the UPPER
             // middle element (n=4 → index 2; deterministic, biased high).
-            // `needed ≥ 1` (the quorum gate above) guarantees at least one
-            // reveal, so `n == 0` is unreachable here.
+            // `n == 0` is impossible on a compliant pool: Median subaccords
+            // are created with `reveal_threshold_bps > 0` (SR2-M-1), so
+            // `needed ≥ 1` and the quorum gate above rejects a zero-reveal
+            // round into RedrawEligible before this tally runs.
             Aggregation::Median => {
                 let mut vs = [0u64; MAX_JURORS];
                 let mut n = 0usize;

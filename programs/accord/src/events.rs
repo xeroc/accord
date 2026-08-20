@@ -204,8 +204,11 @@ pub struct SlotReclaimed {
     pub index: u32,
 }
 
-/// Emitted when a new staker claims a recycled tree slot from the free list
-/// (RECLAIM-LEAF). The freed `JurorStake` is closed (rent → caller).
+/// Emitted when a recycled tree slot leaves the free list (RECLAIM-LEAF):
+/// either a new staker pops a freed slot (the freed `JurorStake` is closed,
+/// rent → caller) or the original drained juror re-claims their own reclaimed
+/// slot as the free-list head (SR2-M-2 — the account stays open and becomes
+/// the juror's active leaf again).
 #[event]
 pub struct SlotAllocated {
     pub subaccord: Pubkey,

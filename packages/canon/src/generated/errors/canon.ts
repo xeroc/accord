@@ -56,8 +56,21 @@ export const CANON_ERROR__INVALID_RULING = 0x1782; // 6018
 export const CANON_ERROR__INVALID_RULES_HASH = 0x1783; // 6019
 /** ChallengePctTooHigh: challenge_pct exceeds MAX_CHALLENGE_PCT_BPS. */
 export const CANON_ERROR__CHALLENGE_PCT_TOO_HIGH = 0x1784; // 6020
+/** InvalidEvidenceOperator: evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence. */
+export const CANON_ERROR__INVALID_EVIDENCE_OPERATOR = 0x1785; // 6021
+/** NotRemoved: Item is not in the Removed state. */
+export const CANON_ERROR__NOT_REMOVED = 0x1786; // 6022
+/** StakeOutstanding: Removed item still holds accumulated_stake (invariant breach). */
+export const CANON_ERROR__STAKE_OUTSTANDING = 0x1787; // 6023
+/** AlphaTooHigh: court.alpha_bps exceeds 10_000 (100%). */
+export const CANON_ERROR__ALPHA_TOO_HIGH = 0x1788; // 6024
+/** WindowTooShort: court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits. */
+export const CANON_ERROR__WINDOW_TOO_SHORT = 0x1789; // 6025
+/** TreeDepthTooDeep: court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget. */
+export const CANON_ERROR__TREE_DEPTH_TOO_DEEP = 0x178a; // 6026
 
 export type CanonError =
+  | typeof CANON_ERROR__ALPHA_TOO_HIGH
   | typeof CANON_ERROR__ALREADY_DISPUTED
   | typeof CANON_ERROR__ARITHMETIC_OVERFLOW
   | typeof CANON_ERROR__CHALLENGE_PCT_TOO_HIGH
@@ -65,6 +78,7 @@ export type CanonError =
   | typeof CANON_ERROR__DISPUTE_NOT_FINAL
   | typeof CANON_ERROR__DISPUTE_PDA_MISMATCH
   | typeof CANON_ERROR__INSUFFICIENT_FUNDS
+  | typeof CANON_ERROR__INVALID_EVIDENCE_OPERATOR
   | typeof CANON_ERROR__INVALID_ITEM_STATE
   | typeof CANON_ERROR__INVALID_RULES_HASH
   | typeof CANON_ERROR__INVALID_RULING
@@ -73,16 +87,21 @@ export type CanonError =
   | typeof CANON_ERROR__NOT_DISPUTED
   | typeof CANON_ERROR__NOT_LISTED
   | typeof CANON_ERROR__NOT_PENDING
+  | typeof CANON_ERROR__NOT_REMOVED
   | typeof CANON_ERROR__NOT_SUBMITTER
   | typeof CANON_ERROR__NOT_WITHDRAW_PENDING
   | typeof CANON_ERROR__OWNER_MISMATCH
+  | typeof CANON_ERROR__STAKE_OUTSTANDING
   | typeof CANON_ERROR__SUBACCORD_MISMATCH
+  | typeof CANON_ERROR__TREE_DEPTH_TOO_DEEP
+  | typeof CANON_ERROR__WINDOW_TOO_SHORT
   | typeof CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN
   | typeof CANON_ERROR__WRONG_ACCORD_PROGRAM;
 
 let canonErrorMessages: Record<CanonError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
   canonErrorMessages = {
+    [CANON_ERROR__ALPHA_TOO_HIGH]: `court.alpha_bps exceeds 10_000 (100%).`,
     [CANON_ERROR__ALREADY_DISPUTED]: `Item is already Disputed.`,
     [CANON_ERROR__ARITHMETIC_OVERFLOW]: `Arithmetic overflow.`,
     [CANON_ERROR__CHALLENGE_PCT_TOO_HIGH]: `challenge_pct exceeds MAX_CHALLENGE_PCT_BPS.`,
@@ -90,6 +109,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [CANON_ERROR__DISPUTE_NOT_FINAL]: `Accord dispute has not reached the Final state.`,
     [CANON_ERROR__DISPUTE_PDA_MISMATCH]: `Dispute PDA does not match the expected derivation.`,
     [CANON_ERROR__INSUFFICIENT_FUNDS]: `Challenger has insufficient funds for challenge_stake + accord_fee.`,
+    [CANON_ERROR__INVALID_EVIDENCE_OPERATOR]: `evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence.`,
     [CANON_ERROR__INVALID_ITEM_STATE]: `Item is not challengeable (must be Pending, Listed, or WithdrawPending).`,
     [CANON_ERROR__INVALID_RULES_HASH]: `rules_hash must not be the zero hash (would collide with absent criteria).`,
     [CANON_ERROR__INVALID_RULING]: `Dispute final_ruling is not a valid Canon option.`,
@@ -98,10 +118,14 @@ if (process.env["NODE_ENV"] !== "production") {
     [CANON_ERROR__NOT_DISPUTED]: `Item is not in the Disputed state.`,
     [CANON_ERROR__NOT_LISTED]: `Item is not in the Listed state.`,
     [CANON_ERROR__NOT_PENDING]: `Item is not in the Pending state.`,
+    [CANON_ERROR__NOT_REMOVED]: `Item is not in the Removed state.`,
     [CANON_ERROR__NOT_SUBMITTER]: `Caller is not the item submitter.`,
     [CANON_ERROR__NOT_WITHDRAW_PENDING]: `Item is not in the WithdrawPending state.`,
     [CANON_ERROR__OWNER_MISMATCH]: `Curated account is not owned by the list's list_program.`,
+    [CANON_ERROR__STAKE_OUTSTANDING]: `Removed item still holds accumulated_stake (invariant breach).`,
     [CANON_ERROR__SUBACCORD_MISMATCH]: `Provided Subaccord does not match the list's backing Subaccord.`,
+    [CANON_ERROR__TREE_DEPTH_TOO_DEEP]: `court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget.`,
+    [CANON_ERROR__WINDOW_TOO_SHORT]: `court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits.`,
     [CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN]: `Withdrawal timelock has not elapsed yet.`,
     [CANON_ERROR__WRONG_ACCORD_PROGRAM]: `Wrong Accord program account.`,
   };

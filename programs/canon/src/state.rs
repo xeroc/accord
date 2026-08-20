@@ -69,6 +69,52 @@ pub struct CreateList<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// Creator-supplied dispute-mechanism profile for the backing Subaccord
+/// (milestone accord-qz7d). Grouped-args pattern mirrors Accord's
+/// `CreateSubaccordParams` (bean accord-sqve) — every field here is
+/// creator-settable and lands verbatim on the Subaccord via the
+/// `create_subaccord` CPI.
+///
+/// Pinned (NOT here, set by the handler): `aggregation = Plurality` (Canon
+/// disputes are binary — keep/remove — so a Median scalar is meaningless),
+/// `shortfall_policy = Redraw` (only variant that exists),
+/// `coherence_tol_bps = 0` (inert under Plurality, ADR-0025), `authority` =
+/// the CanonList PDA (the retuning upgrade path), and the attestation pair
+/// (`Pubkey::default()` — PROG-ATTESTTION is separate scope).
+///
+/// `min_jury_size` and `depth` are immutable on the Subaccord (absent from
+/// Accord's `UpdatePayload`) — set-once at list creation. The canonical
+/// default profile lives in the SDK (`defaultCourtParams()` in
+/// `@useaccord/canon`).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
+pub struct CourtParams {
+    /// Draw eligibility threshold, in `staking_token`.
+    pub min_stake: u64,
+    /// Slash factor in basis points (10% = 1000). Canon guard: <= 10_000.
+    pub alpha_bps: u16,
+    /// Seconds a round spends in review. Canon guard: > 0.
+    pub review_window: u64,
+    /// Seconds jurors get to commit. Canon guard: > 0.
+    pub commit_window: u64,
+    /// Seconds jurors get to reveal. Canon guard: > 0.
+    pub reveal_window: u64,
+    /// Appeal window after a round resolves (Accord floor: >= 1h).
+    pub appeal_window: u64,
+    /// Max appeals per dispute; ladder `(J+1)·2^k − 1` must fit MAX_JURORS.
+    pub max_appeals: u8,
+    /// Round-1 juror panel size; must be odd. Immutable on the Subaccord.
+    pub min_jury_size: u32,
+    /// Per-juror fee, in `fee_mint`.
+    pub fee_per_juror: u64,
+    /// Reveal-quorum fraction in bps (ADR-0021).
+    pub reveal_threshold_bps: u16,
+    /// Max same-size redraws per round (ADR-0021).
+    pub max_draw_attempts: u8,
+    /// MST accumulator depth. Canon guard: <= `MAX_LIST_TREE_DEPTH` (8).
+    /// Immutable on the Subaccord.
+    pub depth: u8,
+}
+
 /// Lifecycle of a curated item (SPEC §Item state machine).
 ///
 /// v1 ships five variants. `WithdrawPending` (a submitter-initiated delist) is
@@ -93,8 +139,9 @@ pub enum ItemState {
 }
 
 /// A permissionless, token-agnostic curated list. `create_list` CPIs Accord
-/// `create_subaccord` for the 1:1 backing court and initialises this account
-/// with the Canon canonical defaults.
+/// `create_subaccord` for the 1:1 backing court (creator-supplied
+/// `CourtParams`) and initialises this account with the list-level economics
+/// passed as instruction args.
 ///
 /// Seeds: `["canon", creator, rules_hash]`. `rules_hash` + `list_program` are
 /// immutable (frozen at creation); the dispute-mechanism economics live on the

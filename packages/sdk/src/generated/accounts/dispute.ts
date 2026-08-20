@@ -144,6 +144,18 @@ export type Dispute = {
   filedAt: bigint;
   bump: number;
   /**
+   * Seats landed for the CURRENT round so far (H-2, security review
+   * 2026-08-19). Maintained by `draw_seat` (mirrors `round.juror_count`
+   * after each seat) and reset to 0 by `appeal` (fresh round) and the
+   * `redraw` clear. It is the on-chain PROOF that a partially drawn Round
+   * account exists while the dispute still sits in `Created` — without it,
+   * `cancel_dispute`'s pre-draw branch cannot tell "no seats drawn" (no
+   * Round PDA exists, nothing to pass) from "cranker omitted the accounts"
+   * (jurors strand), so it cannot safely require them. Carved out of the
+   * former padding: account size and all prior field offsets unchanged.
+   */
+  drawnSeats: number;
+  /**
    * Reserved tail space for future field extensions. Zeroed at `init`;
    * must stay the last field — new fields are carved out of it without
    * moving existing offsets or resizing the account.
@@ -227,6 +239,18 @@ export type DisputeArgs = {
   filedAt: number | bigint;
   bump: number;
   /**
+   * Seats landed for the CURRENT round so far (H-2, security review
+   * 2026-08-19). Maintained by `draw_seat` (mirrors `round.juror_count`
+   * after each seat) and reset to 0 by `appeal` (fresh round) and the
+   * `redraw` clear. It is the on-chain PROOF that a partially drawn Round
+   * account exists while the dispute still sits in `Created` — without it,
+   * `cancel_dispute`'s pre-draw branch cannot tell "no seats drawn" (no
+   * Round PDA exists, nothing to pass) from "cranker omitted the accounts"
+   * (jurors strand), so it cannot safely require them. Carved out of the
+   * former padding: account size and all prior field offsets unchanged.
+   */
+  drawnSeats: number;
+  /**
    * Reserved tail space for future field extensions. Zeroed at `init`;
    * must stay the last field — new fields are carved out of it without
    * moving existing offsets or resizing the account.
@@ -262,7 +286,8 @@ export function getDisputeEncoder(): Encoder<DisputeArgs> {
       ["frozenTotalStake", getU64Encoder()],
       ["filedAt", getI64Encoder()],
       ["bump", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
+      ["drawnSeats", getU32Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 60)],
     ]),
     (value) => ({ ...value, discriminator: DISPUTE_DISCRIMINATOR }),
   );
@@ -295,7 +320,8 @@ export function getDisputeDecoder(): Decoder<Dispute> {
     ["frozenTotalStake", getU64Decoder()],
     ["filedAt", getI64Decoder()],
     ["bump", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
+    ["drawnSeats", getU32Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 60)],
   ]);
 }
 

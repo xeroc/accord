@@ -1,0 +1,125 @@
+/* @useaccord/landing — global styles.
+ *
+ * Tokens, fonts (IBM Plex via Fontsource), and the shadcn semantic theme now
+ * come from @useaccord/ui (styles.css) — do NOT import fontsource here.
+ * This file only owns the Tailwind engine wiring and landing-local rules. */
+
+@import "tailwindcss";
+@import "@useaccord/ui/styles.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Utilities living in packages/ui source must be discovered by the app build. */
+@source "../../../packages/ui/src";
+
+/* Landing-owned base (from the old global.css @layer base). The page scrolls
+   naturally — no html/body/#root height rule. */
+:root {
+  color-scheme: dark;
+}
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background-color: var(--color-ink);
+  color: var(--color-body);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+::selection {
+  background: var(--accord-amber);
+  color: var(--accord-ink);
+}
+:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+/* Belt-and-suspenders: kill owned motion for reduced-motion users.
+   The prologue JS also short-circuits; this catches everything else. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* (The old static .grid-texture was replaced by the kit Backdrop —
+   the living version of the same idea — in the Hero.) */
+
+/* Hero prologue one-shot → settle (from Hero.astro <style is:global>).
+   No-flash: <html class="js"> boots the prologue state before paint (inline
+   script in index.html head); .is-settled resolves to the hero. */
+[data-prologue-stage] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 500ms var(--ease-expo);
+  pointer-events: none;
+}
+[data-hero-main] {
+  transition: opacity 600ms var(--ease-expo);
+}
+.js [data-prologue-stage] {
+  opacity: 1;
+}
+.js [data-hero-main] {
+  opacity: 0;
+}
+.js.is-settled [data-prologue-stage] {
+  opacity: 0;
+}
+.js.is-settled [data-hero-main] {
+  opacity: 1;
+}
+[data-beat] {
+  position: absolute;
+  inset: 0;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 520ms var(--ease-expo),
+    transform 520ms var(--ease-expo);
+}
+[data-beat][data-active] {
+  opacity: 1;
+  transform: none;
+}
+[data-replay] {
+  position: absolute;
+  bottom: 1.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .js [data-prologue-stage] {
+    opacity: 0 !important;
+  }
+  .js [data-hero-main] {
+    opacity: 1 !important;
+  }
+  [data-beat] {
+    transition: none;
+    transform: none;
+  }
+}

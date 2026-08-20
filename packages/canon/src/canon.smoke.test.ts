@@ -15,6 +15,7 @@ import {
   findCanonListPda,
   findCanonItemPda,
   CANON_PROGRAM_ID,
+  defaultCourtParams,
 } from "../dist/index.js";
 
 const DUMMY = "11111111111111111111111111111111";
@@ -49,6 +50,24 @@ test("findCanonListPda: deterministic, seeds [b'canon', creator, rules_hash]", a
     rulesHash,
   });
   assert.notEqual(addr, addr4);
+});
+
+test("defaultCourtParams: canonical profile (ADR canon/0002)", () => {
+  const p = defaultCourtParams();
+  assert.equal(p.minStake, 1_000n);
+  assert.equal(p.alphaBps, 1_000);
+  assert.equal(p.reviewWindow, 604_800n);
+  assert.equal(p.commitWindow, 172_800n);
+  assert.equal(p.revealWindow, 172_800n);
+  assert.equal(p.appealWindow, 259_200n);
+  assert.equal(p.maxAppeals, 3);
+  assert.equal(p.minJurySize, 3);
+  assert.equal(p.feePerJuror, 10n);
+  assert.equal(p.revealThresholdBps, 6_666);
+  assert.equal(p.maxDrawAttempts, 3);
+  assert.equal(p.depth, 8);
+  // fresh object per call — callers may spread-and-override safely
+  assert.notEqual(defaultCourtParams(), p);
 });
 
 test("findCanonItemPda: deterministic, seeds [b'canon-item', list, account]", async () => {

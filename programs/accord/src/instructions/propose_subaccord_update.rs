@@ -42,6 +42,8 @@ impl<'info> ProposeSubaccordUpdate<'info> {
         // H-1: reject invalid updates at propose time so the authority gets
         // immediate feedback instead of wasting the 48h timelock period.
         validate_update_payload(&payload)?;
+        // SR2-L-1: cross-field bounds that need the live pool (appeal ladder).
+        validate_update_cross_field(&ctx.accounts.subaccord, &payload)?;
 
         let slot = Clock::get()?.slot;
         let execute_after = slot

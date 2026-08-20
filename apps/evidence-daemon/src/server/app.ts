@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ServerDeps } from "./handlers.js";
 import { evidenceRoutes } from "./routes.js";
+import { domainRoutes } from "./domain.js";
 
 export interface AppOptions {
   /** Per-peer-IP requests/min. 0 disables the limiter. Default: 0. */
@@ -115,6 +116,7 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
   });
 
   app.route("/", evidenceRoutes(deps));
+  app.route("/", domainRoutes(deps));
 
   // /healthz — bean accord-u1pu implements the real S3+RPC probe; the server
   // boots with this stub so main() serves immediately.

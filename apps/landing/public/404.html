@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a0e14" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>404 — Not found | Accord</title>
+    <meta name="description" content="This page doesn't exist. The primitive does." />
+    <style>
+      /* Self-contained fallback (no built CSS on a static 404) — the 404.astro
+         markup with the handful of tokens it actually uses inlined. */
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #0a0e14;
+        color: #c9d1d9;
+        font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .c { min-height: 60svh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 1.5rem; text-align: center; }
+      .code { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.08em; color: #f0a830; }
+      .h1 { margin: 1rem 0 0; font-size: clamp(2.25rem, 6vw, 3rem); font-weight: 600; letter-spacing: -0.02em; color: #f0f6fc; }
+      .body { margin: 1rem 0 0; max-width: 28rem; color: #7d8590; }
+      .link { margin-top: 2rem; font-size: 0.875rem; color: #f0a830; text-underline-offset: 4px; }
+      .link:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <section class="c">
+      <p class="code">404</p>
+      <h1 class="h1">Not found.</h1>
+      <p class="body">This page doesn't exist. The primitive does.</p>
+      <a class="link" href="/">← Back to useaccord.xyz</a>
+    </section>
+  </body>
+</html>

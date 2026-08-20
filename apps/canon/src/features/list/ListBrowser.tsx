@@ -26,8 +26,7 @@ import {
   findAllCanonLists,
   fetchCanonListRaw,
 } from "@/shared/rpc";
-import { Copyable } from "@/components/Copyable";
-import { Skeleton } from "@/components/Skeleton";
+import { Copyable, Skeleton } from "@useaccord/ui";
 import { formatHash, formatTokenAmount } from "@/shared/format";
 
 const PAGE_SIZE = 12;
@@ -119,9 +118,11 @@ function FeaturedSlot({
       <section className="mb-6">
         <p className="mb-3 font-mono text-xs uppercase tracking-[0.06em] text-amber">Featured.</p>
         <div className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col" aria-busy>
-          <Skeleton style={{ width: "40%", height: "1rem" }} />
+          <Skeleton className="rounded-sm bg-border" style={{ width: "40%", height: "1rem" }} aria-hidden />
           <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "70%", height: "0.85rem", marginTop: "0.75rem" }}
+            aria-hidden
           />
         </div>
       </section>
@@ -211,7 +212,7 @@ function Pagination({
 }) {
   return (
     <>
-      <p className="mt-4 text-center text-[0.82rem] text-muted-foreground">
+      <p className="mt-4 text-center text-xs text-muted-foreground">
         Showing {shown} of {total}.
       </p>
       {hasMore && (
@@ -232,12 +233,16 @@ function ListGridSkeleton() {
     <ul className="grid list-none gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading lists">
       {Array.from({ length: 6 }).map((_, i) => (
         <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
-          <Skeleton style={{ width: "60%", height: "1rem" }} />
+          <Skeleton className="rounded-sm bg-border" style={{ width: "60%", height: "1rem" }} aria-hidden />
           <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
+            aria-hidden
           />
           <Skeleton
+            className="rounded-sm bg-border"
             style={{ width: "50%", height: "0.85rem", marginTop: "0.4rem" }}
+            aria-hidden
           />
         </li>
       ))}

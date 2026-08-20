@@ -17,7 +17,7 @@ import bs58 from "bs58";
 
 import type { Accord } from "@useaccord/sdk";
 
-import { readDispute, readRound, readSubaccord } from "./chain/reader";
+import { readDispute, readRound, readSubaccord, readSynodCase } from "./chain/reader";
 import { deliverToJuror, operatorDecrypt, sha256 } from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "./keys/keyring";
 import { deliver } from "./pipeline/deliver";
@@ -29,13 +29,29 @@ import {
   type IngestStore,
 } from "./pipeline/ingest";
 import { NoOpWatermark } from "./pipeline/watermark";
+import { synodIngest as synodIngestPipeline } from "./pipeline/synod-ingest";
+import {
+  synodManifest as synodManifestPipeline,
+  type BundleDecryptor,
+} from "./pipeline/synod-manifest";
+import { getDomain, putDomain } from "./pipeline/domain";
 import {
   base64ToBytes,
   bytesToBase64,
   type EvidenceStore,
   type EvidenceBundle as StoreBundle,
 } from "./store/store";
-import type { DeliverHandler, IngestHandler, ManifestHandler, ServerDeps } from "./server/handlers";
+import type { DomainStore } from "./store/domain";
+import type {
+  DeliverHandler,
+  DomainGetHandler,
+  DomainPutHandler,
+  IngestHandler,
+  ManifestHandler,
+  ServerDeps,
+  SynodIngestHandler,
+  SynodManifestHandler,
+} from "./server/handlers";
 import type { KeyringPublicKeys } from "./server/public-keys";
 
 // ---------------------------------------------------------------------------
@@ -92,6 +108,10 @@ function fromStoreBundle(b: StoreBundle): EvidenceBundle {
 export interface WireDeps {
   /** Ciphertext store (v1: S3Store). Address-typed. */
   readonly store: EvidenceStore;
+  /** Public domain-doc CAS (ADR-0027) — same backend selection as `store`. */
+  readonly domainStore: DomainStore;
+  /** PUT /domains/{hash} body cap in bytes (default 1 MiB, config.ts). */
+  readonly maxDomainBytes: number;
   /** Read-only RPC client (the chain reader functions close over this). */
   readonly accord: Accord;
   /** Per-Subaccord operator keyring (v1: EnvKeyring). */
@@ -142,13 +162,24 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     if (v === null) return null;
     return {
       subaccord: b58ToBytes(v.subaccord),
+      filer: b58ToBytes(v.filer),
       evidence_hashes: v.evidenceHashes.map((h) => new Uint8Array(h)),
       current_round: v.currentRound,
+    };
+  };
+  const readSynodCaseBytes = async (f: Uint8Array) => {
+    const v = await readSynodCase(accord, bytesToAddr(f));
+    if (v === null) return null;
+    return {
+      subaccord: b58ToBytes(v.subaccord),
+      party_count: v.partyCount,
+      dispute: b58ToBytes(v.dispute),
     };
   };
   const ingestChain: IngestChainReader = { readDispute: readDisputeIngest };
   const deliverChain = {
     readDispute: readDisputeDeliver,
+    readSynodCase: readSynodCaseBytes,
     async readSubaccord(sa: Uint8Array) {
       const v = await readSubaccord(accord, bytesToAddr(sa));
       if (v === null) return null;
@@ -241,6 +272,117 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     return { ok: false, status: out.status, error: out.reason };
   };
 
+  // Synod ingest (accord-1viq): pre-dispute grouping by SynodCase PDA + party
+  // slot. Reuses the ingest store adapter — the key triple is (subaccord,
+  // case, slot) and the pipeline overwrites all keying fields from the
+  // on-chain case, so the constructed bundle's placeholders are never trusted.
+  const synodIngestHandler: SynodIngestHandler = async (caseStr, party, body) => {
+    let c: Uint8Array;
+    try {
+      c = b58ToBytes(caseStr);
+    } catch {
+      return { ok: false, status: 400, error: "invalid base58 address" };
+    }
+    const parsed = parseIngestBody(body);
+    if (parsed === null) {
+      return { ok: false, status: 400, error: "malformed evidence bundle" };
+    }
+    const bundle: EvidenceBundle = {
+      subaccord: new Uint8Array(32), // placeholder — chain-derived by the pipeline
+      dispute: c,
+      round: party,
+      ct: parsed.ct,
+      claimant_ephem_pub: parsed.claimant_ephem_pub,
+      wrapped: parsed.wrapped,
+      plaintext_hash: parsed.plaintext_hash,
+      ingested_at: 0,
+    };
+    const out = await synodIngestPipeline(c, party, bundle, {
+      store: ingestStore,
+      chain: { readSynodCase: readSynodCaseBytes },
+    });
+    if (out.status === 201) {
+      return {
+        ok: true,
+        status: 201,
+        location: `/evidence/synod/${caseStr}/${party}`,
+      };
+    }
+    return { ok: false, status: out.status, error: out.reason };
+  };
+
+  // Synod assembled manifest (accord-lry5): GET /evidence/synod/:case. The
+  // decrypt closure memoizes the operator secret (resolved via the stored
+  // bundle's chain-derived subaccord); an unknown operator or a tampered
+  // bundle yields null — that slot keeps its entry with `manifest: null`.
+  const synodManifestHandler: SynodManifestHandler = async (caseStr) => {
+    let c: Uint8Array;
+    try {
+      c = b58ToBytes(caseStr);
+    } catch {
+      return { ok: false, status: 404, error: "invalid address" };
+    }
+    let operatorSecret: Uint8Array | null | undefined; // undefined = not yet resolved
+    const decrypt: BundleDecryptor = async (b) => {
+      if (operatorSecret === undefined) {
+        const sub = await readSubaccord(accord, bytesToAddr(b.subaccord));
+        const kp =
+          sub === null ? null : await keyring.forOperator(b58ToBytes(sub.evidenceOperator));
+        operatorSecret = kp === null ? null : kp.secretKey;
+      }
+      const sk = operatorSecret;
+      if (sk === null || sk === undefined) return null;
+      try {
+        return await operatorDecrypt(
+          {
+            ct: b.ct,
+            claimant_ephem_pub: b.claimant_ephem_pub,
+            wrapped: b.wrapped,
+            plaintext_hash: b.plaintext_hash,
+          },
+          sk,
+        );
+      } catch {
+        return null; // tampered/undecryptable — the slot reports manifest: null
+      }
+    };
+    const out = await synodManifestPipeline(c, {
+      store: ingestStore,
+      chain: {
+        readSynodCase: readSynodCaseBytes,
+        async readDisputeRoot(d) {
+          const v = await readDispute(accord, bytesToAddr(d));
+          if (v === null) return null;
+          const h = v.evidenceHashes[0];
+          return h ? new Uint8Array(h) : null;
+        },
+      },
+      sha256,
+      decrypt,
+    });
+    if (out.status === 200) {
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          party_count: out.body.party_count,
+          verified: out.body.verified,
+          parties: out.body.parties.map((p) =>
+            p.present
+              ? {
+                  party: p.party,
+                  present: true,
+                  plaintext_hash: bytesToBase64(p.plaintext_hash),
+                  ingested_at: p.ingested_at,
+                  manifest: p.manifest,
+                }
+              : { party: p.party, present: false },
+          ),
+        },
+      };
+    }
+    return { ok: false, status: out.status, error: out.reason };
+  };
   const deliverHandler: DeliverHandler = async (disputeStr, jurorStr) => {
     let d: Uint8Array;
     let j: Uint8Array;
@@ -334,8 +476,36 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     return { ok: true, status: 200, body };
   };
 
+  // --- Domain CAS handlers (ADR-0027 as amended): outcome → handler result ---
+  // PUT anchor gate: resolve the ?subaccord anchor's on-chain domain_ref via
+  // the chain reader (create-first — the pipeline polls for commitment lag).
+  const domainPutHandler: DomainPutHandler = async (hash, bytes, contentType, subaccordStr) => {
+    const out = await putDomain(hash, bytes, contentType, subaccordStr, {
+      store: deps.domainStore,
+      maxBytes: deps.maxDomainBytes,
+      sha256,
+      readAnchor: async (sa) => {
+        const v = await readSubaccord(accord, address(sa));
+        return v === null ? null : new Uint8Array(v.domainRef);
+      },
+    });
+    return out.status === 200 || out.status === 201
+      ? { ok: true, status: out.status }
+      : { ok: false, status: out.status, error: out.reason };
+  };
+  const domainGetHandler: DomainGetHandler = async (hash) => {
+    const out = await getDomain(hash, { store: deps.domainStore });
+    return out.status === 200
+      ? { ok: true, status: 200, bytes: out.bytes, contentType: out.contentType }
+      : { ok: false, status: out.status, error: out.reason };
+  };
+
   return {
     ingest: ingestHandler,
+    domainPut: domainPutHandler,
+    domainGet: domainGetHandler,
+    synodIngest: synodIngestHandler,
+    synodManifest: synodManifestHandler,
     deliver: deliverHandler,
     manifest: manifestHandler,
     publicKeys: deps.publicKeys,

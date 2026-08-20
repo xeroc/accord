@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_DEVNET_RPC: string;
   readonly VITE_MAINNET_RPC: string;
-  readonly VITE_EVIDENCE_DAEMON_URL: string;
+  readonly VITE_EVIDENCE_OPERATOR: string;
 }
 
 interface ImportMeta {

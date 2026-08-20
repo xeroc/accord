@@ -1,59 +1,77 @@
 /**
- * Create list form (accord-fx93, happy path a).
+ * Create list form (accord-fx93, happy path a; rules-doc authoring per the
+ * ADR-0027 amendment — accord-nh14).
  *
  * Controlled form at `/lists/new`. Builds a `CreateListArgs` + `CreateListAccounts`
- * from plain string inputs (decision #8: no zod, no react-hook-form), calls
- * `createList` from the canon SDK, signs + sends via `sendInstruction`, and
- * redirects to `/lists/:address` on success.
+ * from plain string inputs (decision #8: no zod, no react-hook-form — logic in
+ * the node-tested `createForm.ts`), calls `createList` from the canon SDK
+ * (which CPIs the backing Subaccord with `domain_ref := rules_hash`), signs +
+ * sends via `sendInstruction`.
+ *
+ * Rules identity (create-first, ADR-0027 amendment): default = author the
+ * rules doc in an editable DomainDocCard (template prefill), hashed
+ * client-side (`rules_hash = sha256(doc)`); advanced = paste an existing
+ * doc's hash with a live GET+verify preview. After the create-tx CONFIRMS,
+ * the doc is published via SDK `putDomainDoc(…, { subaccord })` against the
+ * backing Subaccord (the daemon anchor-verifies `domain_ref == hash`).
+ * Publish failure ≠ creation failure: toast + the card flips to missing
+ * state with retry (re-publish the doc, or upload the original file —
+ * client-checked `sha256(bytes) == rules_hash`). Success redirects to
+ * `/lists/:address`.
  *
  * The creator IS the connected wallet — the SDK adapter wires `creator: signer`.
- * The backing Subaccord is created via CPI inside the on-chain `create_list`
- * handler (Canon canonical defaults; the user does not configure Accord params).
+ * Canon canonical defaults fill the backing Subaccord; the user does not
+ * configure Accord params except the evidence operator, which is
+ * deployment-configured — see EVIDENCE_OPERATOR below.
  *
  * Signer seam: `useSigner()` resolves the connected wallet via ConnectorKit.
  * When no wallet is connected the form renders a connect-wallet gate.
  *
  * see SPEC §Instructions #1, milestone §1(a).
  */
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { Address } from "@solana/kit";
-import { createList } from "@useaccord/canon";
+import { createList, MAX_LIST_TREE_DEPTH } from "@useaccord/canon";
+import { putDomainDoc, verifyDomainDoc } from "@useaccord/sdk";
+import { Button, DomainDocCard } from "@useaccord/ui";
+import { toast } from "sonner";
 
 import { useClusterRpc } from "@/shared/rpc";
 import { sendInstruction } from "@/shared/transaction";
 import { describeError } from "@/shared/errors";
 import { useSigner } from "@/shared/wallet";
+import {
+  Field as UiField,
+  FieldControl,
+  FieldDescription,
+  FieldLabel,
+  Input,
+} from "@useaccord/ui";
+import { useDomainDoc } from "@/features/domain/DomainDocPanel";
+import {
+  DEFAULTS,
+  DEFAULT_CHALLENGE_PCT_BPS,
+  DEFAULT_SUBMIT_DEPOSIT,
+  MAX_CHALLENGE_PCT_BPS,
+  buildArgs,
+  buildCourt,
+  docBytes,
+  nextPublish,
+  requireAddress,
+  rulesHashHex,
+  type CourtFormState,
+  type FormState,
+  type PublishState,
+} from "./createForm";
 
-// --- Canon canonical defaults (mirror programs/canon/constants.rs) ---
+const EVIDENCE_DAEMON_URL =
+  import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
 
-const DEFAULT_SUBMIT_DEPOSIT = "500";
-const DEFAULT_CHALLENGE_PCT_BPS = "5000";
-const FIVE_DAYS_SECS = (5 * 24 * 60 * 60).toString();
-const MAX_CHALLENGE_PCT_BPS = 10_000;
-
-/** String-valued form state — every input is text; parsed on submit. */
-interface FormState {
-  stakeMint: string;
-  feeMint: string;
-  rulesHash: string;
-  listProgram: string;
-  submitDeposit: string;
-  challengePct: string;
-  listingWindow: string;
-  withdrawalTimelock: string;
-}
-
-const DEFAULTS: FormState = {
-  stakeMint: "",
-  feeMint: "",
-  rulesHash: "",
-  listProgram: "",
-  submitDeposit: DEFAULT_SUBMIT_DEPOSIT,
-  challengePct: DEFAULT_CHALLENGE_PCT_BPS,
-  listingWindow: FIVE_DAYS_SECS,
-  withdrawalTimelock: FIVE_DAYS_SECS,
-};
+/** Deployment-configured evidence operator — the evidence daemon's Ed25519
+ * pubkey (must match a key in the daemon's keyring). Static per .env, not a
+ * form field — same pattern as VITE_EVIDENCE_DAEMON_URL. The program rejects
+ * the default pubkey: a zero operator key can never be an ECIES target. */
+const EVIDENCE_OPERATOR = import.meta.env.VITE_EVIDENCE_OPERATOR_ADDRESS ?? "";
 
 export function CreateListPage() {
   const { signer } = useSigner();
@@ -62,9 +80,27 @@ export function CreateListPage() {
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // post-confirm publish (author mode): anchor subaccord + frozen rules hash
+  const [publish, setPublish] = useState<PublishState>({ status: "idle" });
+  const [listAddr, setListAddr] = useState<string | null>(null);
+  const [subaccordAddr, setSubaccordAddr] = useState<string | null>(null);
+  const [onChainRef, setOnChainRef] = useState<string | null>(null);
+
+  const refHex = rulesHashHex(form);
+  const signingOrPublishing = sending || publish.status === "pending";
+  // live GET+verify preview for a pasted hash (reference mode, 64-hex only)
+  const previewHash =
+    form.domainMode === "reference" && /^[0-9a-fA-F]{64}$/.test(refHex)
+      ? refHex.toLowerCase()
+      : undefined;
+  const preview = useDomainDoc(previewHash);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function setCourt<K extends keyof CourtFormState>(key: K, value: string) {
+    setForm((f) => ({ ...f, court: { ...f.court, [key]: value } }));
   }
 
   async function onSubmit(e: FormEvent) {
@@ -77,27 +113,19 @@ export function CreateListPage() {
     }
     setSending(true);
     try {
-      const listProgram = form.listProgram.trim() || SYSTEM_PROGRAM_ID;
-      const { instruction, list } = await createList(
+      const args = buildArgs(form);
+      const { instruction, list, subaccord } = await createList(
         {
           creator: signer,
           stakeMint: requireAddress(form.stakeMint, "Stake mint"),
           feeMint: requireAddress(form.feeMint, "Fee mint"),
         },
         {
-          listProgram: listProgram as Address,
-          rulesHash: parseHex32(form.rulesHash, "Rules hash"),
-          submitDeposit: parseBigint(form.submitDeposit, "Submit deposit"),
-          challengePct: parseBoundedInt(
-            form.challengePct,
-            "Challenge pct",
-            0,
-            MAX_CHALLENGE_PCT_BPS,
-          ),
-          listingWindow: parseBigint(form.listingWindow, "Listing window"),
-          withdrawalTimelock: parseBigint(
-            form.withdrawalTimelock,
-            "Withdrawal timelock",
+          ...args,
+          court: buildCourt(form), // parsed + client-guarded; program stays authority
+          evidenceOperator: requireAddress(
+            EVIDENCE_OPERATOR,
+            "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS in .env)",
           ),
         },
       );
@@ -107,6 +135,31 @@ export function CreateListPage() {
         signer,
         instruction,
       );
+      // tx CONFIRMED — create-first: publish the doc behind the rules hash,
+      // anchored on the backing Subaccord (domain_ref := rules_hash)
+      if (form.domainMode === "author") {
+        setListAddr(list);
+        setSubaccordAddr(subaccord);
+        setOnChainRef(refHex);
+        setPublish((s) => nextPublish(s, { type: "tx-confirmed" }));
+        try {
+          await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+            subaccord,
+          });
+          setPublish((s) => nextPublish(s, { type: "published" }));
+          toast.success("List created. Rules document published.");
+        } catch (err) {
+          const msg = describeError(err);
+          setPublish((s) => nextPublish(s, { type: "failed", error: msg }));
+          toast.error(
+            `List created, but the rules document was not published — ${msg}`,
+          );
+          setSending(false);
+          return; // stay: card flips to missing state with retry
+        }
+      } else {
+        toast.success("List created.");
+      }
       navigate(`/lists/${list}`);
     } catch (e) {
       setError(describeError(e));
@@ -114,14 +167,60 @@ export function CreateListPage() {
     }
   }
 
+  /** Retry the daemon publish after a failure (bytes re-checked client-side:
+   * sha256(doc) must equal the frozen on-chain rules hash). */
+  async function onRetryPublish() {
+    if (!listAddr || !subaccordAddr || !onChainRef) return;
+    if (!verifyDomainDoc(docBytes(form), onChainRef)) {
+      toast.error(
+        "The document no longer hashes to the on-chain rules hash — upload the original file.",
+      );
+      return;
+    }
+    setPublish((s) => nextPublish(s, { type: "retry" }));
+    try {
+      await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+        subaccord: subaccordAddr,
+      });
+      setPublish((s) => nextPublish(s, { type: "published" }));
+      toast.success("Rules document published.");
+      navigate(`/lists/${listAddr}`);
+    } catch (err) {
+      const msg = describeError(err);
+      setPublish((s) => nextPublish(s, { type: "failed", error: msg }));
+      toast.error(`Publish failed — ${msg}`);
+    }
+  }
+
+  /** Retry via file upload: client-check sha256(bytes) == on-chain rules
+   * hash before accepting the bytes back into the editor. */
+  async function onUploadFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ref = onChainRef ?? refHex;
+    if (!verifyDomainDoc(bytes, ref)) {
+      toast.error(
+        "File does not hash to the on-chain rules hash — not the original document.",
+      );
+      return;
+    }
+    set("rulesDoc", new TextDecoder().decode(bytes));
+    toast.success("Original document loaded.");
+  }
+
   return (
     <main className="mx-auto max-w-[1100px] px-6 py-10">
       <header className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em]">Create a list.</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Create a list.</h1>
         <p className="mb-4 text-muted-foreground">
           Curated registry with an Accord court backing every dispute.
         </p>
-        <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link
+          to="/"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← Back to lists.
         </Link>
       </header>
@@ -136,7 +235,90 @@ export function CreateListPage() {
       ) : (
         <form className="flex flex-col gap-7" onSubmit={onSubmit}>
           <fieldset className="grid gap-4 rounded-lg border border-border p-5">
-            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Mints.</legend>
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Rules document.
+            </legend>
+            {publish.status === "failed" ? (
+              <DomainDocCard
+                doc={{ status: "missing" }}
+                hash={onChainRef ?? refHex}
+                retry={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void onRetryPublish()}
+                    >
+                      Retry publish
+                    </Button>
+                    <label className="inline-flex cursor-pointer items-center rounded-md border border-input px-3 py-1.5 text-sm transition-colors hover:bg-accent">
+                      Upload original file
+                      <input
+                        type="file"
+                        accept=".md,.markdown,.txt,text/markdown,text/plain"
+                        className="hidden"
+                        onChange={(e) => void onUploadFile(e)}
+                      />
+                    </label>
+                  </div>
+                }
+              />
+            ) : form.domainMode === "author" ? (
+              <>
+                <DomainDocCard
+                  editable={!signingOrPublishing}
+                  value={form.rulesDoc}
+                  onValueChange={(v) => set("rulesDoc", v)}
+                  hash={refHex}
+                />
+                <button
+                  type="button"
+                  className="w-fit text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                  onClick={() => set("domainMode", "reference")}
+                >
+                  Reference an existing doc by hash instead →
+                </button>
+              </>
+            ) : (
+              <>
+                <Field
+                  label="Existing doc hash"
+                  help="64-hex sha256 of an already-authored rules document. Preview below verifies the bytes behind the hash."
+                  placeholder="64 hex chars"
+                  value={form.rulesHash}
+                  onChange={(v) => set("rulesHash", v.trim())}
+                  required
+                  mono
+                />
+                {previewHash ? (
+                  <DomainDocCard doc={preview.doc} hash={previewHash} />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Paste a 64-hex hash to preview + verify the referenced
+                    document.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="w-fit text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                  onClick={() => set("domainMode", "author")}
+                >
+                  ← Author a new document
+                </button>
+              </>
+            )}
+            <p className="text-xs text-muted-foreground">
+              The document is the list's public listing criteria — its sha256
+              becomes the immutable on-chain rules hash (and the backing court's
+              domain ref). After creation confirms, the document is published to
+              the domain registry (ADR-0027).
+            </p>
+          </fieldset>
+
+          <fieldset className="grid gap-4 rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Mints.
+            </legend>
             <Field
               label="Stake mint"
               help="SPL mint — juror collateral in the backing Subaccord."
@@ -158,16 +340,9 @@ export function CreateListPage() {
           </fieldset>
 
           <fieldset className="grid gap-4 rounded-lg border border-border p-5">
-            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Identity.</legend>
-            <Field
-              label="Rules hash"
-              help="32-byte hex (64 chars). Public listing criteria. Cannot be zero."
-              placeholder="a1b2… (64 hex chars)"
-              value={form.rulesHash}
-              onChange={(v) => set("rulesHash", v.trim())}
-              required
-              mono
-            />
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Identity.
+            </legend>
             <Field
               label="List program"
               help="Program whose accounts this list curates. Empty = ownership check disabled."
@@ -179,7 +354,9 @@ export function CreateListPage() {
           </fieldset>
 
           <fieldset className="grid gap-4 rounded-lg border border-border p-5">
-            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Economics.</legend>
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Economics.
+            </legend>
             <Field
               label="Submit deposit"
               help={`Atomic units in fee mint. Base skin-in-the-game. Default ${DEFAULT_SUBMIT_DEPOSIT}.`}
@@ -199,7 +376,9 @@ export function CreateListPage() {
           </fieldset>
 
           <fieldset className="grid gap-4 rounded-lg border border-border p-5">
-            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">Windows (seconds).</legend>
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Windows (seconds).
+            </legend>
             <Field
               label="Listing window"
               help="Watcher time to catch a scam before auto-list. Default 5 days (432000)."
@@ -218,71 +397,57 @@ export function CreateListPage() {
             />
           </fieldset>
 
+          <fieldset className="grid gap-4 rounded-lg border border-border p-5">
+            <legend className="px-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-amber">
+              Court.
+            </legend>
+            <p className="text-xs text-muted-foreground">
+              Profile of the backing Accord court that adjudicates item
+              disputes — lands verbatim on the Subaccord (ADR canon/0002).
+              Canonical defaults pre-filled; tune what you care about.
+            </p>
+            {ESSENTIAL_COURT.map((f) => (
+              <CourtField key={f.k} {...f} court={form.court} onChange={setCourt} />
+            ))}
+            <details className="group rounded-lg border border-border open:pb-1">
+              <summary className="cursor-pointer select-none px-5 py-3 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:text-foreground">
+                Advanced court parameters.
+                <span className="ml-1.5 font-normal normal-case tracking-normal">
+                  ({ADVANCED_COURT.length} fields, defaults pre-filled)
+                </span>
+              </summary>
+              <div className="grid gap-4 border-t border-border p-5">
+                {ADVANCED_COURT.map((f) => (
+                  <CourtField key={f.k} {...f} court={form.court} onChange={setCourt} />
+                ))}
+              </div>
+            </details>
+          </fieldset>
+
           {error && (
-            <p className="text-sm text-destructive font-mono text-sm text-foreground" role="alert">
+            <p
+              className="text-sm text-destructive font-mono text-sm text-foreground"
+              role="alert"
+            >
               {error}
             </p>
           )}
 
-          <button type="submit" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" disabled={sending}>
-            {sending ? "Signing…" : "Create list."}
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+            disabled={signingOrPublishing}
+          >
+            {publish.status === "pending"
+              ? "Publishing rules document…"
+              : sending
+                ? "Signing…"
+                : "Create list."}
           </button>
         </form>
       )}
     </main>
   );
-}
-
-// --- constants --------------------------------------------------------------
-
-/** `Pubkey::default()` — System Program; the sentinel that disables the
- * ownership check (curate arbitrary base58 data). */
-const SYSTEM_PROGRAM_ID =
-  "11111111111111111111111111111111" as const;
-
-// --- parse + validate -------------------------------------------------------
-
-/** Parse a 64-char hex string into `Uint8Array(32)`. 0x prefix optional. */
-function parseHex32(input: string, label: string): Uint8Array {
-  const hex = input.startsWith("0x") ? input.slice(2) : input;
-  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
-    throw new Error(
-      `${label}: expected 64 hex chars (32 bytes), got "${input}".`,
-    );
-  }
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
-}
-
-function parseBigint(input: string, label: string): bigint {
-  const v = input.trim();
-  if (!/^\d+$/.test(v))
-    throw new Error(`${label}: expected a non-negative integer.`);
-  return BigInt(v);
-}
-
-function parseBoundedInt(
-  input: string,
-  label: string,
-  min: number,
-  max: number,
-): number {
-  const v = input.trim();
-  if (!/^-?\d+$/.test(v)) throw new Error(`${label}: expected an integer.`);
-  const n = Number(v);
-  if (!Number.isSafeInteger(n) || n < min || n > max) {
-    throw new Error(`${label}: expected ${min}–${max}, got ${n}.`);
-  }
-  return n;
-}
-
-function requireAddress(input: string, label: string): Address {
-  const v = input.trim();
-  if (!v) throw new Error(`${label}: address required.`);
-  return v as Address;
 }
 
 // --- field primitive --------------------------------------------------------
@@ -305,19 +470,118 @@ function Field({
   mono?: boolean;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-foreground">
+    <UiField>
+      <FieldLabel>
         {label}.{required ? " *" : ""}
-      </span>
-      <input
-        className={`rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none ${mono ? "font-mono text-sm text-foreground" : ""}`}
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-      />
-      {help && <span className="text-xs text-muted-foreground">{help}</span>}
-    </label>
+      </FieldLabel>
+      <FieldControl>
+        <Input
+          className={mono ? "font-mono" : undefined}
+          type="text"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+        />
+      </FieldControl>
+      {help && <FieldDescription>{help}</FieldDescription>}
+    </UiField>
   );
 }
+
+// --- court fields -------------------------------------------------------------
+
+/** One court form input, bound to a `CourtFormState` key. */
+function CourtField({
+  k,
+  label,
+  help,
+  court,
+  onChange,
+}: {
+  k: keyof CourtFormState;
+  label: string;
+  help: string;
+  court: CourtFormState;
+  onChange: <K extends keyof CourtFormState>(key: K, value: string) => void;
+}) {
+  return (
+    <Field
+      label={label}
+      help={help}
+      value={court[k]}
+      onChange={(v) => onChange(k, v)}
+      required
+      mono
+    />
+  );
+}
+
+/** Essential court fields — the economics a list creator actively decides.
+ * Everything else hides collapsed behind "Advanced". */
+const ESSENTIAL_COURT: { k: keyof CourtFormState; label: string; help: string }[] = [
+  {
+    k: "minStake",
+    label: "Min stake",
+    help: "Juror draw-eligibility threshold, atomic units in the stake mint. Default 1000.",
+  },
+  {
+    k: "minJurySize",
+    label: "Min jury size",
+    help: "Round-1 juror panel; must be odd. Irreversible — set once at creation. Default 3.",
+  },
+  {
+    k: "maxAppeals",
+    label: "Max appeals",
+    help: "Appeal rounds; each appeal grows the panel to (J+1)·2^k − 1, capped at 31. Default 3.",
+  },
+  {
+    k: "feePerJuror",
+    label: "Fee per juror",
+    help: "Per-juror dispute cost, atomic units in the fee mint. Default 10.",
+  },
+];
+
+/** Advanced court fields — sane defaults; collapsed unless deliberately tuned. */
+const ADVANCED_COURT: { k: keyof CourtFormState; label: string; help: string }[] = [
+  {
+    k: "alphaBps",
+    label: "Alpha (bps)",
+    help: "Slash factor for incoherent jurors (1000 = 10%). Max 10_000. Default 1000.",
+  },
+  {
+    k: "reviewWindow",
+    label: "Review window (seconds)",
+    help: "Evidence review before the draw. Must be > 0. Default 604800 (7d).",
+  },
+  {
+    k: "commitWindow",
+    label: "Commit window (seconds)",
+    help: "Time jurors get to commit votes. Must be > 0. Default 172800 (2d).",
+  },
+  {
+    k: "revealWindow",
+    label: "Reveal window (seconds)",
+    help: "Time jurors get to reveal commitments. Must be > 0. Default 172800 (2d).",
+  },
+  {
+    k: "appealWindow",
+    label: "Appeal window (seconds)",
+    help: "Window to appeal a ruling; floor 3600 (1h). Default 259200 (3d).",
+  },
+  {
+    k: "revealThresholdBps",
+    label: "Reveal threshold (bps)",
+    help: "Quorum making a round authoritative (6666 ≈ 2/3). Max 10_000.",
+  },
+  {
+    k: "maxDrawAttempts",
+    label: "Max draw attempts",
+    help: "Same-size redraws per round before the dispute fails. 1–10. Default 3.",
+  },
+  {
+    k: "depth",
+    label: "Tree depth",
+    help: `Juror-seat accumulator depth (2^depth seats). Irreversible — set once. Max ${MAX_LIST_TREE_DEPTH} (tx-size bound). Default 8.`,
+  },
+];

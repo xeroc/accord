@@ -7,11 +7,9 @@
  * a raw UTF-8 string. This component parses the known `accord-evidence/v1`
  * format with a targeted parser — no YAML dependency needed.
  */
-import { Copyable } from "../../../components/Copyable";
+import { Copyable, MarkdownText } from "@useaccord/ui";
 import { useManifest } from "./useManifest";
 import { parseManifest, type ParsedManifest } from "@useaccord/sdk/evidence";
-import { MarkdownDescription } from "./MarkdownDescription";
-
 
 export function EvidenceManifest({
   subaccord,
@@ -41,7 +39,8 @@ export function EvidenceManifest({
           Evidence manifest
         </h2>
         <p className="text-sm text-slash">
-          Failed to load: {error instanceof Error ? error.message : "unknown error"}
+          Failed to load:{" "}
+          {error instanceof Error ? error.message : "unknown error"}
         </p>
       </div>
     );
@@ -63,25 +62,29 @@ export function EvidenceManifest({
   // The daemon returns a YAML string (JSON.parse fails on YAML) or a parsed
   // object if the plaintext was JSON. Handle both.
   const manifest: ParsedManifest =
-    typeof data === "string" ? parseManifest(data) : parseManifest(JSON.stringify(data));
+    typeof data === "string"
+      ? parseManifest(data)
+      : parseManifest(JSON.stringify(data));
 
   return (
     <div className="space-y-4 rounded-lg border border-border-subtle bg-raised p-4">
       {/* Title */}
       <div>
-        <h2 className="font-mono text-xs text-text-secondary">Evidence manifest</h2>
+        <h2 className="font-mono text-xs text-text-secondary">
+          Evidence manifest
+        </h2>
         <p className="mt-1 text-lg font-semibold">{manifest.title}</p>
       </div>
 
       {/* Description (sanitized markdown — display-only, never alters committed bytes) */}
-      {manifest.description && (
-        <MarkdownDescription source={manifest.description} />
-      )}
+      {manifest.description && <MarkdownText source={manifest.description} />}
 
       {/* Metadata grid */}
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <span className="font-mono text-xs text-text-secondary">Filed at</span>
+          <span className="font-mono text-xs text-text-secondary">
+            Filed at
+          </span>
           <p className="mt-0.5">
             {manifest.filedAt === "—"
               ? "—"

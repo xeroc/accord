@@ -252,6 +252,10 @@ impl<'info> DrawSeat<'info> {
             .checked_add(1)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
+        // H-2: mirror the seat count onto the Dispute so `cancel_dispute`'s
+        // pre-draw branch can prove a partial Round exists (see state.rs).
+        dispute.drawn_seats = round.juror_count;
+
         // When the panel fills, open the round windows and transition to Drawn.
         // Ugly 6: windows are filing-time (frozen on the dispute).
         if round.juror_count >= panel {

@@ -13,16 +13,14 @@
 //
 // Asserts: dispute created with filer = list; final ruling = keep; settle folds
 // the forfeited challenge_stake into accumulated_stake (progressive protection)
-// and flips the item to Listed. Run via `anchor test` (auto-starts Surfpool).
-import {
-  commit,
-  DEFAULT_APPEAL_WINDOW_SECS,
-  finalizeDispute,
-  finalizeRound,
-  reveal,
-} from "@useaccord/sdk";
+// and flips the item to Listed. The second test drives a terminal `Failed`
+// dispute (fabricated via the synod-harness cheat): both parties are refunded
+// their own stake and — C-1 — neither payout can be redirected to an account
+// the caller controls. Run via `anchor test` (auto-starts Surfpool).
+import { commit, finalizeDispute, finalizeRound, reveal } from "@useaccord/sdk";
 import {
   createList,
+  defaultCourtParams,
   challengeItem,
   settleItem,
   submitItem,
@@ -31,6 +29,7 @@ import {
   getCanonItemDecoder,
   getCanonListDecoder,
   ItemState,
+  type CourtParams,
 } from "@useaccord/canon";
 import { getProgramDerivedAddress, getAddressEncoder, type Address } from "@solana/kit";
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
@@ -53,6 +52,7 @@ import {
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
+import { forceDisputeOutcome, tokenAmount } from "./synod-harness.js";
 
 /** DisputeState numeric tags (state.rs): Created=0 … RoundResolved=5, Final=6. */
 const ROUND_RESOLVED = 5;
@@ -65,21 +65,33 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     env = await createTestEnv();
   }, 60_000);
 
-  // BLOCKER (canon × accord integration): this test drives create_list → stake
-  // → submit → challenge_item (CPI create_dispute) → … → settle. The first three
-  // steps pass on Surfpool; `challenge_item`'s `create_dispute` CPI FAILS because
-  // Accord's `CreateDispute` uses the filer (`payer = filer`) as the rent-payer
-  // for the dispute `init`, and canon's filer is the data-carrying CanonList PDA.
-  // Anchor's init emits `system::transfer` (or allocate+assign+transfer), which
-  // the system program rejects with "Transfer: `from` must not carry data" /
-  // "Invalid program argument" for a data-carrying payer. Accord's own e2e uses a
-  // data-free wallet filer, so it never hit this. FIX: Accord's `create_dispute`
-  // must decouple the rent-payer from the filer (add a data-free `fee_payer`
-  // account; keep `filer` as the signing/fee-source). Until then this is skipped.
-  it.skip("files a dispute via Canon's CPI and settles a keep ruling", async () => {
+  // Un-skipped: Accord's create_dispute gained a data-free `rent_payer`
+  // signer (dispute-init + fee_vault rent), so the CanonList PDA can file via
+  // CPI — the challenger wallet pays rent. The old blocker (system program
+  // rejects rent transfers from the data-carrying PDA filer) is gone; the
+  // same fix unblocked Synod's file_dispute e2e.
+  //
+  it("files a dispute via Canon's CPI and settles a keep ruling", async () => {
     if (!env.up) return; // offline CI lane
 
-    // --- create_list: CPIs Accord create_subaccord (depth 20, fee_per_juror 10) ---
+    // --- create_list: CPIs Accord create_subaccord with an explicit court
+    // profile — depth 8, fee_per_juror 10, custom (short) windows so the
+    // warp-split below drives the list's own terms, not the canonical
+    // 7d/2d/2d/3d defaults. ---
+    const court: CourtParams = {
+      minStake: 1_000n,
+      alphaBps: 1_000,
+      reviewWindow: 3_600n, // 1h (canonical 7d)
+      commitWindow: 600n, // 10m (canonical 2d)
+      revealWindow: 600n, // 10m (canonical 2d)
+      appealWindow: 3_600n, // 1h — Accord's MIN_APPEAL_WINDOW_SECS floor (canonical 3d)
+      maxAppeals: 3,
+      minJurySize: 3,
+      feePerJuror: 10n,
+      revealThresholdBps: 6_666,
+      maxDrawAttempts: 3,
+      depth: 8,
+    };
     const accordState = await ensurePause(env);
     const { mint } = await createMint(env, 6);
     const rulesHash = crypto.getRandomValues(new Uint8Array(32));
@@ -89,18 +101,22 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       { creator: env.payer, stakeMint: mint, feeMint: mint },
       {
         listProgram,
+        // Any non-default key satisfies create_list's InvalidEvidenceOperator
+        // guard; the e2e doesn't exercise ECIES (see tests/e2e.test.ts).
+        evidenceOperator: env.payer.address,
         rulesHash,
         submitDeposit: 500n,
         challengePct: 5_000, // 50%
         listingWindow: 5n * 24n * 60n * 60n,
         withdrawalTimelock: 5n * 24n * 60n * 60n,
+        court,
       },
       CANON_PROGRAM_ID,
     );
     await env.sendIx(createIx);
 
-    // --- stake 3 jurors into the canon-created Subaccord (depth 8) ---
-    const core = await armCanonJurors(env, accordState, subaccord, mint, 8);
+    // --- stake 3 jurors into the canon-created Subaccord (court.depth) ---
+    const core = await armCanonJurors(env, accordState, subaccord, mint, court.depth);
     const fx: DrawFixture = { env, up: true, ...core };
 
     // --- submit_item: lock the 500 deposit (accumulated_stake = 500) ---
@@ -247,7 +263,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
 
     // --- no appeal: warp the appeal window, then finalize_dispute ---
     round = await readRound(env, roundPda);
-    await warpTo(env, round!.revealEnd + DEFAULT_APPEAL_WINDOW_SECS);
+    await warpTo(env, round!.revealEnd + court.appealWindow);
     await env.sendIx(
       finalizeDispute(
         env.accord.adapter,
@@ -257,7 +273,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       ),
     );
     expect(await readDisputeState(env, dispute)).toBe(FINAL);
-    expect(await readDisputeFinalRuling(env, dispute)).toBe(0); // keep
+    expect(await readDisputeFinalRuling(env, dispute)).toBe(0n); // keep
 
     // --- settle_item: keep ⇒ progressive protection (challenge_stake → accumulated) ---
     const before = (await fetchDecoded(env, item, getCanonItemDecoder()))!;
@@ -341,4 +357,130 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     const listAfter = (await fetchDecoded(env, list, getCanonListDecoder()))!;
     expect(listAfter.disputeCount).toBe(2n); // filer-nonce advanced twice
   }, 600_000);
+  // Self-contained Failed-dispute flow: no jurors needed — the terminal
+  // state is fabricated (cancel_dispute / redraw exhaustion are Accord's own
+  // e2e coverage; canon only reads the state).
+  it("a Failed dispute settles by refunding both parties, payouts pinned to the recorded payees", async () => {
+    if (!env.up) return; // offline CI lane
+
+    const accordState = await ensurePause(env);
+    const { mint } = await createMint(env, 6);
+    const rulesHash = crypto.getRandomValues(new Uint8Array(32));
+    const listProgram = "11111111111111111111111111111111" as Address; // sentinel ⇒ ownership off
+
+    const court = defaultCourtParams();
+    const { instruction: createIx, list, subaccord } = await createList(
+      { creator: env.payer, stakeMint: mint, feeMint: mint },
+      {
+        listProgram,
+        evidenceOperator: env.payer.address,
+        rulesHash,
+        submitDeposit: 500n,
+        challengePct: 5_000, // 50%
+        listingWindow: 5n * 24n * 60n * 60n,
+        withdrawalTimelock: 5n * 24n * 60n * 60n,
+        court,
+      },
+      CANON_PROGRAM_ID,
+    );
+    await env.sendIx(createIx);
+
+    // Accord's create_dispute intake gate requires staker_count >=
+    // min_jury_size (3). No draw/vote happens in this test — the dispute is
+    // forced terminal-Failed below — so arming the court is enough.
+    await armCanonJurors(env, accordState, subaccord, mint, court.depth);
+
+    const canonVault = await ataOf(mint, list);
+    const submitter = await fundSigner(env);
+    await setTokenBalance(env, submitter.address, mint, 10_000n);
+    const submitterAta = await ataOf(mint, submitter.address);
+    const curatedAccount = await fundSigner(env);
+    const { instruction: submitIx, item } = await submitItem(
+      {
+        submitter,
+        list,
+        account: curatedAccount.address,
+        feeMint: mint,
+        submitterTokenAccount: submitterAta,
+        vault: canonVault,
+      },
+      { evidence: crypto.getRandomValues(new Uint8Array(32)), deposit: 500n },
+      CANON_PROGRAM_ID,
+    );
+    await env.sendIx(submitIx);
+
+    const challenger = await fundSigner(env);
+    await setTokenBalance(env, challenger.address, mint, 100_000n);
+    const challengerAta = await ataOf(mint, challenger.address);
+    const [dispute] = await getProgramDerivedAddress({
+      programAddress: ACCORD_PROGRAM_ID,
+      seeds: [
+        new TextEncoder().encode("dispute"),
+        getAddressEncoder().encode(list),
+        new Uint8Array(8), // nonce 0, little-endian
+      ],
+    });
+    const accordFeeVault = await ataOf(mint, subaccord);
+    await env.sendIx(
+      challengeItem(
+        {
+          challenger,
+          list,
+          item,
+          subaccord,
+          feeMint: mint,
+          challengerTokenAccount: challengerAta,
+          vault: canonVault,
+        },
+        { evidence: crypto.getRandomValues(new Uint8Array(32)) },
+        {
+          accordDispute: dispute,
+          accordState: accordState,
+          accordFeeVault,
+          accordProgram: ACCORD_PROGRAM_ID,
+        },
+        CANON_PROGRAM_ID,
+      ),
+    );
+    expect(await readDisputeState(env, dispute)).toBe(0); // Created
+
+    // --- force the terminal Failed state (liveness escape) ---
+    await forceDisputeOutcome(env, dispute, { state: "Failed" });
+
+    // --- C-1: the crank caller must not be able to redirect either refund ---
+    await setTokenBalance(env, env.payer.address, mint, 1_000n);
+    const attackerAta = await ataOf(mint, env.payer.address);
+    const trySettle = (challengerTa: Address, submitterTa: Address) =>
+      env.sendIx(
+        settleItem(
+          {
+            caller: env.payer,
+            list,
+            item,
+            dispute,
+            feeMint: mint,
+            vault: canonVault,
+            challengerTokenAccount: challengerTa,
+            submitterTokenAccount: submitterTa,
+          },
+          CANON_PROGRAM_ID,
+        ),
+      );
+    await expect(trySettle(attackerAta, submitterAta)).rejects.toThrow();
+    await expect(trySettle(challengerAta, attackerAta)).rejects.toThrow();
+
+    // --- correct settle: no ruling, both parties whole, item Removed ---
+    const subBefore = await tokenAmount(env, submitterAta);
+    const challBefore = await tokenAmount(env, challengerAta);
+    await trySettle(challengerAta, submitterAta);
+
+    const after = (await fetchDecoded(env, item, getCanonItemDecoder()))!;
+    expect(after.state).toBe(ItemState.Removed);
+    expect(after.accumulatedStake).toBe(0n);
+    expect(after.activeDispute).toBe("11111111111111111111111111111111");
+    // deposit (500) back to the submitter; challenge_stake (250) back to the
+    // challenger; the accord fee stays with Accord (not canon's refund).
+    expect(await tokenAmount(env, submitterAta)).toBe(subBefore + 500n);
+    expect(await tokenAmount(env, challengerAta)).toBe(challBefore + 250n);
+  }, 300_000);
 });

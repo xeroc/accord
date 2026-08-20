@@ -15,7 +15,7 @@ design record. The docs site links out to them as references.
 Each program owns an independent, sequentially-numbered ADR series:
 
 - **[Accord](accord/index.md)** — the arbitration program (Schelling-point court
-  on Solana). ADRs `accord/0001`–`accord/0025`.
+  on Solana). ADRs `accord/0001`–`accord/0027`.
 - **[Canon](canon/index.md)** — the curated-list registry Arbitrable. Starts
   at `canon/0001`.
 - **[Synod](synod/index.md)** — the N-party dispute-escrow Arbitrable.

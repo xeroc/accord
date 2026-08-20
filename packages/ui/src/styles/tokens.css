@@ -1,0 +1,35 @@
+/*
+ * @useaccord/ui — canonical design tokens.
+ *
+ * Raw, framework-free values only: safe to import in any context (React SPA,
+ * Astro, plain CSS). No Tailwind directives, no font asset imports, no base
+ * rules — those live in theme.css / base.css / styles.css.
+ *
+ * Palette: brand/DESIGN.md — ink-dominant, amber identity accent, two
+ * restricted state colors (confirm green, slash red).
+ */
+:root {
+  /* Color */
+  --accord-ink: #0a0e14; /* primary surface (cold near-black) */
+  --accord-raised: #11161d; /* cards, code blocks, popovers */
+  --accord-border: #1f2630; /* hairlines, dividers */
+  --accord-amber: #f0a830; /* Verdict Amber — identity accent / primary */
+  --accord-confirm: #3fb950; /* state: success / finalized */
+  --accord-slash: #f85149; /* state: destructive / slash */
+  --accord-muted: #7d8590; /* secondary text */
+  --accord-text-secondary: #8b949e; /* secondary text (feature-view name) */
+  --accord-text-primary: #e6edf3; /* primary text (feature-view name) */
+  --accord-body: #c9d1d9; /* body text on dark */
+  --accord-nearwhite: #f0f6fc; /* headlines / foreground on dark */
+  --accord-paper: #f6f7f8; /* rare light surface */
+
+  /* Type */
+  --accord-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --accord-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Motion — exponential ease-out (terminal feel). brand/DESIGN.md §08. */
+  --accord-ease-expo: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Radius */
+  --accord-radius: 0.5rem;
+}

@@ -1,5 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Collapsible as CollapsiblePrimitive } from "radix-ui";
+import { ChevronRightIcon } from "lucide-react";
+import {
+  Button,
+  Field,
+  FieldControl,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  Input,
+  Label,
+  Textarea,
+} from "@useaccord/ui";
 import {
   Accord,
   INITIAL_NUM_JURORS,
@@ -29,9 +42,12 @@ import {
   type EvidenceEditorOutput,
   type ManifestCtx,
 } from "./evidence";
-import { sha256 } from "@useaccord/sdk/evidence";
-
-type Mode = "format" | "manual";
+import {
+  sha256,
+  parseManifest,
+  buildManifest,
+  generateSalt,
+} from "@useaccord/sdk/evidence";
 
 function isValidHex32(s: string): boolean {
   return /^[0-9a-fA-F]{64}$/.test(s);
@@ -61,16 +77,18 @@ export function CreateDispute() {
     searchParams.get("subaccord") || "",
   );
   const [nonce, setNonce] = useState(randomNonce());
-  const [mode, setMode] = useState<Mode>("format");
+  const [advanced, setAdvanced] = useState(false);
 
-  // Manual-mode state (status quo preserved).
-  const [evidenceHash, setEvidenceHash] = useState("0".repeat(64));
+  // Manual manifest (advanced): paste a pre-authored manifest.yaml + its
+  // option hashes instead of using the editor. The pasted bytes are hashed,
+  // encrypted, and published exactly as authored.
+  const [manual, setManual] = useState(false);
+  const [manifestText, setManifestText] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
 
-  // Format-mode state.
-  const [formatOutput, setFormatOutput] = useState<EvidenceEditorOutput | null>(
-    null,
-  );
+  // Manifest state (the default flow).
+  const [manifestOutput, setManifestOutput] =
+    useState<EvidenceEditorOutput | null>(null);
 
   // Publish-failure recovery state.
   const [publishFail, setPublishFail] = useState<{
@@ -111,6 +129,40 @@ export function CreateDispute() {
     };
   }, [signer, nonce]);
 
+  // Manifest → option-hash sync (manual flow): derive
+  // sha256(option_salt ‖ label_i) from the pasted manifest and fill any hash
+  // input the filer hasn't hand-edited. Hashes are one-way — the manifest is
+  // the source of truth; editing a hash by hand opts that slot out of sync.
+  const derivedHashes = useRef<string[]>([]);
+  useEffect(() => {
+    if (!manual) return;
+    const parsed = parseManifest(manifestText);
+    const labels = parsed.options
+      .filter((o) => o.label.trim())
+      .map((o) => o.label)
+      .slice(0, MAX_OPTIONS);
+    if (!isValidHex32(parsed.optionSalt) || labels.length === 0) return;
+    let cancelled = false;
+    deriveOptionHashes(hexToBytes32(parsed.optionSalt), labels)
+      .then((hashes) => {
+        if (cancelled) return;
+        const hex = hashes.map((h) =>
+          Array.from(h, (b) => b.toString(16).padStart(2, "0")).join(""),
+        );
+        const prevDerived = derivedHashes.current;
+        derivedHashes.current = hex;
+        setOptions((prev) =>
+          hex.map((h, i) => (!prev[i] || prev[i] === prevDerived[i] ? h : prev[i])),
+        );
+      })
+      .catch(() => {
+        /* derivation failed — leave hash inputs as-is */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [manual, manifestText]);
+
   const { data: subaccord } = useSubaccord(
     subaccordAddr.length > 32 ? subaccordAddr : undefined,
   );
@@ -126,16 +178,49 @@ export function CreateDispute() {
     signer?.address,
     feeToken,
   );
+  // Underfunded only when the balance is known and below the fee.
+  const insufficient =
+    !balanceLoading &&
+    balance !== undefined &&
+    fee !== null &&
+    balance < fee;
   const sufficient = balance !== undefined && fee !== null && balance >= fee;
+
+  /** Prefill the manual textarea with a valid `accord-evidence/v1` skeleton
+   * built from the live ctx (real filer/subaccord/dispute, fresh salt). */
+  function insertTemplate() {
+    if (!manifestCtx) return;
+    setManifestText(
+      new TextDecoder().decode(
+        buildManifest(
+          {
+            salt: generateSalt(),
+            title: "Dispute title",
+            labels: ["Option 0", "Option 1"],
+            entries: [{ path: "https://example.com/evidence" }],
+          },
+          manifestCtx,
+        ),
+      ),
+    );
+  }
+
   const validOptions = options.filter(isValidHex32);
+
+  const feeLabel =
+    fee === null
+      ? "—"
+      : decimals !== undefined
+        ? `${formatBigInt(fee, decimals)} ${symbol}`
+        : `${fee.toString()} (raw)`;
 
   const canSubmit = (() => {
     if (submitting || !subaccord || !sufficient) return false;
-    if (mode === "format") return formatOutput !== null && disputePda !== null;
+    if (!manual) return manifestOutput !== null && disputePda !== null;
     return (
       validOptions.length >= MIN_OPTIONS &&
       validOptions.length <= MAX_OPTIONS &&
-      isValidHex32(evidenceHash)
+      manifestText.trim() !== ""
     );
   })();
 
@@ -184,44 +269,54 @@ export function CreateDispute() {
       return;
     }
 
-    // --- mode-specific resolve ---
+    // --- flow-specific resolve ---
     let resolvedOptions: Uint8Array[] = [];
     let resolvedEvidenceHash: Uint8Array = new Uint8Array(32);
     let manifest: Uint8Array | null = null;
 
-    if (mode === "format") {
-      if (!formatOutput) {
+    if (!manual) {
+      if (!manifestOutput) {
         setError("Complete the evidence manifest before submitting.");
         return;
       }
       // DOWNLOAD SYNCHRONOUSLY — before any await (browser gesture protection).
-      downloadManifest(formatOutput.manifest);
-      manifest = formatOutput.manifest;
+      downloadManifest(manifestOutput.manifest);
+      manifest = manifestOutput.manifest;
     } else {
+      // Manual manifest: hash the pasted bytes exactly as authored (no trim —
+      // the committed hash must match the published bytes). No auto-download:
+      // the filer already holds this file.
+      if (!manifestText.trim()) {
+        setError("Paste the manifest.yaml content (Advanced settings).");
+        return;
+      }
       const validOpts = options.filter(isValidHex32);
       if (validOpts.length < MIN_OPTIONS) {
         setError(`At least ${MIN_OPTIONS} valid option hashes required.`);
         return;
       }
-      if (!isValidHex32(evidenceHash)) {
-        setError("Evidence hash must be 64 hex characters (32 bytes).");
+      if (parseManifest(manifestText).options.length < MIN_OPTIONS) {
+        setError(
+          `Pasted manifest does not parse — it must list at least ${MIN_OPTIONS} options.`,
+        );
         return;
       }
       resolvedOptions = validOpts.map(hexToBytes32);
-      resolvedEvidenceHash = hexToBytes32(evidenceHash);
+      manifest = new TextEncoder().encode(manifestText);
+      resolvedEvidenceHash = await sha256(manifest);
     }
 
     setSubmitting(true);
     try {
-      // Format mode: derive option hashes + verify (async, after sync download).
-      if (mode === "format" && manifest && formatOutput) {
+      // Manifest flow: derive option hashes + verify (async, after sync download).
+      if (!manual && manifest && manifestOutput) {
         resolvedOptions = await deriveOptionHashes(
-          formatOutput.salt,
-          formatOutput.labels,
+          manifestOutput.salt,
+          manifestOutput.labels,
         );
         await verifyOptionHashes(
-          formatOutput.salt,
-          formatOutput.labels,
+          manifestOutput.salt,
+          manifestOutput.labels,
           resolvedOptions,
         );
         resolvedEvidenceHash = await sha256(manifest);
@@ -237,6 +332,7 @@ export function CreateDispute() {
       const { instruction, dispute } = await accord.methods.createDispute(
         {
           filer: signer.address,
+          rentPayer: signer.address,
           subaccord: subaccord.address,
           feeToken,
           filerTokenAccount,
@@ -257,8 +353,9 @@ export function CreateDispute() {
         instruction,
       );
 
-      // Format mode: publish encrypted manifest to the evidence daemon.
-      if (mode === "format" && manifest) {
+      // Publish the encrypted manifest to the evidence daemon (both flows —
+      // editor-authored and manually pasted — commit to a manifest).
+      if (manifest) {
         const operatorBytes = new Uint8Array(
           getAddressEncoder().encode(subaccord.data.evidenceOperator),
         );
@@ -348,41 +445,40 @@ export function CreateDispute() {
             Dispute: {publishFail.dispute}
           </p>
           <div className="mt-3 flex gap-2">
-            <button
+            <Button
               type="button"
               onClick={handleRetryPublish}
-              disabled={publishing}
-              className="rounded-md bg-amber px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
+              loading={publishing}
             >
               {publishing ? "Publishing…" : "Retry publish"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
               onClick={() => navigate(`/disputes/${publishFail.dispute}`)}
-              className="rounded-md border border-border-subtle px-4 py-2 text-sm text-text-secondary hover:text-text-primary"
             >
               View dispute
-            </button>
+            </Button>
           </div>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Subaccord selector */}
-        <div>
-          <label className="mb-1 block font-mono text-sm text-text-secondary">
-            Subaccord address
-          </label>
-          <input
-            type="text"
-            value={subaccordAddr}
-            onChange={(e) => setSubaccordAddr(e.target.value)}
-            placeholder="Subaccord PDA address"
-            className="w-full rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-sm text-text-primary placeholder:text-muted-foreground focus:border-amber focus:outline-none"
-          />
-          {subaccordAddr && !subaccord && (
-            <p className="mt-1 text-sm text-slash">Subaccord not found.</p>
-          )}
+        <Field invalid={!!(subaccordAddr && !subaccord)}>
+          <FieldLabel>Subaccord address</FieldLabel>
+          <FieldControl>
+            <Input
+              value={subaccordAddr}
+              onChange={(e) => setSubaccordAddr(e.target.value)}
+              placeholder="Subaccord PDA address"
+              className="font-mono"
+            />
+          </FieldControl>
+          <FieldError>
+            {subaccordAddr && !subaccord ? "Subaccord not found." : null}
+          </FieldError>
+        </Field>
           {subaccord && (
             <div className="mt-2 rounded-md border border-border-subtle bg-raised p-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
@@ -405,188 +501,220 @@ export function CreateDispute() {
               </div>
             </div>
           )}
-        </div>
 
-        {/* Fee summary */}
+        {/* Fee summary — note only when underfunded */}
         {fee !== null && (
           <div className="rounded-md border border-amber/30 bg-amber/5 p-3">
             <span className="font-mono text-xs text-text-secondary">
               Required fee ({INITIAL_NUM_JURORS} × fee per juror)
             </span>
-            <p className="font-mono text-lg text-amber">
-              {fee && decimals !== undefined
-                ? `${formatBigInt(fee, decimals)} ${symbol}`
-                : `${fee?.toString() ?? 0n} (raw)`}
-            </p>
-            {signer && feeToken && (
-              <div className="mt-2 border-t border-amber/20 pt-2">
-                <span className="font-mono text-xs text-text-secondary">
-                  Your fee-token balance
-                </span>
-                <p
-                  className={`font-mono ${
-                    balanceLoading
-                      ? "text-text-secondary"
-                      : sufficient
-                        ? "text-confirm"
-                        : "text-slash"
-                  }`}
-                >
-                  {balanceLoading
-                    ? "loading…"
-                    : (balance ?? 0n) === 0n
-                      ? `0 ${symbol} (no ATA)`
-                      : decimals !== undefined
-                        ? `${formatBigInt(balance ?? 0n, decimals)} ${symbol}`
-                        : `${(balance ?? 0n).toString()} (raw)`}
-                </p>
-              </div>
+            <p className="font-mono text-lg text-amber">{feeLabel}</p>
+            {insufficient && (
+              <p className="mt-2 border-t border-amber/20 pt-2 font-mono text-xs text-slash">
+                Insufficient {symbol} balance —{" "}
+                {decimals !== undefined
+                  ? `${formatBigInt(balance ?? 0n, decimals)} ${symbol} available,`
+                  : `${(balance ?? 0n).toString()} (raw) available,`}
+                {feeLabel} required. Top up before filing.
+              </p>
             )}
           </div>
         )}
 
-        {/* Nonce */}
-        <div>
-          <label className="mb-1 block font-mono text-sm text-text-secondary">
-            Nonce (dispute namespace)
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={nonce}
-              onChange={(e) => setNonce(e.target.value)}
-              className="flex-1 rounded-md border border-border-subtle bg-raised px-3 py-2 font-mono text-sm focus:border-amber focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => setNonce(randomNonce())}
-              className="rounded-md border border-border-subtle px-3 py-2 font-mono text-sm text-text-secondary hover:text-text-primary"
-            >
-              Randomize
-            </button>
-          </div>
-        </div>
-
-        {/* Mode toggle */}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setMode("format")}
-            className={`rounded-md px-3 py-1.5 font-mono text-sm ${
-              mode === "format"
-                ? "bg-amber text-ink"
-                : "border border-border-subtle text-text-secondary hover:text-text-primary"
-            }`}
-          >
-            Format mode
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("manual")}
-            className={`rounded-md px-3 py-1.5 font-mono text-sm ${
-              mode === "manual"
-                ? "bg-amber text-ink"
-                : "border border-border-subtle text-text-secondary hover:text-text-primary"
-            }`}
-          >
-            Manual mode
-          </button>
-        </div>
-
-        {/* Mode-conditional inputs */}
-        {mode === "format" ? (
-          manifestCtx ? (
-            <div className="rounded-md border border-border-subtle bg-raised p-4">
-              <h2 className="mb-3 font-mono text-sm text-text-secondary">
-                Evidence manifest
-              </h2>
-              <EvidenceEditor ctx={manifestCtx} onChange={setFormatOutput} />
-            </div>
-          ) : (
+        {/* Dispute essentials: the manifest editor (title, option labels,
+            evidence URLs) — or a pointer to advanced when a manifest is
+            provided manually. */}
+        {manual ? (
+          <div className="rounded-md border border-border-subtle bg-raised p-4">
+            <h2 className="mb-2 font-mono text-sm text-text-secondary">
+              Manually provided manifest.
+            </h2>
             <p className="text-sm text-text-secondary">
-              Connect a wallet and select a subaccord to author evidence.
+              {manifestText.trim()
+                ? `Parsed: “${parseManifest(manifestText).title}” — ${parseManifest(manifestText).options.length} options, ${parseManifest(manifestText).entries.length} entries. Option hashes + paste editing live in Advanced settings.`
+                : "Paste your manifest.yaml and its option hashes in Advanced settings."}
             </p>
-          )
+          </div>
+        ) : manifestCtx ? (
+          <div className="rounded-md border border-border-subtle bg-raised p-4">
+            <h2 className="mb-3 font-mono text-sm text-text-secondary">
+              Evidence manifest
+            </h2>
+            <EvidenceEditor ctx={manifestCtx} onChange={setManifestOutput} />
+          </div>
         ) : (
-          <>
-            {/* Options (manual) */}
-            <div>
-              <label className="mb-2 block font-mono text-sm text-text-secondary">
-                Option hashes ({validOptions.length}/{MAX_OPTIONS}, min{" "}
-                {MIN_OPTIONS})
-              </label>
-              <div className="space-y-2">
-                {options.map((opt, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="w-6 font-mono text-xs text-text-secondary">
-                      {idx}
-                    </span>
-                    <input
-                      type="text"
-                      value={opt}
-                      onChange={(e) => updateOption(idx, e.target.value)}
-                      placeholder={`${"0".repeat(64)} (64 hex chars)`}
-                      className={`flex-1 rounded-md border bg-raised px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus:outline-none ${
-                        opt && !isValidHex32(opt)
-                          ? "border-slash"
-                          : isValidHex32(opt)
-                            ? "border-confirm/50"
-                            : "border-border-subtle focus:border-amber"
-                      }`}
-                    />
-                    {options.length > MIN_OPTIONS && (
-                      <button
-                        type="button"
-                        onClick={() => removeOption(idx)}
-                        className="font-mono text-sm text-slash hover:text-text-primary"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {options.length < MAX_OPTIONS && (
-                <button
-                  type="button"
-                  onClick={addOption}
-                  className="mt-2 font-mono text-sm text-amber hover:underline"
-                >
-                  + Add option
-                </button>
-              )}
-            </div>
-
-            {/* Evidence hash (manual) */}
-            <div>
-              <label className="mb-1 block font-mono text-sm text-text-secondary">
-                Evidence hash (defaults to all-zeros)
-              </label>
-              <input
-                type="text"
-                value={evidenceHash}
-                onChange={(e) => setEvidenceHash(e.target.value)}
-                className={`w-full rounded-md border bg-raised px-3 py-2 font-mono text-sm focus:outline-none ${
-                  isValidHex32(evidenceHash)
-                    ? "border-border-subtle focus:border-amber"
-                    : "border-slash"
-                }`}
-              />
-            </div>
-          </>
+          <p className="text-sm text-text-secondary">
+            Connect a wallet and select a subaccord to author evidence.
+          </p>
         )}
+
+        <CollapsiblePrimitive.Root open={advanced} onOpenChange={setAdvanced}>
+          <CollapsiblePrimitive.Trigger className="group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left font-mono text-sm text-text-secondary transition-colors hover:text-text-primary">
+            <ChevronRightIcon
+              className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-90"
+              aria-hidden
+            />
+            Advanced settings
+            <span className="text-xs font-normal text-text-secondary/70">
+              manifest preview · manual manifest · nonce
+            </span>
+          </CollapsiblePrimitive.Trigger>
+          <CollapsiblePrimitive.Content className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] data-[state=open]:grid-rows-[1fr]">
+            <div className="overflow-hidden">
+              <div className="space-y-6 pt-5">
+                {/* Manifest YAML preview + manual download (default flow) */}
+                {!manual && manifestOutput && (
+                  <div>
+                    <div className="mb-1 flex items-center justify-between">
+                      <FieldLabel>manifest.yaml preview</FieldLabel>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="w-fit font-mono text-xs font-normal"
+                        onClick={() =>
+                          downloadManifest(manifestOutput.manifest)
+                        }
+                      >
+                        ↓ Download
+                      </Button>
+                    </div>
+                    <pre className="max-h-64 overflow-auto rounded-md border border-border-subtle bg-raised p-3 font-mono text-xs text-text-secondary">
+                      {new TextDecoder().decode(manifestOutput.manifest)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Manual manifest */}
+                <Label className="flex cursor-pointer items-start gap-2 font-mono text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={manual}
+                    onChange={(e) => setManual(e.target.checked)}
+                  />
+                  <span>
+                    Provide the manifest manually.
+                    <span className="mt-1 block text-xs font-normal text-text-secondary">
+                      Paste a pre-authored manifest.yaml and its option hashes
+                      instead of using the editor. The pasted bytes are hashed
+                      (evidence_hash), encrypted, and published exactly as
+                      authored — no submit-time re-download.
+                    </span>
+                  </span>
+                </Label>
+                {manual && (
+                  <>
+                    <div>
+                      <div className="mb-1 flex items-center justify-between">
+                        <FieldLabel>manifest.yaml</FieldLabel>
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="w-fit font-mono text-xs font-normal"
+                          onClick={insertTemplate}
+                          disabled={!manifestCtx}
+                          title={
+                            manifestCtx
+                              ? "Insert a manifest template (live ctx, fresh salt)"
+                              : "Connect a wallet and select a subaccord first"
+                          }
+                        >
+                          Insert template
+                        </Button>
+                      </div>
+                      <FieldControl>
+                        <Textarea
+                          value={manifestText}
+                          onChange={(e) => setManifestText(e.target.value)}
+                          placeholder="Paste the full manifest.yaml here"
+                          rows={8}
+                          spellCheck={false}
+                          className="font-mono text-xs"
+                        />
+                      </FieldControl>
+                      <FieldDescription>
+                        Option hashes below auto-derive from this manifest's
+                        option_salt + labels — edit a hash to override it.
+                      </FieldDescription>
+                    </div>
+                    <div>
+                      <FieldLabel className="mb-2">
+                        Option hashes ({validOptions.length}/{MAX_OPTIONS}, min{" "}
+                        {MIN_OPTIONS})
+                      </FieldLabel>
+                      <div className="space-y-2">
+                        {options.map((opt, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <span className="w-6 font-mono text-xs text-text-secondary">
+                              {idx}
+                            </span>
+                            <Input
+                              value={opt}
+                              onChange={(e) => updateOption(idx, e.target.value)}
+                              placeholder={`${"0".repeat(64)} (64 hex chars)`}
+                              aria-invalid={!!opt && !isValidHex32(opt)}
+                              className={`flex-1 font-mono ${
+                                isValidHex32(opt) ? "border-confirm/50" : ""
+                              }`}
+                            />
+                            {options.length > MIN_OPTIONS && (
+                              <button
+                                type="button"
+                                onClick={() => removeOption(idx)}
+                                className="font-mono text-sm text-slash hover:text-text-primary"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {options.length < MAX_OPTIONS && (
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="mt-2 w-fit font-mono font-normal"
+                          onClick={addOption}
+                        >
+                          + Add option
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Nonce */}
+                <div>
+                  <FieldLabel>Nonce (dispute namespace)</FieldLabel>
+                  <div className="flex gap-2">
+                    <FieldControl>
+                      <Input
+                        value={nonce}
+                        onChange={(e) => setNonce(e.target.value)}
+                        className="font-mono"
+                      />
+                    </FieldControl>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setNonce(randomNonce())}
+                    >
+                      Randomize
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CollapsiblePrimitive.Content>
+        </CollapsiblePrimitive.Root>
 
         {/* Error */}
         {error && <p className="text-sm text-slash">{error}</p>}
 
         {/* Submit */}
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="w-full rounded-md bg-amber px-4 py-3 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="submit" disabled={!canSubmit} loading={submitting} className="w-full">
           {submitting ? "Submitting…" : "File dispute"}
-        </button>
+        </Button>
       </form>
     </div>
   );

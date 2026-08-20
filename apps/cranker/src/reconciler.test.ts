@@ -3,13 +3,15 @@
  *
  * The dispute + round fetchers are injected, so the cycle runs with no validator.
  * Covers: terminal skip, current-round resolution, prior-round settlement scan,
- * per-dispatch-handler invocation, unhandled-action logging, and the Canon
- * item phase (bean accord-7fj6: advance_pending / settle_item /
- * advance_withdrawal).
+ * per-dispatch-handler invocation, unhandled-action logging, the Canon item
+ * phase (bean accord-7fj6: advance_pending / settle_item / advance_withdrawal),
+ * and the Synod case phase (bean accord-i1mp: file_dispute /
+ * refund_roster_miss / claim).
  */
 import { test, expect } from "bun:test";
 import { address, type Account } from "@solana/kit";
 import { ItemState, type CanonItem, type CanonList } from "@useaccord/canon";
+import { CaseState, type SynodCase } from "@useaccord/synod";
 import {
   Accord,
   Aggregation,
@@ -39,6 +41,7 @@ function dispute(over: Partial<Dispute> & Pick<Dispute, "state"> = {} as never):
     options: [Z32, Z32],
     evidenceHashes: [Z32, Z32, Z32, Z32],
     currentRound: 0,
+    drawnSeats: 0,
     terms: {
       alphaBps: 1_000,
       minStake: 1_000n,
@@ -131,6 +134,8 @@ function config(
     fetchReclaimableSlots: async () => [],
     fetchCanonItems: async () => [],
     fetchCanonLists: async () => [],
+    fetchRemovedCanonItems: async () => [],
+    fetchSynodCases: async () => [],
     ...over,
   };
 }
@@ -402,4 +407,157 @@ test("canon: WithdrawPending past timelock → advance_withdrawal; item without 
   );
   expect(fired).toBe(1);
   expect(calls).toEqual([{ kind: "canon_advance_withdrawal", item: CANON_ITEM_ADDR }]);
+});
+
+// --- Canon GC phase (bean accord-m5fd) ----------------------------------------
+
+test("canon GC: Removed sweep dispatches canon_close_item per item address", async () => {
+  const { d, calls } = recordingDispatch({ canon_close_item: async () => {} });
+  const other = address("Canon22222222222222222222222222222222222222");
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      fetchRemovedCanonItems: async () => [CANON_ITEM_ADDR, other],
+    }),
+  );
+  expect(fired).toBe(2);
+  expect(calls).toEqual([
+    { kind: "canon_close_item", item: CANON_ITEM_ADDR },
+    { kind: "canon_close_item", item: other },
+  ]);
+});
+
+test("canon GC: module disabled → scan never runs, nothing dispatched", async () => {
+  const { d, calls } = recordingDispatch({ canon_close_item: async () => {} });
+  let scanned = 0;
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      canonCloseEnabled: false,
+      fetchRemovedCanonItems: async () => {
+        scanned += 1;
+        return [CANON_ITEM_ADDR];
+      },
+    }),
+  );
+  expect(fired).toBe(0);
+  expect(calls).toEqual([]);
+  expect(scanned).toBe(0);
+});
+
+// --- Synod case phase (bean accord-i1mp) -------------------------------------
+
+const CASE_ADDR = address("Case111111111111111111111111111111111111111");
+
+function synodCase(over: Partial<SynodCase> & Pick<SynodCase, "state"> = {} as never): SynodCase {
+  return {
+    discriminator: new Uint8Array(8),
+    subaccord: address("11111111111111111111111111111111"),
+    parties: [
+      address("11111111111111111111111111111112"),
+      address("11111111111111111111111111111113"),
+      address("11111111111111111111111111111111"),
+      address("11111111111111111111111111111111"),
+      address("11111111111111111111111111111111"),
+      address("11111111111111111111111111111111"),
+      address("11111111111111111111111111111111"),
+    ],
+    partyCount: 2,
+    joined: 0b11,
+    stake: 1_000n,
+    fee: 30n,
+    joinDeadline: 0n,
+    evidence: new Array(7).fill(new Uint8Array(32)),
+    dispute: D_ADDR,
+    paidOut: 0,
+    bump: 0,
+    ...over,
+  };
+}
+
+test("synod: Opening case with full roster → synod_file_dispute dispatched", async () => {
+  const { d, calls } = recordingDispatch({ synod_file_dispute: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      fetchSynodCases: async () => [
+        { address: CASE_ADDR, data: synodCase({ state: CaseState.Opening }) } as Account<SynodCase>,
+      ],
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "synod_file_dispute", case: CASE_ADDR }]);
+});
+
+test("synod: Opening case past deadline, partial roster → refund first joined-unpaid party", async () => {
+  const { d, calls } = recordingDispatch({ synod_refund_roster_miss: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      now: () => 10_000n,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      fetchSynodCases: async () => [
+        {
+          address: CASE_ADDR,
+          data: synodCase({ state: CaseState.Opening, joined: 0b01, joinDeadline: 10_000n }),
+        } as Account<SynodCase>,
+      ],
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "synod_refund_roster_miss", case: CASE_ADDR, partyIndex: 0 }]);
+});
+
+test("synod: Live case with Final dispute, winner = party 1 → claim party 1; still-resolving dispute → nothing", async () => {
+  const { d, calls } = recordingDispatch({ synod_claim: async () => {} });
+  const finalWinner = dispute({ state: DisputeState.Final, finalRuling: 1n });
+  const resolving = dispute({ state: DisputeState.Reveal });
+  const OTHER_CASE = address("Case11111111111111111111111111111111111111a");
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [
+        { address: D_ADDR, data: finalWinner } as unknown as Account<Dispute>,
+        { address: R_ADDR, data: resolving } as unknown as Account<Dispute>,
+      ],
+      fetchRound: async () => null,
+      fetchSynodCases: async () => [
+        // dispute bound + Final, winner slot 1 unpaid → claim
+        {
+          address: CASE_ADDR,
+          data: synodCase({ state: CaseState.Live, dispute: D_ADDR }),
+        } as Account<SynodCase>,
+        // dispute still resolving → nothing due, no action
+        {
+          address: OTHER_CASE,
+          data: synodCase({ state: CaseState.Live, dispute: R_ADDR }),
+        } as Account<SynodCase>,
+      ],
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "synod_claim", case: CASE_ADDR, partyIndex: 1 }]);
+});
+
+test("synod: unregistered synod kind → logged + skipped, fired stays 0", async () => {
+  const { d, calls } = recordingDispatch({}); // no synod handler registered
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      fetchSynodCases: async () => [
+        { address: CASE_ADDR, data: synodCase({ state: CaseState.Opening }) } as Account<SynodCase>,
+      ],
+    }),
+  );
+  expect(fired).toBe(0);
+  expect(calls).toEqual([]);
 });

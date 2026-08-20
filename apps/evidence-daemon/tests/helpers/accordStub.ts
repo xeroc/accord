@@ -24,8 +24,8 @@ import {
   getDisputeEncoder,
   getRoundEncoder,
   getSubaccordEncoder,
-  type Accord,
 } from "@useaccord/sdk";
+import { CaseState, getSynodCaseEncoder, SYNOD_PROGRAM_ADDRESS } from "@useaccord/synod";
 
 /** System-program id (32 zero bytes) — the default for unused address fields. */
 export const ZERO: Address = address("11111111111111111111111111111111");
@@ -138,6 +138,24 @@ export type SubaccordStubData = Partial<typeof SUBACCORD_DEFAULT>;
 export type DisputeStubData = Partial<typeof DISPUTE_DEFAULT>;
 export type RoundStubData = Partial<typeof ROUND_DEFAULT>;
 
+/** Default SynodCase: 2-party Opening case, unbound dispute (accord-g1dy). */
+const SYNOD_CASE_DEFAULT = {
+  subaccord: ZERO,
+  parties: Array.from({ length: 7 }, (): Address => ZERO),
+  partyCount: 2,
+  joined: 0,
+  stake: 0n,
+  fee: 0n,
+  joinDeadline: 0n,
+  evidence: Array.from({ length: 7 }, z32),
+  dispute: ZERO, // Pubkey::default sentinel — dispute not yet filed
+  paidOut: 0,
+  state: CaseState.Opening,
+  bump: 0,
+};
+
+export type SynodCaseStubData = Partial<typeof SYNOD_CASE_DEFAULT>;
+
 export interface AccordStubRegs {
   /** Registered at `address`; fetched by `readSubaccord`. */
   subaccord?: { address: Address; data?: SubaccordStubData } | null;
@@ -145,6 +163,8 @@ export interface AccordStubRegs {
   dispute?: { address: Address; data?: DisputeStubData } | null;
   /** Registered at `findRoundPda({dispute, roundIdx})`; fetched by `readRound`. */
   round?: { dispute: Address; roundIdx: number; data?: RoundStubData } | null;
+  /** Registered at `address` with the SYNOD program owner; fetched by `readSynodCase`. */
+  synodCase?: { address: Address; data?: SynodCaseStubData } | null;
 }
 
 /** Pad/truncate a jurors list to the Round's fixed size of 31 (zero-pubkey fill). */
@@ -164,13 +184,13 @@ export async function stubAccord(regs: AccordStubRegs): Promise<Accord> {
   const toBase64 = getBase64Decoder();
   const byAddr = new Map<Address, { value: unknown }>();
 
-  const register = (addr: Address, bytes: Uint8Array): void => {
+  const register = (addr: Address, bytes: Uint8Array, owner: Address = ACCORD_PROGRAM_ID): void => {
     byAddr.set(addr, {
       value: {
         data: [toBase64.decode(bytes), "base64"],
         executable: false,
         lamports: 1,
-        owner: ACCORD_PROGRAM_ID,
+        owner,
         space: bytes.length,
       },
     });
@@ -200,6 +220,13 @@ export async function stubAccord(regs: AccordStubRegs): Promise<Accord> {
       ...(data?.jurors ? { jurors: fixJurors(data.jurors) } : {}),
     };
     register(pda, getRoundEncoder().encode(merged));
+  }
+  if (regs.synodCase) {
+    register(
+      regs.synodCase.address,
+      getSynodCaseEncoder().encode({ ...SYNOD_CASE_DEFAULT, ...regs.synodCase.data }),
+      SYNOD_PROGRAM_ADDRESS,
+    );
   }
 
   const nullResp = { value: null };

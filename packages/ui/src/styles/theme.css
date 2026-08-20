@@ -1,0 +1,126 @@
+/*
+ * @useaccord/ui — Tailwind v4 theme + the permanent dark theme values.
+ *
+ * Maps the canonical --accord-* tokens (tokens.css) onto:
+ *  - the brand utility names feature views use (bg-ink, text-amber, …), and
+ *  - the shadcn semantic token system (bg-background, text-foreground, …).
+ *
+ * The apps are always dark; :root carries the ink palette directly.
+ * No light theme, no runtime theming.
+ */
+@theme {
+  /* Brand tokens (feature-view names). */
+  --color-ink: var(--accord-ink);
+  --color-raised: var(--accord-raised);
+  --color-border-subtle: var(--accord-border);
+  --color-amber: var(--accord-amber);
+  --color-confirm: var(--accord-confirm);
+  --color-slash: var(--accord-slash);
+  --color-text-primary: var(--accord-text-primary);
+  --color-text-secondary: var(--accord-text-secondary);
+  /* Brand palette (marketing names, brand/DESIGN.md §04). */
+  --color-body: var(--accord-body);
+  --color-nearwhite: var(--accord-nearwhite);
+  --color-paper: var(--accord-paper);
+  /* Brand motion curve — exponential ease-out (terminal feel). */
+  --ease-expo: var(--accord-ease-expo);
+}
+
+@theme inline {
+  --font-sans: var(--accord-font-sans);
+  --font-mono: var(--accord-font-mono);
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Dark-first: :root carries the ink palette directly. */
+:root {
+  --background: var(--accord-ink);
+  --foreground: var(--accord-nearwhite);
+  --card: var(--accord-raised);
+  --card-foreground: var(--accord-nearwhite);
+  --popover: var(--accord-raised);
+  --popover-foreground: var(--accord-nearwhite);
+  --primary: var(--accord-amber);
+  --primary-foreground: var(--accord-ink);
+  --secondary: var(--accord-border);
+  --secondary-foreground: var(--accord-nearwhite);
+  --muted: var(--accord-raised);
+  --muted-foreground: var(--accord-muted);
+  --accent: var(--accord-border);
+  --accent-foreground: var(--accord-nearwhite);
+  --destructive: var(--accord-slash);
+  --success: var(--accord-confirm);
+  --border: var(--accord-border);
+  --input: var(--accord-border);
+  --ring: var(--accord-amber);
+  --chart-1: var(--accord-amber);
+  --chart-2: var(--accord-confirm);
+  --chart-3: var(--accord-slash);
+  --chart-4: var(--accord-muted);
+  --chart-5: var(--accord-body);
+  --radius: var(--accord-radius);
+  --sidebar: var(--accord-raised);
+  --sidebar-foreground: var(--accord-nearwhite);
+  --sidebar-primary: var(--accord-amber);
+  --sidebar-primary-foreground: var(--accord-ink);
+  --sidebar-accent: var(--accord-border);
+  --sidebar-accent-foreground: var(--accord-nearwhite);
+  --sidebar-border: var(--accord-border);
+  --sidebar-ring: var(--accord-amber);
+}
+
+/*
+ * Brand aliases — feature views reference the original Accord variable
+ * names. These point to the shadcn tokens above so both naming systems
+ * coexist. --muted is NOT aliased (it's a dark bg in shadcn); feature
+ * views use --muted-foreground for muted text.
+ */
+:root {
+  --ink: var(--background);
+  --raised: var(--card);
+  --amber: var(--primary);
+  --green: var(--success);
+  --red: var(--destructive);
+  --text: var(--foreground);
+}

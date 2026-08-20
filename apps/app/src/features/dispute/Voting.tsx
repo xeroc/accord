@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   type Account,
   type Address,
@@ -14,12 +15,26 @@ import {
   NO_VOTE,
 } from "@useaccord/sdk";
 
-import { Copyable } from "../../components/Copyable";
+import {
+  Button,
+  Copyable,
+  Field,
+  FieldControl,
+  FieldLabel,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@useaccord/ui";
 import { useAccord } from "../../shared/rpc";
+import { fetchSubaccord } from "../../shared/fetch";
 import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { timeRemaining } from "../../shared/format";
 import { useManifest, optionLabels } from "./evidence";
+import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
 
 // --- localStorage salt persistence (commit → reveal bridge) ---
 
@@ -43,7 +58,10 @@ function loadStoredVote(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredVote;
     // BigInt(String(v)) also revives u8-era entries stored as JSON numbers.
-    return { vote: BigInt(String(parsed.vote)), salt: new Uint8Array(parsed.salt) };
+    return {
+      vote: BigInt(String(parsed.vote)),
+      salt: new Uint8Array(parsed.salt),
+    };
   } catch {
     return null;
   }
@@ -115,6 +133,14 @@ export function Voting({
   const manifestLabels = optionLabels(manifest);
   const wallet = env?.signer.address ?? "";
 
+  // Domain doc (ADR-0027): the subaccord's domain_ref → rules the jurors vote under.
+  const subaccordQuery = useQuery({
+    queryKey: ["subaccord", d.subaccord, env?.rpc],
+    queryFn: () => fetchSubaccord(env!.rpc, d.subaccord),
+    enabled: Boolean(env),
+    staleTime: 30_000,
+  });
+
   // Check if connected wallet is a drawn juror
   const seatIdx = wallet
     ? r.jurors.slice(0, r.jurorCount).indexOf(wallet as Address)
@@ -139,8 +165,10 @@ export function Voting({
   // past commit_end, no reveals yet) `state` is still `Commit`. Drive the UI
   // off Clock time + commit_count so each form appears exactly when the chain
   // would accept the transaction.
-  const commitPhase = state === DisputeState.Drawn || state === DisputeState.Commit;
-  const revealPhase = state === DisputeState.Commit || state === DisputeState.Reveal;
+  const commitPhase =
+    state === DisputeState.Drawn || state === DisputeState.Commit;
+  const revealPhase =
+    state === DisputeState.Commit || state === DisputeState.Reveal;
   const allCommitted = r.commitCount === r.jurorCount;
 
   const reviewEnd = Number(r.reviewEnd);
@@ -248,10 +276,16 @@ export function Voting({
         <Copyable value={wallet} />
       </div>
 
+      {subaccordQuery.data && (
+        <DomainDocPanel hash={hexIfSet(subaccordQuery.data.domainRef)} />
+      )}
+
       {(reviewPending || commitOpen || revealOpen) && (
         <div
           className={`flex items-center gap-2 rounded-md border px-3 py-2 font-mono text-xs ${
-            reviewPending ? "border-border-subtle" : "border-amber/40 bg-amber/10"
+            reviewPending
+              ? "border-border-subtle"
+              : "border-amber/40 bg-amber/10"
           }`}
         >
           <span
@@ -302,43 +336,50 @@ export function Voting({
           {/* Commit phase */}
           {commitOpen && !hasCommitted && (
             <div className="space-y-3">
-              <label className="block font-mono text-sm text-text-secondary">
-                {isMedian ? "Scalar vote" : "Select option"}
-              </label>
+            <Field>
+              <FieldLabel>{isMedian ? "Scalar vote" : "Select option"}</FieldLabel>
               {isMedian ? (
                 // Median: decimal scalar string (encodeScalarVote scales it).
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="e.g. 123.45"
-                  value={scalar}
-                  onChange={(e) => setScalar(e.target.value)}
-                  className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-                />
+                <FieldControl>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="e.g. 123.45"
+                    value={scalar}
+                    onChange={(e) => setScalar(e.target.value)}
+                    className="font-mono"
+                  />
+                </FieldControl>
               ) : (
-                <select
-                  value={vote}
-                  onChange={(e) => setVote(Number(e.target.value))}
-                  className="w-full rounded-md border border-border-subtle bg-ink px-3 py-2 font-mono text-sm text-text-primary focus:border-amber focus:outline-none"
-                >
-                  {Array.from({ length: numOptions }, (_, i) => {
-                    const label = manifestLabels[i]?.trim();
-                    if (label) {
-                      return (
-                        <option key={i} value={i}>
-                          {label}
-                        </option>
-                      );
-                    }
-                    const hash = d.options[i] ? hexBytes(d.options[i]) : "";
-                    return (
-                      <option key={i} value={i}>
-                        {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
-                      </option>
-                    );
-                  })}
-                </select>
+                <FieldControl>
+                  <Select
+                    value={vote.toString()}
+                    onValueChange={(v) => setVote(Number(v))}
+                  >
+                    <SelectTrigger className="w-full font-mono" aria-label="Vote option">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: numOptions }, (_, i) => {
+                        const label = manifestLabels[i]?.trim();
+                        if (label) {
+                          return (
+                            <SelectItem key={i} value={i.toString()}>
+                              {label}
+                            </SelectItem>
+                          );
+                        }
+                        const hash = d.options[i] ? hexBytes(d.options[i]) : "";
+                        return (
+                          <SelectItem key={i} value={i.toString()}>
+                            {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </FieldControl>
               )}
+            </Field>
               {!isMedian && (
                 <div className="break-all font-mono text-xs text-text-secondary">
                   {manifestLabels[vote]?.trim()
@@ -347,18 +388,15 @@ export function Voting({
                   {d.options[vote] ? hexBytes(d.options[vote]) : "—"}
                 </div>
               )}
-              <button
-                onClick={handleCommit}
-                disabled={sending}
-                className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button onClick={handleCommit} loading={sending}>
                 {sending ? "Signing…" : "Commit vote"}
-              </button>
+              </Button>
             </div>
           )}
           {commitOpen && hasCommitted && (
             <p className="text-sm text-confirm">
-              Vote committed. Reveal opens once all jurors commit (or the commit window closes).
+              Vote committed. Reveal opens once all jurors commit (or the commit
+              window closes).
             </p>
           )}
 

@@ -6,7 +6,8 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { Address } from "@solana/kit";
-import { getCanonItemDecoder, ItemState } from "@useaccord/canon";
+import { ItemState } from "@useaccord/canon";
+import { fetchCanonItem } from "../../shared/fetch";
 import { useClusterRpc } from "../../shared/rpc";
 import { EvidenceManifest } from "./EvidenceManifest";
 import { DisputeStatusCard } from "./DisputeStatusCard";
@@ -30,13 +31,7 @@ export function ItemDetailPage() {
     queryKey: ["canon-item", address],
     queryFn: async () => {
       if (!address || !clusterRpc) return null;
-      const res = await clusterRpc.rpc
-        .getAccountInfo(address as Address, { encoding: "base64" })
-        .send();
-      if (!res.value) return null;
-      return getCanonItemDecoder().decode(
-        new Uint8Array(Buffer.from(res.value.data[0]!, "base64")),
-      );
+      return fetchCanonItem(clusterRpc.rpc, address as Address);
     },
     enabled: !!address && !!clusterRpc,
     retry: false,

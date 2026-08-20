@@ -141,15 +141,22 @@ export type SettleItemAsyncInput<
   item: Address<TAccountItem>;
   /**
    * Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
-   * `state` + `final_ruling` are read directly. Boxed to keep the struct
-   * off the stack during the token-transfer CPI call chain.
+   * `state` + `final_ruling` are read directly.
    */
   dispute: Address<TAccountDispute>;
   feeMint: Address<TAccountFeeMint>;
   vault?: Address<TAccountVault>;
-  /** Challenger ATA — receives bounty on `remove`. */
+  /**
+   * Challenger's `fee_mint` token account — receives the bounty on `remove`
+   * and the stake refund on a `Failed` dispute. Pinned to the payee recorded
+   * on the item so a crank caller cannot redirect the payout (C-1).
+   */
   challengerTokenAccount: Address<TAccountChallengerTokenAccount>;
-  /** Submitter ATA — receives stake on withdrawal-`keep`. */
+  /**
+   * Submitter's `fee_mint` token account — receives the payout on
+   * withdrawal-`keep` and the refund on a `Failed` dispute. Pinned the same
+   * way (C-1).
+   */
   submitterTokenAccount: Address<TAccountSubmitterTokenAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
@@ -293,15 +300,22 @@ export type SettleItemInput<
   item: Address<TAccountItem>;
   /**
    * Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
-   * `state` + `final_ruling` are read directly. Boxed to keep the struct
-   * off the stack during the token-transfer CPI call chain.
+   * `state` + `final_ruling` are read directly.
    */
   dispute: Address<TAccountDispute>;
   feeMint: Address<TAccountFeeMint>;
   vault: Address<TAccountVault>;
-  /** Challenger ATA — receives bounty on `remove`. */
+  /**
+   * Challenger's `fee_mint` token account — receives the bounty on `remove`
+   * and the stake refund on a `Failed` dispute. Pinned to the payee recorded
+   * on the item so a crank caller cannot redirect the payout (C-1).
+   */
   challengerTokenAccount: Address<TAccountChallengerTokenAccount>;
-  /** Submitter ATA — receives stake on withdrawal-`keep`. */
+  /**
+   * Submitter's `fee_mint` token account — receives the payout on
+   * withdrawal-`keep` and the refund on a `Failed` dispute. Pinned the same
+   * way (C-1).
+   */
   submitterTokenAccount: Address<TAccountSubmitterTokenAccount>;
   tokenProgram?: Address<TAccountTokenProgram>;
 };
@@ -414,15 +428,22 @@ export type ParsedSettleItemInstruction<
     item: TAccountMetas[2];
     /**
      * Accord Dispute — `Account<Dispute>` validates ownership + deserialises;
-     * `state` + `final_ruling` are read directly. Boxed to keep the struct
-     * off the stack during the token-transfer CPI call chain.
+     * `state` + `final_ruling` are read directly.
      */
     dispute: TAccountMetas[3];
     feeMint: TAccountMetas[4];
     vault: TAccountMetas[5];
-    /** Challenger ATA — receives bounty on `remove`. */
+    /**
+     * Challenger's `fee_mint` token account — receives the bounty on `remove`
+     * and the stake refund on a `Failed` dispute. Pinned to the payee recorded
+     * on the item so a crank caller cannot redirect the payout (C-1).
+     */
     challengerTokenAccount: TAccountMetas[6];
-    /** Submitter ATA — receives stake on withdrawal-`keep`. */
+    /**
+     * Submitter's `fee_mint` token account — receives the payout on
+     * withdrawal-`keep` and the refund on a `Failed` dispute. Pinned the same
+     * way (C-1).
+     */
     submitterTokenAccount: TAccountMetas[7];
     tokenProgram: TAccountMetas[8];
   };

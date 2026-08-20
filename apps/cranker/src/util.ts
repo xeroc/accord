@@ -40,6 +40,10 @@ import {
   type CanonItem,
   type CanonList,
 } from "@useaccord/canon";
+import {
+  fetchMaybeSynodCase as fetchMaybeSynodCaseGenerated,
+  type SynodCase,
+} from "@useaccord/synod";
 
 /** SPL Token program. */
 export const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -201,4 +205,24 @@ export async function fetchCanonList(
   const acc = await fetchMaybeCanonListGenerated(rpc, list);
   if (!acc.exists) throw new Error(`CanonList not found: ${list}`);
   return acc as Account<CanonList>;
+}
+
+/** Fetch + decode a SynodCase, throw if missing. */
+export async function fetchSynodCase(
+  rpc: Rpc<GetAccountInfoApi>,
+  kase: Address,
+): Promise<Account<SynodCase>> {
+  const acc = await fetchMaybeSynodCaseGenerated(rpc, kase);
+  if (!acc.exists) throw new Error(`SynodCase not found: ${kase}`);
+  return acc as Account<SynodCase>;
+}
+
+/** Whether any account exists at `address` (raw existence probe — the synod
+ * per-party ATA gate skips parties whose destination doesn't exist). */
+export async function accountExists(
+  rpc: Rpc<GetAccountInfoApi>,
+  address: Address,
+): Promise<boolean> {
+  const res = await rpc.getAccountInfo(address, { encoding: "base64" }).send();
+  return res.value !== null;
 }

@@ -8,6 +8,7 @@
 // commit → reveal → finalize_round (median) → finalize_dispute (band coherence).
 import {
   commit,
+  createSubaccord,
   encodeScalarVote,
   finalizeDispute,
   finalizeRound,
@@ -17,6 +18,8 @@ import {
   Aggregation,
   DEFAULT_APPEAL_WINDOW_SECS,
 } from "@useaccord/sdk";
+import { defaultSubaccordArgs, randomBytes32 } from "./setup/fixtures.js";
+import { createMint } from "./setup/tokens.js";
 
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import { fetchDecoded } from "./setup/assertions.js";
@@ -188,4 +191,39 @@ describe("e2e: scalar voting — Median aggregation + coherence band (requires S
       expect(js!.activeDraws).toBe(0);
     }
   }, 300_000);
+  it("rejects a Median pool with revealThresholdBps = 0 (SR2-M1); Plurality stays legal", async () => {
+    if (!env.up) return; // offline CI lane
+
+    const mint = (await createMint(env, 6)).mint;
+
+    // Median + zero threshold: the quorum gate collapses to needed = 0 and a
+    // zero-reveal round would fabricate a median of 0 — rejected at creation
+    // (the field is immutable, creation is its only write path).
+    const medianArgs = defaultSubaccordArgs(mint, mint, env.payer.address, {
+      aggregation: Aggregation.Median,
+      revealThresholdBps: 0,
+    });
+    const median = await createSubaccord(
+      env.accord.adapter,
+      env.programId,
+      env.payer.address,
+      medianArgs,
+    );
+    await expect(env.sendIx(median.instruction)).rejects.toThrow();
+
+    // Plurality + zero threshold stays accepted: an all-zero tally ties and
+    // ADR-0026 routes the round to RedrawEligible — zero participation can
+    // never crown a winner.
+    const pluralityArgs = defaultSubaccordArgs(mint, mint, env.payer.address, {
+      aggregation: Aggregation.Plurality,
+      revealThresholdBps: 0,
+    });
+    const plurality = await createSubaccord(
+      env.accord.adapter,
+      env.programId,
+      env.payer.address,
+      pluralityArgs,
+    );
+    await env.sendIx(plurality.instruction);
+  }, 120_000);
 });

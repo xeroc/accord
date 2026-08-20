@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 import { ACCORD_PROGRAM_ID, Accord } from "@useaccord/sdk";
+import { SYNOD_PROGRAM_ID } from "@useaccord/synod";
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -44,7 +45,8 @@ export interface TestEnv {
   readonly payer: KeyPairSigner;
   readonly accord: Accord;
   readonly programId: Address;
-  /** Build → sign → confirm a single instruction; returns the tx signature. */
+  /** Synod program id (scaffold canonical keypair) — probed like `programId`. */
+  readonly synodProgramId: Address;
   sendIx(instruction: Instruction): Promise<string>;
 }
 
@@ -147,6 +149,18 @@ export async function createTestEnv(
       );
     }
 
+    // Synod deploys alongside accord (Surfpool auto-deploys every .so in
+    // target/deploy; the deployment runbook carries deploy_synod too). Probe
+    // it so a stale Surfnet fails fast with the fix, not opaque per-spec errors.
+    const synodAccount = await rpc.getAccountInfo(SYNOD_PROGRAM_ID).send();
+    if (synodAccount.value === null) {
+      throw new Error(
+        `TestEnv: Synod program not deployed at ${SYNOD_PROGRAM_ID}. ` +
+          "Rebuild with `anchor build` and restart the validator so Surfpool " +
+          "auto-deploys synod.so (`anchor test` does both).",
+      );
+    }
+
     const balance = await rpc.getBalance(payer.address).send();
     if (balance.value < MIN_PAYER_LAMPORTS) {
       await rpc.requestAirdrop(payer.address, TOPUP_LAMPORTS).send();
@@ -154,7 +168,16 @@ export async function createTestEnv(
     }
   }
 
-  return { up, rpcUrl: endpoint, rpc, payer, accord, programId: ACCORD_PROGRAM_ID, sendIx };
+  return {
+    up,
+    rpcUrl: endpoint,
+    rpc,
+    payer,
+    accord,
+    programId: ACCORD_PROGRAM_ID,
+    synodProgramId: SYNOD_PROGRAM_ID,
+    sendIx,
+  };
 }
 
 /**

@@ -1,14 +1,15 @@
 //! Compile-time constants for Canon: canonical PDA seed prefixes (SPEC
-//! account/seed table), the v1 canonical-default profile (SPEC §v1 canonical
-//! defaults), and the domain ceilings consumed by `create_list` validation.
+//! account/seed table), the v1 canonical-default list-level profile (SPEC §v1
+//! canonical defaults), and the domain ceilings consumed by `create_list`
+//! validation.
 //!
-//! The dispute-mechanism defaults (jurors, appeals, alpha, windows,
-//! `fee_per_juror`) mirror Accord's v1 defaults — Canon initialises its 1:1
-//! backing Subaccord with them at `create_list`. They are then controlled by the
-//! Subaccord authority (NOT the list creator) and retunable via the 48h
-//! propose/execute timelock (ADR-0005). The list-level defaults
-//! (`submit_deposit`, `challenge_pct`, `listing_window`, `withdrawal_timelock`)
-//! are stored on `CanonList`.
+//! The dispute-mechanism profile of the backing Subaccord is creator-supplied
+//! at `create_list` (`CourtParams`, milestone accord-qz7d) — the canonical
+//! default profile lives in the SDK (`defaultCourtParams()` in
+//! `@useaccord/canon`), not here. Court-side ceilings Accord does not already
+//! enforce at the `create_subaccord` CPI boundary live below; everything else
+//! (appeals cap, jury parity, ladder fit, thresholds, draw attempts,
+//! appeal-window floor) is Accord's job and its CPI errors propagate.
 
 // --- Canonical PDA seed prefixes (SPEC account table) -----------------------
 //
@@ -19,43 +20,6 @@
 pub const SEED_CANON_LIST: &[u8] = b"canon";
 /// `CanonItem` PDA seed prefix. Full seeds: `["canon-item", list, account]`.
 pub const SEED_CANON_ITEM: &[u8] = b"canon-item";
-
-// --- v1 canonical-default dispute-mechanism profile -------------------------
-//
-// Passed to Accord `create_subaccord` at `create_list`; mirror Accord's v1
-// defaults (programs/accord/src/constants.rs). `initial_num_jurors` is Accord's
-// *fixed* round-1 panel protocol constant (ADR-0019) — restated here as the
-// canonical profile the backing Subaccord relies on, not a Subaccord parameter.
-
-/// Round-1 juror panel size. Accord fixed protocol constant (ADR-0019); the
-/// appeal ladder grows it via `2N+1`: 3 -> 7 -> 15 -> 31.
-pub const INITIAL_NUM_JURORS: u32 = 3;
-/// Default maximum appeals per dispute (3 -> 7 -> 15 -> 31 ladder).
-pub const DEFAULT_MAX_APPEALS: u8 = 3;
-/// Default alpha (slash factor) in basis points: 10%.
-pub const DEFAULT_ALPHA_BPS: u16 = 1_000;
-pub const DEFAULT_REVIEW_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
-pub const DEFAULT_COMMIT_WINDOW_SECS: u64 = 2 * 24 * 60 * 60;
-pub const DEFAULT_REVEAL_WINDOW_SECS: u64 = 2 * 24 * 60 * 60;
-/// Default appeal window after a round resolves (Accord v1 default: 3 days).
-pub const DEFAULT_APPEAL_WINDOW_SECS: u64 = 3 * 24 * 60 * 60;
-/// Default per-juror fee, in `fee_mint` (round-1 ~= 30).
-pub const DEFAULT_FEE_PER_JUROR: u64 = 10;
-/// Default minimum juror stake for draw eligibility (in `staking_token`).
-/// Mirrors Accord's v1 default (SPEC §v1 Defaults: "Min juror stake: 1,000").
-pub const DEFAULT_MIN_STAKE: u64 = 1_000;
-/// Default reveal-quorum fraction in bps (ADR-0021): 6666 = 2/3.
-pub const DEFAULT_REVEAL_THRESHOLD_BPS: u16 = 6_666;
-/// Default max same-size redraws per round (ADR-0021).
-pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
-/// Default Merkle accumulator tree depth (ADR-0012). 2^8 = 256 seats.
-/// Capped at 8 (not the SPEC's aspirational 20) because each `stake`/`draw`
-/// carries a depth-length `MSTNode` path (40 B/level) in the tx — depth 20
-/// alone is ~800 B of path data, blowing the 1232-byte tx limit, so a depth-20
-/// pool can never be staked against. Depth 8 keeps the stake tx ~900 B with
-/// comfortable margin. (Proper fix: expose `depth` as a `create_list` arg so the
-/// creator chooses — tracked as a follow-up.)
-pub const DEFAULT_TREE_DEPTH: u8 = 8;
 
 // --- v1 canonical-default list-level profile (stored on CanonList) ----------
 
@@ -77,6 +41,13 @@ pub const DEFAULT_WITHDRAWAL_TIMELOCK_SECS: u64 = 5 * 24 * 60 * 60;
 /// cannot exceed the item's accumulated stake, so 100% (10_000 bps) is the hard
 /// upper bound.
 pub const MAX_CHALLENGE_PCT_BPS: u16 = 10_000;
+
+/// Ceiling on `CourtParams.depth`. Each `stake`/`draw` tx carries a
+/// depth-length `MSTNode` path (~40 B/level); at the canonical depth 8 the
+/// stake tx is ~900 B, and each extra level eats further into the 1232-byte
+/// packet budget. Raising this needs a measured draw-tx budget first
+/// (follow-up bean). Tighter than Accord's own `depth <= 31` on purpose.
+pub const MAX_LIST_TREE_DEPTH: u8 = 8;
 
 // --- Dispute options (SPEC §Instructions #4) ---------------------------------
 //

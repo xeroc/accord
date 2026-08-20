@@ -65,7 +65,7 @@ loaded wallet.
 
 ### `lifecycle:init-pause [--skip-if-exists] [--dry-run]`
 
-One-time init of the PauseState singleton PDA (`methods.initializePause`); the
+One-time init of the AccordState singleton PDA (`methods.initializePause`); the
 wallet becomes the pause authority. `--skip-if-exists` is idempotent.
 
 ```bash
@@ -75,7 +75,7 @@ useaccord lifecycle:init-pause
 ```
 ✓ confirmed: Lu4kfssBXDQn…
   authority: 3vbYr…hzP3
-  pauseState: AaNWS…XVG9
+  accordState: AaNWS…XVG9
 ```
 
 ### `lifecycle:create-subaccord [flags] [--random-domain-id] [--dry-run]`
@@ -108,7 +108,7 @@ Permissionless crank that lands a pending update once the timelock elapses.
 
 ### `lifecycle:pause [--dry-run]`
 
-Instant emergency freeze (pause authority only). The PauseState PDA is derived
+Instant emergency freeze (pause authority only). The AccordState PDA is derived
 from the canonical program id.
 
 ### `lifecycle:propose-unpause [--dry-run]`
@@ -333,7 +333,7 @@ JSON payload for piping.
 | `read:dispute <addr>`                             | One Dispute                    |
 | `read:round <addr>`                               | One Round                      |
 | `read:juror-stake <addr>`                         | One JurorStake                 |
-| `read:pause-state`                                | PauseState singleton (no arg)  |
+| `read:pause-state`                                | AccordState singleton (no arg) |
 | `read:pending-update <addr>`                      | One PendingUpdate              |
 | `read:appeal-bond --dispute <a> --round-idx <n>`  | AppealBond PDA (derived)       |
 | `read:disputes --by-subaccord\|--by-filer\|--all` | Bulk Dispute query             |
@@ -345,6 +345,37 @@ JSON payload for piping.
 useaccord read:pause-state --json
 useaccord read:phase --dispute AaNWS…XVG9
 useaccord read:disputes --by-subaccord <addr> --out disputes.json
+```
+
+### `canon:*` — Canon curated-list Arbitrable (@useaccord/canon)
+
+Twelve commands over the Canon program (ADR `canon/0001`): create a list (CPI
+`create_subaccord` for the 1:1 backing court), submit items, challenge via a
+CPI'd Accord dispute, crank settle/advance, withdraw, and read list/item
+state. Every derived address comes from on-chain state — the item's `list`
+back-ref, the list's `fee_mint`/`subaccord`/`dispute_count`, the item's
+`activeDispute`/`challenger`/`submitter`.
+
+| Command                              | SDK fn                  | Sends?    |
+| ------------------------------------ | ----------------------- | --------- |
+| `canon:create-list`                  | `createList`            | ✓         |
+| `canon:submit --list --account`      | `submitItem`            | ✓         |
+| `canon:advance-pending --item`       | `advancePending`        | ✓ (crank) |
+| `canon:challenge --item`             | `challengeItem`         | ✓         |
+| `canon:settle --item`                | `settleItem`            | ✓ (crank) |
+| `canon:request-withdrawal --item`    | `requestWithdrawal`     | ✓         |
+| `canon:advance-withdrawal --item`    | `advanceWithdrawal`     | ✓ (crank) |
+| `canon:close-item --item`            | `closeItem`             | ✓ (crank) |
+| `canon:list <addr>` / `canon:lists`  | `fetchMaybeCanonList` / `findAllCanonLists` | read |
+| `canon:item <addr>` / `canon:items`  | `fetchMaybeCanonItem` / `findAllCanonItems` | read |
+
+```bash
+useaccord canon:create-list --random-rules-hash \
+  --stake-mint <mint> --fee-mint <mint> --submit-deposit 500 \
+  --challenge-pct 5000 --listing-window 432000 --withdrawal-timelock 432000 \
+  --evidence-operator <addr>
+useaccord canon:submit --list <pda> --account <addr>
+useaccord canon:challenge --item <pda>
 ```
 
 ## Infrastructure (for future commands)

@@ -1,10 +1,11 @@
 ---
 # accord-e4up
 title: Synod SDK — Codama codegen + facade (@useaccord/synod)
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-08-18T05:27:57Z
-updated_at: 2026-08-18T05:27:57Z
+updated_at: 2026-08-18T15:08:59Z
 parent: accord-oylq
 blocked_by:
     - accord-l2ad

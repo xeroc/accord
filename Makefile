@@ -12,7 +12,7 @@ DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
 SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
 SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
-.PHONY: prep build codegen sdk docs test test_unit test_surfpool run_surfpool run_validator lint clean help
+.PHONY: prep build codegen sdk docs test test_unit lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -28,10 +28,11 @@ build: ## Build programs + packages + docs
 	anchor build --ignore-keys
 	pnpm -r run build
 	$(MAKE) -C apps/docs build
+	$(MAKE) codegen
 
-codegen: ## Regenerate the Codama Kit client from the Accord IDL (run after `anchor build`)
-	anchor build --ignore-keys
+codegen: ## Regenerate the Codama Kit clients from the program IDLs (run after `anchor build`)
 	cd packages/sdk && pnpm exec codama run js
+	cd packages/synod && pnpm exec codama run js
 
 sdk: ## Build the SDK package only
 	cd packages/sdk && pnpm run build
@@ -46,8 +47,11 @@ test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Sur
 	anchor build --ignore-keys
 	anchor test --skip-build
 
-test_unit:
-	cargo test
+test_unit: ## LiteSVM + unit tests. The no-entrypoint feature is REQUIRED per
+	## program — plain `cargo test` (or a single package's flag) compiles but
+	## silently SKIPS every other package's *_litesvm.rs
+	## (they are `#![cfg(feature = "no-entrypoint")]`-gated). AGENTS.md §Testing.
+	cargo test --features accord/no-entrypoint,canon/no-entrypoint,synod/no-entrypoint
 
 lint: ## Lint every workspace that declares a lint script
 	pnpm -r run lint

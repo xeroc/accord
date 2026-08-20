@@ -175,8 +175,18 @@ impl<'info> CancelDispute<'info> {
                 .ok_or(AccordError::ArithmeticOverflow)?;
             require!(now > deadline, AccordError::CancelTooEarly);
 
-            // REVIEW #3: probe for a partially-drawn current round. If any
-            // seats landed before the stall, release those jurors too.
+            // REVIEW #3 / H-2 (security review 2026-08-19): release a
+            // partially-drawn current round's jurors. `drawn_seats` is the
+            // on-chain proof seats landed, so the Round + JurorStake accounts
+            // are MANDATORY whenever it is non-zero — a cancel that omits them
+            // would revert instead of stranding the partial jurors'
+            // `active_draws` + `slash_reserve` forever (`Failed` is terminal;
+            // `settle_round` requires `Final`). The Round PDA necessarily
+            // exists in this case (draw_seat created it), so the requirement is
+            // always satisfiable. When `drawn_seats == 0` no Round account can
+            // exist (only draw_seat creates one, bumping the counter), so none
+            // is required — prior appeal rounds remain mandatory via the strict
+            // accounting below.
             let mut idx = 0;
             let current_round_pda = Pubkey::find_program_address(
                 &[
@@ -187,9 +197,15 @@ impl<'info> CancelDispute<'info> {
                 &crate::ID,
             )
             .0;
-            if !ctx.remaining_accounts.is_empty()
-                && ctx.remaining_accounts[0].key == &current_round_pda
-            {
+            if dispute.drawn_seats > 0 {
+                require!(
+                    !ctx.remaining_accounts.is_empty(),
+                    AccordError::InvalidMembershipProof
+                );
+                require!(
+                    ctx.remaining_accounts[0].key == &current_round_pda,
+                    AccordError::InvalidMembershipProof
+                );
                 const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
                 let (juror_count, jurors) = {
                     let loader = AccountLoader::<Round>::try_from(&ctx.remaining_accounts[0])?;

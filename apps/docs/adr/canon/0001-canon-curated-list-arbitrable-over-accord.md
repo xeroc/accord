@@ -47,7 +47,9 @@ instance, not the whole product.
 + **Canon enforces canonical dispute-mechanism defaults** (`initial_num_jurors`,
   `max_appeals`, `alpha_bps`, `fee_per_juror`, windows, `evidence_operator`)
   per token/risk tier (chosen). Creator owns only registry economics + token
-  choice.
+  choice. **Superseded by [canon/0002](0002-per-list-court-params-at-create-list.md)**:
+  the court profile is creator-supplied (`CourtParams`) behind canon guards,
+  with the capture-critical fields handler-pinned.
 
 **Token model.**
 

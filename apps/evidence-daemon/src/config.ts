@@ -165,6 +165,8 @@ export interface ServerConfig {
   readonly rateLimitPerMin: number;
   /** Request body cap in bytes. 0 = no cap. */
   readonly maxEvidenceBytes: number;
+  /** Domain-doc PUT body cap in bytes (ADR-0027). Default: 1 MiB. */
+  readonly maxDomainBytes: number;
   /** Accounting-only X-Account-Key (never denies). */
   readonly accountKeyEnabled: boolean;
   /**
@@ -201,6 +203,7 @@ export function loadServerConfig(
     tls: certPath !== undefined && keyPath !== undefined ? { certPath, keyPath } : {},
     rateLimitPerMin: num(env, "EVIDENCE_RATE_LIMIT_PER_MIN", 0),
     maxEvidenceBytes: num(env, "EVIDENCE_MAX_EVIDENCE_BYTES", 0),
+    maxDomainBytes: num(env, "EVIDENCE_MAX_DOMAIN_BYTES", 1_048_576),
     accountKeyEnabled: (env.EVIDENCE_ACCOUNT_KEY_ENABLED ?? "").toLowerCase() === "true",
     trustProxy: (env.EVIDENCE_TRUST_PROXY ?? "").toLowerCase() === "true",
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),

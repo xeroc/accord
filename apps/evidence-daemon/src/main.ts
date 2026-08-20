@@ -24,6 +24,9 @@ import { EnvKeyring } from "./keys/keyring.js";
 import type { EvidenceStore } from "./store/store.js";
 import { FsStore } from "./store/fs.js";
 import { S3Store } from "./store/s3.js";
+import type { DomainStore } from "./store/domain.js";
+import { FsDomainStore } from "./store/domain-fs.js";
+import { S3DomainStore } from "./store/domain-s3.js";
 import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
@@ -64,12 +67,14 @@ function main(): void {
   // read, so an fs deployment needs no S3 credentials (and vice versa).
   let store: EvidenceStore;
   let storagePing: () => Promise<boolean>;
+  let domainStore: DomainStore;
   if (cfg.storage.kind === "fs") {
     // Pre-create the root so /healthz is green from boot (the store creates
     // parent dirs lazily per-object, but the probe stat()s the root itself).
     mkdirSync(cfg.storage.fs.rootDir, { recursive: true });
     const root = cfg.storage.fs.rootDir;
     store = new FsStore({ rootDir: root });
+    domainStore = new FsDomainStore({ rootDir: root });
     storagePing = async () => {
       try {
         return (await stat(root)).isDirectory();
@@ -93,6 +98,14 @@ function main(): void {
     });
     const bucket = cfg.storage.s3.bucket;
     store = new S3Store({
+      client: s3Client,
+      bucket,
+      ...(cfg.storage.s3.serverSideEncryption
+        ? { serverSideEncryption: cfg.storage.s3.serverSideEncryption }
+        : {}),
+      ...(cfg.storage.s3.kmsKeyId ? { kmsKeyId: cfg.storage.s3.kmsKeyId } : {}),
+    });
+    domainStore = new S3DomainStore({
       client: s3Client,
       bucket,
       ...(cfg.storage.s3.serverSideEncryption
@@ -127,7 +140,15 @@ function main(): void {
     timeoutMs: srv.healthTimeoutMs,
   });
 
-  const deps = createServerDeps({ store, accord, keyring, health, publicKeys });
+  const deps = createServerDeps({
+    store,
+    domainStore,
+    maxDomainBytes: srv.maxDomainBytes,
+    accord,
+    keyring,
+    health,
+    publicKeys,
+  });
 
   const app = createApp(deps, {
     rateLimitPerMin: srv.rateLimitPerMin,

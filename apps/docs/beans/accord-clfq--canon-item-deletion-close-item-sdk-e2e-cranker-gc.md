@@ -1,10 +1,11 @@
 ---
 # accord-clfq
 title: Canon — item deletion (close_item + SDK + e2e + cranker GC)
-status: todo
+status: completed
 type: milestone
+priority: normal
 created_at: 2026-08-14T19:06:00Z
-updated_at: 2026-08-14T19:06:00Z
+updated_at: 2026-08-19T19:50:11Z
 ---
 
 ---

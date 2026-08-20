@@ -11,6 +11,8 @@
  *   ACCORD_WS_URL          — WebSocket endpoint (program-log subscription)
  *   ACCORD_CRANKER_KEYPAIR — path to funded solana keypair JSON
  *   ACCORD_VRF_ORACLE_QUEUE — override the VRF oracle queue (optional)
+ *   CANON_GC_ENABLED       — toggle the canon close_item GC module (default on)
+ *   CANON_PROGRAM_ID       — override the canon program id (optional)
  */
 import {
   createSolanaRpc,
@@ -26,7 +28,9 @@ import {
   VRF_ORACLE_TEST_QUEUE,
   type Dispute,
 } from "@useaccord/sdk";
+import { CANON_PROGRAM_ID } from "@useaccord/canon";
 
+import { removedCanonItemFilters } from "./canon-gc.js";
 import { createCrankDispatch } from "./dispatch.js";
 import { ProgramAccountListener } from "./listener.js";
 import { reconcileOnce, startReconciler, type ReconcilerConfig } from "./reconciler.js";
@@ -43,11 +47,15 @@ import { register as registerAccordRequestVrf } from "./cranks/accord/request-vr
 import { register as registerAccordSettleRound } from "./cranks/accord/settle-round.js";
 import { register as registerCanonAdvancePending } from "./cranks/canon/advance-pending.js";
 import { register as registerCanonAdvanceWithdrawal } from "./cranks/canon/advance-withdrawal.js";
+import { register as registerCanonCloseItem } from "./cranks/canon/close-item.js";
 import { register as registerCanonSettleItem } from "./cranks/canon/settle-item.js";
+import { register as registerSynodFileDispute } from "./cranks/synod/file-dispute.js";
+import { register as registerSynodRefundRosterMiss } from "./cranks/synod/refund-roster-miss.js";
+import { register as registerSynodClaim } from "./cranks/synod/claim.js";
 import { loadCrankerWallet } from "./wallet.js";
 import { log } from "./log.js";
 
-/** Build a dispatch with every crank registered (11 Accord + 3 Canon). */
+/** Build a dispatch with every crank registered (11 Accord + 4 Canon + 3 Synod). */
 function fullDispatch() {
   const d = createCrankDispatch();
   // Accord — the host program (dispute lifecycle, timelocks, refunds).
@@ -62,10 +70,16 @@ function fullDispatch() {
   registerAccordExecuteUnpause(d);
   registerAccordReclaimSlot(d);
   registerAccordClaimRefund(d);
-  // Canon — the Arbitrable guest program (curated-item lifecycle).
+  // Canon — the Arbitrable guest program (curated-item lifecycle + GC).
   registerCanonAdvancePending(d);
   registerCanonSettleItem(d);
   registerCanonAdvanceWithdrawal(d);
+  registerCanonCloseItem(d);
+  // Synod — the Arbitrable guest program (N-party escrow): file, refund,
+  // and the claim sweep.
+  registerSynodFileDispute(d);
+  registerSynodRefundRosterMiss(d);
+  registerSynodClaim(d);
   return d;
 }
 
@@ -77,6 +91,20 @@ function resolveOracleQueue(rpcUrl: string, env: Record<string, string | undefin
   }
   const isLocal = /127\.0\.0\.1|localhost/.test(rpcUrl);
   return (isLocal ? VRF_ORACLE_TEST_QUEUE : VRF_ORACLE_QUEUE) as Address;
+}
+
+/** Canon GC module: on unless explicitly negated (CANON_GC_ENABLED=false|0|off|no). */
+function resolveCanonCloseEnabled(env: Record<string, string | undefined>): boolean {
+  return !/^(false|0|off|no)$/i.test((env.CANON_GC_ENABLED ?? "").trim());
+}
+
+/** Canon program id: explicit env override, else the SDK canonical address. */
+function resolveCanonProgramId(env: Record<string, string | undefined>): Address {
+  const explicit = env.CANON_PROGRAM_ID;
+  if (explicit !== undefined && explicit.trim().length > 0) {
+    return explicit as Address;
+  }
+  return CANON_PROGRAM_ID as Address;
 }
 
 async function main(): Promise<void> {
@@ -107,6 +135,8 @@ async function main(): Promise<void> {
   const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
 
   // 6. Assemble the reconciler config.
+  const canonCloseEnabled = resolveCanonCloseEnabled(process.env);
+  const canonProgramId = resolveCanonProgramId(process.env);
   const config: ReconcilerConfig = {
     accord,
     rpcSubscriptions,
@@ -114,6 +144,8 @@ async function main(): Promise<void> {
     dispatch,
     oracleQueue,
     programIdentity,
+    canonCloseEnabled,
+    canonProgramId,
     log,
   };
 
@@ -132,13 +164,13 @@ async function main(): Promise<void> {
   const listener = new ProgramAccountListener({
     rpcSubscriptions,
     programId: Accord.PROGRAM_ID,
-    reconciler: {
+    target: {
       // Full sweep — used on reconnect to close the gap.
-      reconcileAll: async () => {
+      onResubscribe: async () => {
         await reconcileOnce(config);
       },
-      // Scoped sweep — just the one dispute the log event mentioned.
-      reconcileDispute: async (addr: Address) => {
+      // Scoped sweep — just the one dispute the account notification named.
+      onAccount: async (addr: Address) => {
         const maybe = await fetchMaybeDispute(accord.rpc, addr);
         if (!maybe.exists) return;
         await reconcileOnce({
@@ -148,15 +180,48 @@ async function main(): Promise<void> {
         });
       },
     },
-    log: (msg: string) => log(msg),
+    log: (msg) => log(msg),
   });
   listener.start();
+
+  // 8b. Canon GC listener — Removed CanonItem notifications dispatch
+  //     close_item immediately (rent bounty); the 60s reconciler sweep is the
+  //     backstop. Disabled together with the reconciler phase via
+  //     CANON_GC_ENABLED.
+  const canonListener = new ProgramAccountListener({
+    rpcSubscriptions,
+    programId: canonProgramId,
+    // Discriminator + state == Removed memcmp: only GC-eligible items arrive.
+    filters: removedCanonItemFilters(),
+    target: {
+      // Scoped canon-only sweep for the one notified item; profitability +
+      // state guards live in the executor, dedup in the dispatch map.
+      onAccount: async (item: Address) => {
+        await reconcileOnce({
+          ...config,
+          fetchDisputes: async () => [],
+          fetchPendingUpdates: async () => [],
+          fetchAccordState: async () => null,
+          fetchReclaimableSlots: async () => [],
+          fetchCanonItems: async () => [],
+          fetchCanonLists: async () => [],
+          fetchSynodCases: async () => [],
+          fetchRemovedCanonItems: async () => [item],
+        });
+      },
+      // No gap to close eagerly: the 60s poll sweeps every Removed item.
+      onResubscribe: async () => {},
+    },
+    log: (msg) => log(`[canon-gc] ${msg}`),
+  });
+  if (canonCloseEnabled) canonListener.start();
 
   // 9. Graceful shutdown.
   const shutdown = (): void => {
     log("cranker shutting down");
     reconcilerHandle.stop();
     listener.stop();
+    canonListener.stop();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

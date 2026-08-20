@@ -26,6 +26,7 @@ import { useDispute } from "./useDispute";
 import { WithdrawalCard } from "./WithdrawalCard";
 import { DisputeStatusCard } from "./DisputeStatusCard";
 import {
+  CHALLENGEABLE_STATES,
   ITEM_STATE_LABELS,
   formatTimestamp,
   formatTokenAmount,
@@ -33,6 +34,7 @@ import {
   shortAddress,
   timeRemaining,
 } from "@/shared/format";
+import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
 
 const STATE_HINT: Record<ItemState, string> = {
   [ItemState.Pending]:
@@ -46,18 +48,18 @@ const STATE_HINT: Record<ItemState, string> = {
     "Under Accord adjudication. settle_item applies the ruling here once final (cranker).",
 };
 
-function stateColor(state: ItemState): string {
+function stateClass(state: ItemState): string {
   switch (state) {
     case ItemState.Listed:
-      return "var(--green)";
+      return "text-confirm";
     case ItemState.Removed:
-      return "var(--red)";
+      return "text-slash";
     case ItemState.Disputed:
-      return "var(--red)";
+      return "text-slash";
     case ItemState.WithdrawPending:
-      return "var(--amber)";
+      return "text-amber";
     default:
-      return "var(--muted-foreground)";
+      return "text-muted-foreground";
   }
 }
 
@@ -71,8 +73,14 @@ export function ItemDetailPage() {
   if (item.isLoading) {
     return (
       <div className="mx-auto max-w-[1100px] px-6 py-10">
-        <div className="animate-pulse rounded-sm bg-border" style={{ height: "1.5rem", width: "12rem" }} />
-        <div className="animate-pulse rounded-sm bg-border" style={{ height: "6rem", width: "100%", marginTop: "1.5rem" }} />
+        <div
+          className="animate-pulse rounded-sm bg-border"
+          style={{ height: "1.5rem", width: "12rem" }}
+        />
+        <div
+          className="animate-pulse rounded-sm bg-border"
+          style={{ height: "6rem", width: "100%", marginTop: "1.5rem" }}
+        />
       </div>
     );
   }
@@ -80,10 +88,15 @@ export function ItemDetailPage() {
   if (item.error) {
     return (
       <div className="mx-auto max-w-[1100px] px-6 py-10">
-        <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link
+          to="/"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← Back
         </Link>
-        <p className="italic text-muted-foreground">Failed to load item: {String(item.error.message)}</p>
+        <p className="italic text-muted-foreground">
+          Failed to load item: {String(item.error.message)}
+        </p>
       </div>
     );
   }
@@ -91,7 +104,10 @@ export function ItemDetailPage() {
   if (!item.data) {
     return (
       <div className="mx-auto max-w-[1100px] px-6 py-10">
-        <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link
+          to="/"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
           ← Back
         </Link>
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
@@ -117,21 +133,35 @@ export function ItemDetailPage() {
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-10">
-      <Link to="/" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+      <Link
+        to="/"
+        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
         ← Back
       </Link>
       <div className="mb-8">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.01em] font-mono text-sm text-foreground">Canon item</h1>
+        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Canon item</h1>
         <p className="mb-4 text-muted-foreground font-mono text-sm text-foreground">{shortAddress(item.data.address)}</p>
-        <p className="font-mono text-sm text-foreground" style={{ color: stateColor(state), fontWeight: 650 }}>
+        <p className={`font-mono text-sm font-semibold ${stateClass(state)}`}>
           {stateLabel}
         </p>
-        <p className="italic text-muted-foreground" style={{ margin: "0.35rem 0 0", fontSize: "0.85rem" }}>
+        <p className="mt-1.5 text-xs italic text-muted-foreground">
           {STATE_HINT[state]}
         </p>
+        {CHALLENGEABLE_STATES[state] && (
+          <Link
+            to={`/items/${item.data.address}/challenge`}
+            className="mt-4 inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+          >
+            Challenge this item.
+          </Link>
+        )}
       </div>
 
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]" style={{ marginBottom: "1.5rem" }}>
+      <div
+        className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]"
+        style={{ marginBottom: "1.5rem" }}
+      >
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
           <dl className="grid gap-2">
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -161,11 +191,15 @@ export function ItemDetailPage() {
           <dl className="grid gap-2">
             <div className="flex items-center justify-between gap-3 text-sm">
               <dt className="text-muted-foreground">Accumulated stake</dt>
-              <dd className="text-right">{formatTokenAmount(it.accumulatedStake)}</dd>
+              <dd className="text-right">
+                {formatTokenAmount(it.accumulatedStake)}
+              </dd>
             </div>
             <div className="flex items-center justify-between gap-3 text-sm">
               <dt className="text-muted-foreground">Fee mint</dt>
-              <dd className="text-right">{shortAddress(listData?.feeMint ?? "—")}</dd>
+              <dd className="text-right">
+                {shortAddress(listData?.feeMint ?? "—")}
+              </dd>
             </div>
             {state === ItemState.Disputed && (
               <>
@@ -175,43 +209,66 @@ export function ItemDetailPage() {
                 </div>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <dt className="text-muted-foreground">Challenge stake</dt>
-                  <dd className="text-right">{formatTokenAmount(it.challengeStake)}</dd>
+                  <dd className="text-right">
+                    {formatTokenAmount(it.challengeStake)}
+                  </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <dt className="text-muted-foreground">Challenged</dt>
-                  <dd className="text-right">{formatTimestamp(it.challengedAt)}</dd>
+                  <dd className="text-right">
+                    {formatTimestamp(it.challengedAt)}
+                  </dd>
                 </div>
               </>
             )}
             {state === ItemState.WithdrawPending &&
               it.withdrawalRequestedAt.__option === "Some" && (
                 <div className="flex items-center justify-between gap-3 text-sm">
-                  <dt className="text-muted-foreground">Withdrawal requested</dt>
-                  <dd className="text-right">{formatTimestamp(it.withdrawalRequestedAt.value)}</dd>
+                  <dt className="text-muted-foreground">
+                    Withdrawal requested
+                  </dt>
+                  <dd className="text-right">
+                    {formatTimestamp(it.withdrawalRequestedAt.value)}
+                  </dd>
                 </div>
               )}
           </dl>
         </section>
       </div>
 
+      {/* Rules document (ADR-0027): the bytes behind the parent list's rules_hash */}
+      {listData && (
+        <div style={{ marginBottom: "1.5rem" }}>
+          <DomainDocPanel hash={hexIfSet(listData.rulesHash)} />
+        </div>
+      )}
+
       {/* Per-state action / status */}
       {state === ItemState.Pending && (
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-          <h3 className="font-mono text-sm text-foreground" style={{ color: "var(--amber)", marginBottom: "0.5rem" }}>
+          <h3 className="mb-2 font-mono text-sm text-amber">
             Listing window
           </h3>
           <dl className="grid gap-2">
             <div className="flex items-center justify-between gap-3 text-sm">
               <dt className="text-muted-foreground">Window</dt>
-              <dd className="text-right">{listData ? formatWindow(listData.listingWindow) : "—"}</dd>
+              <dd className="text-right">
+                {listData ? formatWindow(listData.listingWindow) : "—"}
+              </dd>
             </div>
             <div className="flex items-center justify-between gap-3 text-sm">
               <dt className="text-muted-foreground">Auto-lists in</dt>
-              <dd className="text-right">{listingDeadline !== null ? timeRemaining(listingDeadline) || "elapsed" : "—"}</dd>
+              <dd className="text-right">
+                {listingDeadline !== null
+                  ? timeRemaining(listingDeadline) || "elapsed"
+                  : "—"}
+              </dd>
             </div>
             <div className="flex items-center justify-between gap-3 text-sm">
               <dt className="text-muted-foreground">Advances via</dt>
-              <dd className="italic text-muted-foreground text-right">cranker (advance_pending)</dd>
+              <dd className="italic text-muted-foreground text-right">
+                cranker (advance_pending)
+              </dd>
             </div>
           </dl>
         </section>
@@ -219,7 +276,7 @@ export function ItemDetailPage() {
 
       {state === ItemState.Removed && (
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-          <p className="italic text-muted-foreground" style={{ margin: "0", fontSize: "0.9rem" }}>
+            <p className="m-0 text-xs italic text-muted-foreground">
             This item has been delisted. Stake was either returned to the
             submitter (withdrawal / failed challenge) or paid to the challenger
             (successful removal ruling).
@@ -234,10 +291,13 @@ export function ItemDetailPage() {
         (dispute.data ? (
           <DisputeStatusCard dispute={dispute.data} />
         ) : dispute.isLoading ? (
-          <div className="animate-pulse rounded-sm bg-border" style={{ height: "6rem", width: "100%" }} />
+          <div
+            className="animate-pulse rounded-sm bg-border"
+            style={{ height: "6rem", width: "100%" }}
+          />
         ) : (
           <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
-            <p className="italic text-muted-foreground" style={{ margin: "0", fontSize: "0.9rem" }}>
+              <p className="m-0 text-xs italic text-muted-foreground">
               Dispute account not found at {shortAddress(it.activeDispute)}.
             </p>
           </section>

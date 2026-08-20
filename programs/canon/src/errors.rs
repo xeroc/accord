@@ -47,4 +47,16 @@ pub enum CanonError {
     InvalidRulesHash,
     #[msg("challenge_pct exceeds MAX_CHALLENGE_PCT_BPS.")]
     ChallengePctTooHigh,
+    #[msg("evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence.")]
+    InvalidEvidenceOperator,
+    #[msg("Item is not in the Removed state.")]
+    NotRemoved,
+    #[msg("Removed item still holds accumulated_stake (invariant breach).")]
+    StakeOutstanding,
+    #[msg("court.alpha_bps exceeds 10_000 (100%).")]
+    AlphaTooHigh,
+    #[msg("court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits.")]
+    WindowTooShort,
+    #[msg("court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget.")]
+    TreeDepthTooDeep,
 }

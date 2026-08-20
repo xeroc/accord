@@ -1,0 +1,25 @@
+/* @useaccord/synod-app — global styles
+ * Tailwind v4 CSS-first config with shadcn theme tokens.
+ *
+ * Dark-first brand palette (BRAND.md, Synod milestone accord-daq8):
+ *   ink #0A0E14 · raised #11161D · border #1F2630
+ *   amber #F0A830 (primary) · green #3FB950 (confirm) · red #F85149 (slash)
+ *   muted #7D8590
+ * IBM Plex Sans (body) + IBM Plex Mono (code/labels/stats).
+ * The app is always dark — no light theme toggle. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@useaccord/ui/styles.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Utilities living in packages/ui source must be discovered by the app build. */
+@source "../../../packages/ui/src";
+
+/* SPA shell — app-local by design (no #root in Landing). */
+html,
+body,
+#root {
+  height: 100%;
+}

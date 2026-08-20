@@ -75,3 +75,31 @@ pub struct ItemSettled {
     /// accumulated_stake before settlement (for indexer reconciliation).
     pub accumulated_before_settlement: u64,
 }
+
+/// Emitted by `settle_item` when the Accord dispute reached terminal `Failed`
+/// (cancel / redraw exhaustion): no ruling exists, so both parties are made
+/// whole — `accumulated_stake` → submitter, `challenge_stake` → challenger
+/// (no bounty, no forfeit) — and the item is `Removed`.
+#[event]
+pub struct ItemSettlementVoided {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    /// The Accord `Dispute` PDA that failed.
+    pub dispute: Pubkey,
+    /// Refunded to the submitter (the item's `accumulated_stake`).
+    pub submitter_refund: u64,
+    /// Returned to the challenger (their locked `challenge_stake`).
+    pub challenger_refund: u64,
+}
+
+/// Emitted by `close_item` right before the rent drain — the explicit
+/// tombstone indexers need so a GPA-derived view sees an end-of-life instead
+/// of an account silently vanishing.
+#[event]
+pub struct ItemClosed {
+    pub list: Pubkey,
+    pub item: Pubkey,
+    /// The curated account (seed component; re-submittable after close).
+    pub account: Pubkey,
+    pub submitter: Pubkey,
+}
