@@ -5,8 +5,10 @@
  * Read states (data in via props — this module is SDK-free; the app's
  * `useDomainDoc` hook owns fetch + verify):
  *   - loading · missing-404 (loud, with a `retry` action slot wired by the
- *     write path) · tampered (sha256 verification failed) · ok (frontmatter
- *     title/description header + markdown body via MarkdownText).
+ *     write path; pass `raw` when the doc text is still held locally — e.g.
+ *     a failed post-confirm publish — to offer a Download of it) · tampered
+ *     (sha256 verification failed) · ok (frontmatter title/description
+ *     header + markdown body via MarkdownText).
  *
  * Editable mode (create flow / publish-retry ONLY): ONE textarea over the raw
  * doc text, with the YAML frontmatter visually emphasized as a distinct mono
@@ -64,6 +66,9 @@ export function DomainDocCard({
   hash,
   retry,
   editable,
+  /** Locally-held raw doc text (authored but not published — e.g. a failed
+   * post-confirm publish). Surfaces a Download action on the missing state. */
+  raw,
   value,
   onValueChange,
   className,
@@ -76,7 +81,9 @@ export function DomainDocCard({
   retry?: ReactNode;
   /** Editor mode: renders the raw-doc textarea; false after submit locks it. */
   editable?: boolean;
-  /** Raw doc text in editor mode. */
+  /** Locally-held raw doc text (authored but not published — e.g. a failed
+   * post-confirm publish). Surfaces a Download action on the missing state. */
+  raw?: string;
   value?: string;
   onValueChange?: (value: string) => void;
   className?: string;
@@ -143,11 +150,26 @@ export function DomainDocCard({
         <p className="mt-1 text-xs text-muted-foreground">
           {hash ?? "unknown hash"}
         </p>
-        {retry ? <div className="mt-3">{retry}</div> : null}
+        {(retry || raw !== undefined) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {retry}
+            {raw !== undefined && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  downloadRawDoc(raw, `${hash ?? "domain-doc"}.md`)
+                }
+              >
+                Download
+              </Button>
+            )}
+          </div>
+        )}
       </section>
     );
   }
-
   if (doc.status === "tampered") {
     return (
       <section

@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { useWallClockFrame } from "./clock";
+import { useNow, useWallClockFrame } from "./clock";
 
 function mockReducedMotion(reduced: boolean) {
   vi.stubGlobal(
@@ -75,5 +75,33 @@ describe("useWallClockFrame", () => {
     }
     expect(result.current).toBeGreaterThanOrEqual(80);
     expect(result.current).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("useNow", () => {
+  it("returns the current unix second on mount", () => {
+    const before = Math.floor(Date.now() / 1000);
+    const { result } = renderHook(() => useNow(true));
+    expect(result.current).toBeGreaterThanOrEqual(before);
+    expect(result.current).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+  });
+
+  it("ticks every interval while enabled and stops when disabled", () => {
+    vi.useFakeTimers();
+    try {
+      const { result, rerender } = renderHook(({ enabled }) => useNow(enabled), {
+        initialProps: { enabled: true },
+      });
+      const atMount = result.current;
+      act(() => vi.advanceTimersByTime(2500));
+      expect(result.current).toBeGreaterThanOrEqual(atMount + 2);
+
+      rerender({ enabled: false });
+      const frozen = result.current;
+      act(() => vi.advanceTimersByTime(5000));
+      expect(result.current).toBe(frozen);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

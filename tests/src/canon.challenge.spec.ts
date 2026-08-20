@@ -134,7 +134,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         submitterTokenAccount: submitterAta,
         vault: canonVault,
       },
-      { evidence: crypto.getRandomValues(new Uint8Array(32)), deposit: 500n },
+      { deposit: 500n },
       CANON_PROGRAM_ID,
     );
     await env.sendIx(submitIx);
@@ -318,7 +318,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         submitterTokenAccount: await ataOf(mint, submitter2.address),
         vault: canonVault,
       },
-      { evidence: crypto.getRandomValues(new Uint8Array(32)), deposit: 500n },
+      { deposit: 500n },
       CANON_PROGRAM_ID,
     );
     await env.sendIx(submitIx2);
@@ -404,7 +404,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         submitterTokenAccount: submitterAta,
         vault: canonVault,
       },
-      { evidence: crypto.getRandomValues(new Uint8Array(32)), deposit: 500n },
+      { deposit: 500n },
       CANON_PROGRAM_ID,
     );
     await env.sendIx(submitIx);

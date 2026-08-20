@@ -56,6 +56,7 @@ import {
 } from "@useaccord/sdk";
 import {
   Button,
+  DepthPicker,
   DomainDocCard,
   ErrorShake,
   Field as UiField,
@@ -64,6 +65,7 @@ import {
   FieldLabel,
   Input,
   Label,
+  EmptyState,
   Select,
   SelectContent,
   SelectItem,
@@ -92,7 +94,7 @@ export function SubaccordCreatePage() {
   const { signer } = useSigner();
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+    <>
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-[-0.01em]">Create a subaccord.</h1>
         <p className="mb-4 text-muted-foreground">
@@ -107,18 +109,16 @@ export function SubaccordCreatePage() {
       </header>
 
       {!signer ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">Connect a wallet.</p>
-          <p className="mb-5 text-muted-foreground">
-            Creating a subaccord signs with your wallet as the creator.
-          </p>
-        </div>
+        <EmptyState
+          title="Connect a wallet."
+          description="Creating a subaccord signs with your wallet as the creator."
+        />
       ) : (
         /* key: (re)mount on connect/switch → fresh defaults (template doc,
            authority re-prefilled with the active wallet) */
         <CreateForm key={signer.address} signer={signer} />
       )}
-    </main>
+    </>
   );
 }
 
@@ -254,6 +254,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
             <DomainDocCard
               doc={{ status: "missing" }}
               hash={onChainRef ?? refHex}
+              raw={form.domainDoc}
               retry={
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -528,6 +529,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
                   <DepthPicker
                     value={form.depth}
                     onChange={(v) => set("depth", v)}
+                    maxDepth={MAX_SAFE_TREE_DEPTH}
                   />
                 </fieldset>
               </div>
@@ -541,67 +543,18 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
           </p>
         )}
 
-        <button
-          type="submit"
-          className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-          disabled={signingOrPublishing}
-        >
+        <Button type="submit" loading={signingOrPublishing}>
           {publish.status === "pending"
             ? "Publishing domain document…"
             : sending
               ? "Signing…"
               : "Create subaccord."}
-        </button>
+        </Button>
       </form>
     </ErrorShake>
   );
 }
 
-// --- depth picker (pool capacity) -------------------------------------------
-
-/** Curated depth options — capped at MAX_SAFE_TREE_DEPTH (browser tx limit). */
-const DEPTH_OPTIONS = [
-  { depth: 4, note: "16 seats — testing" },
-  { depth: 6, note: "64 seats — small pool" },
-  { depth: 8, note: "256 seats" },
-  { depth: 10, note: "1,024 seats" },
-  { depth: 12, note: "4,096 seats — recommended" },
-  { depth: 14, note: "16,384 seats — large" },
-  { depth: MAX_SAFE_TREE_DEPTH, note: "65,536 seats — max" },
-] as const;
-
-function DepthPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <UiField>
-      <FieldLabel>Pool capacity.</FieldLabel>
-      <FieldControl>
-        <Select value={value} onValueChange={onChange}>
-          <SelectTrigger className="w-full" aria-label="Pool capacity">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {DEPTH_OPTIONS.map((opt) => (
-              <SelectItem key={opt.depth} value={opt.depth.toString()}>
-                {opt.note}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FieldControl>
-      <FieldDescription>
-        Maximum juror seats. Each stake/unstake tx carries a Merkle proof
-        proportional to depth — depths beyond {MAX_SAFE_TREE_DEPTH} exceed the
-        1232-byte transaction limit in browser wallets.
-      </FieldDescription>
-    </UiField>
-  );
-}
 
 // --- field primitive --------------------------------------------------------
 

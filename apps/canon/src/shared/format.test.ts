@@ -163,9 +163,11 @@ test("formatBps: standard values", () => {
   assert.equal(formatBps(0), "0%");
 });
 
-test("formatBps: custom fraction digits", () => {
-  assert.equal(formatBps(333, 1), "3.3%");
-  assert.equal(formatBps(333, 0), "3%");
+test("formatBps: zero fraction digits keep integer zeros (regression)", () => {
+  assert.equal(formatBps(5000, 0), "50%");
+  assert.equal(formatBps(10000, 0), "100%");
+  assert.equal(formatBps(5000), "50%");
+  assert.equal(formatBps(6670), "66.7%");
 });
 
 // --- formatHash ---

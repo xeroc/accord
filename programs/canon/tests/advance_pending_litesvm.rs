@@ -218,10 +218,7 @@ fn submit_item(env: &mut TestEnv, submitter: &Keypair) -> Pubkey {
             associated_token_program: spl_associated_token_account::ID,
             system_program: system_program::ID,
         })
-        .args(instruction::SubmitItem {
-            evidence: [0xAA; 32],
-            deposit,
-        })
+        .args(instruction::SubmitItem { deposit })
         .instruction()
         .unwrap();
     env.ctx

@@ -27,6 +27,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  useNow,
 } from "@useaccord/ui";
 import { useAccord } from "../../shared/rpc";
 import { fetchSubaccord } from "../../shared/fetch";
@@ -88,21 +89,6 @@ function hexBytes(bytes: ReadonlyUint8Array): string {
     .join("");
 }
 
-// --- live "now" (seconds) for countdowns; only ticks while enabled ---
-
-function useNow(enabled: boolean, intervalMs = 1000): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    if (!enabled) return;
-    setNow(Math.floor(Date.now() / 1000));
-    const id = setInterval(
-      () => setNow(Math.floor(Date.now() / 1000)),
-      intervalMs,
-    );
-    return () => clearInterval(id);
-  }, [enabled, intervalMs]);
-  return now;
-}
 
 // --- Component ---
 
@@ -277,16 +263,17 @@ export function Voting({
       </div>
 
       {subaccordQuery.data && (
-        <DomainDocPanel hash={hexIfSet(subaccordQuery.data.domainRef)} />
+        <div className="py-2">
+          <DomainDocPanel hash={hexIfSet(subaccordQuery.data.domainRef)} />
+        </div>
       )}
 
       {(reviewPending || commitOpen || revealOpen) && (
         <div
-          className={`flex items-center gap-2 rounded-md border px-3 py-2 font-mono text-xs ${
-            reviewPending
-              ? "border-border-subtle"
-              : "border-amber/40 bg-amber/10"
-          }`}
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 font-mono text-xs ${reviewPending
+            ? "border-border-subtle"
+            : "border-amber/40 bg-amber/10"
+            }`}
         >
           <span
             className={`font-medium ${reviewPending ? "text-text-secondary" : "text-amber"}`}
@@ -336,50 +323,50 @@ export function Voting({
           {/* Commit phase */}
           {commitOpen && !hasCommitted && (
             <div className="space-y-3">
-            <Field>
-              <FieldLabel>{isMedian ? "Scalar vote" : "Select option"}</FieldLabel>
-              {isMedian ? (
-                // Median: decimal scalar string (encodeScalarVote scales it).
-                <FieldControl>
-                  <Input
-                    inputMode="decimal"
-                    placeholder="e.g. 123.45"
-                    value={scalar}
-                    onChange={(e) => setScalar(e.target.value)}
-                    className="font-mono"
-                  />
-                </FieldControl>
-              ) : (
-                <FieldControl>
-                  <Select
-                    value={vote.toString()}
-                    onValueChange={(v) => setVote(Number(v))}
-                  >
-                    <SelectTrigger className="w-full font-mono" aria-label="Vote option">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: numOptions }, (_, i) => {
-                        const label = manifestLabels[i]?.trim();
-                        if (label) {
+              <Field>
+                <FieldLabel>{isMedian ? "Scalar vote" : "Select option"}</FieldLabel>
+                {isMedian ? (
+                  // Median: decimal scalar string (encodeScalarVote scales it).
+                  <FieldControl>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="e.g. 123.45"
+                      value={scalar}
+                      onChange={(e) => setScalar(e.target.value)}
+                      className="font-mono"
+                    />
+                  </FieldControl>
+                ) : (
+                  <FieldControl>
+                    <Select
+                      value={vote.toString()}
+                      onValueChange={(v) => setVote(Number(v))}
+                    >
+                      <SelectTrigger className="w-full font-mono" aria-label="Vote option">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: numOptions }, (_, i) => {
+                          const label = manifestLabels[i]?.trim();
+                          if (label) {
+                            return (
+                              <SelectItem key={i} value={i.toString()}>
+                                {label}
+                              </SelectItem>
+                            );
+                          }
+                          const hash = d.options[i] ? hexBytes(d.options[i]) : "";
                           return (
                             <SelectItem key={i} value={i.toString()}>
-                              {label}
+                              {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
                             </SelectItem>
                           );
-                        }
-                        const hash = d.options[i] ? hexBytes(d.options[i]) : "";
-                        return (
-                          <SelectItem key={i} value={i.toString()}>
-                            {hash ? `${hash.slice(0, 12)}…` : `Option ${i}`}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </FieldControl>
-              )}
-            </Field>
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </FieldControl>
+                )}
+              </Field>
               {!isMedian && (
                 <div className="break-all font-mono text-xs text-text-secondary">
                   {manifestLabels[vote]?.trim()
@@ -413,13 +400,9 @@ export function Voting({
                         : String(stored.vote)}
                     </span>{" "}
                   </p>
-                  <button
-                    onClick={handleReveal}
-                    disabled={sending}
-                    className="rounded-md bg-amber px-4 py-2 font-medium text-ink disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  <Button onClick={handleReveal} loading={sending}>
                     {sending ? "Signing…" : "Reveal vote"}
-                  </button>
+                  </Button>
                 </>
               ) : (
                 <p className="text-sm text-slash">

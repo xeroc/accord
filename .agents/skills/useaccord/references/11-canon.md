@@ -70,14 +70,13 @@ Submit `--account` for curation. Inits CanonItem `["canon-item", list, account]`
 |---|---|---|
 | `--list <pda>` | address | CanonList PDA |
 | `--account <addr>` | address | The curated address (PDA owned by `list_program`; any address on a sentinel list) |
-| `--evidence <hex>` | 32-byte hex | Evidence commitment. Default: 32 zero bytes |
 
 ```bash
 useaccord canon:submit --list can5Z… --account Fg6Pa…7r4t
 # → { signature, item, deposit }
 ```
 
-SDK: `submitItem(accounts, { evidence, deposit })` → `{ instruction, item }`.
+SDK: `submitItem(accounts, { deposit })` → `{ instruction, item }`.
 
 ## `canon:challenge`
 

@@ -86,7 +86,10 @@
   --secondary: var(--accord-border);
   --secondary-foreground: var(--accord-nearwhite);
   --muted: var(--accord-raised);
-  --muted-foreground: var(--accord-muted);
+  /* Aliased to the feature-view secondary gray — one secondary text color
+   * across both dialects (apple-design audit H2); --accord-muted stays on
+   * charts only. */
+  --muted-foreground: var(--accord-text-secondary);
   --accent: var(--accord-border);
   --accent-foreground: var(--accord-nearwhite);
   --destructive: var(--accord-slash);

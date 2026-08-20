@@ -23,7 +23,10 @@ import {
 import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
 import {
+  Button,
   Copyable,
+  EmptyState,
+  ErrorState,
   Skeleton,
   StaggerGroup,
   StaggerItem,
@@ -152,7 +155,7 @@ export function JurorBrowsePage() {
       : [];
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+    <>
       <header className="mb-8">
         <Link to="/juror" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
           ← Juror dashboard.
@@ -184,19 +187,18 @@ export function JurorBrowsePage() {
             ))}
           </StaggerGroup>
         ) : (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="mb-2 text-lg font-semibold">No active jurors.</p>
-            <p className="mb-5 text-muted-foreground">
-              No one is staked yet. Stake collateral in a subaccord to appear
-              here.
-            </p>
-          <Link to="/subaccords" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
-              Browse subaccords.
-            </Link>
-          </div>
+          <EmptyState
+            title="No active jurors."
+            description="No one is staked yet. Stake collateral in a subaccord to appear here."
+            action={
+              <Button asChild>
+                <Link to="/subaccords">Browse subaccords.</Link>
+              </Button>
+            }
+          />
         )}
       </Reveal>
-    </main>
+    </>
   );
 }
 
@@ -283,23 +285,5 @@ function JurorGridSkeleton() {
         </li>
       ))}
     </ul>
-  );
-}
-
-function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-dashed border-border p-12 text-center">
-      <p className="mb-2 text-lg font-semibold">Read failed.</p>
-      <p className="mb-5 font-mono text-sm text-muted-foreground">{message}</p>
-      <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={onRetry}>
-        Retry.
-      </button>
-    </div>
   );
 }

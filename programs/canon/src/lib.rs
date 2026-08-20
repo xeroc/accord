@@ -38,8 +38,8 @@ pub mod canon {
     /// `account.owner == list.list_program` (unless the list is sentinel),
     /// locks the permanent `submit_deposit` (`fee_mint`) into the CanonList
     /// vault, and inits a `CanonItem` PDA in `Pending`.
-    pub fn submit_item(ctx: Context<SubmitItem>, evidence: [u8; 32], deposit: u64) -> Result<()> {
-        instructions::submit_item::handler(ctx, evidence, deposit)
+    pub fn submit_item(ctx: Context<SubmitItem>, deposit: u64) -> Result<()> {
+        instructions::submit_item::handler(ctx, deposit)
     }
 
     /// Permissionless crank (SPEC §Instructions #3): advances a `Pending`

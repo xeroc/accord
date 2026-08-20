@@ -228,5 +228,10 @@ export function timeAgo(
  */
 export function formatBps(bps: number, maxFractionDigits = 2): string {
   const pct = bps / 100;
-  return `${pct.toFixed(maxFractionDigits).replace(/\.?0+$/, "")}%`;
+  // Strip only fractional trailing zeros — a bare "50"/"100" must survive
+  // (`\.?0+$` would eat integer zeros: 5000bps/0digits → "5%" not "50%").
+  return `${pct
+    .toFixed(maxFractionDigits)
+    .replace(/(\.\d*?)0+$/, "$1")
+    .replace(/\.$/, "")}%`;
 }

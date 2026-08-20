@@ -181,7 +181,7 @@ export interface SubmitItemAccounts {
 
 export async function submitItem(
   accounts: SubmitItemAccounts,
-  args: { evidence: Uint8Array; deposit: bigint },
+  args: { deposit: bigint },
   programId: Address = CANON_PROGRAM_ID,
 ): Promise<{ instruction: Instruction; item: Address }> {
   const [item] = await findCanonItemPda(accounts.list, accounts.account, {
@@ -196,7 +196,6 @@ export async function submitItem(
       feeMint: accounts.feeMint,
       submitterTokenAccount: accounts.submitterTokenAccount,
       vault: accounts.vault,
-      evidence: args.evidence,
       deposit: args.deposit,
     },
     { programAddress: programId },

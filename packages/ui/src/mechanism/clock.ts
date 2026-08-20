@@ -45,3 +45,24 @@ export function useWallClockFrame({
 
   return frame;
 }
+
+/**
+ * useNow — the current unix second, re-rendered on an interval; only
+ * ticks while `enabled` so closed windows cost nothing. Drives countdown
+ * gates (commit/reveal/appeal windows) that must re-evaluate on time.
+ */
+export function useNow(enabled: boolean, intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    if (!enabled) return;
+    setNow(Math.floor(Date.now() / 1000));
+    const id = setInterval(
+      () => setNow(Math.floor(Date.now() / 1000)),
+      intervalMs,
+    );
+    return () => clearInterval(id);
+  }, [enabled, intervalMs]);
+
+  return now;
+}

@@ -109,20 +109,15 @@ export type SubmitItemInstruction<
 
 export type SubmitItemInstructionData = {
   discriminator: ReadonlyUint8Array;
-  evidence: ReadonlyUint8Array;
   deposit: bigint;
 };
 
-export type SubmitItemInstructionDataArgs = {
-  evidence: ReadonlyUint8Array;
-  deposit: number | bigint;
-};
+export type SubmitItemInstructionDataArgs = { deposit: number | bigint };
 
 export function getSubmitItemInstructionDataEncoder(): FixedSizeEncoder<SubmitItemInstructionDataArgs> {
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["evidence", fixEncoderSize(getBytesEncoder(), 32)],
       ["deposit", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SUBMIT_ITEM_DISCRIMINATOR }),
@@ -132,7 +127,6 @@ export function getSubmitItemInstructionDataEncoder(): FixedSizeEncoder<SubmitIt
 export function getSubmitItemInstructionDataDecoder(): FixedSizeDecoder<SubmitItemInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["evidence", fixDecoderSize(getBytesDecoder(), 32)],
     ["deposit", getU64Decoder()],
   ]);
 }
@@ -178,7 +172,6 @@ export type SubmitItemAsyncInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
-  evidence: SubmitItemInstructionDataArgs["evidence"];
   deposit: SubmitItemInstructionDataArgs["deposit"];
 };
 
@@ -394,7 +387,6 @@ export type SubmitItemInput<
   tokenProgram?: Address<TAccountTokenProgram>;
   associatedTokenProgram?: Address<TAccountAssociatedTokenProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
-  evidence: SubmitItemInstructionDataArgs["evidence"];
   deposit: SubmitItemInstructionDataArgs["deposit"];
 };
 

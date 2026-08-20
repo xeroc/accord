@@ -40,6 +40,7 @@ export const Missing: Story = {
       <DomainDocCard
         doc={{ status: "missing" }}
         hash={"a".repeat(64)}
+        raw={OK_DOC.raw}
         retry={
           <button type="button" className="text-sm underline">
             Publish the document now →

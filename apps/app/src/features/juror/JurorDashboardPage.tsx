@@ -11,7 +11,10 @@ import { Link } from "react-router-dom";
 import { useSigner } from "../../shared/wallet";
 import { formatTokenAmount } from "../../shared/format";
 import {
+  Button,
   Copyable,
+  EmptyState,
+  ErrorState,
   StaggerGroup,
   StaggerItem,
 } from "@useaccord/ui";
@@ -24,6 +27,7 @@ export function JurorDashboardPage() {
     isLoading,
     isError,
     error,
+    refetch,
   } = useJurorStakes(signer?.address);
 
   const totalStaked = stakes?.reduce((sum, s) => sum + s.data.staked, 0n) ?? 0n;
@@ -33,43 +37,39 @@ export function JurorDashboardPage() {
     stakes?.reduce((sum, s) => sum + s.data.activeDraws, 0) ?? 0;
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+     <>
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-[-0.01em]">Juror.</h1>
         <p className="mb-4 text-muted-foreground">
           Your capital, your draws, your earned fees — across every subaccord.
         </p>
-        <Link to="/subaccords" className="inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset ring-primary transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]">
-          Find a pool to stake in.
-        </Link>
+        <Button variant="outline" asChild>
+          <Link to="/subaccords">Find a pool to stake in.</Link>
+        </Button>
       </header>
 
       {!signer ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">Connect a wallet.</p>
-          <p className="mb-5 text-muted-foreground">
-            Your stakes read from your connected wallet address.
-          </p>
-        </div>
+        <EmptyState
+          title="Connect a wallet."
+          description="Your stakes read from your connected wallet address."
+        />
       ) : isLoading ? (
         <p className="text-sm text-text-secondary">Loading your stakes…</p>
       ) : isError ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">Read failed.</p>
-          <p className="mb-5 font-mono text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : "RPC error."}
-          </p>
-        </div>
+        <ErrorState
+          message={error instanceof Error ? error.message : "RPC error."}
+          onRetry={() => void refetch()}
+        />
       ) : !stakes || stakes.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-12 text-center">
-          <p className="mb-2 text-lg font-semibold">No stakes yet.</p>
-          <p className="mb-5 text-muted-foreground">
-            Stake collateral in a subaccord to become draw-eligible.
-          </p>
-          <Link to="/subaccords" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
-            Browse subaccords.
-          </Link>
-        </div>
+        <EmptyState
+          title="No stakes yet."
+          description="Stake collateral in a subaccord to become draw-eligible."
+          action={
+            <Button asChild>
+              <Link to="/subaccords">Browse subaccords.</Link>
+            </Button>
+          }
+        />
       ) : (
         <>
           <div className="mb-6 grid grid-cols-3 gap-3 rounded-lg border border-border-subtle bg-raised p-4 font-mono text-sm">
@@ -111,14 +111,14 @@ export function JurorDashboardPage() {
                       />
                     )}
                   </dl>
-                  <span className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96] mt-3 inline-block">Manage. →</span>
+                  <span className="mt-3 inline-block font-semibold text-primary">Manage. →</span>
                 </Link>
               </StaggerItem>
             ))}
           </StaggerGroup>
         </>
       )}
-    </main>
+    </>
   );
 }
 

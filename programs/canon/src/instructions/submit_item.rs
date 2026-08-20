@@ -59,7 +59,7 @@ pub struct SubmitItem<'info> {
 
 /// Permissionless item submission. Locks the permanent deposit and inits the
 /// `CanonItem` in `Pending`.
-pub fn handler(ctx: Context<SubmitItem>, evidence: [u8; 32], deposit: u64) -> Result<()> {
+pub fn handler(ctx: Context<SubmitItem>, deposit: u64) -> Result<()> {
     let list = &mut ctx.accounts.list;
 
     // Defense-in-depth: the caller's deposit must match the list's canonical
@@ -118,7 +118,6 @@ pub fn handler(ctx: Context<SubmitItem>, evidence: [u8; 32], deposit: u64) -> Re
         account: account_key,
         submitter: submitter_key,
         deposit: delta,
-        evidence,
     });
 
     Ok(())

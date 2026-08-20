@@ -177,10 +177,7 @@ describe("Canon lifecycle (Surfpool)", () => {
         submitterTokenAccount: payerAta,
         vault,
       },
-      {
-        evidence: crypto.getRandomValues(new Uint8Array(32)),
-        deposit: SUBMIT_DEPOSIT,
-      },
+      { deposit: SUBMIT_DEPOSIT },
     );
     await env.sendIx(instruction);
 
@@ -320,10 +317,7 @@ describe("Canon lifecycle (Surfpool)", () => {
         submitterTokenAccount: payerAta,
         vault,
       },
-      {
-        evidence: crypto.getRandomValues(new Uint8Array(32)),
-        deposit: SUBMIT_DEPOSIT,
-      },
+      { deposit: SUBMIT_DEPOSIT },
     );
     await env.sendIx(instruction);
 
@@ -379,7 +373,7 @@ describe("Canon lifecycle (Surfpool)", () => {
         submitterTokenAccount: submitterAta,
         vault,
       },
-      { evidence: crypto.getRandomValues(new Uint8Array(32)), deposit: 500n },
+      { deposit: 500n },
       CANON_PROGRAM_ID,
     );
     await env.sendIx(submitIx);
