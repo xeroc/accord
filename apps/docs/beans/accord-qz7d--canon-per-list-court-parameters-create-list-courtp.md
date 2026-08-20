@@ -1,11 +1,11 @@
 ---
 # accord-qz7d
 title: Canon — per-list court parameters (create_list CourtParams)
-status: todo
+status: completed
 type: milestone
 priority: high
 created_at: 2026-08-19T18:18:13Z
-updated_at: 2026-08-19T18:18:14Z
+updated_at: 2026-08-20T02:25:08Z
 ---
 
 ## Scope
