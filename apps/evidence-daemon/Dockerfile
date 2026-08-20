@@ -24,13 +24,17 @@ WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # Copy EVERY workspace member's manifest: --frozen-lockfile validates the full
 # graph the lockfile was generated against, so partial manifests fail it.
+
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/canon/package.json packages/canon/
+COPY packages/synod/package.json package/synod/
+
 COPY apps/cli/package.json apps/cli/
 COPY apps/app/package.json apps/app/
 COPY apps/cranker/package.json apps/cranker/
 COPY apps/landing/package.json apps/landing/
 COPY apps/evidence-daemon/package.json apps/evidence-daemon/
+
 COPY tests/package.json tests/
 RUN pnpm install --frozen-lockfile
 
@@ -40,12 +44,18 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 # Shared TS base config (every workspace tsconfig extends ../../tsconfig.base.json).
 COPY tsconfig.base.json ./
+
 COPY packages/sdk packages/sdk
+COPY packages/canon packages/canon
+COPY packages/synod packages/synod
+
 COPY apps/evidence-daemon apps/evidence-daemon
+
 # SDK compiles src/generated (committed) -> dist/. No anchor/IDL step needed.
-RUN pnpm --filter @useaccord/sdk build
-# daemon build is `tsc --noEmit` (typecheck only; bun runs .ts directly).
-RUN pnpm --filter @useaccord/evidence-daemon build
+RUN pnpm --filter @useaccord/sdk  \
+  --filter @useaccord/canon \
+  --filter @useaccord/synod build && \
+  pnpm --filter @useaccord/evidence-daemon build
 
 ############################
 # 3. Prune to one self-contained package
