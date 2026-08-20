@@ -150,7 +150,7 @@ landing page.
 - **Fonts** — `@useaccord/ui` owns the Fontsource imports via `styles.css`;
   `tokens.css` stays font-asset-free for non-React consumers.
 - **AccordMark in the kit** — recorded exception to "apps own logos":
-  the _house_ mark is shared identity with real consumers in the app
+  the *house* mark is shared identity with real consumers in the app
   navbar, the landing Nav/Footer, and the Remotion videos; product
   marks remain per-app. One geometry, defined once.
 - **Frame-driven display components** — Backdrop + mechanism pieces

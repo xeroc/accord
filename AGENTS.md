@@ -33,7 +33,6 @@ apps/
   app/               Accord dApp (React + Vite)
   canon/ synod/      Canon / Synod dApps (React + Vite)
   landing/           landing page
-  remotion/          @useaccord/remotion — Remotion video framework (videos/ content is local-only, gitignored)
   docs/              MkDocs site — docs/, adr/, beans/ (issue tracker storage)
 reports/             security reviews (accord, canon)
 runbooks/            Surfpool deployment runbooks (wired via txtx.yml + anchor test)
@@ -133,7 +132,6 @@ The on-chain programs are the **source of truth**; every downstream layer is der
 | CLI                 | `apps/cli/`                                                                                                                               | `useaccord` — consumes the SDK.                                                                   |
 | Cranker             | `apps/cranker/`                                                                                                                           | Lifecycle cranker — consumes the SDK.                                                             |
 | Evidence daemon     | `apps/evidence-daemon/`                                                                                                                   | Consumes `@useaccord/sdk` + `@useaccord/sdk/evidence`.                                            |
-| Video framework    | `apps/remotion/`                                                                                                                          | Remotion videos obeying `@useaccord/ui`; see its README. Videos under `videos/` are local-only.   |
 | Frontends           | `apps/app/`, `apps/canon/`, `apps/synod/`, `apps/landing/`                                                                                | React + Vite — consume the SDK(s) + `@useaccord/ui`.                                              |
 | Docs                | `programs/*/SPEC.md`, `apps/docs/`, ADRs, `README.md`                                                                                     | Must describe the code as it is.                                                                  |
 | Agent skills        | `.agents/skills/useaccord/`                                                                                                               | CLI command + flag reference consumed by agents; mirrors `useaccord …` invocations + flag tables. |
