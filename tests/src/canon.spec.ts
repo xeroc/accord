@@ -363,7 +363,7 @@ describe("Canon lifecycle (Surfpool)", () => {
 
     // create_dispute's intake gate needs staker_count >= min_jury_size (3);
     // the dispute is forced terminal-Failed below, so arming is enough.
-    await armCanonJurors(env, accordState, subaccord, settleMint, 8);
+    await armCanonJurors(env, accordState, subaccord, settleMint, defaultCourtParams().depth);
 
     const vault = await ataOf(settleMint, list);
     const submitter = await fundSigner(env);

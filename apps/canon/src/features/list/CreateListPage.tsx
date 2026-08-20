@@ -116,12 +116,11 @@ export function CreateListPage() {
         },
         {
           ...args,
+          court: defaultCourtParams(), // canonical profile until a court-params UI ships
           evidenceOperator: requireAddress(
             EVIDENCE_OPERATOR,
             "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS in .env)",
           ),
-          // canonical court profile until the advanced court-params UI ships
-          court: defaultCourtParams(),
         },
       );
       await sendInstruction(

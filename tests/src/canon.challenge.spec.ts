@@ -17,13 +17,7 @@
 // dispute (fabricated via the synod-harness cheat): both parties are refunded
 // their own stake and — C-1 — neither payout can be redirected to an account
 // the caller controls. Run via `anchor test` (auto-starts Surfpool).
-import {
-  commit,
-  DEFAULT_APPEAL_WINDOW_SECS,
-  finalizeDispute,
-  finalizeRound,
-  reveal,
-} from "@useaccord/sdk";
+import { commit, finalizeDispute, finalizeRound, reveal } from "@useaccord/sdk";
 import {
   createList,
   defaultCourtParams,
@@ -35,6 +29,7 @@ import {
   getCanonItemDecoder,
   getCanonListDecoder,
   ItemState,
+  type CourtParams,
 } from "@useaccord/canon";
 import { getProgramDerivedAddress, getAddressEncoder, type Address } from "@solana/kit";
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
@@ -79,7 +74,24 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
   it("files a dispute via Canon's CPI and settles a keep ruling", async () => {
     if (!env.up) return; // offline CI lane
 
-    // --- create_list: CPIs Accord create_subaccord (defaultCourtParams: depth 8, fee_per_juror 10) ---
+    // --- create_list: CPIs Accord create_subaccord with an explicit court
+    // profile — depth 8, fee_per_juror 10, custom (short) windows so the
+    // warp-split below drives the list's own terms, not the canonical
+    // 7d/2d/2d/3d defaults. ---
+    const court: CourtParams = {
+      minStake: 1_000n,
+      alphaBps: 1_000,
+      reviewWindow: 3_600n, // 1h (canonical 7d)
+      commitWindow: 600n, // 10m (canonical 2d)
+      revealWindow: 600n, // 10m (canonical 2d)
+      appealWindow: 3_600n, // 1h — Accord's MIN_APPEAL_WINDOW_SECS floor (canonical 3d)
+      maxAppeals: 3,
+      minJurySize: 3,
+      feePerJuror: 10n,
+      revealThresholdBps: 6_666,
+      maxDrawAttempts: 3,
+      depth: 8,
+    };
     const accordState = await ensurePause(env);
     const { mint } = await createMint(env, 6);
     const rulesHash = crypto.getRandomValues(new Uint8Array(32));
@@ -97,14 +109,14 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         challengePct: 5_000, // 50%
         listingWindow: 5n * 24n * 60n * 60n,
         withdrawalTimelock: 5n * 24n * 60n * 60n,
-        court: defaultCourtParams(),
+        court,
       },
       CANON_PROGRAM_ID,
     );
     await env.sendIx(createIx);
 
-    // --- stake 3 jurors into the canon-created Subaccord (depth 8) ---
-    const core = await armCanonJurors(env, accordState, subaccord, mint, 8);
+    // --- stake 3 jurors into the canon-created Subaccord (court.depth) ---
+    const core = await armCanonJurors(env, accordState, subaccord, mint, court.depth);
     const fx: DrawFixture = { env, up: true, ...core };
 
     // --- submit_item: lock the 500 deposit (accumulated_stake = 500) ---
@@ -251,7 +263,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
 
     // --- no appeal: warp the appeal window, then finalize_dispute ---
     round = await readRound(env, roundPda);
-    await warpTo(env, round!.revealEnd + DEFAULT_APPEAL_WINDOW_SECS);
+    await warpTo(env, round!.revealEnd + court.appealWindow);
     await env.sendIx(
       finalizeDispute(
         env.accord.adapter,
@@ -356,6 +368,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     const rulesHash = crypto.getRandomValues(new Uint8Array(32));
     const listProgram = "11111111111111111111111111111111" as Address; // sentinel ⇒ ownership off
 
+    const court = defaultCourtParams();
     const { instruction: createIx, list, subaccord } = await createList(
       { creator: env.payer, stakeMint: mint, feeMint: mint },
       {
@@ -366,7 +379,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         challengePct: 5_000, // 50%
         listingWindow: 5n * 24n * 60n * 60n,
         withdrawalTimelock: 5n * 24n * 60n * 60n,
-        court: defaultCourtParams(),
+        court,
       },
       CANON_PROGRAM_ID,
     );
@@ -375,7 +388,7 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
     // Accord's create_dispute intake gate requires staker_count >=
     // min_jury_size (3). No draw/vote happens in this test — the dispute is
     // forced terminal-Failed below — so arming the court is enough.
-    await armCanonJurors(env, accordState, subaccord, mint, 8);
+    await armCanonJurors(env, accordState, subaccord, mint, court.depth);
 
     const canonVault = await ataOf(mint, list);
     const submitter = await fundSigner(env);
