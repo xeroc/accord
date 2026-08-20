@@ -190,6 +190,9 @@ importers:
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
+      '@useaccord/canon':
+        specifier: workspace:*
+        version: link:../../packages/canon
       '@useaccord/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

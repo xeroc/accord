@@ -34,7 +34,8 @@
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.0.0",
-    "@useaccord/sdk": "workspace:*",
+    "@useaccord/canon": "workspace:*",
+     "@useaccord/sdk": "workspace:*",
     "tsup": "^8.3.0"
   },
   "oclif": {
@@ -72,6 +73,9 @@
       },
       "accumulator": {
         "description": "Offline MST helpers (methods/mst.ts) — pure, no chain"
+      },
+      "canon": {
+        "description": "Canon curated-list Arbitrable (@useaccord/canon)"
       },
       "domain": {
         "description": "Rules-doc registry on the evidence daemon CAS (ADR-0027)"

@@ -27,6 +27,7 @@ commit-reveal votes, and emits a Ruling.
 | Read account state                 | `useaccord read:*`                                   | [09-reads.md](references/09-reads.md)             |
 | Build MST proofs offline           | `useaccord accumulator:*`                            | [03-accumulator.md](references/03-accumulator.md) |
 | Publish / fetch a domain rules doc | `useaccord domain:put` / `domain:get`                | [10-domains.md](references/10-domains.md)         |
+| Curate a Canon list (create, submit, challenge, withdraw, read) | `useaccord canon:*`                                     | [11-canon.md](references/11-canon.md)             |
 
 ## Key concepts
 
