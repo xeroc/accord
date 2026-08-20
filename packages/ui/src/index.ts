@@ -105,6 +105,7 @@ export { AmberRule } from "./brand/amber-rule";
 // as a pure function of a `frame` counter (caller owns time). Remotion
 // feeds useCurrentFrame(); browsers useWallClockFrame(). Includes the
 // ambient Backdrop and the wall-clock driver.
+export { Backdrop } from "./mechanism/backdrop";
 export { useNow } from "./mechanism/clock";
 export { useWallClockFrame } from "./mechanism/clock";
 export { JurorPool } from "./mechanism/juror-pool";
