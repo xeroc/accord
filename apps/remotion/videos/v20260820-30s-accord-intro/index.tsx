@@ -1,5 +1,4 @@
-import { Html5Audio, Sequence, staticFile } from "remotion";
-
+import { Sequence, staticFile } from "remotion";
 
 import { defineVideo } from "../../src/framework/video";
 import { Stage } from "../../src/shell/stage";
@@ -30,13 +29,17 @@ export const video = defineVideo({
   width: 1920,
   height: 1080,
   durationInFrames: 30 * FPS,
+  music: {
+    // rendered once by `pnpm --filter @useaccord/remotion score accord-intro-30s`
+    src: staticFile("audio/accord-intro-30s.wav"),
+    volume: 0.25,
+  },
 });
 
 function AccordIntro30s() {
   return (
     <Stage>
-      {/* rendered once by `pnpm --filter @useaccord/remotion score accord-intro-30s` */}
-      <Html5Audio src={staticFile("audio/accord-intro-30s.wav")} volume={0.25} />
+      {/* music is mounted by Root from the `music` field above */}
       <Sequence durationInFrames={120}>
         <HookScene />
       </Sequence>

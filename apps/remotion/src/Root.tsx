@@ -1,5 +1,6 @@
 import { Composition, Folder } from "remotion";
 
+import { withMusic } from "./framework/music";
 import { videos } from "./videos.gen";
 
 /**
@@ -12,7 +13,7 @@ export const RemotionRoot: React.FC = () => (
       <Folder key={video.id} name={video.id}>
         <Composition
           id={video.id}
-          component={video.component}
+          component={withMusic(video)}
           durationInFrames={video.durationInFrames}
           fps={video.fps}
           width={video.width}

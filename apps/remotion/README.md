@@ -16,6 +16,7 @@ apps/remotion/
     Root.tsx                one <Folder><Composition/> per video (from manifest)
     videos.gen.ts           GENERATED manifest (gitignored; never hand-edit)
     framework/video.ts      defineVideo() — the per-video contract
+    framework/music.tsx     music volume curve + Root-mounted <Html5Audio> wrapper
     shell/theme.css         Tailwind wiring, identical to apps/app/src/index.css
     shell/stage.tsx         <Stage> — ink canvas + fonts-ready render gate
     shell/presets.ts        EASE_EXPO (brand curve) + SPRING feels
@@ -52,13 +53,22 @@ pnpm --filter @useaccord/remotion score --stale       # re-render only changed s
 score, the next render/studio run re-bakes it (needs network); unchanged
 scores are skipped in under a second.
 
-In a video (Html5Audio = the plain HTML5-element path; needs remotion ≥
-4.0.514, which introduced the export):
+Declare the artifact as `music` in `defineVideo` — the framework mounts it
+(Root wraps the component) and applies the fades via a `volume` callback,
+so no video ever renders `<Html5Audio>` itself and Studio draws the volume
+curve:
 
 ```tsx
-import { Html5Audio, staticFile } from "remotion";
+import { staticFile } from "remotion";
 
-<Html5Audio src={staticFile("audio/my-score.wav")} volume={0.1} />
+export const video = defineVideo({
+  /* id, component, fps, width, height, durationInFrames, */
+  music: {
+    src: staticFile("audio/my-score.wav"),
+    volume: 0.1,  // base level the fades scale
+    fadeOut: 1.5, // seconds; default 1.5 — hits 0 at the composition end
+  },
+});
 ```
 
 - The score's `setcpm` is parsed by the command; pass the composition length
@@ -102,6 +112,8 @@ pnpm --filter @useaccord/remotion exec remotion render <id> out/<id>.mp4 --brows
 The contract (see `src/framework/video.ts`):
 
 ```tsx
+import { staticFile } from "remotion";
+
 import { defineVideo } from "../../src/framework/video";
 import { Stage } from "../../src/shell/stage";
 
@@ -112,6 +124,10 @@ export const video = defineVideo({
   width: 1920,               // 1920x1080 renders app-density UI 1:1
   height: 1080,
   durationInFrames: 30 * 20, // 20s
+  music: {                   // optional — mounted + faded by the framework
+    src: staticFile("audio/my-score.wav"),
+    volume: 0.1,
+  },
 });
 
 function MyVideo() {
