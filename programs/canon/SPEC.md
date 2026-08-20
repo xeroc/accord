@@ -35,7 +35,7 @@ staking.
 
 | # | Instruction | Semantics |
 | --- | --- | --- |
-| 1 | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock, evidence_operator)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, **Canon canonical dispute-mechanism defaults**, `evidence_operator` forwarded — `Pubkey::default()` rejected with `InvalidEvidenceOperator`); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
+| 1 | `create_list(stake_mint, fee_mint, list_program, rules_hash, submit_deposit, challenge_pct, listing_window, withdrawal_timelock, evidence_operator, court: CourtParams)` — mints passed as validated `Mint` **accounts**, stored on `CanonList` | permissionless; records `list_program` (the program whose accounts this list curates; immutable); CPIs Accord `create_subaccord` (staking token `stake_mint`, fee token `fee_mint`, court profile from `court` with `aggregation = Plurality` / `shortfall_policy = Redraw` / `coherence_tol_bps = 0` / `authority = CanonList PDA` pinned — canon/0002; `evidence_operator` forwarded — `Pubkey::default()` rejected with `InvalidEvidenceOperator`); canon-side guards (only what the CPI doesn't check): `alpha_bps <= 10_000` (`AlphaTooHigh`), nonzero review/commit/reveal windows (`WindowTooShort`), `depth <= MAX_LIST_TREE_DEPTH = 8` (`TreeDepthTooDeep`); inits `CanonList`. `stake_mint` may equal `fee_mint`. |
 | 2 | `submit_item(list, account, evidence, deposit = submit_deposit)` | verifies `account.owner == list.list_program`; locks `submit_deposit` (in `fee_mint`) permanently; `CanonItem` (keyed by the account) → `Pending`. |
 | 3 | `advance_pending(item)` | permissionless crank; after `listing_window` with no challenge → `Listed`. |
 | 4 | `challenge_item(item, evidence)` | locks `challenge_stake = challenge_pct × item.accumulated_stake` **+** `accord_fee` (in `fee_mint`); CPIs Accord `create_dispute(options = [keep, remove], evidence_hash, fee)`. Usable from `Pending`, `Listed`, or `WithdrawPending`. |
@@ -89,32 +89,71 @@ item.accumulated_stake` (forfeited on a failed challenge).
   Accord as the filer; consumed by Accord (coherent jurors). Dollar-legible
   throughout (`fee_mint`, default USDC).
 
-## v1 canonical defaults
+## Court profile (`CourtParams`) and canonical defaults
 
-Each Canon list's params live on its 1:1 backing Subaccord (per-list, not
-global). They are initialized to the Canon defaults below, **controlled by the
-Subaccord authority (NOT the list creator)**, and retunable via the 48h
-propose/execute timelock (ADR-0005). `create_list` sets the authority to the
-**CanonList PDA itself** — no external governance key exists yet, and the PDA
-keeps the court as immutable as `Pubkey::default()` until canon ships a gated
-retuning instruction (not yet implemented) that CPIs
-`propose/execute_subaccord_update` with the list PDA as `invoke_signed`
-signer.
+Each Canon list's court params live on its 1:1 backing Subaccord (per-list, not
+global). Since canon/0002 the list creator sets them at `create_list` via the
+grouped `court: CourtParams` argument; the table below is the canonical
+default profile, returned by `defaultCourtParams()` in `@useaccord/canon` (the
+dApp and tests call the helper; power users spread-and-override individual
+fields). The program itself pins what is protocol identity rather than taste:
+`aggregation = Plurality` (Canon files 2-option `[keep, remove]` disputes
+only, ADR-0019/0025), `shortfall_policy = Redraw`, `coherence_tol_bps = 0`
+(inert under Plurality), `authority` = the CanonList PDA, and
+`juror_credential` / `juror_schema` = `default()` (attestation gating is
+separate scope).
 
-| param                    | v1 value                                                                         | notes                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `initial_num_jurors`     | 3                                                                                | ADR-0019 default; round-1 panel                                                                           |
-| `aggregation`            | `Plurality`                                                                      | Canon files 2-option `[keep, remove]` disputes only (ADR-0019/0025)                                       |
-| `coherence_tol_bps`      | 0                                                                                | Inert on a `Plurality` pool — zero keeps coherence exact (ADR-0025)                                       |
-| `max_appeals`            | 3                                                                                | 3 → 7 → 15 → 31 ladder                                                                                    |
-| `alpha_bps`              | 1000 (10%)                                                                       | Accord v1 slash default                                                                                   |
-| review / commit / reveal | 7d / 2d / 2d                                                                     | Accord v1 defaults                                                                                        |
-| `evidence_operator`      | creator-supplied (deployment-configured; dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`) | must be a real key held by the daemon's keyring (ADR-0006/0011) — a zero key can never be an ECIES target |
-| `fee_per_juror`          | 10                                                                               | in `fee_mint`; round-1 ≈ 30                                                                               |
-| `submit_deposit`         | 500                                                                              | in `fee_mint`; base skin (recoverable via withdrawal)                                                     |
-| `challenge_pct`          | 50% (5000 bps)                                                                   | challenger stakes half the accumulated stake                                                              |
-| `listing_window`         | 5 days                                                                           | watcher time to catch a scam before auto-list                                                             |
-| `withdrawal_timelock`    | 5 days                                                                           | final fraud-challenge window (matches listing_window)                                                     |
+Canon guards only what Accord's `create_subaccord` CPI does not already
+validate: `alpha_bps <= 10_000` (`AlphaTooHigh` — no slash factor above 100%),
+nonzero review/commit/reveal windows (`WindowTooShort` — zero windows would
+brick disputes forever and strand third-party item deposits), and `depth <=
+MAX_LIST_TREE_DEPTH = 8` (`TreeDepthTooDeep` — every stake/draw tx carries a
+depth-length MST path at ~40 B/level, ADR-0012; depth 8 keeps the stake tx
+≈ 900 B under the 1232-byte limit). Everything else (appeals cap, odd
+`min_jury_size`, ladder fit, reveal threshold, draw attempts, appeal-window
+floor) is Accord's validation at the CPI — its errors propagate.
+
+Once created, the params are **controlled by the Subaccord authority (NOT the
+list creator)** and retunable via the 48h propose/execute timelock
+(ADR-0005) — except `min_jury_size` and `depth`, which are **set-once**:
+immutable on the Subaccord (absent from `UpdatePayload`), irreversible
+list-creation choices. `create_list` sets the authority to the **CanonList PDA
+itself** — no external governance key exists yet, and the PDA keeps the court
+as immutable as `Pubkey::default()` until canon ships a gated retuning
+instruction (not yet implemented) that CPIs `propose/execute_subaccord_update`
+with the list PDA as `invoke_signed` signer.
+
+`CourtParams` fields (canonical defaults):
+
+| param                  | default           | notes                                                                |
+| ---------------------- | ----------------- | -------------------------------------------------------------------- |
+| `min_stake`            | 1_000             | min juror stake for draw eligibility (in `stake_mint`)               |
+| `alpha_bps`            | 1_000 (10%)       | slash factor; canon guard `<= 10_000`                                |
+| `review_window`        | 7d                | nonzero (canon guard)                                                |
+| `commit_window`        | 2d                | nonzero (canon guard)                                                |
+| `reveal_window`        | 2d                | nonzero (canon guard)                                                |
+| `appeal_window`        | 3d                | Accord floor `MIN_APPEAL_WINDOW_SECS` (ADR-0022)                     |
+| `max_appeals`          | 3                 | 3 → 7 → 15 → 31 ladder                                               |
+| `min_jury_size`        | 3                 | round-1 panel (ADR-0019); **set-once** — immutable on the Subaccord  |
+| `fee_per_juror`        | 10                | in `fee_mint`; round-1 ≈ 30                                          |
+| `reveal_threshold_bps` | 6_666 (2/3)       | reveal quorum (ADR-0021)                                             |
+| `max_draw_attempts`    | 3                 | same-size redraws per round (ADR-0021)                               |
+| `depth`                | 8                 | accumulator tree depth (ADR-0012); canon guard `<= 8`; **set-once**  |
+
+`evidence_operator` stays its own `create_list` arg (not a `CourtParams`
+field): creator-supplied, deployment-configured (dApp:
+`VITE_EVIDENCE_OPERATOR_ADDRESS`); must be a real key held by the daemon's
+keyring (ADR-0006/0011) — a zero key can never be an ECIES target.
+
+List-level economics (already per-list `create_list` args, stored on
+`CanonList`):
+
+| param                 | default        | notes                                                         |
+| --------------------- | -------------- | ------------------------------------------------------------- |
+| `submit_deposit`      | 500            | in `fee_mint`; base skin (recoverable via withdrawal)         |
+| `challenge_pct`       | 50% (5000 bps) | challenger stakes half the accumulated stake                  |
+| `listing_window`      | 5 days         | watcher time to catch a scam before auto-list                 |
+| `withdrawal_timelock` | 5 days         | final fraud-challenge window (matches listing_window)         |
 
 ## Token model
 
@@ -197,10 +236,13 @@ public rules to the juror-only evidence → `keep` / `remove`.
 ## Out of scope (v2+)
 
 ATQ "code-as-item" scaling (curate tagging _modules_, not individual items) ·
-multi-surface distribution (wallet snap / explorer / DEX) · per-list custom
-dispute-param tiers · badges/tiers as separate Canon lists.
+multi-surface distribution (wallet snap / explorer / DEX) · advanced
+court-params editing UI in the dApp (the per-list on-chain params themselves
+shipped with canon/0002; v1's create flow passes `defaultCourtParams()`) ·
+badges/tiers as separate Canon lists.
 
 ## Authority
 
-`canon-0001` · `CURATED-LIST.md` · `programs/accord/SPEC.md` · Accord ADR-0001 /
-0002 / 0004 / 0019 / 0027 · `CONTEXT.md` · `BRAND.md`.
+`canon-0001` · `canon-0002` · `CURATED-LIST.md` · `programs/accord/SPEC.md` ·
+Accord ADR-0001 / 0002 / 0004 / 0019 / 0021 / 0022 / 0025 / 0027 ·
+`CONTEXT.md` · `BRAND.md`.
