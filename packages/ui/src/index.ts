@@ -92,6 +92,7 @@ export {
   type DomainDoc,
 } from "./patterns/domain-doc-card";
 
+
 // Brand — the house identity: the Accord mark and wordmark lockup.
 // Progress-driven (0→1), static-capable defaults.
 export { AccordMark } from "./brand/accord-mark";
@@ -109,6 +110,7 @@ export { SealedVote } from "./mechanism/sealed-vote";
 export { RulingStamp } from "./mechanism/ruling-stamp";
 export { MonoChip, DeltaChip, type ChipTone } from "./mechanism/chips";
 export { TallyBar } from "./mechanism/tally";
+
 // Mechanism additions — the concept-illustration vocabulary (groups
 // A–F): ledger strip, subaccord container, vaults, counters, ladder,
 // lifecycle, accumulator, sortition. Same frame contract; see
