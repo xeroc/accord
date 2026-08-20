@@ -16,9 +16,6 @@ import { submitItem } from "@useaccord/canon";
 
 import { ChainCommand, chainFlags } from "../../lib/base-command.js";
 import { requireCanonList } from "../../canon-context.js";
-import { parseHash32 } from "../dispute/create.js";
-
-const ZERO_EVIDENCE = new Uint8Array(32);
 
 export default class CanonSubmit extends ChainCommand {
   static summary = "Submit an item to a Canon list (locks the submit deposit)";
@@ -30,10 +27,7 @@ export default class CanonSubmit extends ChainCommand {
     "deposit is read from the list — it must match exactly (DepositMismatch). " +
     "The item auto-lists after the listing window unless challenged.";
 
-  static examples = [
-    "<%= config.bin %> canon:submit --list <pda> --account <addr>",
-    "<%= config.bin %> canon:submit --list <pda> --account <addr> --evidence <hex64>",
-  ];
+  static examples = ["<%= config.bin %> canon:submit --list <pda> --account <addr>"];
 
   static flags = {
     ...chainFlags,
@@ -43,16 +37,11 @@ export default class CanonSubmit extends ChainCommand {
         "The curated address (PDA owned by the list's list_program, or any address on a sentinel list)",
       required: true,
     }),
-    evidence: Flags.string({
-      description: "Evidence commitment hash (32-byte hex). Defaults to 32 zero bytes",
-    }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(CanonSubmit);
     this.applyOutput(flags);
-
-    const evidence = flags.evidence ? parseHash32(flags.evidence, "evidence") : ZERO_EVIDENCE;
 
     const ctx = await this.loadChain(flags);
     const listAddr = flags.list as Address;
@@ -73,7 +62,7 @@ export default class CanonSubmit extends ChainCommand {
         submitterTokenAccount,
         vault,
       },
-      { evidence, deposit: list.submitDeposit },
+      { deposit: list.submitDeposit },
     );
 
     if (flags["dry-run"]) {

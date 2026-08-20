@@ -4,7 +4,6 @@
  * The Item Submitter form (milestone §1 path (b)): submits a curated account
  * to a Canon list. Fields:
  *  - account   — the curated address (a PDA owned by `CanonList.list_program`)
- *  - evidence  — 32-byte evidence hash (hex); references off-chain evidence
  *  - deposit   — fee_mint deposit (defaults to the list's `submit_deposit`)
  *
  * Client-side validation (milestone §3): resolves the account's owner via RPC
@@ -36,23 +35,10 @@ import {
   Field,
   FieldControl,
   FieldDescription,
-  FieldError,
   FieldLabel,
   Input,
 } from "@useaccord/ui";
 import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
-
-const ZERO_HASH = "0".repeat(64);
-
-/** Parse a 32-byte hash from hex (optional 0x prefix) → Uint8Array, or null. */
-function parseHash32(input: string): Uint8Array | null {
-  const hex = input.trim().replace(/^0x/, "").toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(hex)) return null;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++)
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  return out;
-}
 
 export function SubmitItemPage() {
   const { address = "" } = useParams<{ address: string }>();
@@ -65,7 +51,6 @@ export function SubmitItemPage() {
   const ownershipDisabled = listData?.listProgram === ZERO_ADDRESS;
 
   const [account, setAccount] = useState("");
-  const [evidenceHex, setEvidenceHex] = useState("");
   const [deposit, setDeposit] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -87,12 +72,6 @@ export function SubmitItemPage() {
     staleTime: 30_000,
   });
 
-  const evidence = evidenceHex.trim() ? parseHash32(evidenceHex) : null;
-  const evidenceError =
-    evidenceHex.trim() && !evidence
-      ? "Enter a 32-byte hex hash (64 chars)."
-      : "";
-
   const ownerMatch =
     ownerQuery.data !== undefined && !!listData
       ? ownerQuery.data === listData.listProgram
@@ -101,13 +80,11 @@ export function SubmitItemPage() {
   const ready =
     !!env &&
     !!listData &&
-    account.length > 30 &&
-    evidence !== null &&
-    !evidenceError;
+    account.length > 30;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!env || !listData || !evidence) return;
+    if (!env || !listData) return;
     setSending(true);
     try {
       const feeMint = listData.feeMint;
@@ -125,7 +102,7 @@ export function SubmitItemPage() {
           submitterTokenAccount,
           vault,
         },
-        { evidence, deposit: BigInt(depositValue) },
+        { deposit: BigInt(depositValue) },
       );
       await sendInstruction(
         env.rpc,
@@ -224,24 +201,6 @@ export function SubmitItemPage() {
                   ? "✗ account does not exist on-chain."
                   : "✗ owner mismatch — submit will revert."}
             </span>
-          )}
-        </Field>
-
-        <Field invalid={!!evidenceError}>
-          <FieldLabel>Evidence hash</FieldLabel>
-          <FieldControl>
-            <Input
-              className="font-mono"
-              placeholder={ZERO_HASH}
-              value={evidenceHex}
-              onChange={(e) => setEvidenceHex(e.target.value)}
-            />
-          </FieldControl>
-          <FieldError>{evidenceError ?? null}</FieldError>
-          {!evidenceError && (
-            <FieldDescription>
-              32-byte sha256 of the off-chain evidence (hex).
-            </FieldDescription>
           )}
         </Field>
 

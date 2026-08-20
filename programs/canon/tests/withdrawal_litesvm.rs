@@ -207,7 +207,6 @@ fn submit_item(env: &mut TestEnv, submitter: &Keypair) -> Pubkey {
             system_program: SYS_PROGRAM_ID,
         })
         .args(instruction::SubmitItem {
-            evidence: [0xAA; 32],
             deposit: env.deposit,
         })
         .instruction()

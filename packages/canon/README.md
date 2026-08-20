@@ -33,7 +33,7 @@ const { instruction, item } = await submitItem(
     submitterTokenAccount,
     vault,
   },
-  { evidence: hash32, deposit: 500n },
+  { deposit: 500n },
 );
 ```
 
@@ -61,7 +61,7 @@ const { instruction, item } = await submitItem(
   spread-and-override: `{ ...defaultCourtParams(), alphaBps: 500 }`
 - `MAX_LIST_TREE_DEPTH` — ceiling on `court.depth` (8), mirroring the
   program constant; consumers (dApp form) bound the depth input with it.
-- `submitItem(accounts, { evidence, deposit })` — permissionless item submission
+- `submitItem(accounts, { deposit })` — permissionless item submission
 - `advancePending({ caller, list, item })` — crank: Pending → Listed
 - `challengeItem(accounts, { evidence }, extras)` — lock stake + fee, CPI Accord
 - `settleItem(accounts)` — crank: read ruling, redistribute
