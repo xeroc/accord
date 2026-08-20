@@ -27,7 +27,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/canon/package.json packages/canon/
-COPY packages/synod/package.json package/synod/
+COPY packages/synod/package.json packages/synod/
 
 COPY apps/cli/package.json apps/cli/
 COPY apps/app/package.json apps/app/
@@ -54,8 +54,9 @@ COPY apps/evidence-daemon apps/evidence-daemon
 # SDK compiles src/generated (committed) -> dist/. No anchor/IDL step needed.
 RUN pnpm --filter @useaccord/sdk  \
   --filter @useaccord/canon \
-  --filter @useaccord/synod build && \
-  pnpm --filter @useaccord/evidence-daemon build
+  --filter @useaccord/synod \
+  --filter @useaccord/evidence-daemon \
+  build
 
 ############################
 # 3. Prune to one self-contained package
