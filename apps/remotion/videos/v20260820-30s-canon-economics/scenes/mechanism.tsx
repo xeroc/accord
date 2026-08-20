@@ -34,8 +34,13 @@ const BEATS = [
 /** THE item — same token card across all three beats. */
 const ITEM_ADDR = "7xKX…gQ2v";
 
-/** The deposit pile: five amber blocks = 500 locked. */
-const PileBlocks: FC<{ frame: number }> = ({ frame }) => (
+/** The deposit pile: five amber blocks = 500 locked. Failed strikes
+ *  weld their forfeited stake on as extra blocks — `extra` carries the
+ *  frame each one lands, so the pile visibly grows with every attack. */
+const PileBlocks: FC<{ frame: number; extra?: readonly number[] }> = ({
+  frame,
+  extra = [],
+}) => (
   <div className="flex gap-2">
     {Array.from({ length: 5 }, (_, i) => {
       const land = enterAt(frame, 30, 0.7 + i * 0.14, 0.3);
@@ -44,6 +49,22 @@ const PileBlocks: FC<{ frame: number }> = ({ frame }) => (
           key={i}
           className="h-12 flex-1 rounded-md border border-amber bg-amber"
           style={{ opacity: land, translate: `0px ${(1 - land) * 26}px` }}
+        />
+      );
+    })}
+    {extra.map((at, i) => {
+      if (frame < at) {
+        return null;
+      }
+      const pop = enterAt(frame, 30, at / 30, 0.25);
+      return (
+        <div
+          key={`armor${i}`}
+          className="h-12 flex-1 rounded-md border border-amber bg-amber"
+          style={{
+            opacity: pop,
+            scale: `${0.6 + 0.4 * pop} ${0.6 + 0.4 * pop}`,
+          }}
         />
       );
     })}
@@ -197,15 +218,57 @@ const strikeMotion = (
   };
 };
 
-/** Stake chips of a failed strike: flip slash→amber, slide to the plate. */
+const STRIKE_TONE = {
+  slash: { line: "bg-slash", head: "border-l-slash" },
+  confirm: { line: "bg-confirm", head: "border-l-confirm" },
+} as const;
+
+/**
+ * StrikeArrow — one attack, legibly: a shaft + arrowhead flying at
+ * the card with its verdict word riding above, so red/green always
+ * read as wrong/right challenges instead of abstract lines. The word
+ * chip sits on an opaque pill — it crosses grid lines mid-flight.
+ */
+const StrikeArrow: FC<{
+  tone: keyof typeof STRIKE_TONE;
+  word: string;
+  x: number;
+  y: number;
+  opacity: number;
+  className?: string;
+}> = ({ tone, word, x, y, opacity, className }) => (
+  <Interactive.Div
+    name={`Strike arrow · ${word}`}
+    className={className}
+    style={{ translate: `${x}px ${y}px`, opacity }}
+  >
+    <div className="flex origin-center -rotate-36 items-center">
+      <div
+        className={`h-0 w-0 border-y-[8px] border-l-[14px] border-y-transparent ${STRIKE_TONE[tone].head}`}
+      />
+      <div className={`h-[5px] w-32 rounded-full ${STRIKE_TONE[tone].line}`} />
+    </div>
+    <MonoChip
+      tone={tone}
+      className="absolute -top-10 left-4 bg-raised px-3 py-1 text-sm"
+    >
+      {word}
+    </MonoChip>
+  </Interactive.Div>
+);
+
+/**
+ * Stake chips of a failed strike: flip slash→amber mid-air, then fly
+ * into the card and land on the pile row's right end — they hand off
+ * to the extra PileBlocks that pop at the same moment.
+ */
 const ArmorChips: FC<{
   frame: number;
   strike: StrikeMotion;
   flipAt: number;
   slideTo: readonly [number, number];
-  plate: "top" | "bottom";
-  plateAt: number;
-}> = ({ frame, strike, flipAt, slideTo, plate, plateAt }) => {
+  topBase: number;
+}> = ({ frame, strike, flipAt, slideTo, topBase }) => {
   const flip = interpolate(frame, [flipAt, flipAt + 18], [0, 180], {
     easing: EASE_EXPO,
     ...clamp,
@@ -220,7 +283,6 @@ const ArmorChips: FC<{
   });
   const x = strike.chipsX + slideTo[0] * slide;
   const y = strike.chipsY + slideTo[1] * slide;
-  const platePop = enterAt(frame, 30, plateAt / 30, 0.25);
   return (
     <>
       {[0, 1].map((i) => (
@@ -230,7 +292,7 @@ const ArmorChips: FC<{
           className="absolute"
           style={{
             left: 436 + i * 16,
-            top: 30 + i * 22 + (plate === "bottom" ? 90 : 0),
+            top: topBase + i * 22,
             translate: `${x}px ${y}px`,
           }}
         >
@@ -258,18 +320,11 @@ const ArmorChips: FC<{
           </div>
         </Interactive.Div>
       ))}
-      <Interactive.Div
-        name={`Armor plate ${plate}`}
-        className={`absolute left-1 w-2.5 rounded-full bg-amber ${
-          plate === "top" ? "top-8 h-24" : "bottom-8 h-24"
-        }`}
-        style={{ opacity: platePop, scale: `1 ${0.3 + 0.7 * platePop}` }}
-      />
     </>
   );
 };
 
-/** 02 · armor — two failed strikes plate the card; the pile ticks up. */
+/** 02 · armor — two failed strikes weld their stake into the pile; it ticks up. */
 const ArmorBeat: FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -330,21 +385,20 @@ const ArmorBeat: FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <PileBlocks frame={frame} />
+                <PileBlocks frame={frame} extra={[80, 170]} />
               </CardContent>
             </Card>
           </div>
 
           {/* strike layer */}
           <div className="pointer-events-none absolute inset-0">
-            <Interactive.Div
-              name="Strike 1 bolt"
-              className="absolute left-[300px] top-[44px] h-1.5 w-36 origin-center rounded-full bg-slash"
-              style={{
-                rotate: "-36deg",
-                translate: `${s1.boltX}px ${s1.boltY}px`,
-                opacity: s1.boltOp,
-              }}
+            <StrikeArrow
+              tone="slash"
+              word="wrong"
+              x={s1.boltX}
+              y={s1.boltY}
+              opacity={s1.boltOp}
+              className="absolute left-[288px] top-[36px]"
             />
             <Interactive.Div
               name="Strike 1 ring"
@@ -355,18 +409,16 @@ const ArmorBeat: FC = () => {
               frame={frame}
               strike={s1}
               flipAt={46}
-              slideTo={[-428, 20]}
-              plate="top"
-              plateAt={80}
+              slideTo={[-86, 28]}
+              topBase={30}
             />
-            <Interactive.Div
-              name="Strike 2 bolt"
-              className="absolute left-[300px] top-[134px] h-1.5 w-36 origin-center rounded-full bg-slash"
-              style={{
-                rotate: "-36deg",
-                translate: `${s2.boltX}px ${s2.boltY}px`,
-                opacity: s2.boltOp,
-              }}
+            <StrikeArrow
+              tone="slash"
+              word="wrong"
+              x={s2.boltX}
+              y={s2.boltY}
+              opacity={s2.boltOp}
+              className="absolute left-[288px] top-[126px]"
             />
             <Interactive.Div
               name="Strike 2 ring"
@@ -377,9 +429,8 @@ const ArmorBeat: FC = () => {
               frame={frame}
               strike={s2}
               flipAt={136}
-              slideTo={[-428, 0]}
-              plate="bottom"
-              plateAt={170}
+              slideTo={[-86, -62]}
+              topBase={120}
             />
           </div>
         </Interactive.Div>
@@ -418,24 +469,44 @@ const ArmorBeat: FC = () => {
           </Interactive.Div>
         </div>
 
+        {/* armor gains — each lands with its strike's forfeited stake */}
         <div className="flex items-center gap-5">
           <Interactive.Div
-            name="Armor chip 1"
-            style={{ opacity: enterAt(frame, fps, 84 / 30, 0.3) }}
+            name="Armor gain 1"
+            style={{ opacity: enterAt(frame, fps, 82 / 30, 0.3) }}
           >
-            <MonoChip tone="amber" className="px-5 py-2 text-xl">
-              +250 armor
-            </MonoChip>
+            <DeltaChip
+              tone="amber"
+              sign="+"
+              amount={250}
+              label="armor"
+              pop={spring({ frame: since(frame, 82), fps, config: SPRING.snappy })}
+              className="bg-raised"
+            />
           </Interactive.Div>
           <Interactive.Div
-            name="Armor chip 2"
-            style={{ opacity: enterAt(frame, fps, 174 / 30, 0.3) }}
+            name="Armor gain 2"
+            style={{ opacity: enterAt(frame, fps, 172 / 30, 0.3) }}
           >
-            <MonoChip tone="amber" className="px-5 py-2 text-xl">
-              +375 armor
-            </MonoChip>
+            <DeltaChip
+              tone="amber"
+              sign="+"
+              amount={375}
+              label="armor"
+              pop={spring({ frame: since(frame, 172), fps, config: SPRING.snappy })}
+              className="bg-raised"
+            />
           </Interactive.Div>
         </div>
+
+        <Interactive.Div
+          name="Armor rule"
+          style={{ opacity: enterAt(frame, fps, 100 / 30, 0.4) }}
+        >
+          <MonoChip tone="neutral" className="px-5 py-2 text-xl">
+            next challenge = 50% × pile
+          </MonoChip>
+        </Interactive.Div>
       </div>
     </Beat>
   );
@@ -543,16 +614,17 @@ const BountyBeat: FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <PileBlocks frame={frame} />
+                <PileBlocks frame={frame} extra={[0, 0]} />
               </CardContent>
             </Card>
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute left-1 top-8 h-24 w-2.5 rounded-full bg-amber" />
-              <div className="absolute bottom-8 left-1 h-24 w-2.5 rounded-full bg-amber" />
-              <Interactive.Div
-                name="Honest strike bolt"
-                className="absolute left-[296px] top-[40px] h-1.5 w-36 origin-center rounded-full bg-confirm"
-                style={{ rotate: "-36deg", translate: `${boltX}px ${boltY}px` }}
+              <StrikeArrow
+                tone="confirm"
+                word="right"
+                x={boltX}
+                y={boltY}
+                opacity={enterAt(frame, fps, 0.7, 0.2)}
+                className="absolute left-[288px] top-[30px]"
               />
               <Interactive.Div
                 name="Honest strike ring"
@@ -588,18 +660,16 @@ const BountyBeat: FC = () => {
           className="absolute left-[44px] top-[150px] flex items-center gap-2"
           style={{
             opacity: unitIn * unitOut,
-            translate: `${slide * 665}px ${arc}px`,
+            translate: `${slide * 600}px ${arc}px`,
             scale: `${1 - 0.15 * slide} ${1 - 0.15 * slide}`,
           }}
         >
-          {Array.from({ length: 5 }, (_, i) => (
+          {Array.from({ length: 9 }, (_, i) => (
             <div
               key={i}
-              className="h-12 w-16 rounded-md border border-amber bg-amber"
+              className="h-12 w-12 rounded-md border border-amber bg-amber"
             />
           ))}
-          <div className="h-12 w-2.5 rounded-full bg-amber" />
-          <div className="h-12 w-2.5 rounded-full bg-amber" />
         </Interactive.Div>
 
         {/* the challenger */}

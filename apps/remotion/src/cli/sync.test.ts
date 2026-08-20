@@ -135,6 +135,32 @@ describe("collectTwClasses / renderTwClassesFile", () => {
     expect(collectTwClasses(root)).toEqual([]);
   });
 
+  it("collects negative utilities (-top-14, -translate-x-1/2, -rotate-36)", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo"));
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const v = <div className="absolute -top-14 left-1/2 -translate-x-1/2 -rotate-36 -top-[86px]" />;',
+    );
+
+    const classes = collectTwClasses(root);
+    expect(classes).toContain("-top-14");
+    expect(classes).toContain("-translate-x-1/2");
+    expect(classes).toContain("-rotate-36");
+    expect(classes).toContain("-top-[86px]");
+  });
+
+  it("still rejects negative numbers and css variables as classes", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo"));
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const x = ["-460px", "-36deg", "var(--accord-amber)"];',
+    );
+
+    expect(collectTwClasses(root)).toEqual([]);
+  });
+
   it("renders the manifest with the generated-file header", () => {
     const out = renderTwClassesFile(["bg-amber", "text-7xl"]);
     expect(out).toContain("GENERATED");

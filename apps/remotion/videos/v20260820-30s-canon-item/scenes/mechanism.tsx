@@ -47,7 +47,7 @@ const ItemCard: FC<{ frame: number; weld?: number }> = ({ frame, weld = 1 }) => 
       className="absolute -bottom-4 right-8"
       style={{ opacity: weld, scale: `${0.7 + 0.3 * weld} ${0.7 + 0.3 * weld}` }}
     >
-      <MonoChip tone="amber" className="px-4 py-2 text-lg">
+      <MonoChip tone="amber" className="bg-raised px-4 py-2 text-lg">
         deposit 500 · locked
       </MonoChip>
     </div>
@@ -170,7 +170,7 @@ const PendingBeat: FC = () => {
           className="absolute -top-14 left-1/2 -translate-x-1/2"
           style={{ opacity: enterAt(frame, fps, 0.3, 0.4) }}
         >
-          <MonoChip tone="amber" className="px-4 py-2 text-lg">
+          <MonoChip tone="amber" className="bg-raised px-4 py-2 text-lg">
             window · {days}d
           </MonoChip>
         </Interactive.Div>
@@ -187,7 +187,7 @@ const PendingBeat: FC = () => {
             ),
           }}
         >
-          <MonoChip tone="slash" className="px-5 py-2.5 text-xl">
+          <MonoChip tone="slash" className="bg-raised px-5 py-2.5 text-xl">
             challenge_item()
           </MonoChip>
         </Interactive.Div>
@@ -265,7 +265,7 @@ const ListedBeat: FC = () => {
                 ),
               }}
             >
-              <MonoChip tone="slash" className="px-5 py-2.5 text-xl">
+              <MonoChip tone="slash" className="bg-raised px-5 py-2.5 text-xl">
                 challenge_item()
               </MonoChip>
             </Interactive.Div>
@@ -275,7 +275,7 @@ const ListedBeat: FC = () => {
           name="Still listed chip"
           style={{ opacity: enterAt(frame, fps, 3.3, 0.4) }}
         >
-          <MonoChip tone="confirm" className="px-4 py-2 text-lg">
+          <MonoChip tone="confirm" className="bg-raised px-4 py-2 text-lg">
             still listed
           </MonoChip>
         </Interactive.Div>
@@ -300,7 +300,7 @@ const ExitBeat: FC = () => {
             <span className="font-mono text-xl text-text-secondary">withdrawal</span>
             <MonoChip
               tone="amber"
-              className="px-4 py-1.5 text-base"
+              className="bg-raised px-4 py-1.5 text-base"
               style={{ opacity: enterAt(frame, fps, 1.3, 0.4) }}
             >
               timelock · 5d

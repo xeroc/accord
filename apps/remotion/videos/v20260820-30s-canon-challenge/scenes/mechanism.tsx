@@ -208,8 +208,10 @@ const CaseBeat: FC = () => {
 };
 
 /**
- * 03 · verdict — wires to the sealed court, the ruling descends, and
- * the settlement executes itself: the whole pile walks to the challenger.
+ * 03 · verdict — the dispute wires to the sealed court, the ruling
+ * descends, and the settlement executes itself: the whole pile walks
+ * to the challenger. Centered via Beat like every other beat; all
+ * coordinates live inside the 1240×340 stage, nothing overlaps.
  */
 const VerdictBeat: FC = () => {
   const frame = useCurrentFrame();
@@ -220,115 +222,129 @@ const VerdictBeat: FC = () => {
   const wireIn = enterAt(frame, fps, 0.5, 0.5);
   const drop = enterAt(frame, fps, 1.5, 0.4);
   return (
-    <div className="relative h-[360px] w-[1240px]" style={{ scale: "1.3 1.3" }}>
-      <Interactive.Div
-        name="Accord court box"
-        className="absolute right-[20px] top-0 w-[300px]"
-        style={{
-          opacity: enterAt(frame, fps, 0.1, 0.5),
-          translate: `0px ${(1 - enterAt(frame, fps, 0.1, 0.5)) * 24}px`,
-        }}
-      >
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-mono text-xl text-text-secondary">
-              accord · court
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Badge variant="secondary">sealed</Badge>
-          </CardContent>
-        </Card>
-      </Interactive.Div>
+    <Beat
+      copy="ruling lands. payout executes."
+      sub="settle_item() · payout to challenger"
+    >
+      <div className="relative h-[340px] w-[1240px]" style={{ scale: "1.25 1.25" }}>
+        {/* the item under trial — disgraced by the ruling */}
+        <Interactive.Div
+          name="Fake item group"
+          className="absolute left-0 top-0 flex w-[320px] flex-col gap-3"
+        >
+          <Interactive.Div name="Fake item card" style={{ opacity: dim }}>
+            <Card className="ring-slash" size="sm">
+              <CardHeader>
+                <CardTitle className="font-mono text-xl text-text-secondary">
+                  $WlF · fake
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </Interactive.Div>
+          <div className="flex flex-col-reverse gap-1.5">
+            {Array.from({ length: ACCUMULATED }, (_, i) => {
+              const rise = enterAt(frame, fps, 0.3 + i * 0.12, 0.4);
+              const slide = interpolate(
+                frame,
+                [(2.9 + i * 0.15) * fps, (3.5 + i * 0.15) * fps],
+                ["0px 0px", "430px 35px"],
+                { easing: EASE_EXPO, ...clamp },
+              );
+              return (
+                <div
+                  key={i}
+                  className="h-8 w-40 rounded-md border border-amber bg-amber"
+                  style={{ opacity: rise, translate: slide }}
+                />
+              );
+            })}
+          </div>
+        </Interactive.Div>
+        <Interactive.Div name="Removed state" className="absolute left-0 top-[262px]">
+          <StateNode
+            frame={frame}
+            label="REMOVED"
+            at={2.85 * fps}
+            activeAt={2.95 * fps}
+          />
+        </Interactive.Div>
 
-      <Interactive.Div
-        name="Fake item group"
-        className="absolute left-0 top-0 flex w-[320px] flex-col gap-3"
-        style={{ opacity: dim }}
-      >
-        <Card className="ring-slash" size="sm">
-          <CardHeader>
-            <CardTitle className="font-mono text-xl text-text-secondary">
-              $WlF · fake
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <div className="flex flex-col-reverse gap-1.5">
-          {Array.from({ length: ACCUMULATED }, (_, i) => {
-            const rise = enterAt(frame, fps, 0.3 + i * 0.12, 0.4);
-            const slide = interpolate(
-              frame,
-              [(2.9 + i * 0.15) * fps, (3.5 + i * 0.15) * fps],
-              ["0px 0px", "480px 110px"],
-              { easing: EASE_EXPO, ...clamp },
-            );
-            return (
-              <div
-                key={i}
-                className="h-8 w-40 rounded-md border border-amber bg-amber"
-                style={{ opacity: rise, translate: slide }}
-              />
-            );
-          })}
-        </div>
-      </Interactive.Div>
-      <Interactive.Div name="Removed state" className="absolute left-0 top-[262px]">
-        <StateNode
-          frame={frame}
-          label="REMOVED"
-          at={2.85 * fps}
-          activeAt={2.95 * fps}
+        {/* the sealed court */}
+        <Interactive.Div
+          name="Accord court box"
+          className="absolute right-0 top-0 w-[300px]"
+          style={{
+            opacity: enterAt(frame, fps, 0.1, 0.5),
+            translate: `0px ${(1 - enterAt(frame, fps, 0.1, 0.5)) * 24}px`,
+          }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-mono text-xl text-text-secondary">
+                accord · court
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Badge variant="secondary">sealed</Badge>
+            </CardContent>
+          </Card>
+        </Interactive.Div>
+
+        {/* dispute wire: item → court */}
+        <Interactive.Div
+          name="Dispute wire"
+          className="absolute left-[340px] top-[86px] flex items-center"
+          style={{ opacity: wireIn }}
+        >
+          <div
+            className="h-[3px] w-[520px] origin-left rounded-full bg-amber"
+            style={{ transform: `scaleX(${wireIn})` }}
+          />
+          <div className="h-0 w-0 border-y-[7px] border-l-[12px] border-y-transparent border-l-amber" />
+        </Interactive.Div>
+        <Interactive.Div
+          name="Dispute wire label"
+          className="absolute left-[540px] top-[38px]"
+          style={{ opacity: enterAt(frame, fps, 1.0, 0.4) }}
+        >
+          <MonoChip tone="amber" className="px-4 py-2 text-xl">
+            dispute →
+          </MonoChip>
+        </Interactive.Div>
+
+        {/* the ruling: court → settlement */}
+        <Interactive.Div
+          name="Ruling wire"
+          className="absolute right-[172px] top-[116px] h-[100px] w-[3px] origin-top rounded-full bg-amber"
+          style={{ scale: `1 ${drop}` }}
         />
-      </Interactive.Div>
+        <Interactive.Div
+          name="Ruling wire label"
+          className="absolute right-[190px] top-[150px] font-mono text-xl text-amber"
+          style={{ opacity: enterAt(frame, fps, 1.8, 0.4) }}
+        >
+          ↓ ruling
+        </Interactive.Div>
+        <Interactive.Div name="Ruling stamp" className="absolute right-[40px] top-[228px]">
+          <RulingStamp frame={frame} text="REMOVE" at={2.0 * fps} size="md" />
+        </Interactive.Div>
 
-      <Interactive.Div
-        name="Dispute wire"
-        className="absolute left-[240px] top-[140px] h-[3px] w-[640px] origin-left rounded-full bg-amber"
-        style={{ transform: `rotate(-6deg) scaleX(${wireIn})` }}
-      />
-      <Interactive.Div
-        name="Dispute wire label"
-        className="absolute left-[480px] top-[104px]"
-        style={{ opacity: enterAt(frame, fps, 1.0, 0.4) }}
-      >
-        <MonoChip tone="amber" className="px-4 py-2 text-xl">
-          dispute →
-        </MonoChip>
-      </Interactive.Div>
-
-      <Interactive.Div
-        name="Ruling wire"
-        className="absolute right-[170px] top-[140px] h-[60px] w-[3px] origin-top rounded-full bg-amber"
-        style={{ scale: `1 ${drop}` }}
-      />
-      <Interactive.Div
-        name="Ruling wire label"
-        className="absolute right-[210px] top-[152px] font-mono text-xl text-amber"
-        style={{ opacity: enterAt(frame, fps, 1.8, 0.4) }}
-      >
-        ← ruling
-      </Interactive.Div>
-
-      <Interactive.Div name="Ruling stamp" className="absolute right-[30px] top-[215px]">
-        <RulingStamp frame={frame} text="REMOVE" at={2.0 * fps} size="md" />
-      </Interactive.Div>
-
-      <Interactive.Div
-        name="Challenger zone"
-        className="absolute left-[480px] top-[130px] w-[180px]"
-      >
-        <span className="font-mono text-2xl text-text-secondary">challenger</span>
-        <div className="absolute left-0 top-[200px]">
+        {/* the challenger — the pile lands just above, bounty pops beside */}
+        <Interactive.Div
+          name="Challenger zone"
+          className="absolute left-[430px] top-[235px] flex items-center gap-6"
+        >
+          <span className="font-mono text-2xl text-text-secondary">challenger</span>
           <DeltaChip
             tone="confirm"
             sign="+"
-            amount={2000}
+            amount={100 * (ACCUMULATED + CHALLENGE)}
             label="bounty"
             pop={enterAt(frame, fps, 3.6, 0.4)}
           />
-        </div>
-      </Interactive.Div>
-    </div>
+        </Interactive.Div>
+      </div>
+    </Beat>
   );
 };
 
