@@ -25,6 +25,9 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: ./pnpm-lock.yaml
 
+      - name: Build packages
+        run: pnpm run -r --filter "./packages/*" build
+
       - name: Build
         working-directory: ./apps/landing
         run: pnpm run build

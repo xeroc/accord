@@ -150,7 +150,7 @@ export default class CanonCreateList extends ChainCommand {
       description: "Court: max same-size redraws per round (ADR-0021)",
       default: DEFAULT_COURT.maxDrawAttempts,
     }),
-    "depth": Flags.integer({
+    depth: Flags.integer({
       description: "Court: MST accumulator depth (≤ 8); immutable on the Subaccord",
       default: DEFAULT_COURT.depth,
     }),

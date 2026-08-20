@@ -17,6 +17,7 @@ export function Footer() {
             </p>
           </div>
           <nav className="flex flex-col gap-2 text-sm sm:items-end" aria-label="Footer">
+            <a href="/how-it-rules" className="text-muted-foreground transition-colors hover:text-nearwhite">How it Rules</a>
             <a href="https://docs.useaccord.xyz" className="text-muted-foreground transition-colors hover:text-nearwhite">Docs</a>
             <a href="https://t.me/useaccord" className="text-muted-foreground transition-colors hover:text-nearwhite" rel="noopener">Telegram</a>
             <a href="https://github.com/xeroc/accord" className="text-muted-foreground transition-colors hover:text-nearwhite" rel="noopener">GitHub</a>
