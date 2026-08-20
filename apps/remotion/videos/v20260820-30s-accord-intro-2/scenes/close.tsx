@@ -1,7 +1,7 @@
 import { Interactive, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 
 import { enterAt, exitAt } from "../../../src/shell/anim";
-import { AmberRule, Wordmark } from "../../../src/shell/brand";
+import { AmberRule, Wordmark } from "@useaccord/ui";
 import { Scene } from "../../../src/shell/scene";
 
 /**

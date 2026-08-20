@@ -1,7 +1,7 @@
 import { Interactive, useCurrentFrame, useVideoConfig } from "remotion";
 
 import { enterAt } from "../../../src/shell/anim";
-import { AccordMark, Wordmark } from "../../../src/shell/brand";
+import { AccordMark, Wordmark } from "@useaccord/ui";
 import { Scene } from "../../../src/shell/scene";
 
 /** S6 · END CARD — wordmark, tagline, one link. */
@@ -15,7 +15,6 @@ export function EndcardScene() {
         <AccordMark
           size={90}
           progress={enterAt(frame, fps, 0.05, 0.35)}
-          dot={enterAt(frame, fps, 0.35, 0.25)}
           className="text-amber"
         />
       </Interactive.Div>

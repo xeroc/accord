@@ -2,7 +2,7 @@ import { Badge, Button } from "@useaccord/ui";
 import { useCurrentFrame, useVideoConfig } from "remotion";
 
 import { enterAt } from "../../../src/shell/anim";
-import { AmberRule, Wordmark } from "../../../src/shell/brand";
+import { AmberRule, Wordmark } from "@useaccord/ui";
 import { Scene } from "../../../src/shell/scene";
 
 export function TitleScene() {

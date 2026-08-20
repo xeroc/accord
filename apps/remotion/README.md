@@ -109,28 +109,24 @@ Rules that are enforced by convention — follow them:
 
 ## Shared vocabulary (use these, don't hand-roll them)
 
-Videos kept re-implementing the same elements; they now live in the
-framework. `grep` these before writing scene-local code:
+The brand layer and the mechanism pieces live **in `@useaccord/ui`**
+(shared with the landing page and the app); the video-specific staging
+stays in this framework. `grep` these before writing scene-local code:
 
 | Need | Import | Notes |
 |---|---|---|
-| Brand-eased enter/exit | `src/shell/anim` — `enterAt`, `exitAt`, `clamp`, `since`, `scramble` | The sanctioned way to write motion. No hand-rolled `interpolate(..., {easing: EASE_EXPO, clamp, clamp})` — use `enterAt(frame, fps, delaySec, durSec)`. `clamp` spreads into the rare multi-segment `interpolate`. |
-| Scene frame | `src/shell/scene` — `Scene`, `Beat` | `Scene seed stack` = shared `Backdrop` + centered column (`p-16`, gap via className). `Beat` = mechanism step chrome (visual center, copy bottom). |
-| Moving backdrop | `src/shell/backdrop` — `Backdrop seed` | The one backdrop: ledger grid + juror field + verdict glow + vignette. All videos use it — do not fork it. |
-| The Accord mark | `src/shell/brand` — `AccordMark` | The 3-line mark (two diagonals + one vertical converging on a dot) — same geometry as the app navbar. `progress`/`dot` animate it. Never redraw the glyph. |
-| Wordmark / rule | `src/shell/brand` — `Wordmark`, `AmberRule` | Progress-driven (0→1), sizing via className. |
+| Brand-eased enter/exit | `src/shell/anim` — `enterAt`, `exitAt`, `clamp`, `since`, `scramble` | Seconds-based motion math for scenes. No hand-rolled `interpolate(..., {easing: EASE_EXPO, clamp, clamp})`. |
+| Scene frame | `src/shell/scene` — `Scene`, `Beat` | `Scene seed stack` = shared `Backdrop` + centered column (`p-16`, gap via className). `Beat` = mechanism step chrome. |
+| Moving backdrop | `src/shell/backdrop` — `Backdrop seed` | Thin adapter: feeds `useCurrentFrame()` to the kit's frame-driven `Backdrop`. Do not fork it. |
+| The Accord mark | `@useaccord/ui` — `AccordMark` | The 3-line house mark. `progress` animates the draw-on. Never redraw the glyph. |
+| Wordmark / rule | `@useaccord/ui` — `Wordmark`, `AmberRule` | Progress-driven (0→1), sizing via className. |
 | Step chrome | `src/shell/rail` — `StepRail`, `PhaseCaptions` | Ordered labels, active step amber. |
-| Juror pool dots | `src/pieces/juror-pool` — `JurorPool` | `drawnAt(dot)` pops dots amber; `fadeAt` retires the pool. |
-| Commit→reveal slot | `src/pieces/sealed-vote` — `SealedVote` | Hash scrambles in, locks, flips to the vote; optional tone + cross-out. |
-| Ruling stamp | `src/pieces/ruling-stamp` — `RulingStamp` | Slams in at `at` (1.6×, −4°→−2°, amber glow). |
-| Chips | `src/pieces/chips` — `MonoChip`, `DeltaChip` | Tone = amber/confirm/slash/neutral; size via className (cn-merged, overrides win). |
-| Tally / coin arc | `src/pieces/tally` — `TallyBar`, `Coin` | Vote-count bar; amber token arcing between two points. |
+| Mechanism pieces | `@useaccord/ui` — `JurorPool`, `SealedVote`, `RulingStamp`, `MonoChip`, `DeltaChip`, `TallyBar` | **Frame-prop contract**: pass the scene's `frame` (they are pure functions of it — that's what lets the landing page run them on a wall clock). |
+| Coin arc | `src/pieces/coin` — `Coin` | Video-only staging: absolute 1920×1080 canvas arcs. |
 
-Presentational contract: brand pieces take 0→1 progress values (no
-frame hooks inside); pieces that own their choreography take `at`
-frames and read `useCurrentFrame()` themselves. Components render
-plain divs — wrap in `Interactive.Div` in the scene when you want a
-Studio label.
+Contract: kit pieces take `frame` (or 0→1 progress) explicitly — no
+Remotion hooks inside the kit. Components render plain divs; wrap in
+`Interactive.Div` in the scene when you want a Studio label.
 
 ## Showing real app flows — AppStage
 

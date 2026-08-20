@@ -1,7 +1,7 @@
 import { EASE_EXPO } from "../../../src/shell/presets";
 import { clamp } from "../../../src/shell/anim";
 import { Backdrop } from "../../../src/shell/backdrop";
-import { Coin, type Pt } from "../../../src/pieces/tally";
+import { Coin, type Pt } from "../../../src/pieces/coin";
 import { interpolate, useCurrentFrame } from "remotion";
 
 import {

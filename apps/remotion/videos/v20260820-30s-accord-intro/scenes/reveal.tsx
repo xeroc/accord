@@ -1,7 +1,7 @@
 import { Interactive, useCurrentFrame, useVideoConfig } from "remotion";
 
 import { enterAt } from "../../../src/shell/anim";
-import { AccordMark, AmberRule, Wordmark } from "../../../src/shell/brand";
+import { AccordMark, AmberRule, Wordmark } from "@useaccord/ui";
 import { Scene } from "../../../src/shell/scene";
 
 /** S3 · REVEAL — the wordmark. Mark converges, name lands, tagline follows. */
@@ -15,7 +15,6 @@ export function RevealScene() {
         <AccordMark
           size={120}
           progress={enterAt(frame, fps, 0.15, 0.7)}
-          dot={enterAt(frame, fps, 0.8, 0.3)}
           className="text-amber"
         />
       </Interactive.Div>

@@ -3,7 +3,7 @@ import { Interactive, interpolate, useCurrentFrame, useVideoConfig } from "remot
 import { EASE_EXPO } from "../../../src/shell/presets";
 import { clamp, enterAt } from "../../../src/shell/anim";
 import { Scene } from "../../../src/shell/scene";
-import { MonoChip } from "../../../src/pieces/chips";
+import { MonoChip } from "@useaccord/ui";
 
 /**
  * Scene 3 — the unlock (12s-16s).

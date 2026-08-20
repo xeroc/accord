@@ -8,7 +8,7 @@ import {
 
 import { EASE_EXPO } from "../../../src/shell/presets";
 import { clamp, enterAt } from "../../../src/shell/anim";
-import { MonoChip } from "../../../src/pieces/chips";
+import { MonoChip } from "@useaccord/ui";
 import { Scene } from "../../../src/shell/scene";
 
 const TICKER = [

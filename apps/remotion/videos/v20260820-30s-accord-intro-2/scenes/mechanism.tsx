@@ -3,9 +3,11 @@ import { Interactive, useCurrentFrame, useVideoConfig } from "remotion";
 import { enterAt } from "../../../src/shell/anim";
 import { Scene } from "../../../src/shell/scene";
 import { PhaseCaptions } from "../../../src/shell/rail";
-import { JurorPool } from "../../../src/pieces/juror-pool";
-import { RulingStamp } from "../../../src/pieces/ruling-stamp";
-import { SealedVote } from "../../../src/pieces/sealed-vote";
+import {
+  JurorPool,
+  RulingStamp,
+  SealedVote,
+} from "@useaccord/ui";
 
 const POOL_SIZE = 30;
 
@@ -69,6 +71,7 @@ export function MechanismScene() {
           {/* staked pool */}
           <Interactive.Div name="Juror pool">
             <JurorPool
+              frame={frame}
               count={POOL_SIZE}
               cols={5}
               dotSize={12}
@@ -83,6 +86,7 @@ export function MechanismScene() {
             {JURORS.map((juror) => (
               <Interactive.Div key={juror.hash} name={`Commit ${juror.hash}`}>
                 <SealedVote
+                  frame={frame}
                   hash={juror.hash}
                   vote={juror.vote}
                   commitAt={juror.commitAt}
@@ -97,7 +101,7 @@ export function MechanismScene() {
 
           {/* the ruling */}
           <Interactive.Div name="Ruling stamp">
-            <RulingStamp text="RULING: YES" at={175} dur={7} size="md" />
+            <RulingStamp frame={frame} text="RULING: YES" at={175} dur={7} size="md" />
           </Interactive.Div>
 
           <PhaseCaptions labels={CAPTIONS} active={stage} />

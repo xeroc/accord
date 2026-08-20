@@ -8,11 +8,14 @@ import {
 
 import { EASE_EXPO, SPRING } from "../../../src/shell/presets";
 import { clamp, since } from "../../../src/shell/anim";
-import { JurorPool } from "../../../src/pieces/juror-pool";
-import { SealedVote } from "../../../src/pieces/sealed-vote";
-import { RulingStamp } from "../../../src/pieces/ruling-stamp";
-import { DeltaChip, MonoChip } from "../../../src/pieces/chips";
-import { TallyBar } from "../../../src/pieces/tally";
+import {
+  DeltaChip,
+  JurorPool,
+  MonoChip,
+  RulingStamp,
+  SealedVote,
+  TallyBar,
+} from "@useaccord/ui";
 
 import {
   BEAT,
@@ -172,6 +175,7 @@ export function JurorCard({ juror, i }: { juror: JurorCast; i: number }) {
 
       {/* commit / reveal slot */}
       <SealedVote
+        frame={frame}
         hash={juror.hash}
         vote={juror.vote}
         commitAt={BEAT.commitAt(i)}
@@ -235,6 +239,7 @@ export function JurorCard({ juror, i }: { juror: JurorCast; i: number }) {
  * is seated.
  */
 export function Pool() {
+  const frame = useCurrentFrame();
   return (
     <Interactive.Div
       name="Juror pool"
@@ -242,6 +247,7 @@ export function Pool() {
       style={{ left: "50%", top: 752, transform: "translateX(-50%)" }}
     >
       <JurorPool
+        frame={frame}
         count={POOL_SIZE}
         cols={15}
         drawnAt={(d) => {
@@ -345,17 +351,18 @@ export function Tally() {
       className="absolute"
       style={{ left: 960, top: LAYOUT.tallyY, opacity: op, transform: "translateX(-50%)" }}
     >
-      <TallyBar yes={4} no={1} at={BEAT.tallyGrow} width={900} />
+      <TallyBar frame={frame} yes={4} no={1} at={BEAT.tallyGrow} width={900} />
     </Interactive.Div>
   );
 }
 
 /** Stamp — the Ruling lands: the hero moment. */
 export function Stamp() {
+  const frame = useCurrentFrame();
   return (
     <div className="absolute left-0 right-0" style={{ top: 430 }}>
       <Interactive.Div name="Ruling stamp" className="mx-auto w-fit">
-        <RulingStamp text="RULING: YES" at={BEAT.stampAt} />
+        <RulingStamp frame={frame} text="RULING: YES" at={BEAT.stampAt} />
       </Interactive.Div>
     </div>
   );
