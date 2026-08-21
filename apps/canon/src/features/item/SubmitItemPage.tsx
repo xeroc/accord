@@ -6,9 +6,6 @@
  *  - account   — the curated address (a PDA owned by `CanonList.list_program`)
  *  - deposit   — fee_mint deposit (defaults to the list's `submit_deposit`)
  *
- * The contract requires a 32-byte evidence hash; until evidence authoring is
- * wired, the form submits an all-zero hash (no evidence attached).
- *
  * Client-side validation (milestone §3): resolves the account's owner via RPC
  * and previews whether it matches `list.list_program` (skipped when the list
  * sets the sentinel — ownership check disabled). The on-chain check is
@@ -42,10 +39,6 @@ import {
   Input,
 } from "@useaccord/ui";
 import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
-
-/** All-zero evidence hash — "no evidence attached" until the evidence flow
- * is wired into this form. */
-const ZERO_EVIDENCE = new Uint8Array(32);
 
 export function SubmitItemPage() {
   const { address = "" } = useParams<{ address: string }>();
@@ -106,7 +99,7 @@ export function SubmitItemPage() {
           submitterTokenAccount,
           vault,
         },
-        { evidence: ZERO_EVIDENCE, deposit: BigInt(depositValue) },
+        { deposit: BigInt(depositValue) },
       );
       await sendInstruction(
         env.rpc,

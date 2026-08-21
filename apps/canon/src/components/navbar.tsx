@@ -57,6 +57,14 @@ export function Navbar() {
           <span className="text-lg font-bold tracking-tight">CANON</span>
         </Link>
       }
+      navigation={
+        <Link
+          to="/how-it-works"
+          className="hidden text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-amber sm:inline"
+        >
+          How it works
+        </Link>
+      }
       accountControls={
         <>
           {cluster && (
