@@ -16,7 +16,10 @@ import { findAllSubaccords } from "@useaccord/sdk";
 import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
 import {
+  Button,
   Copyable,
+  EmptyState,
+  ErrorState,
   Skeleton,
   StaggerGroup,
   StaggerItem,
@@ -37,13 +40,13 @@ export function SubaccordListPage() {
   });
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+    <>
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-[-0.01em]">Subaccords.</h1>
         <p className="mb-4 text-muted-foreground">Stake pools adjudicating one class of dispute.</p>
-        <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
-          Create a subaccord.
-        </Link>
+        <Button asChild>
+          <Link to="/subaccords/new">Create a subaccord.</Link>
+        </Button>
       </header>
 
       <Reveal state={isLoading ? "skeleton" : isError ? "error" : data && data.length > 0 ? "content" : "empty"}>
@@ -61,10 +64,18 @@ export function SubaccordListPage() {
             ))}
           </StaggerGroup>
         ) : (
-          <EmptyState />
+          <EmptyState
+            title="No subaccords yet."
+            description="Create the first pool. Stake jurors. File a dispute."
+            action={
+              <Button asChild>
+                <Link to="/subaccords/new">Create a subaccord.</Link>
+              </Button>
+            }
+          />
         )}
       </Reveal>
-    </main>
+    </>
   );
 }
 
@@ -122,38 +133,5 @@ function SubaccordGridSkeleton() {
         </li>
       ))}
     </ul>
-  );
-}
-
-function EmptyState() {
-  // BRAND.md voice — imperative, no hedging: "No subaccords yet." not "No results found."
-  return (
-    <div className="rounded-lg border border-dashed border-border p-12 text-center">
-      <p className="mb-2 text-lg font-semibold">No subaccords yet.</p>
-      <p className="mb-5 text-muted-foreground">
-        Create the first pool. Stake jurors. File a dispute.
-      </p>
-      <Link to="/subaccords/new" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]">
-        Create a subaccord.
-      </Link>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-dashed border-border p-12 text-center">
-      <p className="mb-2 text-lg font-semibold">Read failed.</p>
-      <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">{message}</p>
-      <button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]" onClick={onRetry}>
-        Retry.
-      </button>
-    </div>
   );
 }

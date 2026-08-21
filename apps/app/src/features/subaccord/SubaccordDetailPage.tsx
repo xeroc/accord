@@ -19,7 +19,14 @@ import { Aggregation } from "@useaccord/sdk";
 import { useClusterRpc } from "../../shared/rpc";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
 import { formatTokenAmount, formatWindow } from "../../shared/format";
-import { Copyable, Skeleton, Reveal } from "@useaccord/ui";
+import {
+  Button,
+  Copyable,
+  EmptyState,
+  ErrorState,
+  Skeleton,
+  Reveal,
+} from "@useaccord/ui";
 import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
 
 export function SubaccordDetailPage() {
@@ -33,7 +40,7 @@ export function SubaccordDetailPage() {
   });
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-10">
+    <>
       <header className="mb-8">
         <Link
           to="/subaccords"
@@ -60,39 +67,25 @@ export function SubaccordDetailPage() {
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="mb-2 text-lg font-semibold">Read failed.</p>
-            <p className="mb-5 text-muted-foreground font-mono text-sm text-foreground">
-              {error instanceof Error ? error.message : "RPC error."}
-            </p>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-              onClick={() => void refetch()}
-            >
-              Retry.
-            </button>
-          </div>
+          <ErrorState
+            message={error instanceof Error ? error.message : "RPC error."}
+            onRetry={() => void refetch()}
+          />
         ) : !data ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <p className="mb-2 text-lg font-semibold">
-              No subaccord at this address.
-            </p>
-            <p className="mb-5 text-muted-foreground">
-              Check the address or create a new subaccord.
-            </p>
-            <Link
-              to="/subaccords/new"
-              className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-            >
-              Create a subaccord.
-            </Link>
-          </div>
+          <EmptyState
+            title="No subaccord at this address."
+            description="Check the address or create a new subaccord."
+            action={
+              <Button asChild>
+                <Link to="/subaccords/new">Create a subaccord.</Link>
+              </Button>
+            }
+          />
         ) : (
           <SubaccordDetail address={address} subaccord={data} />
         )}
       </Reveal>
-    </main>
+    </>
   );
 }
 
@@ -106,18 +99,12 @@ function SubaccordDetail({
   return (
     <>
       <nav className="mb-8 flex flex-wrap gap-3">
-        <Link
-          to={`/juror/stake?subaccord=${address}`}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
-        >
-          Stake as juror.
-        </Link>
-        <Link
-          to={`/disputes/new?subaccord=${address}`}
-          className="inline-flex items-center justify-center rounded-md bg-transparent px-3.5 py-2 text-sm font-semibold text-primary ring-1 ring-inset transition-[background-color,scale] hover:bg-primary/10 active:scale-[0.96]"
-        >
-          File a dispute.
-        </Link>
+        <Button asChild>
+          <Link to={`/juror/stake?subaccord=${address}`}>Stake as juror.</Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link to={`/disputes/new?subaccord=${address}`}>File a dispute.</Link>
+        </Button>
       </nav>
 
       <section className="gap-4 grid [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
@@ -299,7 +286,9 @@ function SubaccordDetail({
       </section>
 
       {/* Domain document (ADR-0027): the rules this subaccord arbitrates under */}
-      <DomainDocPanel hash={hexIfSet(d.domainRef)} />
+      <div className="mt-8">
+        <DomainDocPanel hash={hexIfSet(d.domainRef)} />
+      </div>
     </>
   );
 }

@@ -1,6 +1,12 @@
 /**
  * ItemDetailPage — `/items/:address` (accord-gg8f).
  *
+ * Page narrative (top-down): the parent LIST — what this list is about
+ * (its rules doc, framed as the listing criteria every item must meet) —
+ * then THE ITEM: the curated account as the hero, its state + transition
+ * hint, and the challenge action. Below, on-chain facts and per-state
+ * status/actions.
+ *
  * Renders a CanonItem as a state-machine view across all five lifecycle states
  * (SPEC §Item state machine): Pending, Listed, Removed, WithdrawPending,
  * Disputed. Each state shows its on-chain fields + a one-line "what happens
@@ -17,9 +23,12 @@
  *    deep-linked) read-only.
  */
 
+import { ExternalLink } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
+import { Copyable } from "@useaccord/ui";
 import { ItemState } from "@useaccord/canon";
+import { explorerAccountUrl } from "@/shared/explorer";
 import { useCanonItem } from "./useCanonItem";
 import { useCanonList } from "./useCanonList";
 import { useDispute } from "./useDispute";
@@ -134,29 +143,86 @@ export function ItemDetailPage() {
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-10">
       <Link
-        to="/"
+        to={`/lists/${it.list}`}
         className="text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
-        ← Back
+        ← Back to list.
       </Link>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-[-0.01em]">Canon item</h1>
-        <p className="mb-4 text-muted-foreground font-mono text-sm text-foreground">{shortAddress(item.data.address)}</p>
-        <p className={`font-mono text-sm font-semibold ${stateClass(state)}`}>
-          {stateLabel}
-        </p>
-        <p className="mt-1.5 text-xs italic text-muted-foreground">
-          {STATE_HINT[state]}
-        </p>
-        {CHALLENGEABLE_STATES[state] && (
+
+      {/* The list — what items here are curated against (ADR-0027) */}
+      <section className="mb-8">
+        <h2 className="mb-1 text-xl font-semibold tracking-[-0.01em]">
+          The list.
+        </h2>
+        <p className="mb-3 max-w-[720px] text-sm text-muted-foreground">
+          This item is curated on{" "}
           <Link
-            to={`/items/${item.data.address}/challenge`}
-            className="mt-4 inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+            to={`/lists/${it.list}`}
+            className="font-mono underline underline-offset-2 transition-colors hover:text-foreground"
           >
-            Challenge this item.
+            {shortAddress(it.list)}
           </Link>
+          . The document below is the list's{" "}
+          <strong className="font-semibold text-foreground">
+            listing criteria
+          </strong>{" "}
+          — the rules every item on this list must meet. A challenge argues
+          this item breaks them, and Accord jurors rule by them.
+        </p>
+        {listData && (
+          <DomainDocPanel
+            hash={hexIfSet(listData.rulesHash)}
+            subaccord={listData.subaccord}
+          />
         )}
-      </div>
+      </section>
+
+      {/* The item — the curated account is the point of this page */}
+      <section className="mb-8">
+        <h2 className="mb-2 text-xl font-semibold tracking-[-0.01em]">
+          The item.
+        </h2>
+        <div className="rounded-lg bg-card p-5 ring-1 ring-foreground/10">
+          <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+            The curated account
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="break-all">
+              <Copyable
+                value={it.account}
+                head={it.account.length}
+                tail={0}
+                className="text-lg text-foreground"
+              />
+            </span>
+            <a
+              href={explorerAccountUrl(it.account)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="View on explorer"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="size-4" aria-hidden />
+            </a>
+          </div>
+          <p
+            className={`mt-4 font-mono text-sm font-semibold ${stateClass(state)}`}
+          >
+            {stateLabel}
+          </p>
+          <p className="mt-1.5 max-w-[720px] text-xs italic text-muted-foreground">
+            {STATE_HINT[state]}
+          </p>
+          {CHALLENGEABLE_STATES[state] && (
+            <Link
+              to={`/items/${item.data.address}/challenge`}
+              className="mt-4 inline-flex items-center justify-center rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-[opacity,scale] hover:opacity-90 active:scale-[0.96]"
+            >
+              Challenge this item.
+            </Link>
+          )}
+        </div>
+      </section>
 
       <div
         className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]"
@@ -165,12 +231,10 @@ export function ItemDetailPage() {
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">
           <dl className="grid gap-2">
             <div className="flex items-center justify-between gap-3 text-sm">
-              <dt className="text-muted-foreground">Account</dt>
-              <dd className="text-right">{shortAddress(it.account)}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <dt className="text-muted-foreground">List</dt>
-              <dd className="text-right">{shortAddress(it.list)}</dd>
+              <dt className="text-muted-foreground">Item PDA</dt>
+              <dd className="text-right">
+                <Copyable value={item.data.address} />
+              </dd>
             </div>
             <div className="flex items-center justify-between gap-3 text-sm">
               <dt className="text-muted-foreground">Submitter</dt>
@@ -235,14 +299,6 @@ export function ItemDetailPage() {
           </dl>
         </section>
       </div>
-
-      {/* Rules document (ADR-0027): the bytes behind the parent list's rules_hash */}
-      {listData && (
-        <div style={{ marginBottom: "1.5rem" }}>
-          <DomainDocPanel hash={hexIfSet(listData.rulesHash)} />
-        </div>
-      )}
-
       {/* Per-state action / status */}
       {state === ItemState.Pending && (
         <section className="rounded-lg bg-card p-4 ring-1 ring-foreground/10">

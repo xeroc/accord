@@ -41,6 +41,7 @@ import { sendInstruction } from "@/shared/transaction";
 import { describeError } from "@/shared/errors";
 import { useSigner } from "@/shared/wallet";
 import {
+  DepthPicker,
   Field as UiField,
   FieldControl,
   FieldDescription,
@@ -242,6 +243,7 @@ export function CreateListPage() {
               <DomainDocCard
                 doc={{ status: "missing" }}
                 hash={onChainRef ?? refHex}
+                raw={form.rulesDoc}
                 retry={
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -420,6 +422,11 @@ export function CreateListPage() {
                 {ADVANCED_COURT.map((f) => (
                   <CourtField key={f.k} {...f} court={form.court} onChange={setCourt} />
                 ))}
+                <DepthPicker
+                  value={form.court.depth}
+                  onChange={(v) => setCourt("depth", v)}
+                  maxDepth={MAX_LIST_TREE_DEPTH}
+                />
               </div>
             </details>
           </fieldset>
@@ -573,15 +580,5 @@ const ADVANCED_COURT: { k: keyof CourtFormState; label: string; help: string }[]
     k: "revealThresholdBps",
     label: "Reveal threshold (bps)",
     help: "Quorum making a round authoritative (6666 ≈ 2/3). Max 10_000.",
-  },
-  {
-    k: "maxDrawAttempts",
-    label: "Max draw attempts",
-    help: "Same-size redraws per round before the dispute fails. 1–10. Default 3.",
-  },
-  {
-    k: "depth",
-    label: "Tree depth",
-    help: `Juror-seat accumulator depth (2^depth seats). Irreversible — set once. Max ${MAX_LIST_TREE_DEPTH} (tx-size bound). Default 8.`,
   },
 ];

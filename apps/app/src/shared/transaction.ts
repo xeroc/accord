@@ -32,6 +32,7 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
+import { queryClient } from "./queryClient";
 /**
  * Thrown when pre-flight transaction simulation fails — i.e. the program
  * reverted before we ever broadcast. Carries the full program `logs`; the
@@ -98,6 +99,11 @@ export async function sendInstruction(
     rpc,
     rpcSubscriptions,
   });
-  await sendAndConfirm(signed, { commitment: "confirmed" });
-  return getSignatureFromTransaction(signed);
+  // A confirmed tx changed on-chain state — drop every cached read so the
+  // next render reflects it (apple-design audit C1: txs completed silently).
+  // Domain-doc bytes are content-addressed and immutable — skip the refetch.
+  void queryClient.invalidateQueries({
+    predicate: (query) => query.queryKey[0] !== "domain-doc",
+  });
+   return getSignatureFromTransaction(signed);
 }

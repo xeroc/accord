@@ -6,12 +6,26 @@
  * (staleTime ∞ — CAS bytes are immutable). The panel maps the query onto
  * the `DomainDocCard` states; undefined hash (zero `rules_hash`) renders
  * nothing.
+ *
+ * Recovery publish: pass the backing `subaccord` and the missing state also
+ * offers uploading the original file — bytes client-verified
+ * (`sha256(bytes) == rules_hash`) then published via SDK `putDomainDoc`
+ * (the daemon anchor-verifies `domain_ref == hash`; the PUT is
+ * permissionless). Success invalidates the cached query so the card flips
+ * to ok.
  */
-import { useQuery } from "@tanstack/react-query";
-import type { ReadonlyUint8Array } from "@solana/kit";
-import { fetchDomainDoc } from "@useaccord/sdk";
+import { useState, type ChangeEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Address, ReadonlyUint8Array } from "@solana/kit";
+import {
+  fetchDomainDoc,
+  putDomainDoc,
+  verifyDomainDoc,
+} from "@useaccord/sdk";
 import { Button, DomainDocCard, type DomainDoc } from "@useaccord/ui";
+import { toast } from "sonner";
 
+import { describeError } from "@/shared/errors";
 const EVIDENCE_DAEMON_URL =
   import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
 
@@ -62,17 +76,77 @@ export function useDomainDoc(hash: string | undefined): {
   };
 }
 
-export function DomainDocPanel({ hash }: { hash: string | undefined }) {
+export function DomainDocPanel({
+  hash,
+  subaccord,
+}: {
+  hash: string | undefined;
+  /** Backing Subaccord — the daemon PUT anchor. When set, the missing
+   * state offers uploading + publishing the original rules document. */
+  subaccord?: Address;
+}) {
   const { doc, refetch } = useDomainDoc(hash);
+  const queryClient = useQueryClient();
+  const [publishing, setPublishing] = useState(false);
+
+  /** Upload the original file: client-check sha256(bytes) == rules hash,
+   * then publish against the backing Subaccord. */
+  async function onUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !hash || !subaccord) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!verifyDomainDoc(bytes, hash)) {
+      toast.error(
+        "File does not hash to the on-chain rules hash — not the original document.",
+      );
+      return;
+    }
+    setPublishing(true);
+    try {
+      await putDomainDoc(EVIDENCE_DAEMON_URL, bytes, { subaccord });
+      toast.success("Rules document published.");
+      await queryClient.invalidateQueries({ queryKey: ["domain-doc", hash] });
+    } catch (err) {
+      toast.error(`Publish failed — ${describeError(err)}`);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   if (!hash || !doc) return null;
+  const canUpload = doc.status === "missing" && subaccord !== undefined;
   return (
     <DomainDocCard
       doc={doc}
       hash={hash}
       retry={
-        <Button size="sm" variant="outline" onClick={() => void refetch()}>
-          Retry
-        </Button>
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void refetch()}
+            disabled={publishing}
+          >
+            Retry
+          </Button>
+          {canUpload && (
+            <label
+              className={
+                "inline-flex cursor-pointer items-center rounded-md border border-input px-3 py-1.5 text-sm transition-colors hover:bg-accent" +
+                (publishing ? " pointer-events-none opacity-60" : "")
+              }
+            >
+              {publishing ? "Publishing…" : "Upload rules document"}
+              <input
+                type="file"
+                accept=".md,.markdown,.txt,text/markdown,text/plain"
+                className="hidden"
+                onChange={(e) => void onUpload(e)}
+              />
+            </label>
+          )}
+        </>
       }
     />
   );

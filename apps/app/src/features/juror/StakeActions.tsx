@@ -156,18 +156,20 @@ function ActionPicker({
   const canWithdrawFees = d.feesEarned > 0n;
 
   const btn = (a: Action, label: string, disabled: boolean) => (
-    <button
+    <Button
       type="button"
-      onClick={() => setAction(action === a ? "none" : a)}
+      variant="outline"
+      aria-pressed={action === a}
       disabled={disabled}
-      className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+      onClick={() => setAction(action === a ? "none" : a)}
+      className={
         action === a
-          ? "border-amber bg-amber/10 text-amber"
-          : "border-border-subtle text-text-primary hover:border-amber"
-      } disabled:cursor-not-allowed disabled:opacity-40`}
+          ? "border-amber bg-amber/10 text-amber hover:bg-amber/10"
+          : "border-border-subtle text-text-primary hover:border-amber hover:bg-transparent"
+      }
     >
       {label}
-    </button>
+    </Button>
   );
 
   return (

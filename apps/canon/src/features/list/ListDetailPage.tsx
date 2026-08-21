@@ -10,6 +10,7 @@
  *
  * see SPEC §Item state machine, milestone §1(d), §2.
  */
+import { ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -42,8 +43,11 @@ import {
   TableHeader,
   TableRow,
 } from "@useaccord/ui";
+import {
+  accordSubaccordUrl,
+  explorerAccountUrl,
+} from "@/shared/explorer";
 import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
-
 const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
   [ItemState.Listed]: "Listed",
@@ -159,7 +163,10 @@ export function ListDetailPage() {
       {/* Rules document (ADR-0027): the bytes behind the list's rules_hash */}
       {list && (
         <div style={{ marginTop: "1.5rem" }}>
-          <DomainDocPanel hash={hexIfSet(list.data.rulesHash)} />
+          <DomainDocPanel
+            hash={hexIfSet(list.data.rulesHash)}
+            subaccord={list.data.subaccord}
+          />
         </div>
       )}
 
@@ -243,7 +250,23 @@ function ListParams({ list }: { list: Account<CanonList> }) {
               </span>
             }
           />
-          <Row label="Subaccord" value={<Copyable value={d.subaccord} />} />
+          <Row
+            label="Subaccord"
+            value={
+              <span className="inline-flex items-center gap-1.5">
+                <Copyable value={d.subaccord} />
+                <a
+                  href={accordSubaccordUrl(d.subaccord)}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="Open subaccord in Accord"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ExternalLink className="size-3.5" aria-hidden />
+                </a>
+              </span>
+            }
+          />
           <Row label="Authority" value={<Copyable value={d.authority} />} />
           <Row label="Item count" value={d.itemCount.toString()} />
         </dl>
@@ -485,12 +508,23 @@ function ItemRow({
   return (
     <TableRow className="border-b border-border transition-colors last:border-b-0 hover:bg-foreground/5">
       <TableCell className="px-4 py-2.5">
-        <Link
-          to={`/items/${item.address}`}
-          className="transition-colors hover:text-amber"
-        >
-          <Copyable value={d.account} />
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/items/${item.address}`}
+            className="transition-colors hover:text-amber"
+          >
+            <Copyable value={d.account} />
+          </Link>
+          <a
+            href={explorerAccountUrl(d.account)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="View on explorer"
+          >
+            <ExternalLink className="size-3.5" aria-hidden />
+          </a>
+        </div>
       </TableCell>
       <TableCell className="whitespace-nowrap px-4 py-2.5">
         {ITEM_STATE_LABELS[d.state] ?? "Unknown"}

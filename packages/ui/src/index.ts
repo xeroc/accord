@@ -84,7 +84,10 @@ export { StaggerGroup, StaggerItem, Reveal, ErrorShake, EASE_EXPO } from "./moti
 // (no router/wallet/SDK/env imports, see header policy).
 export { ProductNavbar } from "./patterns/product-navbar";
 export { PageTransition } from "./patterns/page-transition";
+export { EmptyState } from "./patterns/empty-state";
 export { PageShell } from "./patterns/page-shell";
+export { ErrorState } from "./patterns/error-state";
+export { DepthPicker } from "./patterns/depth-picker";
 export { DisputeStatusCard } from "./patterns/dispute-status-card";
 export {
   DomainDocCard,
@@ -103,6 +106,7 @@ export { AmberRule } from "./brand/amber-rule";
 // feeds useCurrentFrame(); browsers useWallClockFrame(). Includes the
 // ambient Backdrop and the wall-clock driver.
 export { Backdrop } from "./mechanism/backdrop";
+export { useNow } from "./mechanism/clock";
 export { useWallClockFrame } from "./mechanism/clock";
 export { JurorPool } from "./mechanism/juror-pool";
 export { SealedVote } from "./mechanism/sealed-vote";

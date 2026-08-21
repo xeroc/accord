@@ -78,6 +78,36 @@ describe("DomainDocCard — download", () => {
     expect(clickSpy).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:domain-doc");
   });
+  it("missing + raw: renders a download button that blobs the local bytes", async () => {
+    const raw = "---\ntitle: Draft\n---\n\n## Rules\n\nWIP.";
+    const createObjectURL = vi.fn((_blob: Blob) => "blob:domain-doc");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click");
+
+    render(
+      <DomainDocCard doc={{ status: "missing" }} hash={"b".repeat(64)} raw={raw} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /download/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0]![0] as Blob;
+    expect(blob.type).toBe("text/markdown");
+    expect(blob.size).toBe(raw.length);
+    expect(clickSpy).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:domain-doc");
+  });
+
+  it("missing without raw: no download button", () => {
+    render(<DomainDocCard doc={{ status: "missing" }} hash={"b".repeat(64)} />);
+    expect(
+      screen.queryByRole("button", { name: /download/i }),
+    ).toBeNull();
+  });
 });
 
 describe("DomainDocCard — editable mode", () => {
