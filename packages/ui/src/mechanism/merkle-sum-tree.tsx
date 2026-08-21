@@ -115,7 +115,7 @@ export const MerkleSumTree: FC<{
     const left = nodes[leftIdx];
     const right = nodes[rightIdx];
     if (!first || !last || !left || !right) return leftIdx; // unreachable by construction
-    const level = Math.ceil(Math.log2(b - a + 1));
+    const level = depth - Math.ceil(Math.log2(b - a + 1));
     const idx = nodes.length;
     nodes.push({
       a,
@@ -276,7 +276,7 @@ export const MerkleSumTree: FC<{
         return (
           <div key={`l${i}`} data-leaf={li} className="absolute" style={{ left: node.x, top: node.y }}>
             <div
-              className="relative -translate-x-1/2 -translate-y-1/2 rounded-sm"
+              className="relative -translate-x-1/2 -translate-y-1/2 rounded-sm bg-raised"
               style={{
                 width: w,
                 height: 14,

@@ -125,4 +125,18 @@ export { LedgerCounter, type LedgerTone } from "./mechanism/ledger-counter";
 export { PanelLadder, PANEL_LADDER } from "./mechanism/panel-ladder";
 export { StateNode } from "./mechanism/state-node";
 export { MerkleSumTree } from "./mechanism/merkle-sum-tree";
-export { SortitionRuler } from "./mechanism/sortition-ruler";
+export { SortitionRuler, type SortitionDart } from "./mechanism/sortition-ruler";
+// Video extractions — composed animations lifted out of the concept
+// videos (economics D3/D4, accord-30s intro, draw-and-sortition C1)
+// so pages can replay them on their own clock. Same frame contract.
+export { AppealCostCurve } from "./mechanism/appeal-cost-curve";
+export {
+  RetroBeam,
+  type RetroBeamRound,
+} from "./mechanism/retro-beam";
+export {
+  DrawCommitReveal,
+  type DrawCommitRevealJuror,
+  type DrawCommitRevealDraw,
+} from "./mechanism/draw-commit-reveal";
+export { DisputeFlow, DEFAULT_CONSUMERS } from "./mechanism/dispute-flow";
