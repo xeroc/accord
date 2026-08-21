@@ -115,7 +115,12 @@ Payload kinds (`--payload <Kind:value>`) — `domain_ref`/`evidence_spec` are
 immutable and absent: `MinStake:<lamports>`, `AlphaBps:<n>`, `ReviewWindow:<secs>`,
 `CommitWindow:<secs>`, `RevealWindow:<secs>`, `AppealWindow:<secs>`,
 `MaxAppeals:<n>`, `FeePerJuror:<lamports>`, `Authority:<addr>`,
-`EvidenceOperator:<addr>`.
+`EvidenceOperator:<addr>`, `RevealThresholdBps:<n>` (≤ 10_000; > 0 on Median
+pools), `MaxDrawAttempts:<n>` (1–10).
+
+The loaded wallet signs as the authority AND pays the PendingUpdate rent
+(ADR-0028 rent-payer split — PDA authorities pass a separate data-free payer;
+the CLI's single-signer flow needs no flag).
 
 SDK: `proposeSubaccordUpdate` → `{ instruction, pendingUpdate }`;
 `getUpdateExecuteAfterSlot` reads the slot back; `executeSubaccordUpdate` →

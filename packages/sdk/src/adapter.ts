@@ -161,6 +161,11 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       return getProposeSubaccordUpdateInstruction(
         {
           authority: accord.signer,
+          // Data-free rent payer (propose_subaccord_update.rs, ADR-0028): the
+          // facade pins it to its wallet signer, same as the authority —
+          // wallet authorities pay their own rent; PDA authorities (e.g.
+          // Canon's list PDA) CPI from their program with a crank caller.
+          rentPayer: accord.signer,
           subaccord: input.subaccord,
           pendingUpdate: input.pendingUpdatePda,
           nonce: input.nonce,
