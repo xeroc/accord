@@ -181,7 +181,7 @@ stays in this framework. `grep` these before writing scene-local code:
 | The Accord mark | `@useaccord/ui` — `AccordMark` | The 3-line house mark. `progress` animates the draw-on. Never redraw the glyph. |
 | Wordmark / rule | `@useaccord/ui` — `Wordmark`, `AmberRule` | Progress-driven (0→1), sizing via className. |
 | Step chrome | `src/shell/rail` — `StepRail`, `PhaseCaptions` | Ordered labels, active step amber. |
-| Mechanism pieces | `@useaccord/ui` — `JurorPool`, `SealedVote`, `RulingStamp`, `MonoChip`, `DeltaChip`, `TallyBar` | **Frame-prop contract**: pass the scene's `frame` (they are pure functions of it — that's what lets the landing page run them on a wall clock). |
+| Mechanism pieces | `@useaccord/ui` — `JurorPool`, `SealedVote`, `RulingStamp`, `MonoChip`, `DeltaChip`, `TallyBar`, plus the concept additions (`PanelLadder`, `SortitionRuler`, `MerkleSumTree`, …) and the composed extractions (`AppealCostCurve`, `RetroBeam`, `DrawCommitReveal`, `DisputeFlow`) — see `concept-illustrations/ui-kit-additions.md` | **Frame-prop contract**: pass the scene's `frame` (they are pure functions of it — that's what lets the landing page run them on a wall clock). |
 | Coin arc | `src/pieces/coin` — `Coin` | Video-only staging: absolute 1920×1080 canvas arcs. |
 
 Contract: kit pieces take `frame` (or 0→1 progress) explicitly — no

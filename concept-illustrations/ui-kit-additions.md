@@ -330,10 +330,14 @@ fires at `updateAt + k·hopDur` and the root lands on the final hop — keep the
 
 Stake-proportional segments whose widths ARE the probability mass, `0` /
 `total_stake` endpoint labels, an optional density wave (bars bump as it
-passes), a dart that flies a shallow arc and lands at `r` with squash-settle
-+ drop-needle, the winner's amber tint sweep, and the diagonal-hatch
-"drawn — excluded" state. **The ruler never reshapes** — collision re-derives
-the dart, not the widths (re-mount with a new `dartR`).
+passes), darts that fly a shallow arc and land at `r` with a
+drop-needle plus a round end marker, winner amber tint sweeps, and the diagonal-hatch
+"drawn — excluded" state. **The ruler never reshapes** — a collision
+re-derives the next dart, never the widths. The single-dart/winner/hatch
+props cover one draw; the plural `darts`/`wins`/`hatches` props play the
+full C1 story (pinned throw → collision dissolve → re-derived throw,
+two winner tints, per-segment hatch beats) on one ruler — classic props
+normalize into them, so both styles compose.
 
 | Prop | Type | Default | Notes |
 |---|---|---|---|
@@ -350,7 +354,11 @@ the dart, not the widths (re-mount with a new `dartR`).
 | `winAt` | `number` | `dartAt + 4` | frame the sweep runs |
 | `drawn` | `readonly number[]` | — | excluded segment indices (hatch) |
 | `drawnAt` | `number` | — | frame the hatches wipe on (8 f) |
+| `darts` | `readonly SortitionDart[]` | — | extra darts: `{ r, from?, pinAt?, throwAt, landAt, dissolveAt? }` |
+| `wins` | `readonly { seg, at }[]` | — | extra winner tint sweeps (tints persist — the win record) |
+| `hatches` | `readonly { seg, at }[]` | — | extra hatches, each on its own beat |
 | `width` | `number` | `520` | px |
+| `height` | `number` | `102` | box height — baseline at the bottom, headroom for labels + dart |
 | `className` | `string` | — | |
 
 ```tsx
@@ -370,6 +378,105 @@ the dart, not the widths (re-mount with a new `dartR`).
 
 **Groups:** C1 (the whole draw), C3 (the mini-ruler callback under window A),
 A1 (stake-proportional slices).
+
+---
+
+## Video extractions — composed animations
+
+Whole beats lifted out of the finished videos so the app and landing
+can replay them on their own clock. Same frame contract as everything
+above: pure functions of `frame`, tokens only, `data-*` test seams.
+
+### `AppealCostCurve` — the ladder's hero beat (economics D3)
+
+`import { AppealCostCurve } from "@useaccord/ui";`
+
+The exponential cost curve drawing over the `PanelLadder` staircase —
+slow crawl, explosive rise (the two-segment easing IS the exponent) —
+crossing the dashed "value of capturing the ruling" line with a flash
+and ✕, then exiting the top. Fixed 560×500 box that frames the curve —
+baseline (the ladder's floor) at local y = 470, curve peak at y = 30.
+Pair with a default `PanelLadder` placed at `left: 88`, floor on the baseline.
+
+| Prop | Type | Default | Notes |
+|---|---|---|---|
+| `frame` | `number` | — | |
+| `at` | `number` | `0` | frame the curve starts drawing |
+| `dur` | `number` | `51` | draw length (the D3 tempo) |
+| `dashAt` | `number` | `at − 50` | frame the prize line draws L→R (12 f) |
+| `labelAt` | `number` | `dashAt + 10` | frame the prize label settles |
+| `prizeLabel` | `string` | `"value of capturing the ruling"` | caption |
+| `className` | `string` | — | sizing overrides (box is 560×500) |
+
+### `RetroBeam` — the final ruling reaches back (economics D4)
+
+`import { RetroBeam } from "@useaccord/ui";`
+
+A horizontal round rail: rounds' votes start colored by option (YES
+amber, NO grey), the final ruling stamps into its slot at the right,
+then the beam sweeps right→left — decelerating into the earliest round
+— and dots recolor AS THE BEAM PASSES (with-final → confirm, against →
+slash, one pop at the edge). Once a round is fully passed, its slashed
+jurors' stake moves to the coherent ones: each slashed dot emits a
+stake particle that arcs to a coherent juror of the same round — the
+slashed dot shrinks and dims, the receiver pops and stays grown. Dot
+jitter is seeded (`seededRandom`, byte-identical to Remotion's
+`random`), keyed by round id.
+
+| Prop | Type | Default | Notes |
+|---|---|---|---|
+| `frame` | `number` | — | |
+| `rounds` | `readonly { id?, yes, no }[]` | — | rounds left→right |
+| `finalRuling` | `"yes" \| "no"` | — | what coherence is judged against |
+| `at` | `number` | `0` | rail draws in (19 f) |
+| `beamFrom` / `beamTo` | `number` | `66` / `126` | beam departure / clear |
+| `rulingAt` | `number` | `46` | stamp lands in the slot |
+| `redistribute` | `boolean` | `true` | slashed→coherent stake particles per round |
+| `spotlight` | `{ round, side }` | — | the bribed emphasis — bigger dots, bigger pop |
+| `width` / `height` | `number` | `1300` / `370` | box size |
+| `className` | `string` | — | |
+
+Scene overlays (D2-convention counters, round-local tallies, settle
+chips) stay scene-local — position them off `centers`.
+
+### `DrawCommitReveal` — the mechanism pipeline (accord-30s)
+
+`import { DrawCommitReveal } from "@useaccord/ui";`
+
+The intro's right column as one piece: `JurorPool` (three jurors
+popping out of the staked grid) → `SealedVote`×3 (hashes scramble in
+and lock, the reveal flips them to votes) → `RulingStamp`. Defaults
+reproduce the intro beat exactly; every timing is a prop.
+
+| Prop | Type | Default | Notes |
+|---|---|---|---|
+| `frame` | `number` | — | |
+| `poolCount` / `poolCols` / `dotSize` | `number` | `30` / `5` / `12` | the pool grid |
+| `drawn` | `readonly { dot, at }[]` | the intro trio | which dots pop amber |
+| `jurors` | `readonly { hash, vote, commitAt, revealAt }[]` | the intro trio | the jury |
+| `rulingAt` / `rulingText` / `rulingDur` | — | `175` / `"RULING: YES"` / `7` | the stamp |
+| `width` | `number` | `620` | column width |
+| `className` | `string` | — | |
+
+### `DisputeFlow` — a ruling about the real world (accord-30s)
+
+`import { DisputeFlow } from "@useaccord/ui";`
+
+The unlock diagram: dispute block → wire with a traveling amber pulse →
+the court block scaling in → second pulsed wire → ruling block, then
+the consumer chips fanning out underneath. Pulses loop on the frame
+counter — browser walls clock it via `useWallClockFrame`.
+
+| Prop | Type | Default | Notes |
+|---|---|---|---|
+| `frame` | `number` | — | |
+| `at` | `number` | `0` | source block enters; court `+6`, ruling `+12` |
+| `sourceLabel`/`sourceValue`, `courtLabel`/`courtSub`, `rulingLabel`/`rulingValue` | `string` | intro copy | block text |
+| `consumers` | `readonly string[]` | the intro four | fan-out chips |
+| `consumersAt` | `number` | `at + 57` | first chip; stagger 5 f |
+| `wireFrames` / `wireOffset` | `number` | `45` / `22` | pulse loop / 2nd-wire phase |
+| `wireWidth` | `number` | `200` | px |
+| `className` | `string` | — | |
 
 ---
 

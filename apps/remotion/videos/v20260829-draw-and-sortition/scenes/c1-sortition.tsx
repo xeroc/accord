@@ -4,7 +4,7 @@ import { MonoChip, SortitionRuler } from "@useaccord/ui";
 import { clamp, enterAt, exitAt, scramble } from "../../../src/shell/anim";
 import { Coin } from "../../../src/pieces/coin";
 import { Scene } from "../../../src/shell/scene";
-import { BeatCopy, SceneChrome, expo } from "./chrome";
+import { BeatCopy, SceneChrome } from "./chrome";
 import {
   C1_LABELS,
   C1_R0,
@@ -20,11 +20,11 @@ import {
  * C1Sortition — stake-weighted sortition, the number line.
  *
  * The ruler IS the pool: total_stake as [0, total), five stake-
- * proportional segments, one VRF dart. Kit SortitionRuler owns dart 1
- * (the pinned → thrown → landed lifecycle via two prop windows); darts
- * 2 and 3 are scene-local twins of the kit dart so the collision →
- * draw_attempt re-derivation can play while dart 1's mark persists.
- * The ruler never reshapes — that is the point of the scene.
+ * proportional segments. The kit SortitionRuler plays the whole
+ * story: dart 1 pinned → thrown → landed, the collision dart that
+ * dissolves, the re-derived r₁, per-segment hatches and both winner
+ * tints — via its multi-dart `darts`/`wins`/`hatches` props. The
+ * ruler never reshapes — that is the point of the scene.
  */
 
 const RULER_W = 1000;
@@ -33,89 +33,8 @@ const BASELINE_Y = 560;
 /** stake units → px along the ruler (width == total, so 1:1 here). */
 const stakeToX = (r: number) => (r / C1_TOTAL) * RULER_W;
 
-/** Segment geometry, mirroring the kit's formula (2 px gaps). */
-const SEG_GAP = 2;
-const SEG_USABLE = RULER_W - SEG_GAP * (C1_STAKES.length - 1);
-const SEG_W = C1_STAKES.map((s) => (s / C1_TOTAL) * SEG_USABLE);
-const SEG_LEFT: number[] = [];
-{
-  let cursor = 0;
-  for (const w of SEG_W) {
-    SEG_LEFT.push(cursor);
-    cursor += w + SEG_GAP;
-  }
-}
-
 const HEX1 = "7f3a91c2";
 const HEX2 = "b48d02e7";
-
-/**
- * Dart — scene-local twin of the kit dart (same teardrop geometry,
- * arc, squash-settle and drop-needle) for the collision/re-derivation
- * throws the single-dart kit piece cannot hold alongside dart 1.
- * `dissolveAt` fades dart + needle out (the discarded attempt).
- */
-function Dart({
-  frame,
-  from,
-  to,
-  throwAt,
-  landAt,
-  dissolveAt,
-}: {
-  frame: number;
-  from: number;
-  to: number;
-  throwAt: number;
-  landAt: number;
-  dissolveAt?: number;
-}) {
-  if (frame < throwAt) {
-    return null;
-  }
-  const flight = expo(frame, throwAt, landAt - throwAt);
-  const settle = expo(frame, landAt, 4);
-  const x = stakeToX(from + (to - from) * flight);
-  const arcY = -Math.sin(Math.PI * flight) * 26;
-  const out =
-    dissolveAt !== undefined
-      ? interpolate(frame, [dissolveAt, dissolveAt + 5], [1, 0], { ...clamp })
-      : 1;
-  const dartOp = out * interpolate(frame, [throwAt, throwAt + 4], [0, 1], { ...clamp });
-  return (
-    <>
-      {frame >= landAt ? (
-        <div
-          className="absolute w-px bg-amber"
-          style={{
-            left: x,
-            bottom: 0,
-            height: 54,
-            opacity: settle * out,
-            boxShadow: "0 0 6px var(--accord-amber)",
-          }}
-        />
-      ) : null}
-      <div
-        className="absolute"
-        style={{
-          left: x,
-          bottom: 30 + arcY + 12,
-          transform: `translate(-50%, 50%) scale(${0.97 + settle * 0.03}) rotate(${45 + (1 - flight) * 20}deg)`,
-          opacity: dartOp,
-        }}
-      >
-        <div
-          className="h-[18px] w-[10px] rounded-t-full bg-amber"
-          style={{
-            clipPath: "polygon(50% 100%, 0 22%, 0 0, 100% 0, 100% 22%)",
-            boxShadow: "0 0 10px var(--accord-amber)",
-          }}
-        />
-      </div>
-    </>
-  );
-}
 
 function Seat({
   frame,
@@ -157,14 +76,7 @@ export function C1Sortition() {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // --- kit ruler prop windows -------------------------------------------
-  // W1 (pre-throw): dart pinned at the r=0 end. W2 (post-throw): the
-  // same dart flies 0 → r₀ — continuity holds because both windows put
-  // the dart at x=0 on the switch frame. W3 (seat 2): the winner tint
-  // moves to S; R keeps its hatch (drawn — excluded).
-  const thrown1 = frame >= T1.throw1;
-  const seat2 = frame >= T1.win2;
-
+  // --- VRF state (the hex scramble + draw_attempt odometer) --------------
   const hexTarget = frame >= T1.reflick ? HEX2 : HEX1;
   const hexLocked =
     (frame >= T1.hexLock1 && frame < T1.reflick) || frame >= T1.hexLock2;
@@ -210,29 +122,35 @@ export function C1Sortition() {
         <MonoChip tone="amber">draw_attempt {attempt}</MonoChip>
       </div>
 
-      {/* the ruler — one kit piece, everything anchored to its baseline */}
-      <div className="absolute" style={{ left: RULER_X, top: BASELINE_Y, width: RULER_W }}>
+      {/* the ruler — one kit piece; its box is 102 px tall with the
+          baseline at the box bottom, so shift the wrapper up to keep
+          the baseline at canvas BASELINE_Y. Everything else anchors
+          bottom-relative to the baseline. */}
+      <div className="absolute" style={{ left: RULER_X, top: BASELINE_Y - 102, width: RULER_W }}>
         <SortitionRuler
           frame={frame}
           stakes={C1_STAKES}
           labels={C1_LABELS}
           at={T1.at}
           sweepAt={T1.sweepAt}
-          dartR={thrown1 ? C1_R0 : 0}
-          dartAt={thrown1 ? T1.land1 : 9999}
-          throwFrom={thrown1 ? 0 : undefined}
-          throwAt={thrown1 ? T1.throw1 : T1.dartPin}
-          winner={seat2 ? 3 : 2}
-          winAt={seat2 ? T1.win2 : T1.win1}
-          drawn={[2]}
-          drawnAt={T1.hatchR}
+          darts={[
+            // dart 1 — pinned at r=0, thrown, lands inside R (the winner)
+            { r: C1_R0, from: 0, pinAt: T1.dartPin, throwAt: T1.throw1, landAt: T1.land1 },
+            // dart 2 — the collision (compressed repeat, lands in drawn R, dissolves)
+            { r: C1_R2, from: 0, throwAt: T1.throw2, landAt: T1.land2, dissolveAt: T1.dissolve2 },
+            // dart 3 — the re-derived r₁ (lands in S)
+            { r: C1_R1, from: 0, throwAt: T1.throw3, landAt: T1.land3 },
+          ]}
+          wins={[
+            { seg: 2, at: T1.win1 },
+            { seg: 3, at: T1.win2 },
+          ]}
+          hatches={[
+            { seg: 2, at: T1.hatchR },
+            { seg: 3, at: T1.hatchS },
+          ]}
           width={RULER_W}
         />
-
-        {/* dart 2 — the collision (compressed repeat, lands in drawn R) */}
-        <Dart frame={frame} from={0} to={C1_R2} throwAt={T1.throw2} landAt={T1.land2} dissolveAt={T1.dissolve2} />
-        {/* dart 3 — the re-derived r₁ (lands in S) */}
-        <Dart frame={frame} from={0} to={C1_R1} throwAt={T1.throw3} landAt={T1.land3} />
 
         {/* one flat amber flash on collision — firm, no shake */}
         {frame >= T1.flash2 ? (
@@ -271,21 +189,6 @@ export function C1Sortition() {
         >
           <MonoChip tone="neutral">drawn — excluded</MonoChip>
         </div>
-
-        {/* S hatch — scene-local wipe (the kit hatches all drawn segments
-            at one frame; S needs its own beat without re-wiping R) */}
-        <div
-          className="absolute rounded-t-sm"
-          style={{
-            left: SEG_LEFT[3] ?? 0,
-            bottom: 0,
-            width: SEG_W[3] ?? 0,
-            height: 30,
-            opacity: expo(frame, T1.hatchS, 8),
-            background:
-              "repeating-linear-gradient(45deg, transparent 0 3px, var(--accord-border) 3px 5px)",
-          }}
-        />
 
         {/* prefix-math captions under the winning ranges */}
         <p
