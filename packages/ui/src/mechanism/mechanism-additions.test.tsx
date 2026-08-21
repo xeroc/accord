@@ -9,6 +9,10 @@ import { LedgerCounter } from "./ledger-counter";
 import { PanelLadder, PANEL_LADDER } from "./panel-ladder";
 import { StateNode } from "./state-node";
 import { MerkleSumTree } from "./merkle-sum-tree";
+import { AppealCostCurve } from "./appeal-cost-curve";
+import { RetroBeam } from "./retro-beam";
+import { DrawCommitReveal } from "./draw-commit-reveal";
+import { DisputeFlow } from "./dispute-flow";
 import { SortitionRuler } from "./sortition-ruler";
 
 describe("TokenTone", () => {
@@ -251,6 +255,22 @@ describe("MerkleSumTree", () => {
     expect(container.querySelectorAll("[data-edge]").length).toBe(14);
   });
 
+  it("orients the tree root-up: root above internals above leaves", () => {
+    const { container } = render(<MerkleSumTree frame={60} leaves={LEAVES} />);
+    const nodeTops = Array.from(container.querySelectorAll("[data-node]")).map((n) =>
+      Number.parseFloat((n as HTMLElement).style.top),
+    );
+    const leafTops = Array.from(container.querySelectorAll("[data-leaf]")).map((n) =>
+      Number.parseFloat((n as HTMLElement).style.top),
+    );
+    // the root is the single topmost node (rowsTop = 22), strictly above
+    // every other internal node, and every leaf sits below them all
+    const rootTop = Math.min(...nodeTops);
+    expect(nodeTops.filter((t) => t === rootTop).length).toBe(1);
+    expect(nodeTops.filter((t) => t > rootTop).length).toBe(6);
+    expect(Math.max(...nodeTops)).toBeLessThan(Math.min(...leafTops));
+  });
+
   it("leaf widths are proportional to stake", () => {
     const { container } = render(<MerkleSumTree frame={60} leaves={[100, 300]} width={228} />);
     const bars = [
@@ -343,5 +363,222 @@ describe("SortitionRuler", () => {
     const hatch = container.querySelector("[data-hatch]") as HTMLElement;
     expect(hatch.style.opacity).toBe("1");
     expect(hatch.style.background).toContain("repeating-linear-gradient");
+  });
+
+  it("plays the collision story: pinned dart, dissolving dart, per-segment hatches", () => {
+    const darts = [
+      { r: 290, from: 0, pinAt: 70, throwAt: 92, landAt: 104 },
+      { r: 538, from: 0, throwAt: 158, landAt: 168, dissolveAt: 178 },
+      { r: 773, from: 0, throwAt: 200, landAt: 212 },
+    ];
+    const hatches = [
+      { seg: 2, at: 142 },
+      { seg: 3, at: 250 },
+    ];
+    const props = { stakes: STAKES, darts, hatches };
+    const { container, rerender } = render(<SortitionRuler frame={50} {...props} />);
+    expect(container.querySelectorAll("[data-dart]").length).toBe(0);
+
+    // pinned: dart 0 sits at r=0 before its throw departs
+    rerender(<SortitionRuler frame={80} {...props} />);
+    expect(container.querySelectorAll("[data-dart]").length).toBe(1);
+    expect((container.querySelector('[data-dart-body="0"]') as HTMLElement).style.left).toBe("0px");
+
+    // all three thrown: collision dart dissolves, the re-derived dart lands
+    rerender(<SortitionRuler frame={190} {...props} />);
+    expect(container.querySelectorAll('[data-dart-body="2"]').length).toBe(0); // not yet thrown
+    expect((container.querySelector('[data-dart-body="1"]') as HTMLElement).style.opacity).toBe("0");
+
+    rerender(<SortitionRuler frame={260} {...props} />);
+    expect(container.querySelector('[data-needle="2"]')).not.toBeNull();
+    const hatchesNow = Array.from(container.querySelectorAll("[data-hatch]")) as HTMLElement[];
+    expect(hatchesNow.length).toBe(2);
+    expect(hatchesNow.every((h) => h.style.opacity === "1")).toBe(true);
+  });
+
+  it("sweeps multiple winners, each on its own beat", () => {
+    const { container, rerender } = render(
+      <SortitionRuler
+        frame={108}
+        stakes={STAKES}
+        wins={[{ seg: 2, at: 108 }, { seg: 3, at: 216 }]}
+      />,
+    );
+    const sweeps = () => Array.from(container.querySelectorAll("[data-seg] [data-win-sweep]")) as HTMLElement[];
+    expect(sweeps().length).toBe(2);
+    expect((sweeps()[0] as HTMLElement).style.width).toBe("0%");
+
+    rerender(
+      <SortitionRuler
+        frame={230}
+        stakes={STAKES}
+        wins={[{ seg: 2, at: 108 }, { seg: 3, at: 216 }]}
+      />,
+    );
+    expect(sweeps().every((s) => s.style.width === "100%")).toBe(true);
+  });
+});
+describe("AppealCostCurve", () => {
+  it("draws the prize line L→R, then the curve, flashing the crossing", () => {
+    const { container, rerender } = render(<AppealCostCurve frame={0} at={60} />);
+    const line = () => container.querySelector("[data-prize-line]") as SVGLineElement;
+    expect(Number.parseFloat(line().getAttribute("x2") ?? "0")).toBe(88);
+
+    rerender(<AppealCostCurve frame={16} at={60} />);
+    const x2 = Number.parseFloat(line().getAttribute("x2") ?? "0");
+    expect(x2).toBeGreaterThan(88);
+    expect(x2).toBeLessThan(540);
+    expect(container.querySelector("[data-cross]")).toBeNull();
+
+    rerender(<AppealCostCurve frame={59} at={60} />);
+    expect(
+      (container.querySelector("[data-curve]") as SVGPathElement).getAttribute("stroke-dashoffset"),
+    ).toBe("1");
+
+    rerender(<AppealCostCurve frame={200} at={60} />);
+    expect(
+      (container.querySelector("[data-curve]") as SVGPathElement).getAttribute("stroke-dashoffset"),
+    ).toBe("0");
+    expect(container.querySelector("[data-cross]")).not.toBeNull();
+    expect(screen.getByText("value of capturing the ruling")).toBeInTheDocument();
+  });
+});
+
+describe("RetroBeam", () => {
+  const ROUNDS = [
+    { id: "R1", yes: 2, no: 1 },
+    { id: "R2", yes: 2, no: 5 },
+    { id: "R3", yes: 6, no: 9 },
+  ];
+
+  it("renders one dot per vote, recolored only as the beam passes", () => {
+    const { container, rerender } = render(
+      <RetroBeam frame={60} rounds={ROUNDS} finalRuling="no" />,
+    );
+    const dots = () => Array.from(container.querySelectorAll("[data-dot]")) as HTMLElement[];
+    expect(dots().length).toBe(25);
+    expect(dots().every((d) => d.dataset.passed === "false")).toBe(true);
+    expect(dots()[0]).toHaveClass("bg-amber");
+
+    rerender(<RetroBeam frame={200} rounds={ROUNDS} finalRuling="no" />);
+    expect(dots().every((d) => d.dataset.passed === "true")).toBe(true);
+    expect(dots()[0]).toHaveClass("bg-slash"); // yes vote vs a NO final ruling
+    expect(dots()[2]).toHaveClass("bg-confirm"); // the no vote agrees
+  });
+
+  it("stamps the final ruling into its slot", () => {
+    render(<RetroBeam frame={60} rounds={ROUNDS} finalRuling="no" />);
+    expect(screen.getByText("dispute.final_ruling")).toBeInTheDocument();
+    expect(screen.getByText("NO")).toBeInTheDocument();
+  });
+
+  it("fades the beam in at beamFrom and out after beamTo", () => {
+    const { container, rerender } = render(
+      <RetroBeam frame={50} rounds={ROUNDS} finalRuling="no" />,
+    );
+    const beam = () => container.querySelector("[data-beam]") as HTMLElement;
+    expect(beam().style.opacity).toBe("0");
+
+    rerender(<RetroBeam frame={100} rounds={ROUNDS} finalRuling="no" />);
+    expect(beam().style.opacity).toBe("1");
+
+    rerender(<RetroBeam frame={140} rounds={ROUNDS} finalRuling="no" />);
+    expect(beam().style.opacity).toBe("0");
+  });
+  it("moves slashed stake to the coherent jurors after the beam passes", () => {
+    // forced beam: everything passes by f10 → R1's transfers run f11–24
+    const props = { rounds: [{ id: "R1", yes: 2, no: 1 }], finalRuling: "no" as const, beamFrom: 0, beamTo: 10 };
+    const { container, rerender } = render(<RetroBeam frame={5} {...props} />);
+    expect(container.querySelectorAll("[data-particle]").length).toBe(0);
+
+    rerender(<RetroBeam frame={16} {...props} />);
+    expect(container.querySelectorAll("[data-particle]").length).toBe(2); // both slashed jurors paying
+
+    rerender(<RetroBeam frame={40} {...props} />);
+    expect(container.querySelectorAll("[data-particle]").length).toBe(0); // arrived
+    const dots = Array.from(container.querySelectorAll("[data-dot]")) as HTMLElement[];
+    expect(Number.parseFloat(dots[0]?.style.opacity ?? "1")).toBeCloseTo(0.45, 5); // slashed: dimmed
+    expect(dots[0]?.style.transform).toContain("scale(0.55)"); // and shrunk
+    expect(dots[2]?.style.transform).toContain("scale(1.22)"); // receiver grew
+  });
+
+  it("skips the redistribution when asked", () => {
+    const { container } = render(
+      <RetroBeam
+        frame={40}
+        rounds={[{ id: "R1", yes: 2, no: 1 }]}
+        finalRuling="no"
+        beamFrom={0}
+        beamTo={10}
+        redistribute={false}
+      />,
+    );
+    const dots = Array.from(container.querySelectorAll("[data-dot]")) as HTMLElement[];
+    expect(dots[0]?.style.opacity).toBe("1");
+    expect(dots[0]?.style.transform).toContain("scale(1)");
+  });
+});
+
+describe("DrawCommitReveal", () => {
+  it("runs pool → sealed votes → ruling on the frame clock", () => {
+    const { container, rerender } = render(<DrawCommitReveal frame={30} />);
+    expect(container.querySelectorAll("[data-pool] [data-dot]").length).toBe(30);
+    expect(container.querySelectorAll("[data-votes] > div").length).toBe(3);
+    expect((container.querySelector("[data-ruling] > div") as HTMLElement).style.opacity).toBe("0");
+
+    rerender(<DrawCommitReveal frame={200} />);
+    expect(screen.getByText("RULING: YES")).toBeInTheDocument();
+  });
+
+  it("commits lock as hashes, reveals flip them to votes", () => {
+    const { container, rerender } = render(<DrawCommitReveal frame={134} />);
+    const spans = () =>
+      Array.from(
+        (container.querySelectorAll("[data-votes] > div")[0] as HTMLElement).querySelectorAll(":scope > span"),
+      ) as HTMLElement[];
+    expect(spans()[0]?.textContent).toContain("6f3a91");
+    expect(spans()[0]?.style.opacity).toBe("1");
+    expect(spans()[1]?.style.opacity).toBe("0");
+
+    rerender(<DrawCommitReveal frame={160} />);
+    expect(spans()[0]?.style.opacity).toBe("0");
+    expect(spans()[1]?.style.opacity).toBe("1");
+    expect(spans()[1]?.textContent).toBe("yes");
+  });
+});
+
+describe("DisputeFlow", () => {
+  it("stages source → court → ruling → consumers on the frame clock", () => {
+    const { container, rerender } = render(<DisputeFlow frame={0} at={15} />);
+    const node = (name: string) => container.querySelector(`[data-node="${name}"]`) as HTMLElement;
+    expect(node("source").style.opacity).toBe("0");
+
+    rerender(<DisputeFlow frame={40} at={15} />);
+    expect(node("source").style.opacity).toBe("1");
+    expect(node("court").style.opacity).toBe("1");
+    expect(node("ruling").style.opacity).toBe("1");
+    const chips = Array.from(container.querySelectorAll("[data-consumer]")) as HTMLElement[];
+    expect(chips.length).toBe(4);
+    expect(chips.every((c) => c.style.opacity === "0")).toBe(true);
+
+    rerender(<DisputeFlow frame={110} at={15} />);
+    expect(chips.every((c) => c.style.opacity === "1")).toBe(true);
+  });
+
+  it("pulses travel the wires and slide under the next block at the loop's end", () => {
+    const { container, rerender } = render(<DisputeFlow frame={0} at={15} />);
+    const left = () =>
+      Array.from(container.querySelectorAll("[data-pulse]")).map(
+        (p) => Number.parseFloat((p as HTMLElement).style.left),
+      );
+    expect(left()[0]).toBe(0);
+    expect(left()[1]).toBeCloseTo((22 / 45) * 200, 0);
+
+    rerender(<DisputeFlow frame={10} at={15} />);
+    expect(left()[0]).toBeCloseTo((10 / 45) * 200, 0);
+
+    // late in the loop the dot's tail crosses into the block zone
+    rerender(<DisputeFlow frame={44} at={15} />);
+    expect(left()[0]).toBeGreaterThanOrEqual(192);
   });
 });
