@@ -52,6 +52,8 @@ impl<'info> ExecuteSubaccordUpdate<'info> {
             UpdatePayload::FeePerJuror(v) => sub.fee_per_juror = *v,
             UpdatePayload::Authority(v) => sub.authority = *v,
             UpdatePayload::EvidenceOperator(v) => sub.evidence_operator = *v,
+            UpdatePayload::RevealThresholdBps(v) => sub.reveal_threshold_bps = *v,
+            UpdatePayload::MaxDrawAttempts(v) => sub.max_draw_attempts = *v,
         }
 
         emit!(UpdateExecuted {

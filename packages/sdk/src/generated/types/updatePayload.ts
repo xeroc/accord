@@ -32,7 +32,9 @@ import {
 
 /**
  * Tagged Subaccord parameter update. `domain_ref` and `evidence_spec` are
- * immutable and intentionally absent (ADR-0005).
+ * immutable and intentionally absent (ADR-0005). Variants are append-only:
+ * borsh encodes the variant index, so a new variant MUST be added at the END
+ * (ADR-0028) — in-flight `PendingUpdate` accounts deserialize by index.
  */
 export type UpdatePayload =
   | { __kind: "MinStake"; fields: readonly [bigint] }
@@ -44,7 +46,9 @@ export type UpdatePayload =
   | { __kind: "MaxAppeals"; fields: readonly [number] }
   | { __kind: "FeePerJuror"; fields: readonly [bigint] }
   | { __kind: "Authority"; fields: readonly [Address] }
-  | { __kind: "EvidenceOperator"; fields: readonly [Address] };
+  | { __kind: "EvidenceOperator"; fields: readonly [Address] }
+  | { __kind: "RevealThresholdBps"; fields: readonly [number] }
+  | { __kind: "MaxDrawAttempts"; fields: readonly [number] };
 
 export type UpdatePayloadArgs =
   | { __kind: "MinStake"; fields: readonly [number | bigint] }
@@ -56,7 +60,9 @@ export type UpdatePayloadArgs =
   | { __kind: "MaxAppeals"; fields: readonly [number] }
   | { __kind: "FeePerJuror"; fields: readonly [number | bigint] }
   | { __kind: "Authority"; fields: readonly [Address] }
-  | { __kind: "EvidenceOperator"; fields: readonly [Address] };
+  | { __kind: "EvidenceOperator"; fields: readonly [Address] }
+  | { __kind: "RevealThresholdBps"; fields: readonly [number] }
+  | { __kind: "MaxDrawAttempts"; fields: readonly [number] };
 
 export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
   return getDiscriminatedUnionEncoder([
@@ -99,6 +105,14 @@ export function getUpdatePayloadEncoder(): Encoder<UpdatePayloadArgs> {
     [
       "EvidenceOperator",
       getStructEncoder([["fields", getTupleEncoder([getAddressEncoder()])]]),
+    ],
+    [
+      "RevealThresholdBps",
+      getStructEncoder([["fields", getTupleEncoder([getU16Encoder()])]]),
+    ],
+    [
+      "MaxDrawAttempts",
+      getStructEncoder([["fields", getTupleEncoder([getU8Encoder()])]]),
     ],
   ]);
 }
@@ -144,6 +158,14 @@ export function getUpdatePayloadDecoder(): Decoder<UpdatePayload> {
     [
       "EvidenceOperator",
       getStructDecoder([["fields", getTupleDecoder([getAddressDecoder()])]]),
+    ],
+    [
+      "RevealThresholdBps",
+      getStructDecoder([["fields", getTupleDecoder([getU16Decoder()])]]),
+    ],
+    [
+      "MaxDrawAttempts",
+      getStructDecoder([["fields", getTupleDecoder([getU8Decoder()])]]),
     ],
   ]);
 }
@@ -240,6 +262,26 @@ export function updatePayload(
   "__kind",
   "EvidenceOperator"
 >;
+export function updatePayload(
+  kind: "RevealThresholdBps",
+  data: GetDiscriminatedUnionVariantContent<
+    UpdatePayloadArgs,
+    "__kind",
+    "RevealThresholdBps"
+  >["fields"],
+): GetDiscriminatedUnionVariant<
+  UpdatePayloadArgs,
+  "__kind",
+  "RevealThresholdBps"
+>;
+export function updatePayload(
+  kind: "MaxDrawAttempts",
+  data: GetDiscriminatedUnionVariantContent<
+    UpdatePayloadArgs,
+    "__kind",
+    "MaxDrawAttempts"
+  >["fields"],
+): GetDiscriminatedUnionVariant<UpdatePayloadArgs, "__kind", "MaxDrawAttempts">;
 export function updatePayload<K extends UpdatePayloadArgs["__kind"], Data>(
   kind: K,
   data?: Data,

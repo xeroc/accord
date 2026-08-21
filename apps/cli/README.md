@@ -96,9 +96,11 @@ useaccord lifecycle:create-subaccord --random-domain-id \
 ### `lifecycle:propose-update --subaccord <pda> --payload <Kind:value> [--nonce <n>] [--dry-run]`
 
 Authority-gated proposal to update one mutable Subaccord parameter; arms the
-48h (`UPDATE_TIMELOCK_SLOTS`) timelock. `--payload` is `Kind:value` where Kind
-is one of `MinStake`, `AlphaBps`, `ReviewWindow`, `CommitWindow`, `RevealWindow`,
-`AppealWindow`, `MaxAppeals`, `FeePerJuror`, `Authority`, `EvidenceOperator`.
+48h (`UPDATE_TIMELOCK_SLOTS`) timelock. The loaded wallet signs as the
+authority and pays the PendingUpdate rent (ADR-0028). `--payload` is
+`Kind:value` where Kind is one of `MinStake`, `AlphaBps`, `ReviewWindow`,
+`CommitWindow`, `RevealWindow`, `AppealWindow`, `MaxAppeals`, `FeePerJuror`,
+`Authority`, `EvidenceOperator`, `RevealThresholdBps`, `MaxDrawAttempts`.
 After sending, the exact `executeAfterSlot` is read back from the PendingUpdate
 account and emitted.
 

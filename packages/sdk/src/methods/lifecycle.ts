@@ -427,7 +427,10 @@ export async function createSubaccord(
 
 /**
  * Build `propose_subaccord_update` (lib.rs:331). Authority-gated; arms a 48h
- * timelock. The exact `execute_after_slot` is set on-chain from the landing
+ * timelock. The adapter pins the data-free rent payer to its wallet signer
+ * (ADR-0028) — wallet authorities pay their own PendingUpdate rent; a PDA
+ * authority CPIs from its program with a crank caller as rent payer.
+ * The exact `execute_after_slot` is set on-chain from the landing
  * slot — read it back via `fetchPendingUpdateExecuteAfter` and gate execution
  * with `canExecuteAt`. Returns the derived PendingUpdate PDA.
  */

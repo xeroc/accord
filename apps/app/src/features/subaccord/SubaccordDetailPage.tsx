@@ -1,15 +1,19 @@
 /**
- * Subaccord detail view (accord-rgn6).
+ * Subaccord detail view (accord-rgn6; authority update surface accord-7s0n).
  *
  * `/subaccords/:address` — reads one Subaccord via the typed decoder
  * (`fetchSubaccord(rpc, address)`), shows every on-chain param, and links to
- * the stake + dispute flows with the address as a query param. Read-only — no
- * wallet needed. Hashes/addresses/numbers render in IBM Plex Mono (`.mono`).
+ * the stake + dispute flows with the address as a query param. Hashes/
+ * addresses/numbers render in IBM Plex Mono (`.mono`).
  *
  * The full account struct is shown (the bean lists the headline fields; the
  * ADR-0020/0021 additions — feeToken, appealWindow, revealThresholdBps,
  * maxDrawAttempts — are included so the view matches the code, per
  * docs-match-reality).
+ *
+ * The connected wallet gates the update surface (accord-7s0n): when it IS the
+ * Subaccord authority (non-sentinel), an "Update parameters" card appears —
+ * propose → 48h timelock → execute (ADR-0028). Other wallets see read-only.
  */
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -17,6 +21,7 @@ import type { Address, ReadonlyUint8Array } from "@solana/kit";
 import { Aggregation } from "@useaccord/sdk";
 
 import { useClusterRpc } from "../../shared/rpc";
+import { useSigner } from "../../shared/wallet";
 import { fetchSubaccord, type SubaccordView } from "../../shared/fetch";
 import { formatTokenAmount, formatWindow } from "../../shared/format";
 import {
@@ -28,6 +33,8 @@ import {
   Reveal,
 } from "@useaccord/ui";
 import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
+import { canUpdateSubaccord } from "./update";
+import { UpdateParametersCard } from "./UpdateParametersCard";
 
 export function SubaccordDetailPage() {
   const rpc = useClusterRpc()?.rpc ?? null;
@@ -96,6 +103,11 @@ function SubaccordDetail({
   address: string;
   subaccord: SubaccordView;
 }) {
+  // accord-7s0n: the update surface exists only for the connected authority
+  // (non-sentinel) — every other wallet keeps the read-only view.
+  const { signer } = useSigner();
+  const canUpdate = canUpdateSubaccord(d, signer?.address ?? null);
+
   return (
     <>
       <nav className="mb-8 flex flex-wrap gap-3">
@@ -105,6 +117,13 @@ function SubaccordDetail({
         <Button variant="outline" asChild>
           <Link to={`/disputes/new?subaccord=${address}`}>File a dispute.</Link>
         </Button>
+        {canUpdate && signer && (
+          <UpdateParametersCard
+            subaccord={address as Address}
+            data={d}
+            signer={signer}
+          />
+        )}
       </nav>
 
       <section className="gap-4 grid [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
