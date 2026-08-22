@@ -58,6 +58,8 @@ export {
   requestWithdrawal,
   advanceWithdrawal,
   closeItem,
+  updateList,
+  proposeCourtUpdate,
   MAX_LIST_TREE_DEPTH,
   defaultCourtParams,
   type CreateListAccounts,
@@ -71,6 +73,10 @@ export {
   type RequestWithdrawalAccounts,
   type AdvanceWithdrawalAccounts,
   type CloseItemAccounts,
+  type UpdateListAccounts,
+  type ProposeCourtUpdateAccounts,
+  type UpdatePayload,
+  type UpdatePayloadArgs,
 } from "./methods.js";
 
 // Account codecs + decoders — exposed for advanced/test use (decode raw

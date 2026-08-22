@@ -48,6 +48,9 @@ import {
   explorerAccountUrl,
 } from "@/shared/explorer";
 import { DomainDocPanel, hexIfSet } from "@/features/domain/DomainDocPanel";
+import { useSigner } from "@/shared/wallet";
+import { canUpdateList } from "./retune";
+import { RetunePanel } from "./RetunePanel";
 const ITEM_STATE_LABELS: Record<ItemState, string> = {
   [ItemState.Pending]: "Pending",
   [ItemState.Listed]: "Listed",
@@ -70,6 +73,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 export function ListDetailPage() {
   const { address } = useParams<{ address: string }>();
   const rpc = useClusterRpc()?.rpc ?? null;
+  const { signer } = useSigner();
   const [filter, setFilter] = useState<FilterKey>("all");
 
   const listQuery = useQuery({
@@ -153,10 +157,16 @@ export function ListDetailPage() {
 
       {list && <ListParams list={list} />}
 
-      {/* Court profile — per-list, lives on the backing Subaccord */}
       {list && (
         <div style={{ marginTop: "1.5rem" }}>
           <CourtPanel court={courtQuery.data} loading={courtQuery.isLoading} />
+        </div>
+      )}
+
+      {/* Authority-only retuning surface (accord-gou8 / ADR canon/0003) */}
+      {list && canUpdateList(list.data, signer?.address ?? null) && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <RetunePanel list={list} signer={signer!} />
         </div>
       )}
 

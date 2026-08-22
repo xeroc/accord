@@ -47,17 +47,21 @@ import {
   getChallengeItemInstructionAsync,
   getCloseItemInstruction,
   getCreateListInstructionAsync,
+  getProposeCourtUpdateInstructionAsync,
   getRequestWithdrawalInstruction,
   getSettleItemInstructionAsync,
   getSubmitItemInstructionAsync,
+  getUpdateListInstruction,
   parseAdvancePendingInstruction,
   parseAdvanceWithdrawalInstruction,
   parseChallengeItemInstruction,
   parseCloseItemInstruction,
   parseCreateListInstruction,
+  parseProposeCourtUpdateInstruction,
   parseRequestWithdrawalInstruction,
   parseSettleItemInstruction,
   parseSubmitItemInstruction,
+  parseUpdateListInstruction,
   type AdvancePendingInput,
   type AdvanceWithdrawalAsyncInput,
   type ChallengeItemAsyncInput,
@@ -68,12 +72,16 @@ import {
   type ParsedChallengeItemInstruction,
   type ParsedCloseItemInstruction,
   type ParsedCreateListInstruction,
+  type ParsedProposeCourtUpdateInstruction,
   type ParsedRequestWithdrawalInstruction,
   type ParsedSettleItemInstruction,
   type ParsedSubmitItemInstruction,
+  type ParsedUpdateListInstruction,
+  type ProposeCourtUpdateAsyncInput,
   type RequestWithdrawalInput,
   type SettleItemAsyncInput,
   type SubmitItemAsyncInput,
+  type UpdateListInput,
 } from "../instructions";
 import { findItemPda, findListPda } from "../pdas";
 
@@ -123,9 +131,11 @@ export enum CanonInstruction {
   ChallengeItem,
   CloseItem,
   CreateList,
+  ProposeCourtUpdate,
   RequestWithdrawal,
   SettleItem,
   SubmitItem,
+  UpdateList,
 }
 
 export function identifyCanonInstruction(
@@ -191,6 +201,17 @@ export function identifyCanonInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([49, 107, 137, 118, 251, 154, 60, 31]),
+      ),
+      0,
+    )
+  ) {
+    return CanonInstruction.ProposeCourtUpdate;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([251, 85, 121, 205, 56, 201, 12, 177]),
       ),
       0,
@@ -220,6 +241,17 @@ export function identifyCanonInstruction(
   ) {
     return CanonInstruction.SubmitItem;
   }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([121, 92, 164, 155, 59, 155, 100, 38]),
+      ),
+      0,
+    )
+  ) {
+    return CanonInstruction.UpdateList;
+  }
   throw new SolanaError(
     SOLANA_ERROR__PROGRAM_CLIENTS__FAILED_TO_IDENTIFY_INSTRUCTION,
     { instructionData: data, programName: "canon" },
@@ -245,6 +277,9 @@ export type ParsedCanonInstruction<
       instructionType: CanonInstruction.CreateList;
     } & ParsedCreateListInstruction<TProgram>)
   | ({
+      instructionType: CanonInstruction.ProposeCourtUpdate;
+    } & ParsedProposeCourtUpdateInstruction<TProgram>)
+  | ({
       instructionType: CanonInstruction.RequestWithdrawal;
     } & ParsedRequestWithdrawalInstruction<TProgram>)
   | ({
@@ -252,7 +287,10 @@ export type ParsedCanonInstruction<
     } & ParsedSettleItemInstruction<TProgram>)
   | ({
       instructionType: CanonInstruction.SubmitItem;
-    } & ParsedSubmitItemInstruction<TProgram>);
+    } & ParsedSubmitItemInstruction<TProgram>)
+  | ({
+      instructionType: CanonInstruction.UpdateList;
+    } & ParsedUpdateListInstruction<TProgram>);
 
 export function parseCanonInstruction<TProgram extends string>(
   instruction: Instruction<TProgram> & InstructionWithData<ReadonlyUint8Array>,
@@ -294,6 +332,13 @@ export function parseCanonInstruction<TProgram extends string>(
         ...parseCreateListInstruction(instruction),
       };
     }
+    case CanonInstruction.ProposeCourtUpdate: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: CanonInstruction.ProposeCourtUpdate,
+        ...parseProposeCourtUpdateInstruction(instruction),
+      };
+    }
     case CanonInstruction.RequestWithdrawal: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -313,6 +358,13 @@ export function parseCanonInstruction<TProgram extends string>(
       return {
         instructionType: CanonInstruction.SubmitItem,
         ...parseSubmitItemInstruction(instruction),
+      };
+    }
+    case CanonInstruction.UpdateList: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: CanonInstruction.UpdateList,
+        ...parseUpdateListInstruction(instruction),
       };
     }
     default:
@@ -359,6 +411,10 @@ export type CanonPluginInstructions = {
     input: CreateListAsyncInput,
   ) => ReturnType<typeof getCreateListInstructionAsync> &
     SelfPlanAndSendFunctions;
+  proposeCourtUpdate: (
+    input: ProposeCourtUpdateAsyncInput,
+  ) => ReturnType<typeof getProposeCourtUpdateInstructionAsync> &
+    SelfPlanAndSendFunctions;
   requestWithdrawal: (
     input: RequestWithdrawalInput,
   ) => ReturnType<typeof getRequestWithdrawalInstruction> &
@@ -371,6 +427,9 @@ export type CanonPluginInstructions = {
     input: SubmitItemAsyncInput,
   ) => ReturnType<typeof getSubmitItemInstructionAsync> &
     SelfPlanAndSendFunctions;
+  updateList: (
+    input: UpdateListInput,
+  ) => ReturnType<typeof getUpdateListInstruction> & SelfPlanAndSendFunctions;
 };
 
 export type CanonPluginPdas = {
@@ -417,6 +476,11 @@ export function canonProgram() {
               client,
               getCreateListInstructionAsync(input),
             ),
+          proposeCourtUpdate: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getProposeCourtUpdateInstructionAsync(input),
+            ),
           requestWithdrawal: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -431,6 +495,11 @@ export function canonProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getSubmitItemInstructionAsync(input),
+            ),
+          updateList: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getUpdateListInstruction(input),
             ),
         },
         pdas: { list: findListPda, item: findItemPda },

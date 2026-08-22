@@ -11,6 +11,8 @@ export * from "./advanceWithdrawal";
 export * from "./challengeItem";
 export * from "./closeItem";
 export * from "./createList";
+export * from "./proposeCourtUpdate";
 export * from "./requestWithdrawal";
 export * from "./settleItem";
 export * from "./submitItem";
+export * from "./updateList";
