@@ -68,6 +68,12 @@ export const CANON_ERROR__ALPHA_TOO_HIGH = 0x1788; // 6024
 export const CANON_ERROR__WINDOW_TOO_SHORT = 0x1789; // 6025
 /** TreeDepthTooDeep: court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget. */
 export const CANON_ERROR__TREE_DEPTH_TOO_DEEP = 0x178a; // 6026
+/** Unauthorized: Caller is not the list authority. */
+export const CANON_ERROR__UNAUTHORIZED = 0x178b; // 6027
+/** ForbiddenPayload: This UpdatePayload variant is forbidden for Canon lists. */
+export const CANON_ERROR__FORBIDDEN_PAYLOAD = 0x178c; // 6028
+/** ZeroDeposit: submit_deposit must be nonzero — zero skin-in-the-game invites spam items. */
+export const CANON_ERROR__ZERO_DEPOSIT = 0x178d; // 6029
 
 export type CanonError =
   | typeof CANON_ERROR__ALPHA_TOO_HIGH
@@ -77,6 +83,7 @@ export type CanonError =
   | typeof CANON_ERROR__DEPOSIT_MISMATCH
   | typeof CANON_ERROR__DISPUTE_NOT_FINAL
   | typeof CANON_ERROR__DISPUTE_PDA_MISMATCH
+  | typeof CANON_ERROR__FORBIDDEN_PAYLOAD
   | typeof CANON_ERROR__INSUFFICIENT_FUNDS
   | typeof CANON_ERROR__INVALID_EVIDENCE_OPERATOR
   | typeof CANON_ERROR__INVALID_ITEM_STATE
@@ -94,9 +101,11 @@ export type CanonError =
   | typeof CANON_ERROR__STAKE_OUTSTANDING
   | typeof CANON_ERROR__SUBACCORD_MISMATCH
   | typeof CANON_ERROR__TREE_DEPTH_TOO_DEEP
+  | typeof CANON_ERROR__UNAUTHORIZED
   | typeof CANON_ERROR__WINDOW_TOO_SHORT
   | typeof CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN
-  | typeof CANON_ERROR__WRONG_ACCORD_PROGRAM;
+  | typeof CANON_ERROR__WRONG_ACCORD_PROGRAM
+  | typeof CANON_ERROR__ZERO_DEPOSIT;
 
 let canonErrorMessages: Record<CanonError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
@@ -108,6 +117,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [CANON_ERROR__DEPOSIT_MISMATCH]: `Tendered deposit does not match the list's submit_deposit.`,
     [CANON_ERROR__DISPUTE_NOT_FINAL]: `Accord dispute has not reached the Final state.`,
     [CANON_ERROR__DISPUTE_PDA_MISMATCH]: `Dispute PDA does not match the expected derivation.`,
+    [CANON_ERROR__FORBIDDEN_PAYLOAD]: `This UpdatePayload variant is forbidden for Canon lists.`,
     [CANON_ERROR__INSUFFICIENT_FUNDS]: `Challenger has insufficient funds for challenge_stake + accord_fee.`,
     [CANON_ERROR__INVALID_EVIDENCE_OPERATOR]: `evidence_operator must not be Pubkey::default — a zero operator key can never receive encrypted evidence.`,
     [CANON_ERROR__INVALID_ITEM_STATE]: `Item is not challengeable (must be Pending, Listed, or WithdrawPending).`,
@@ -125,9 +135,11 @@ if (process.env["NODE_ENV"] !== "production") {
     [CANON_ERROR__STAKE_OUTSTANDING]: `Removed item still holds accumulated_stake (invariant breach).`,
     [CANON_ERROR__SUBACCORD_MISMATCH]: `Provided Subaccord does not match the list's backing Subaccord.`,
     [CANON_ERROR__TREE_DEPTH_TOO_DEEP]: `court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget.`,
+    [CANON_ERROR__UNAUTHORIZED]: `Caller is not the list authority.`,
     [CANON_ERROR__WINDOW_TOO_SHORT]: `court review/commit/reveal windows must be nonzero — a zero window bricks disputes forever and strands third-party item deposits.`,
     [CANON_ERROR__WITHDRAWAL_TIMELOCK_OPEN]: `Withdrawal timelock has not elapsed yet.`,
     [CANON_ERROR__WRONG_ACCORD_PROGRAM]: `Wrong Accord program account.`,
+    [CANON_ERROR__ZERO_DEPOSIT]: `submit_deposit must be nonzero — zero skin-in-the-game invites spam items.`,
   };
 }
 

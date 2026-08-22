@@ -29,6 +29,13 @@ import { getSettleItemInstruction } from "./generated/instructions/settleItem.js
 import { getRequestWithdrawalInstruction } from "./generated/instructions/requestWithdrawal.js";
 import { getAdvanceWithdrawalInstruction } from "./generated/instructions/advanceWithdrawal.js";
 import { getCloseItemInstruction } from "./generated/instructions/closeItem.js";
+import { getUpdateListInstruction } from "./generated/instructions/updateList.js";
+import { getProposeCourtUpdateInstruction } from "./generated/instructions/proposeCourtUpdate.js";
+import type {
+  UpdatePayload,
+  UpdatePayloadArgs,
+} from "./generated/types/updatePayload.js";
+import { findPendingUpdatePda } from "@useaccord/sdk";
 
 import {
   CANON_PROGRAM_ID,
@@ -402,3 +409,87 @@ export function closeItem(
     { programAddress: programId },
   );
 }
+
+// ─── update_list ────────────────────────────────────────────────────────────
+
+export interface UpdateListAccounts {
+  /** Must equal `list.authority` (the creator at creation, rotatable via
+   * this very instruction). */
+  authority: TransactionSigner;
+  list: Address;
+}
+
+/** Build `update_list`: authority-gated instant retune of list-level
+ * economics — no timelock. `newAuthority` omitted or set to the zero address
+ * keeps the current key. Value guards (nonzero deposit/windows,
+ * `challengePct <= 10_000`) live on-chain. */
+export function updateList(
+  accounts: UpdateListAccounts,
+  args: {
+    submitDeposit: number | bigint;
+    challengePct: number;
+    listingWindow: number | bigint;
+    withdrawalTimelock: number | bigint;
+    /** New governance key, or omit to keep the current authority. */
+    newAuthority?: Address;
+  },
+  programId: Address = CANON_PROGRAM_ID,
+): Instruction {
+  return getUpdateListInstruction(
+    {
+      authority: accounts.authority,
+      list: accounts.list,
+      submitDeposit: args.submitDeposit,
+      challengePct: args.challengePct,
+      listingWindow: args.listingWindow,
+      withdrawalTimelock: args.withdrawalTimelock,
+      newAuthority:
+        args.newAuthority ??
+        ("11111111111111111111111111111111" as Address),
+    },
+    { programAddress: programId },
+  );
+}
+
+// ─── propose_court_update ───────────────────────────────────────────────────
+
+export interface ProposeCourtUpdateAccounts {
+  /** Must equal `list.authority`; pays the PendingUpdate rent (the list PDA
+   * is data-carrying — the system program rejects transfers from it). */
+  caller: TransactionSigner;
+  list: Address;
+  /** The list's 1:1 backing Subaccord (see `findBackingSubaccordPda`). */
+  subaccord: Address;
+}
+
+/** Build `propose_court_update`: CPIs Accord `propose_subaccord_update` with
+ * the CanonList PDA as the Subaccord authority (`invoke_signed`) and the
+ * caller as rent payer — the 48h Accord timelock applies. The
+ * `Authority` payload variant is rejected on-chain (`ForbiddenPayload`).
+ * Returns the derived PendingUpdate PDA for timelock tracking; execution is
+ * Accord's permissionless `executeSubaccordUpdate` (no canon wrapper). */
+export async function proposeCourtUpdate(
+  accounts: ProposeCourtUpdateAccounts,
+  args: { nonce: number | bigint; payload: UpdatePayloadArgs },
+  programId: Address = CANON_PROGRAM_ID,
+): Promise<{ instruction: Instruction; pendingUpdate: Address }> {
+  const [pendingUpdate] = await findPendingUpdatePda({
+    subaccord: accounts.subaccord,
+    nonce: args.nonce,
+  });
+  const instruction = getProposeCourtUpdateInstruction(
+    {
+      caller: accounts.caller,
+      list: accounts.list,
+      subaccord: accounts.subaccord,
+      pendingUpdate,
+      accordProgram: ACCORD_PROGRAM_ID,
+      systemProgram: "11111111111111111111111111111111" as Address,
+      nonce: args.nonce,
+      payload: args.payload,
+    },
+    { programAddress: programId },
+  );
+  return { instruction, pendingUpdate };
+}
+export type { UpdatePayload, UpdatePayloadArgs };

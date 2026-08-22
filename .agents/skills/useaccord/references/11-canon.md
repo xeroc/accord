@@ -62,6 +62,46 @@ useaccord canon:create-list --random-rules-hash \
 
 SDK: `createList(accounts, args)` → `{ instruction, list, subaccord }`.
 
+## `canon:update`
+
+Authority-gated instant retune of list-level economics (the loaded wallet must be `CanonList.authority` — the creator at creation). No timelock: deposits lock per-item at submit, `challenge_pct` applies at the next challenge, windows gate future crank advances. Omitted flags keep their on-chain value (the CLI fetches the list and passes the current value through).
+
+| Flag | Type | Notes |
+|---|---|---|
+| `--list <pda>` | address | CanonList PDA to retune |
+| `--submit-deposit <units>` | u64 | New permanent submit skin; `> 0`. Default: keep current |
+| `--challenge-pct <bps>` | u16 | Challenger stake fraction; `≤ 10_000`. Default: keep current |
+| `--listing-window <secs>` | u64 | `> 0`. Default: keep current |
+| `--withdrawal-timelock <secs>` | u64 | `> 0`. Default: keep current |
+| `--new-authority <pubkey>` | address | Rotates the governance key. Default: keep current |
+
+```bash
+useaccord canon:update --list can5Z… --challenge-pct 2500
+# → { signature, list }
+```
+
+SDK: `updateList(accounts, args)` → `Instruction` (`newAuthority` omitted ⇒ no rotation).
+
+## `canon:court-update`
+
+Authority-gated proposal to retune the list's **backing-court** params — CPIs Accord `propose_subaccord_update` with the CanonList PDA as court authority; the loaded wallet must be the list authority and pays the `PendingUpdate` rent. Arms the 48h Accord timelock (`UPDATE_TIMELOCK_SLOTS`); land it afterwards with `useaccord lifecycle:execute-update` (permissionless — no canon wrapper; needs `--pending-update <pda>` or the subaccord+nonce).
+
+| Flag | Type | Notes |
+|---|---|---|
+| `--list <pda>` | address | CanonList PDA; the backing Subaccord is read off it |
+| `--nonce <n>` | u64 | Update nonce; increments per proposal. Default 0 |
+| `--payload <Kind:value>` | token | One mutable court field — e.g. `MinStake:2000`, `AlphaBps:1500`, `ReviewWindow:86400`, `FeePerJuror:25`, `RevealThresholdBps:8000`, `MaxDrawAttempts:2`, `EvidenceOperator:<addr>` |
+
+Forbidden payloads: `Authority` (the court authority is pinned to the list PDA — rotating it would strand retuning), `min_jury_size` / `depth` (immutable on the Subaccord). Guards: `AlphaBps ≤ 10_000`, review/commit/reveal windows `> 0` (canon mirrors), everything else rides Accord.
+
+```bash
+useaccord canon:court-update --list can5Z… --payload AlphaBps:1500
+# → { signature, list, subaccord, pendingUpdate, executeAfterSlot }
+useaccord lifecycle:execute-update --subaccord <pda> --nonce 0   # after executeAfterSlot
+```
+
+SDK: `proposeCourtUpdate(accounts, { nonce, payload })` → `{ instruction, pendingUpdate }` (`pendingUpdate` PDA is on the Accord program).
+
 ## `canon:submit`
 
 Submit `--account` for curation. Inits CanonItem `["canon-item", list, account]` in `Pending`, locks the list's `submit_deposit` from the submitter into the list vault. No `--deposit` flag — the on-chain gate demands an exact match (`DepositMismatch`), so the CLI reads it off the list.

@@ -1,7 +1,7 @@
 ---
 # accord-gou8
 title: Canon — list param updates + court retuning via Accord CPI
-status: todo
+status: completed
 type: milestone
 created_at: 2026-08-21T22:21:50Z
 updated_at: 2026-08-21T22:21:50Z
@@ -56,3 +56,13 @@ Ship the retuning path Canon's own docs anticipate: gated update instructions fo
 - make test green; canon.update.spec green on Surfpool end-to-end (CPI propose + timelock + execute)
 - Docs + skill reference match shipped commands
 - dApp: authority wallet sees retuning UI on the list detail page; non-authority wallets never do; update_list instant round-trip + court propose → execute round-trip verified in the browser against Surfnet
+
+## Summary of Changes
+
+- **Authority model (zero layout change):** `CanonList.authority` = the creator at `create_list`, rotatable via `update_list` (`Pubkey::default()` sentinel = keep). Subaccord authority stays the CanonList PDA forever.
+- **Program** (`programs/canon`): new `update_list` (instant, guards ZeroDeposit/ChallengePctTooHigh/WindowTooShort/Unauthorized) + `propose_court_update` (CPI `propose_subaccord_update`: list PDA signs via invoke_signed, caller = rent payer per ADR-0028; rejects `UpdatePayload::Authority` with ForbiddenPayload; mirrors AlphaTooHigh/WindowTooShort). New errors `Unauthorized`/`ForbiddenPayload`/`ZeroDeposit`, events `ListUpdated`/`CourtUpdateProposed`. Accounts structs at crate root per convention.
+- **Tests:** NEW `programs/canon/tests/update_litesvm.rs` (14 tests: auth gates, rotation, guard matrix, CPI propose with proposed_by == list PDA, Authority rejection, RevealThresholdBps pass-through). NEW `tests/src/canon.update.spec.ts` (4 tests green on Surfpool: instant update, non-authority revert, propose → slot warp → direct Accord execute → Subaccord mutated, Authority variant rejected + no account). Fixed stale `create_list_litesvm` authority assertion.
+- **SDK:** canon codegen regenerated (updateList/proposeCourtUpdate instructions + UpdatePayload type); `packages/canon` facade `updateList`/`proposeCourtUpdate` (derives PendingUpdate PDA via @useaccord/sdk).
+- **CLI:** `canon:update` (omitted flags keep on-chain values) + `canon:court-update` (Kind:value payload, client-side Authority rejection, emits executeAfterSlot); skill docs updated (references/11-canon.md + SKILL.md routing).
+- **dApp:** `RetunePanel` on ListDetailPage gated by `canUpdateList(list, connected)` (pure helper + 9 colocated tests in `retune.test.ts`); list params form (instant) + court field picker (11 fields — never Authority/min_jury_size/depth) → propose → executeAfterSlot readback → Execute (direct Accord execute). Readback decodes via page RPC + `getPendingUpdateDecoder` (workspace-sourced SDK runs a second kit instance whose Codama client rejects the page's RPC proxy — noted in-code).
+- **Docs:** SPEC.md (instruction rows 9/10, authority model, superseded out-of-scope line, status→built), ADR `canon/0003` + index. Browser-verified against Surfnet: authority wallet sees the panel, update_list round-trip landed on-chain (deposit 500→777), court propose landed (PendingUpdate on-chain) + executed (alphaBps 1000→1500); the Execute button's own click-through is gated by `getSlot`, which reads Surfpool's internal clock and cannot observe the sysvar warp (harness limitation — the send path is the same code as the verified update_list send).

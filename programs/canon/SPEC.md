@@ -1,10 +1,11 @@
 # Accord Canon — v1 Build Specification
 
-> **Status:** specified (not yet built). **Authority:** `canon-0001`
-> (architecture + Stake-Curate economics), `CURATED-LIST.md` (design seed),
-> `programs/accord/SPEC.md` (Accord Core). This file is the implementation
-> reference for Canon: account model, instructions, state machine, economics.
-> Code is authority on current state; this spec is authority on intent.
+> **Status:** built. **Authority:** `canon-0001` (architecture + Stake-Curate
+> economics), `canon-0003` (retuning + governance key), `CURATED-LIST.md`
+> (design seed), `programs/accord/SPEC.md` (Accord Core). This file is the
+> implementation reference for Canon: account model, instructions, state
+> machine, economics. Code is authority on current state; this spec is
+> authority on intent.
 
 ## Overview
 
@@ -22,8 +23,7 @@ arbitrary registry.
 ## Account / PDA model
 
 | Account     | Seeds                            | Key fields                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `domain_ref`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority`, `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
+| `CanonList` | `["canon", creator, rules_hash]` | `stake_mint`, `fee_mint`, `list_program` (program whose accounts this list curates; `Pubkey::default()` ⇒ ownership check **disabled** — curate arbitrary base58 data; immutable), `rules_hash` (public listing criteria jurors apply; immutable; passed to Accord as the Subaccord `domain_ref`), `subaccord` (1:1 backing court), `submit_deposit`, `challenge_pct` (bps), `listing_window`, `withdrawal_timelock`, `authority` (governance key: the creator at `create_list`, rotatable via `update_list`; gates `update_list` + `propose_court_update` — canon/0003; distinct from the Subaccord authority, which is the list PDA itself, pinned), `item_count`, `bump`. `rules_hash` + `list_program` immutable. |
 | `CanonItem` | `["canon-item", list, account]`  | the curated `account: Pubkey` (a PDA owned by `list_program`), `state` (`Pending`/`Listed`/`Removed`/`WithdrawPending`/`Disputed`), `submitter`, `accumulated_stake` (in `fee_mint`), challenge/withdrawal history, `bump`.                                                                                                                                                                                                                                                                       |
 | token vault | `CanonList`-PDA-owned SPL        | deposit pool (`fee_mint`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
@@ -43,6 +43,8 @@ staking.
 | 6   | `request_withdrawal(item)`                                                                                                                                                                                                                      | submitter-only; item → `WithdrawPending`; opens the `withdrawal_timelock` challenge window.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 7   | `advance_withdrawal(item)`                                                                                                                                                                                                                      | permissionless crank; after the timelock, if unchallenged → return `accumulated_stake` to submitter, item → `Removed`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 8   | `close_item(item)`                                                                                                                                                                                                                              | permissionless PDA close of a settled item; guards `state == Removed` (`NotRemoved` otherwise — incl. mid-dispute), plus the terminal invariants `accumulated_stake == 0` (`StakeOutstanding`) and no live `active_dispute`; emits `ItemClosed { list, item, account, submitter }` then closes with rent → `caller`. No `CanonList` account — the PDA is self-seeded from `item.list` / `item.account` / `item.bump`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 9   | `update_list(submit_deposit, challenge_pct, listing_window, withdrawal_timelock, new_authority)`                                                                                                                                                | authority-gated (`CanonList.authority` — the creator at creation, rotatable via `new_authority`; `Pubkey::default()` = keep) instant retune of the list-level economics. No timelock: deposits lock per-item at `submit_item`, `challenge_pct` applies at the next challenge, windows gate future crank advances — nothing in-flight can be retroactively stolen. Guards: `submit_deposit > 0` (`ZeroDeposit`), `challenge_pct <= 10_000` (`ChallengePctTooHigh`), windows > 0 (`WindowTooShort`), authority match (`Unauthorized`). Emits `ListUpdated`. |
+| 10  | `propose_court_update(nonce, payload: UpdatePayload)`                                                                                                                                                                                            | authority-gated CPI into Accord `propose_subaccord_update`: the CanonList PDA signs as the Subaccord authority (`invoke_signed`), the caller (the list authority) pays the `PendingUpdate` rent (ADR-0028 rent-payer split). Arms the 48h `UPDATE_TIMELOCK_SLOTS` timelock; execution is Accord's permissionless `execute_subaccord_update` — no canon wrapper. Canon guards: reject `UpdatePayload::Authority` (`ForbiddenPayload` — the court authority is pinned to the list PDA forever), `AlphaBps <= 10_000` (`AlphaTooHigh`), nonzero review/commit/reveal windows (`WindowTooShort`); everything else rides Accord's `validate_update_payload` + cross-field checks. Emits `CourtUpdateProposed`. |
 
 A challenge filed during `WithdrawPending` re-enters the dispute path
 (`challenge_item` → `settle_item`); see state machine.
@@ -113,16 +115,20 @@ depth-length MST path at ~40 B/level, ADR-0012; depth 8 keeps the stake tx
 ≈ 900 B under the 1232-byte limit). Everything else (appeals cap, odd
 `min_jury_size`, ladder fit, reveal threshold, draw attempts, appeal-window
 floor) is Accord's validation at the CPI — its errors propagate.
-
-Once created, the params are **controlled by the Subaccord authority (NOT the
-list creator)** and retunable via the 48h propose/execute timelock
-(ADR-0005) — except `min_jury_size` and `depth`, which are **set-once**:
-immutable on the Subaccord (absent from `UpdatePayload`), irreversible
-list-creation choices. `create_list` sets the authority to the **CanonList PDA
-itself** — no external governance key exists yet, and the PDA keeps the court
-as immutable as `Pubkey::default()` until canon ships a gated retuning
-instruction (not yet implemented) that CPIs `propose/execute_subaccord_update`
-with the list PDA as `invoke_signed` signer.
+Once created, the court params are retunable **only through canon's gated
+`propose_court_update`** (canon/0003) — the Subaccord authority is pinned to
+the **CanonList PDA itself** (`create_list` CPIs it that way), so no external
+key can ever touch the court directly. `propose_court_update` lets the list
+authority (the creator, rotatable via `update_list`) CPI Accord's
+`propose_subaccord_update` with the list PDA as `invoke_signed` signer and the
+caller as rent payer; the 48h timelock and the permissionless
+`execute_subaccord_update` (called directly on Accord — canon ships no
+wrapper) apply, per ADR-0005/0028. Two things are forever out of reach:
+`UpdatePayload::Authority` (canon rejects it with `ForbiddenPayload` —
+rotating the court authority off the list PDA would permanently strand
+retuning) and `min_jury_size` / `depth`, which are **set-once**: immutable on
+the Subaccord (absent from `UpdatePayload`), irreversible list-creation
+choices.
 
 `CourtParams` fields (canonical defaults):
 
@@ -230,22 +236,14 @@ public rules to the juror-only evidence → `keep` / `remove`.
 - **`close_item` rent bounty:** the closer pockets the item's rent-exempt
   lamports — a live submitter self-cranks and recovers the rent they paid at
   `submit_item`; abandoned / adjudicated-scam items are self-funding GC
-  bounties for whoever cleans them up (rent ≫ tx fee). Re-submission after a
-  close is a separate instruction/transaction by construction — the same PDA
-  is never re-initialized in the same tx as its close.
-
-## Out of scope (v2+)
-
 ATQ "code-as-item" scaling (curate tagging _modules_, not individual items) ·
-multi-surface distribution (wallet snap / explorer / DEX) · advanced
-court-params editing UI in the dApp (the per-list on-chain params shipped
-with canon/0002; the create flow exposes the full `CourtParams` profile —
-essential fields inline, advanced ones collapsed; post-creation retuning UI
-remains future) ·
-badges/tiers as separate Canon lists.
+multi-surface distribution (wallet snap / explorer / DEX) · post-creation
+retuning shipped with canon/0003 (`update_list` instant + `propose_court_update`
+timelocked, authority-gated in the dApp's list detail page) · badges/tiers as
+separate Canon lists.
 
 ## Authority
 
-`canon-0001` · `canon-0002` · `CURATED-LIST.md` · `programs/accord/SPEC.md` ·
-Accord ADR-0001 / 0002 / 0004 / 0019 / 0021 / 0022 / 0025 / 0027 ·
-`CONTEXT.md` · `BRAND.md`.
+`canon-0001` · `canon-0002` · `canon-0003` · `CURATED-LIST.md` ·
+`programs/accord/SPEC.md` · Accord ADR-0001 / 0002 / 0004 / 0005 / 0019 /
+0021 / 0022 / 0025 / 0027 / 0028 · `CONTEXT.md` · `BRAND.md`.
