@@ -139,4 +139,4 @@ export {
   type DrawCommitRevealJuror,
   type DrawCommitRevealDraw,
 } from "./mechanism/draw-commit-reveal";
-export { DisputeFlow, DEFAULT_CONSUMERS } from "./mechanism/dispute-flow";
+export { PayoutFlow } from "./mechanism/payout-flow";
