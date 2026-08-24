@@ -91,11 +91,12 @@ export type CanonList = {
   /** Seconds the `WithdrawPending` fraud-challenge window stays open. */
   withdrawalTimelock: bigint;
   /**
-   * The CanonList PDA itself (set at `create_list`); also passed as the
-   * backing Subaccord's authority, so dispute-param retuning can only flow
-   * through a canon instruction CPIing `propose_subaccord_update` with the
-   * list PDA as signer (not yet implemented). `CanonList.authority`
-   * mirrors it for display/traceability.
+   * Governance key: the creator at `create_list`, rotatable via
+   * `update_list`. Gates `update_list` and `propose_court_update`. This is
+   * the CANON-side authority — distinct from the backing Subaccord's
+   * authority, which is the CanonList PDA itself (pinned forever; canon
+   * rejects `UpdatePayload::Authority`), so court retuning can only flow
+   * through `propose_court_update`'s CPI with the list PDA as signer.
    */
   authority: Address;
   /**
@@ -154,11 +155,12 @@ export type CanonListArgs = {
   /** Seconds the `WithdrawPending` fraud-challenge window stays open. */
   withdrawalTimelock: number | bigint;
   /**
-   * The CanonList PDA itself (set at `create_list`); also passed as the
-   * backing Subaccord's authority, so dispute-param retuning can only flow
-   * through a canon instruction CPIing `propose_subaccord_update` with the
-   * list PDA as signer (not yet implemented). `CanonList.authority`
-   * mirrors it for display/traceability.
+   * Governance key: the creator at `create_list`, rotatable via
+   * `update_list`. Gates `update_list` and `propose_court_update`. This is
+   * the CANON-side authority — distinct from the backing Subaccord's
+   * authority, which is the CanonList PDA itself (pinned forever; canon
+   * rejects `UpdatePayload::Authority`), so court retuning can only flow
+   * through `propose_court_update`'s CPI with the list PDA as signer.
    */
   authority: Address;
   /**

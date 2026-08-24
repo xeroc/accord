@@ -29,8 +29,8 @@ A specialized Juror pool. Permissionless to create; one per `(creator, domain_re
 
 ## Mutability
 
-- Immutable: `domain_ref`, `evidence_spec`, `aggregation`, `coherence_tol_bps`, `min_jury_size`.
-- Mutable only via 48h timelock (`propose_subaccord_update` → `execute_subaccord_update`): `min_stake`, `alpha_bps`, `review/commit/reveal_window`, `appeal_window`, `max_appeals`, `fee_per_juror`, `authority`, `evidence_operator`, `reveal_threshold_bps`, `shortfall_policy`, `max_draw_attempts`. `aggregation` and `coherence_tol_bps` are immutable ([ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)/[0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)) — they define the pool's coherence game.
+- Immutable: `domain_ref`, `evidence_spec`, `aggregation`, `coherence_tol_bps`, `min_jury_size`, `shortfall_policy`.
+- Mutable only via 48h timelock (`propose_subaccord_update` → `execute_subaccord_update`): `min_stake`, `alpha_bps`, `review/commit/reveal_window`, `appeal_window`, `max_appeals`, `fee_per_juror`, `authority`, `evidence_operator`, `reveal_threshold_bps`, `max_draw_attempts` ([ADR-0028](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0028-pda-authorities-rent-payer-split-retunable-court-params.md); `Median` pools require `reveal_threshold_bps > 0`). `aggregation` and `coherence_tol_bps` are immutable ([ADR-0019](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)/[0025](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0025-scalar-voting.md)) — they define the pool's coherence game.
 - `authority == Pubkey::default()` ⇒ `propose_subaccord_update` reverts with `ImmutableSubaccord`.
 
 ```rust

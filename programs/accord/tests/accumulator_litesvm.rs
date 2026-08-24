@@ -5441,6 +5441,8 @@ fn do_propose_update(env: &mut AccEnv, nonce: u64, payload: UpdatePayload) -> Tr
         .program()
         .accounts(accounts::ProposeSubaccordUpdate {
             authority: env.creator.pubkey(),
+            // Wallet authority pays its own rent (ADR-0028 wallet shape).
+            rent_payer: env.creator.pubkey(),
             subaccord: env.subaccord,
             pending_update: pu,
             system_program: system_program::ID,

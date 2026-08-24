@@ -8,7 +8,8 @@ Accord). Canon's series is independent of Accord's, starting at `canon/0001`.
 | #                                                         | Title                                                | Status                                                                                                      |
 | --------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | [0001](0001-canon-curated-list-arbitrable-over-accord.md) | Accord Canon — a curated-list Arbitrable over Accord | Partially superseded (dispute-parameter ownership, by [0002](0002-per-list-court-params-at-create-list.md)) |
-| [0002](0002-per-list-court-params-at-create-list.md)      | Per-list court parameters at `create_list`           | Accepted                                                                                                    |
+| [0002](0002-per-list-court-params-at-create-list.md)      | Per-list court parameters at `create_list`           | Accepted (retuning path anticipated here shipped as [0003](0003-retuning-and-governance-key.md))           |
+| [0003](0003-retuning-and-governance-key.md)               | Retuning path + governance key (`update_list` / `propose_court_update`) | Accepted                                                                                   |
 
 ## How to read them
 

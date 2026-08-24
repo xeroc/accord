@@ -1,13 +1,19 @@
 use crate::{constants::*, errors::AccordError, events::*, state::*, utils::*};
 use anchor_lang::prelude::*;
 
-/// Account context for `propose_subaccord_update` (veridao-y63e).
+/// Account context for `propose_subaccord_update` (veridao-y63e; rent-payer
+/// split added by ADR-0028).
 #[derive(Accounts)]
 #[instruction(nonce: u64)]
 pub struct ProposeSubaccordUpdate<'info> {
-    /// Must equal `subaccord.authority`; signs + pays for the PendingUpdate.
-    #[account(mut)]
+    /// Must equal `subaccord.authority`; signs the proposal.
     pub authority: Signer<'info>,
+    /// Rent payer for the PendingUpdate `init`. MUST be data-free (the system
+    /// program rejects lamport transfers from data-carrying accounts), so
+    /// Arbitrables whose authority is a data-carrying PDA (e.g. Canon's list
+    /// PDA) pass their crank caller here; wallet authorities pass themselves.
+    #[account(mut)]
+    pub rent_payer: Signer<'info>,
     #[account(
         seeds = [SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.domain_ref.as_ref()],
         bump = subaccord.bump,
@@ -15,7 +21,7 @@ pub struct ProposeSubaccordUpdate<'info> {
     pub subaccord: Account<'info, Subaccord>,
     #[account(
         init,
-        payer = authority,
+        payer = rent_payer,
         space = 8 + PendingUpdate::INIT_SPACE,
         seeds = [SEED_PENDING_UPDATE, subaccord.key().as_ref(), &nonce.to_le_bytes()],
         bump,

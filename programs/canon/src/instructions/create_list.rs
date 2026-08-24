@@ -67,14 +67,12 @@ pub fn create_list_handler(
     );
 
     // --- CPI: create the backing Subaccord from the creator's court profile ---
-    // The court's authority is the CanonList PDA itself: no external key exists
-    // yet, and `Pubkey::default()` would burn the retuning upgrade path forever
-    // (immutable even after a canon upgrade). With the PDA as authority, a
-    // future gated canon instruction can CPI `propose_subaccord_update` with
-    // the list PDA as `invoke_signed` signer (same PDA-signing pattern as the
-    // vault transfers in settle_item / advance_withdrawal). Until that
-    // instruction ships, the PDA signs nothing — as immutable as `default()`,
-    // but upgradeable.
+    // The court's authority is the CanonList PDA itself, pinned forever:
+    // `propose_court_update` rejects `UpdatePayload::Authority`, so court
+    // retuning can only ever flow through a gated canon instruction CPIing
+    // `propose_subaccord_update` with the list PDA as `invoke_signed` signer
+    // (same PDA-signing pattern as the vault transfers in settle_item /
+    // advance_withdrawal).
     let list_pda = ctx.accounts.list.key();
     let cpi_accounts = accord::cpi::accounts::CreateSubaccord {
         creator: ctx.accounts.creator.to_account_info(),
@@ -128,8 +126,10 @@ pub fn create_list_handler(
     list.challenge_pct = challenge_pct;
     list.listing_window = listing_window;
     list.withdrawal_timelock = withdrawal_timelock;
-    // Mirrors the backing Subaccord's authority (the PDA itself).
-    list.authority = list_pda;
+    // Governance key: the creator (rotatable via `update_list`). NOT the list
+    // PDA — the backing Subaccord's authority stays the PDA (pinned); this
+    // field is the canon-side gate for update_list / propose_court_update.
+    list.authority = ctx.accounts.creator.key();
     list.item_count = 0;
     list.dispute_count = 0;
     list.bump = ctx.bumps.list;

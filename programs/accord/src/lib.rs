@@ -229,6 +229,9 @@ pub mod accord {
     /// stakers a window to unstake before a change lands. No-op for immutable
     /// Subaccords (`authority == default`). The nonce is caller-chosen; PDA
     /// `init` enforces uniqueness (a reused nonce simply fails to init).
+    /// A separate data-free `rent_payer` carries the PendingUpdate rent so
+    /// Arbitrables whose authority is a data-carrying PDA can CPI (ADR-0028);
+    /// wallet authorities pass themselves.
     pub fn propose_subaccord_update(
         ctx: Context<ProposeSubaccordUpdate>,
         nonce: u64,

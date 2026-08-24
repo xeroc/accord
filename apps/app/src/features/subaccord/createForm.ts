@@ -189,14 +189,14 @@ export function parseHex32(input: string, label: string): Uint8Array {
   return out;
 }
 
-function parseBigint(input: string, label: string): bigint {
+export function parseBigint(input: string, label: string): bigint {
   const v = input.trim();
   if (!/^\d+$/.test(v))
     throw new Error(`${label}: expected a non-negative integer.`);
   return BigInt(v);
 }
 
-function parseBoundedInt(
+export function parseBoundedInt(
   input: string,
   label: string,
   min: number,
@@ -211,7 +211,7 @@ function parseBoundedInt(
   return n;
 }
 
-function requireAddress(input: string, label: string): Address {
+export function requireAddress(input: string, label: string): Address {
   const v = input.trim();
   if (!v) throw new Error(`${label}: address required.`);
   return v as Address;

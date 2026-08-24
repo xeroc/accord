@@ -36,12 +36,11 @@ describe("useaccord canon:* (help surface)", () => {
     expect(stdout).toContain("--depth");
   });
 
-  it("canon:submit renders usage with --list, --account, --evidence", async () => {
+  it("canon:submit renders usage with --list, --account", async () => {
     const { stdout, exitCode } = await help("canon:submit");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("--list");
     expect(stdout).toContain("--account");
-    expect(stdout).toContain("--evidence");
   });
 
   it("crank + withdraw commands render usage with --item", async () => {

@@ -99,11 +99,13 @@ export async function sendInstruction(
     rpc,
     rpcSubscriptions,
   });
+  await sendAndConfirm(signed, { commitment: "confirmed" });
+
   // A confirmed tx changed on-chain state — drop every cached read so the
   // next render reflects it (apple-design audit C1: txs completed silently).
   // Domain-doc bytes are content-addressed and immutable — skip the refetch.
   void queryClient.invalidateQueries({
     predicate: (query) => query.queryKey[0] !== "domain-doc",
   });
-   return getSignatureFromTransaction(signed);
+  return getSignatureFromTransaction(signed);
 }

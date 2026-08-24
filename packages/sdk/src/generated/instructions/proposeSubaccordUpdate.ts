@@ -29,6 +29,7 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type TransactionSigner,
   type WritableAccount,
@@ -61,6 +62,7 @@ export function getProposeSubaccordUpdateDiscriminatorBytes(): ReadonlyUint8Arra
 export type ProposeSubaccordUpdateInstruction<
   TProgram extends string = typeof ACCORD_PROGRAM_ADDRESS,
   TAccountAuthority extends string | AccountMeta<string> = string,
+  TAccountRentPayer extends string | AccountMeta<string> = string,
   TAccountSubaccord extends string | AccountMeta<string> = string,
   TAccountPendingUpdate extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
@@ -71,9 +73,13 @@ export type ProposeSubaccordUpdateInstruction<
   InstructionWithAccounts<
     [
       TAccountAuthority extends string
-        ? WritableSignerAccount<TAccountAuthority> &
+        ? ReadonlySignerAccount<TAccountAuthority> &
             AccountSignerMeta<TAccountAuthority>
         : TAccountAuthority,
+      TAccountRentPayer extends string
+        ? WritableSignerAccount<TAccountRentPayer> &
+            AccountSignerMeta<TAccountRentPayer>
+        : TAccountRentPayer,
       TAccountSubaccord extends string
         ? ReadonlyAccount<TAccountSubaccord>
         : TAccountSubaccord,
@@ -132,12 +138,20 @@ export function getProposeSubaccordUpdateInstructionDataCodec(): Codec<
 
 export type ProposeSubaccordUpdateAsyncInput<
   TAccountAuthority extends string = string,
+  TAccountRentPayer extends string = string,
   TAccountSubaccord extends string = string,
   TAccountPendingUpdate extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Must equal `subaccord.authority`; signs + pays for the PendingUpdate. */
+  /** Must equal `subaccord.authority`; signs the proposal. */
   authority: TransactionSigner<TAccountAuthority>;
+  /**
+   * Rent payer for the PendingUpdate `init`. MUST be data-free (the system
+   * program rejects lamport transfers from data-carrying accounts), so
+   * Arbitrables whose authority is a data-carrying PDA (e.g. Canon's list
+   * PDA) pass their crank caller here; wallet authorities pass themselves.
+   */
+  rentPayer: TransactionSigner<TAccountRentPayer>;
   subaccord: Address<TAccountSubaccord>;
   pendingUpdate?: Address<TAccountPendingUpdate>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -147,6 +161,7 @@ export type ProposeSubaccordUpdateAsyncInput<
 
 export async function getProposeSubaccordUpdateInstructionAsync<
   TAccountAuthority extends string,
+  TAccountRentPayer extends string,
   TAccountSubaccord extends string,
   TAccountPendingUpdate extends string,
   TAccountSystemProgram extends string,
@@ -154,6 +169,7 @@ export async function getProposeSubaccordUpdateInstructionAsync<
 >(
   input: ProposeSubaccordUpdateAsyncInput<
     TAccountAuthority,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountPendingUpdate,
     TAccountSystemProgram
@@ -163,6 +179,7 @@ export async function getProposeSubaccordUpdateInstructionAsync<
   ProposeSubaccordUpdateInstruction<
     TProgramAddress,
     TAccountAuthority,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountPendingUpdate,
     TAccountSystemProgram
@@ -173,7 +190,8 @@ export async function getProposeSubaccordUpdateInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
+    authority: { value: input.authority ?? null, isWritable: false },
+    rentPayer: { value: input.rentPayer ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     pendingUpdate: { value: input.pendingUpdate ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -205,6 +223,7 @@ export async function getProposeSubaccordUpdateInstructionAsync<
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
+      getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("pendingUpdate", accounts.pendingUpdate),
       getAccountMeta("systemProgram", accounts.systemProgram),
@@ -216,6 +235,7 @@ export async function getProposeSubaccordUpdateInstructionAsync<
   } as ProposeSubaccordUpdateInstruction<
     TProgramAddress,
     TAccountAuthority,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountPendingUpdate,
     TAccountSystemProgram
@@ -224,12 +244,20 @@ export async function getProposeSubaccordUpdateInstructionAsync<
 
 export type ProposeSubaccordUpdateInput<
   TAccountAuthority extends string = string,
+  TAccountRentPayer extends string = string,
   TAccountSubaccord extends string = string,
   TAccountPendingUpdate extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Must equal `subaccord.authority`; signs + pays for the PendingUpdate. */
+  /** Must equal `subaccord.authority`; signs the proposal. */
   authority: TransactionSigner<TAccountAuthority>;
+  /**
+   * Rent payer for the PendingUpdate `init`. MUST be data-free (the system
+   * program rejects lamport transfers from data-carrying accounts), so
+   * Arbitrables whose authority is a data-carrying PDA (e.g. Canon's list
+   * PDA) pass their crank caller here; wallet authorities pass themselves.
+   */
+  rentPayer: TransactionSigner<TAccountRentPayer>;
   subaccord: Address<TAccountSubaccord>;
   pendingUpdate: Address<TAccountPendingUpdate>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -239,6 +267,7 @@ export type ProposeSubaccordUpdateInput<
 
 export function getProposeSubaccordUpdateInstruction<
   TAccountAuthority extends string,
+  TAccountRentPayer extends string,
   TAccountSubaccord extends string,
   TAccountPendingUpdate extends string,
   TAccountSystemProgram extends string,
@@ -246,6 +275,7 @@ export function getProposeSubaccordUpdateInstruction<
 >(
   input: ProposeSubaccordUpdateInput<
     TAccountAuthority,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountPendingUpdate,
     TAccountSystemProgram
@@ -254,6 +284,7 @@ export function getProposeSubaccordUpdateInstruction<
 ): ProposeSubaccordUpdateInstruction<
   TProgramAddress,
   TAccountAuthority,
+  TAccountRentPayer,
   TAccountSubaccord,
   TAccountPendingUpdate,
   TAccountSystemProgram
@@ -263,7 +294,8 @@ export function getProposeSubaccordUpdateInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
+    authority: { value: input.authority ?? null, isWritable: false },
+    rentPayer: { value: input.rentPayer ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
     pendingUpdate: { value: input.pendingUpdate ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -286,6 +318,7 @@ export function getProposeSubaccordUpdateInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("authority", accounts.authority),
+      getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("subaccord", accounts.subaccord),
       getAccountMeta("pendingUpdate", accounts.pendingUpdate),
       getAccountMeta("systemProgram", accounts.systemProgram),
@@ -297,6 +330,7 @@ export function getProposeSubaccordUpdateInstruction<
   } as ProposeSubaccordUpdateInstruction<
     TProgramAddress,
     TAccountAuthority,
+    TAccountRentPayer,
     TAccountSubaccord,
     TAccountPendingUpdate,
     TAccountSystemProgram
@@ -309,11 +343,18 @@ export type ParsedProposeSubaccordUpdateInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Must equal `subaccord.authority`; signs + pays for the PendingUpdate. */
+    /** Must equal `subaccord.authority`; signs the proposal. */
     authority: TAccountMetas[0];
-    subaccord: TAccountMetas[1];
-    pendingUpdate: TAccountMetas[2];
-    systemProgram: TAccountMetas[3];
+    /**
+     * Rent payer for the PendingUpdate `init`. MUST be data-free (the system
+     * program rejects lamport transfers from data-carrying accounts), so
+     * Arbitrables whose authority is a data-carrying PDA (e.g. Canon's list
+     * PDA) pass their crank caller here; wallet authorities pass themselves.
+     */
+    rentPayer: TAccountMetas[1];
+    subaccord: TAccountMetas[2];
+    pendingUpdate: TAccountMetas[3];
+    systemProgram: TAccountMetas[4];
   };
   data: ProposeSubaccordUpdateInstructionData;
 };
@@ -326,12 +367,12 @@ export function parseProposeSubaccordUpdateInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedProposeSubaccordUpdateInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 4) {
+  if (instruction.accounts.length < 5) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 4,
+        expectedAccountMetas: 5,
       },
     );
   }
@@ -345,6 +386,7 @@ export function parseProposeSubaccordUpdateInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       authority: getNextAccount(),
+      rentPayer: getNextAccount(),
       subaccord: getNextAccount(),
       pendingUpdate: getNextAccount(),
       systemProgram: getNextAccount(),

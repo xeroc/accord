@@ -115,6 +115,47 @@ pub mod canon {
         )
     }
 
+    /// Authority-gated instant retune of list-level economics (SPEC
+    /// §Instructions #9): `submit_deposit`, `challenge_pct`, `listing_window`,
+    /// `withdrawal_timelock`, plus an optional governance-key rotation
+    /// (`new_authority = Pubkey::default()` keeps the current authority).
+    /// Deliberately instant — no timelock: deposits lock per-item at
+    /// `submit_item`, `challenge_pct` applies at the next challenge, and the
+    /// windows only gate future crank advances, so nothing in-flight can be
+    /// retroactively stolen. Court params keep the 48h Accord timelock via
+    /// `propose_court_update`.
+    pub fn update_list(
+        ctx: Context<UpdateList>,
+        submit_deposit: u64,
+        challenge_pct: u16,
+        listing_window: u64,
+        withdrawal_timelock: u64,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        instructions::update_list::handler(
+            ctx,
+            submit_deposit,
+            challenge_pct,
+            listing_window,
+            withdrawal_timelock,
+            new_authority,
+        )
+    }
+
+    /// Authority-gated CPI (SPEC §Instructions #10): proposes a backing-court
+    /// param update through Accord's 48h timelock, with the CanonList PDA as
+    /// the Subaccord authority (`invoke_signed`) and the caller as rent payer.
+    /// Rejects `UpdatePayload::Authority` — the court authority stays pinned
+    /// to the list PDA forever. Execution is Accord's permissionless
+    /// `execute_subaccord_update`; canon ships no execute wrapper.
+    pub fn propose_court_update(
+        ctx: Context<ProposeCourtUpdate>,
+        nonce: u64,
+        payload: accord::state::UpdatePayload,
+    ) -> Result<()> {
+        instructions::propose_court_update::handler(ctx, nonce, payload)
+    }
+
     /// Permissionless PDA close (SPEC §Instructions #8): closes a settled
     /// (`Removed`) `CanonItem` and drains its rent to the caller. Guards the
     /// terminal invariants (`state == Removed`, no outstanding stake, no live
@@ -123,4 +164,61 @@ pub mod canon {
     pub fn close_item(ctx: Context<CloseItem>) -> Result<()> {
         instructions::close_item::handler(ctx)
     }
+}
+
+/// Account context for `update_list` (SPEC §Instructions #9) — the
+/// authority-gated instant retune of list-level economics.
+#[derive(Accounts)]
+pub struct UpdateList<'info> {
+    /// Must equal `list.authority` (the creator at creation; rotatable via
+    /// this very instruction).
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [SEED_CANON_LIST, list.creator.as_ref(), list.rules_hash.as_ref()],
+        bump = list.bump,
+    )]
+    pub list: Account<'info, CanonList>,
+}
+
+/// Account context for `propose_court_update` (SPEC §Instructions #10) —
+/// CPIs Accord's `propose_subaccord_update` for the backing court with the
+/// CanonList PDA as the Subaccord authority.
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct ProposeCourtUpdate<'info> {
+    /// Must equal `list.authority`; pays the `PendingUpdate` rent — the list
+    /// PDA is data-carrying, so the system program rejects transfers from it
+    /// (same split as `create_dispute`, ADR-0028).
+    #[account(mut)]
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [SEED_CANON_LIST, list.creator.as_ref(), list.rules_hash.as_ref()],
+        bump = list.bump,
+    )]
+    pub list: Account<'info, CanonList>,
+    /// The backing Accord Subaccord. Seeds link it to this list (`creator`,
+    /// `rules_hash`); `Account<Subaccord>` validates ownership, and the
+    /// explicit constraint pins the 1:1 pairing.
+    #[account(
+        constraint = list.subaccord == subaccord.key() @ CanonError::SubaccordMismatch,
+        seeds = [accord::SEED_SUBACCORD, subaccord.creator.as_ref(), subaccord.domain_ref.as_ref()],
+        seeds::program = accord::ID,
+        bump = subaccord.bump,
+    )]
+    pub subaccord: Account<'info, accord::state::Subaccord>,
+    /// The Accord `PendingUpdate` PDA — inited by the CPI with caller rent.
+    /// CHECK: created via CPI into Accord; seeds validated against Accord's ID.
+    #[account(
+        mut,
+        seeds = [accord::constants::SEED_PENDING_UPDATE, subaccord.key().as_ref(), &nonce.to_le_bytes()],
+        seeds::program = accord::ID,
+        bump,
+    )]
+    pub pending_update: UncheckedAccount<'info>,
+    /// Accord program (CPI target).
+    /// CHECK: constrained by `address = accord::ID`.
+    #[account(address = accord::ID)]
+    pub accord_program: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
 }

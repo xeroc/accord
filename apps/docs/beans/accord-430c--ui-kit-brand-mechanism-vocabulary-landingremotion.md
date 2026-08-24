@@ -11,6 +11,7 @@ updated_at: 2026-08-20T01:35:29Z
 Move the remotion video vocabulary into @useaccord/ui so the landing page and videos share one implementation. NO COMMIT — working tree only.
 
 Extract to packages/ui:
+
 - brand/accord-mark (the 3-line house mark; kills 4 hand-rolled copies: app navbar, landing Nav, landing Footer, remotion)
 - brand/wordmark + amber-rule (progress-driven, static-capable defaults)
 - brand/backdrop — pure function of a frame prop (ledger grid, juror field, verdict glow, vignette); port remotion's mulberry32 PRNG verbatim so node fields stay identical
@@ -18,6 +19,7 @@ Extract to packages/ui:
 - patterns/ juror-pool, sealed-vote, ruling-stamp, chips, tally — frame-PROP contract (no remotion hooks in kit)
 
 Consumers:
+
 - remotion: thin backdrop adapter + kit imports for brand/pieces (anim/Scene/Beat/rail/Coin stay local)
 - landing: Nav/Footer mark, Hero backdrop (replaces static grid-texture), Mechanism section wall-clock mechanism strip
 - apps/app navbar: swap to kit mark
@@ -27,6 +29,7 @@ Verify: kit vitest+lint+build-storybook, remotion test+lint+stills parity, landi
 ## Summary of Changes
 
 **Kit (`packages/ui`)**
+
 - `src/brand/` — `AccordMark` (THE 3-line house mark; static defaults, progress/dot for draw-on), `Wordmark`, `AmberRule`, `Backdrop` (pure function of a `frame` prop; PRNG = verbatim port of Remotion's mulberry32+hash so node fields are identical), `useWallClockFrame` (rAF clock, reduced-motion freeze, optional loop). Stories in `brand/index.stories.tsx`.
 - `src/patterns/` — `JurorPool`, `SealedVote`, `RulingStamp`, `MonoChip`/`DeltaChip`, `TallyBar` with the frame-prop contract (no Remotion deps in the kit). Stories in `patterns/mechanism.stories.tsx` (scrubbable frame slider).
 - `src/internal/motion-math.ts` — `tween`/`enterAt`/`easeExpo`/`linear` (2-point clamped tweens; motion's cubicBezier).

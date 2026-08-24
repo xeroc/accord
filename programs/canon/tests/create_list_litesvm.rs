@@ -169,8 +169,9 @@ fn create_list_inits_canon_list_and_subaccord() {
     assert_eq!(list.withdrawal_timelock, DEFAULT_WITHDRAWAL_TIMELOCK_SECS);
     assert_eq!(list.item_count, 0);
     assert_eq!(
-        list.authority, list_pda,
-        "list authority mirrors the court's"
+        list.authority,
+        creator.pubkey(),
+        "governance authority is the creator (rotatable via update_list)"
     );
     assert!(list.bump > 0);
 

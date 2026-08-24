@@ -43,6 +43,7 @@ status banner is annotated.
 | [0025](0025-scalar-voting.md)                                                 | Scalar voting — u64 votes, Median aggregation, bps coherence band                                   | Accepted             |
 | [0026](0026-plurality-tie-non-decisive-redraw.md)                             | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner         | Accepted             |
 | [0027](0027-domain-document-registry-public-cas.md)                           | Domain document registry — public content-addressed CAS on the evidence daemon (amends 0011)        | Accepted             |
+| [0028](0028-pda-authorities-rent-payer-split-retunable-court-params.md)      | PDA update authorities — rent-payer split + retunable court params (amends 0005)                    | Proposed             |
 
 ### Supersession map
 
@@ -72,6 +73,10 @@ status banner is annotated.
   domain-doc CAS under `domains/`; ADR-0011's encrypted-at-rest invariant is re-scoped to
   evidence objects). Zero on-chain change — `domain_ref`/`rules_hash` stay opaque bytes that
   canon now defines as `sha256(doc)`.
+- **0028** amends **0005** (`propose_subaccord_update` splits the authority signer from a
+  data-free `rent_payer` so PDA authorities (Arbitrables like Canon) can CPI; `UpdatePayload`
+  grows append-only `RevealThresholdBps`/`MaxDrawAttempts`). The single-authority +
+  48h-timelock model is unchanged.
 
 ## How to read them
 
@@ -87,7 +92,7 @@ status banner is annotated.
 
 ## Authoring a new Accord ADR
 
-1. Number = next sequential (currently **0028**).
+1. Number = next sequential (currently **0029**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at
