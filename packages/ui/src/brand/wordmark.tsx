@@ -11,11 +11,12 @@ export const Wordmark: FC<{
   enter?: number;
   settle?: number;
   className?: string;
-}> = ({ enter = 1, settle = 40, className }) => (
+  brandName?: string;
+}> = ({ enter = 1, settle = 40, className, brandName = "Accord" }) => (
   <div
     className={cn("font-heading font-bold tracking-tight text-nearwhite", className)}
     style={{ opacity: enter, translate: `0px ${(1 - enter) * settle}px` }}
   >
-    Accord
+    {brandName}
   </div>
 );
