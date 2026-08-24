@@ -6,10 +6,10 @@ import {
   LedgerCounter,
   MonoChip,
   PanelLadder,
+  PayoutFlow,
   Wordmark,
 } from "@useaccord/ui";
 
-import { PayoutFlow } from "./payout-flow";
 import { SlideFrame } from "./shell";
 import { useSlideFrame } from "./useSlideFrame";
 
@@ -272,7 +272,7 @@ const LadderSlide: FC = () => {
         />
         <p className="max-w-[48ch] text-2xl leading-snug text-body">
           Oracles and prediction markets already settle deterministic
-          risks: that is tier 0, our substrate, not our competitor.
+          risks. That is tier 0, the substrate we build on.
           Tier 1 adds one human brake: any member can challenge a
           proposed payout. Tier 2 hands contested payouts to a staked
           jury. Trust compounds per correctly decided payout.

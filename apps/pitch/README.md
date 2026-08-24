@@ -5,7 +5,7 @@ A full-viewport slide deck built from `meta/PITCH-MUTUAL.md`
 on-chain mutuals are the near term, insurance the vision; primitives
 de-named on stage), rendered entirely with `@useaccord/ui`: one kit
 `Backdrop` runs behind the whole deck, and every mechanism visual is
-a kit piece (`PanelLadder`, `ChainStrip`, `VaultBox`,
+a kit piece (`PanelLadder`, `PayoutFlow`, `ChainStrip`,
 `LedgerCounter`, `MonoChip`) driven by a slide-local frame clock — so
 each animation replays every time its slide is entered.
 
@@ -28,9 +28,6 @@ pnpm --filter @useaccord/pitch lint
 ```
 src/
   deck/slides.tsx      the nine slides + speaker notes (the content)
-  deck/payout-flow.tsx  deck-local mechanism: propose → challenge window
-                       (timer bar) → jury → pay; candidate for the
-                       ui-kit once the shape settles
   deck/useSlideFrame   slide-local frame clock (replays per visit; settles
                        for prefers-reduced-motion)
 ```

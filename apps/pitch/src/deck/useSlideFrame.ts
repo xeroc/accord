@@ -11,10 +11,7 @@ export function useSlideFrame(fps = 30): number {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
-    if (
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setFrame(100_000);
       return;
     }
