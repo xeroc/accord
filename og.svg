@@ -6,7 +6,7 @@
   <text x="80" y="118" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="26" font-weight="500" letter-spacing="6" fill="#F0A830">JUSTICE IS INFRASTRUCTURE</text>
 
   <!-- headline -->
-  <text x="76" y="238" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="106" font-weight="600" letter-spacing="-2" fill="#F0F6FC">Mechanize the verdict.</text>
+  <text x="76" y="232" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="80" font-weight="600" letter-spacing="-2" fill="#F0F6FC">Mechanize the verdict.</text>
 
   <!-- code surface -->
   <rect x="80" y="300" width="1040" height="128" rx="10" fill="#11161D" stroke="#1F2630" stroke-width="1.5"/>
