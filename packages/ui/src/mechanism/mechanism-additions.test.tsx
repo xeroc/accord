@@ -14,6 +14,7 @@ import { RetroBeam } from "./retro-beam";
 import { DrawCommitReveal } from "./draw-commit-reveal";
 import { DisputeFlow } from "./dispute-flow";
 import { SortitionRuler } from "./sortition-ruler";
+import { PayoutFlow } from "./payout-flow";
 
 describe("TokenTone", () => {
   it("maps the two mints to the palette classes", () => {
@@ -580,5 +581,68 @@ describe("DisputeFlow", () => {
     // late in the loop the dot's tail crosses into the block zone
     rerender(<DisputeFlow frame={44} at={15} />);
     expect(left()[0]).toBeGreaterThanOrEqual(192);
+  });
+});
+
+describe("PayoutFlow", () => {
+  it("renders the claim with amount and encrypted evidence once filed", () => {
+    const { container } = render(<PayoutFlow frame={200} />);
+    const claim = container.querySelector("[data-claim]") as HTMLElement;
+    expect(claim.style.opacity).toBe("1");
+    expect(claim.textContent).toContain("12,500");
+    expect(claim.textContent).toContain("evidence · encrypted");
+  });
+
+  it("the window drains linearly, then freezes at 75% when challenged", () => {
+    const { container, rerender } = render(<PayoutFlow frame={73} />);
+    const fill = () => container.querySelector("[data-window-fill]") as HTMLElement;
+    expect(fill().style.width).toBe("50%");
+    expect((container.querySelector("[data-window-readout]") as HTMLElement).textContent).toBe(
+      "50%",
+    );
+
+    rerender(<PayoutFlow frame={200} />);
+    expect(fill().style.width).toBe("75%");
+    expect((container.querySelector("[data-window-readout]") as HTMLElement).textContent).toBe(
+      "interrupted",
+    );
+  });
+
+  it("the ghost auto-pay lane greys out and is struck through after the click", () => {
+    const { container, rerender } = render(<PayoutFlow frame={75} />);
+    const ghost = () => container.querySelector("[data-ghost]") as HTMLElement;
+    const pill = () => ghost().firstElementChild as HTMLElement;
+    expect(ghost().style.opacity).toBe("1");
+    expect(pill()).toHaveClass("text-confirm");
+
+    rerender(<PayoutFlow frame={200} />);
+    expect(pill()).toHaveClass("text-muted-foreground");
+    expect((container.querySelector("[data-strike]") as HTMLElement).style.transform).toBe(
+      "scaleX(1)",
+    );
+  });
+
+  it("the jury decides before the protocol pays", () => {
+    const { container, rerender } = render(<PayoutFlow frame={130} />);
+    const verdict = () => container.querySelector("[data-verdict]") as HTMLElement;
+    const pay = () => container.querySelector("[data-pay]") as HTMLElement;
+    // verdict landing (mid-pop, eased), pay still invisible
+    const verdictOp = Number.parseFloat(verdict().style.opacity);
+    expect(verdictOp).toBeGreaterThan(0);
+    expect(verdictOp).toBeLessThan(1);
+    expect(container.querySelectorAll("[data-juror-dot]").length).toBe(5);
+
+    rerender(<PayoutFlow frame={200} />);
+    expect(verdict().style.opacity).toBe("1");
+    expect(pay().style.opacity).toBe("1");
+    expect(pay().textContent).toContain("the pool pays");
+  });
+
+  it("takes a custom payout amount and a start offset", () => {
+    const { container } = render(<PayoutFlow frame={60} at={20} payout={250_000} />);
+    const claim = container.querySelector("[data-claim]") as HTMLElement;
+    expect(claim.textContent).toContain("250,000");
+    // at=20 → the claim is still entering at f=40 of its 40–52 window
+    expect(claim.style.opacity).toBe("0");
   });
 });

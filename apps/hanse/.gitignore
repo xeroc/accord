@@ -1,0 +1,8 @@
+# build output
+dist/
+# env (the waitlist webhook endpoint is a secret)
+.env
+.env.*
+!.env.example
+# deps
+node_modules/
