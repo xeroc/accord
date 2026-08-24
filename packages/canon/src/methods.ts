@@ -64,7 +64,7 @@ export interface CreateListAccounts {
 /** Ceiling on `court.depth` — `MAX_LIST_TREE_DEPTH` in
  * `programs/canon/src/constants.rs`: the MST membership path in every stake /
  * draw tx grows with depth and must fit the packet budget. */
-export const MAX_LIST_TREE_DEPTH = 8;
+export const MAX_LIST_TREE_DEPTH = 12;
 
 export interface CourtParams {
   /** Draw eligibility threshold, in the staking mint. */
@@ -89,7 +89,7 @@ export interface CourtParams {
   revealThresholdBps: number; // u16
   /** Max same-size redraws per round (ADR-0021). */
   maxDrawAttempts: number; // u8
-  /** MST accumulator depth. Guard: <= MAX_LIST_TREE_DEPTH (8). Immutable. */
+  /** MST accumulator depth. Guard: <= MAX_LIST_TREE_DEPTH. Immutable. */
   depth: number; // u8
 }
 
