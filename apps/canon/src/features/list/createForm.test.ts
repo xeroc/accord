@@ -136,7 +136,7 @@ test("buildCourt: appeal window below the 1h floor throws (Accord floor mirror)"
 });
 
 test("buildCourt: depth over MAX_LIST_TREE_DEPTH throws (canon TreeDepthTooDeep mirror)", () => {
-  assert.throws(() => buildCourt(court({ depth: "9" })), /depth/i);
+  assert.throws(() => buildCourt(court({ depth: "16" })), /depth/i);
 });
 
 test("buildCourt: reveal threshold + draw attempts bounds", () => {
