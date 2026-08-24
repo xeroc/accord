@@ -3,19 +3,21 @@
   <rect x="40" y="40" width="1120" height="550" fill="none" stroke="#1F2630" stroke-width="1.5"/>
 
   <!-- eyebrow -->
-  <text x="80" y="118" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="26" font-weight="500" letter-spacing="6" fill="#F0A830">JUSTICE IS INFRASTRUCTURE</text>
+  <text x="80" y="118" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="26" font-weight="500" letter-spacing="6" fill="#F0A830">ACCORD &#183; JUROR CONSOLE</text>
 
   <!-- headline -->
   <text x="76" y="232" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="80" font-weight="600" letter-spacing="-2" fill="#F0F6FC">Mechanize the verdict.</text>
 
   <!-- code surface -->
   <rect x="80" y="300" width="1040" height="128" rx="10" fill="#11161D" stroke="#1F2630" stroke-width="1.5"/>
-  <text x="116" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#C9D1D9">create_dispute()</text>
-  <text x="566" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#F0A830">&#8594;</text>
-  <text x="624" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#C9D1D9">get_ruling()</text>
+  <text x="116" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#C9D1D9">stake()</text>
+  <text x="357" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#F0A830">&#8594;</text>
+  <text x="441" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#C9D1D9">draw()</text>
+  <text x="655" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#F0A830">&#8594;</text>
+  <text x="739" y="376" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="44" fill="#C9D1D9">reveal()</text>
 
   <!-- footer line -->
-  <text x="80" y="560" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="26" fill="#7D8590">useaccord.xyz  ·  Schelling-point arbitration on Solana</text>
+  <text x="80" y="560" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="26" fill="#7D8590">app.useaccord.xyz &#160;&#183;&#160; Stake, draw, vote &#8212; Schelling-point arbitration</text>
 
   <!-- convergence glyph, bottom-right -->
   <g transform="translate(1060,520)" stroke="#F0A830" stroke-width="3.4" stroke-linecap="square" fill="none">
