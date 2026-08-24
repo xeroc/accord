@@ -32,7 +32,9 @@ apps/
   evidence-daemon/   evidence operator daemon (ADR-0011) — decrypt/re-encrypt service
   app/               Accord dApp (React + Vite)
   canon/ synod/      Canon / Synod dApps (React + Vite)
-  landing/           landing page
+  landing/           landing page (useaccord.xyz)
+  hanse/             Hanse landing page (hanse.useaccord.xyz) — the protocol for mutuals
+  pitch/             demo-day deck — full-viewport slide app (content: meta/PITCH-MUTUAL.md)
   docs/              MkDocs site — docs/, adr/, beans/ (issue tracker storage)
 reports/             security reviews (accord, canon)
 runbooks/            Surfpool deployment runbooks (wired via txtx.yml + anchor test)

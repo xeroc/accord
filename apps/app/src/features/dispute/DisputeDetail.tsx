@@ -65,10 +65,13 @@ export function DisputeDetail() {
   const [appealSending, setAppealSending] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
 
-  // Appeal-window countdown — 1s tick while the dispute is round-resolved
-  // (state 5), so eligibility and "time left" track the on-chain window
-  // instead of drifting up to a minute stale (apple-design audit H4).
-  const now = useNow(dispute?.data.state === 5);
+  // 1s tick while the appeal window (state 5) or any round window is live —
+  // the humanized countdowns in the round card track the chain, not the clock
+  // cache. Stops once every window has passed.
+  const windowsLive = round
+    ? Number(round.data.revealEnd) > Date.now() / 1000
+    : false;
+  const now = useNow(dispute?.data.state === 5 || windowsLive);
 
   if (isLoading) {
     return <p className="text-text-secondary">Loading dispute…</p>;
@@ -421,31 +424,23 @@ export function DisputeDetail() {
           <h2 className="mb-3 font-mono text-sm text-text-secondary">
             Round {round.data.roundIdx}
           </h2>
-          <div className="grid grid-cols-2 gap-4">
-            <InfoRow label="Jurors" value={`${round.data.jurorCount}`} mono />
-            <InfoRow
+          {/* Commits vs reveals — the TallyBar vocabulary (amber fill over a
+              muted remainder, mono counts) as data-driven seat meters. The
+              juror total is the denominator; no separate Jurors row. */}
+          <div className="grid grid-cols-2 gap-6">
+            <SeatMeter
               label="Commits"
-              value={`${round.data.commitCount}/${round.data.jurorCount}`}
-              mono
+              value={Number(round.data.commitCount)}
+              total={round.data.jurorCount}
             />
-            <InfoRow
+            <SeatMeter
               label="Reveals"
-              value={`${round.data.revealCount}/${round.data.jurorCount}`}
-              mono
-            />
-            <InfoRow
-              label="Review ends"
-              value={formatTimestamp(round.data.reviewEnd)}
-            />
-            <InfoRow
-              label="Commit ends"
-              value={formatTimestamp(round.data.commitEnd)}
-            />
-            <InfoRow
-              label="Reveal ends"
-              value={formatTimestamp(round.data.revealEnd)}
+              value={Number(round.data.revealCount)}
+              total={round.data.jurorCount}
+              bar="bg-confirm"
             />
           </div>
+          <WindowEnds round={round.data} now={now} />
           {round.data.jurors.length > 0 && (
             <div className="mt-4">
               <h3 className="mb-2 font-mono text-xs text-text-secondary">
@@ -612,6 +607,84 @@ function InfoRow({
     <div>
       <dt className="font-mono text-xs text-text-secondary">{label}</dt>
       <dd className={`text-sm ${mono ? "font-mono" : ""}`}>{value}</dd>
+    </div>
+  );
+}
+
+/** Commit/reveal seat meter — the TallyBar visual vocabulary (amber fill
+ * over a muted nearwhite remainder, mono M/N count) as a static fraction bar
+ * driven by on-chain counts. The mechanism-strip TallyBar itself is
+ * frame-driven (video choreography) and yes/no-labelled — wrong contract for
+ * a live data view, so this borrows its look, not its API. */
+function SeatMeter({
+  label,
+  value,
+  total,
+  bar = "bg-amber",
+}: {
+  label: string;
+  value: number;
+  total: number;
+  bar?: string;
+}) {
+  const pct = total > 0 ? (value / total) * 100 : 0;
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline justify-between font-mono text-xs tracking-[0.2em]">
+        <span className="text-text-secondary">{label}</span>
+        <span className="text-text-primary">
+          {value}/{total}
+        </span>
+      </div>
+      <div className="flex h-3 gap-1">
+        <div
+          className={`h-full shrink-0 rounded-full ${bar}`}
+          style={{ width: `${pct}%` }}
+        />
+        <div className="h-full flex-1 rounded-full bg-nearwhite/25" />
+      </div>
+    </div>
+  );
+}
+
+/** Humanized review/commit/reveal window ends on one line. The earliest
+ * unpassed window is the live gate — amber; the rest sit muted ahead of it,
+ * passed ones read "ended". Exact end times stay available via tooltips. */
+function WindowEnds({
+  round,
+  now,
+}: {
+  round: {
+    reviewEnd: bigint;
+    commitEnd: bigint;
+    revealEnd: bigint;
+  };
+  now: number;
+}) {
+  const reviewEnd = Number(round.reviewEnd);
+  const commitEnd = Number(round.commitEnd);
+  const revealEnd = Number(round.revealEnd);
+  const stage = now < reviewEnd ? 0 : now < commitEnd ? 1 : 2;
+  const windows = [
+    { label: "review", end: reviewEnd },
+    { label: "commit", end: commitEnd },
+    { label: "reveal", end: revealEnd },
+  ];
+  return (
+    <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs">
+      {windows.map((w, i) => {
+        const remaining = timeRemaining(w.end || null, now);
+        const ended = remaining === "expired" || remaining === "";
+        return (
+          <span
+            key={w.label}
+            title={formatTimestamp(BigInt(w.end))}
+            className={i === stage && !ended ? "text-amber" : "text-text-secondary"}
+          >
+            {w.label} {ended ? "ended" : `in ${remaining}`}
+          </span>
+        );
+      })}
     </div>
   );
 }

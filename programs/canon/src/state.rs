@@ -79,8 +79,8 @@ pub struct CreateList<'info> {
 /// disputes are binary — keep/remove — so a Median scalar is meaningless),
 /// `shortfall_policy = Redraw` (only variant that exists),
 /// `coherence_tol_bps = 0` (inert under Plurality, ADR-0025), `authority` =
-/// the CanonList PDA (the retuning upgrade path), and the attestation pair
-/// (`Pubkey::default()` — PROG-ATTESTTION is separate scope).
+/// the CanonList PDA (retuning flows through `propose_court_update`), and the
+/// attestation pair
 ///
 /// `min_jury_size` and `depth` are immutable on the Subaccord (absent from
 /// Accord's `UpdatePayload`) — set-once at list creation. The canonical
@@ -176,11 +176,12 @@ pub struct CanonList {
     pub listing_window: u64,
     /// Seconds the `WithdrawPending` fraud-challenge window stays open.
     pub withdrawal_timelock: u64,
-    /// The CanonList PDA itself (set at `create_list`); also passed as the
-    /// backing Subaccord's authority, so dispute-param retuning can only flow
-    /// through a canon instruction CPIing `propose_subaccord_update` with the
-    /// list PDA as signer (not yet implemented). `CanonList.authority`
-    /// mirrors it for display/traceability.
+    /// Governance key: the creator at `create_list`, rotatable via
+    /// `update_list`. Gates `update_list` and `propose_court_update`. This is
+    /// the CANON-side authority — distinct from the backing Subaccord's
+    /// authority, which is the CanonList PDA itself (pinned forever; canon
+    /// rejects `UpdatePayload::Authority`), so court retuning can only flow
+    /// through `propose_court_update`'s CPI with the list PDA as signer.
     pub authority: Pubkey,
     /// Count of `CanonItem`s ever filed under this list (PDA-distinctness
     /// guarantee; monotonic, never decremented).

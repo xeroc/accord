@@ -35,7 +35,9 @@ function parsePayload(raw: string): UpdatePayload {
     case "FeePerJuror":
       return { __kind: kind, fields: [BigInt(value)] };
     case "AlphaBps":
-    case "MaxAppeals": {
+    case "MaxAppeals":
+    case "RevealThresholdBps":
+    case "MaxDrawAttempts": {
       const n = Number(value);
       if (!Number.isInteger(n)) throw new Error(`InvalidPayload: ${kind} expects an integer`);
       return { __kind: kind, fields: [n] };
@@ -47,7 +49,8 @@ function parsePayload(raw: string): UpdatePayload {
       throw new Error(
         `InvalidPayload: unknown kind "${kind}". Expected one of MinStake, AlphaBps, ` +
           "ReviewWindow, CommitWindow, RevealWindow, AppealWindow, MaxAppeals, " +
-          "FeePerJuror, Authority, EvidenceOperator.",
+          "FeePerJuror, Authority, EvidenceOperator, RevealThresholdBps, " +
+          "MaxDrawAttempts.",
       );
   }
 }
@@ -57,11 +60,12 @@ export default class LifecycleProposeUpdate extends ChainCommand {
 
   static description =
     "Authority-gated proposal to update one mutable Subaccord parameter " +
-    "(min_stake, alpha_bps, windows, max_appeals, fee_per_juror, authority, or " +
-    "evidence_operator). domain_ref and evidence_spec are immutable. Arms " +
-    "UPDATE_TIMELOCK_SLOTS (48h) on-chain; read back the exact execute slot " +
-    "from the PendingUpdate account after sending, then run " +
-    "lifecycle:execute-update once it elapses.";
+    "(min_stake, alpha_bps, windows, max_appeals, fee_per_juror, authority, " +
+    "evidence_operator, reveal_threshold_bps, or max_draw_attempts). " +
+    "domain_ref and evidence_spec are immutable. The loaded wallet pays the " +
+    "PendingUpdate rent. Arms UPDATE_TIMELOCK_SLOTS (48h) on-chain; read back " +
+    "the exact execute slot from the PendingUpdate account after sending, " +
+    "then run lifecycle:execute-update once it elapses.";
 
   static examples = [
     "<%= config.bin %> lifecycle:propose-update --subaccord <pda> --payload MinStake:2000",

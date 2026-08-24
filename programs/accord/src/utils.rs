@@ -37,16 +37,36 @@ pub(crate) fn validate_update_payload(payload: &UpdatePayload) -> Result<()> {
         UpdatePayload::RevealWindow(v) => require!(*v > 0, AccordError::InvalidAmount),
         // Authority / EvidenceOperator are arbitrary Pubkeys — no domain bound.
         UpdatePayload::Authority(_) | UpdatePayload::EvidenceOperator(_) => {}
+        // ADR-0021 bounds, retunable via the timelock (ADR-0028). The
+        // Median > 0 lower bound needs the live pool — see
+        // `validate_update_cross_field`.
+        UpdatePayload::RevealThresholdBps(v) => {
+            require!(*v <= 10_000, AccordError::InvalidThreshold)
+        }
+        UpdatePayload::MaxDrawAttempts(v) => {
+            require!(
+                (1..=MAX_DRAW_ATTEMPTS).contains(v),
+                AccordError::MaxDrawAttemptsLimitExceeded
+            )
+        }
     }
     Ok(())
 }
 
 /// Cross-field validation that needs the live Subaccord (SR2-L-1, shared-base
-/// §28.3 / §29.3): a `MaxAppeals` update must not birth the degenerate appeal
-/// ladder that `create_subaccord` rejects — `(min_jury_size+1)·2^v − 1` must
-/// stay `≤ MAX_JURORS`. `min_jury_size` is immutable (absent from
-/// `UpdatePayload`), so validating against the live pool at BOTH propose and
-/// execute is sound.
+/// §28.3 / §29.3). Checked at BOTH propose and execute against the live pool:
+///
+/// - `MaxAppeals`: must not birth the degenerate appeal ladder that
+///   `create_subaccord` rejects — `(min_jury_size+1)·2^v − 1` must stay
+///   `≤ MAX_JURORS`. `min_jury_size` is immutable (absent from
+///   `UpdatePayload`), so the live value is authoritative.
+/// - `RevealThresholdBps` (ADR-0028): a Median pool cannot drop to a zero
+///   reveal threshold — the quorum gate would collapse to `needed = 0` and
+///   the median arm could fabricate `result = 0` from an empty reveal set
+///   (SR2-M-1 gate parity with `create_subaccord`). Plurality pools stay
+///   safe at 0 (all-zero tally ties → RedrawEligible, ADR-0026).
+///   `aggregation` is immutable (absent from `UpdatePayload`), so the live
+///   value is authoritative.
 pub(crate) fn validate_update_cross_field(sub: &Subaccord, payload: &UpdatePayload) -> Result<()> {
     if let UpdatePayload::MaxAppeals(v) = payload {
         let ladder_top = (sub.min_jury_size as u64)
@@ -57,6 +77,12 @@ pub(crate) fn validate_update_cross_field(sub: &Subaccord, payload: &UpdatePaylo
         require!(
             ladder_top <= MAX_JURORS as u64,
             AccordError::LadderExceedsMaxJurors
+        );
+    }
+    if let UpdatePayload::RevealThresholdBps(v) = payload {
+        require!(
+            sub.aggregation != Aggregation::Median || *v > 0,
+            AccordError::InvalidThreshold
         );
     }
     Ok(())

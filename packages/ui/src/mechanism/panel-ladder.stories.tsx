@@ -5,6 +5,7 @@ import { PanelLadder } from "./panel-ladder";
 const meta = {
   title: "Mechanism/PanelLadder",
   component: PanelLadder,
+  parameters: { layout: "centered" },
   argTypes: {
     frame: { control: { type: "range", min: 0, max: 240, step: 1 } },
     at: { control: { type: "number", min: 0 } },
@@ -16,9 +17,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof PanelLadder>;
 
-/** The full ladder — 3·7·15·31 with bond prices underneath. */
+/** The full ladder — 3·7·15·31, panel sizes under the steps. */
 export const FullLadder: Story = {
-  args: { labels: ["×1 (B)", "×2 (2B)", "×4 (4B)", "×8 (8B)"] },
+  args: { labels: ["3", "7", "15", "31"] },
 };
 
 /** Still climbing — step 2 (15 dots) micro-cascading in. */
@@ -26,8 +27,7 @@ export const Climbing: Story = {
   args: { frame: 62 },
 };
 
-/** Just the clusters — no price chips (the B1 "3→7" beat composes
- *  MonoChip + PanelLadder side by side). */
+/** Just the clusters — no size chips (compose MonoChip beside it). */
 export const Clusters: Story = {
   args: { frame: 200 },
 };

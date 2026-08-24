@@ -101,3 +101,28 @@ pub struct ItemClosed {
     pub account: Pubkey,
     pub submitter: Pubkey,
 }
+
+/// Emitted by `update_list` when the authority retunes list-level economics
+/// (instant — no timelock) and/or rotates the governance key.
+#[event]
+pub struct ListUpdated {
+    pub list: Pubkey,
+    pub submit_deposit: u64,
+    pub challenge_pct: u16,
+    pub listing_window: u64,
+    pub withdrawal_timelock: u64,
+    /// The (possibly rotated) governance authority after this update.
+    pub authority: Pubkey,
+}
+
+/// Emitted by `propose_court_update` once the Accord CPI lands a
+/// `PendingUpdate` signed by the CanonList PDA. The 48h timelock and the
+/// permissionless execute live in Accord; this event marks the canon-side
+/// propose only.
+#[event]
+pub struct CourtUpdateProposed {
+    pub list: Pubkey,
+    pub subaccord: Pubkey,
+    pub nonce: u64,
+    pub payload: accord::state::UpdatePayload,
+}

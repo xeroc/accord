@@ -552,7 +552,9 @@ pub struct CreateSubaccordParams {
 }
 
 /// Tagged Subaccord parameter update. `domain_ref` and `evidence_spec` are
-/// immutable and intentionally absent (ADR-0005).
+/// immutable and intentionally absent (ADR-0005). Variants are append-only:
+/// borsh encodes the variant index, so a new variant MUST be added at the END
+/// (ADR-0028) — in-flight `PendingUpdate` accounts deserialize by index.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, InitSpace, Debug)]
 pub enum UpdatePayload {
     MinStake(u64),
@@ -565,6 +567,13 @@ pub enum UpdatePayload {
     FeePerJuror(u64),
     Authority(Pubkey),
     EvidenceOperator(Pubkey),
+    /// Reveal-quorum fraction (ADR-0021) — retunable via the timelock so a
+    /// pool can loosen/tighten quorum as panel sizes prove out (ADR-0028).
+    /// In-flight disputes keep their frozen `CaseTerms` copy.
+    RevealThresholdBps(u16),
+    /// Redraw cap per round (ADR-0021) — retunable via the timelock
+    /// (ADR-0028). Orthogonal to `max_appeals`.
+    MaxDrawAttempts(u8),
 }
 
 // --- Draw (ADR-0012 accumulator; veridao-fr1x/veridao-4nyi) ------------------

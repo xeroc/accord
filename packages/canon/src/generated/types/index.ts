@@ -13,3 +13,4 @@ export * from "./disputeState";
 export * from "./itemState";
 export * from "./shortfallPolicy";
 export * from "./subaccord";
+export * from "./updatePayload";

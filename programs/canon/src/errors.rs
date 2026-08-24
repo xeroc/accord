@@ -59,4 +59,10 @@ pub enum CanonError {
     WindowTooShort,
     #[msg("court.depth exceeds MAX_LIST_TREE_DEPTH — the MST path in every stake/draw tx would blow the packet budget.")]
     TreeDepthTooDeep,
+    #[msg("Caller is not the list authority.")]
+    Unauthorized,
+    #[msg("This UpdatePayload variant is forbidden for Canon lists.")]
+    ForbiddenPayload,
+    #[msg("submit_deposit must be nonzero — zero skin-in-the-game invites spam items.")]
+    ZeroDeposit,
 }

@@ -94,8 +94,8 @@ impl<'info> CreateSubaccord<'info> {
         // `result = 0` from an empty reveal set. Plurality pools are safe at
         // 0 (an all-zero tally ties, and ADR-0026 routes ties to
         // RedrawEligible), so the lower bound applies to Median only. The
-        // field is immutable (absent from `UpdatePayload`) — creation is its
-        // only write path.
+        // update path mirrors this gate in `validate_update_cross_field`
+        // (`UpdatePayload::RevealThresholdBps`, ADR-0028).
         require!(
             aggregation != Aggregation::Median || reveal_threshold_bps > 0,
             AccordError::InvalidThreshold
