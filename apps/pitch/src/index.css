@@ -1,0 +1,81 @@
+/* @useaccord/pitch — deck styles.
+ *
+ * Tokens, fonts and the theme come from @useaccord/ui (styles.css).
+ * This file owns the Tailwind engine wiring and the deck's own motion
+ * (slide enters + staggered rises), all on the brand ease curve. */
+
+@import "tailwindcss";
+@import "@useaccord/ui/styles.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Utilities living in packages/ui source must be discovered by the app build. */
+@source "../../../packages/ui/src";
+
+:root {
+  color-scheme: dark;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background-color: var(--color-ink);
+  color: var(--color-body);
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+::selection {
+  background: var(--accord-amber);
+  color: var(--accord-ink);
+}
+
+/* ---- slide transitions ------------------------------------------------ */
+
+/* the slide itself: crossfade + settle-rise, brand curve */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.99);
+  }
+}
+.slide {
+  animation: slide-in 700ms var(--ease-expo) both;
+}
+
+/* staggered content: each direct child of [data-rise] rises in turn */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+[data-rise] > * {
+  animation: rise-in 640ms var(--ease-expo) both;
+}
+[data-rise] > *:nth-child(1) { animation-delay: 150ms; }
+[data-rise] > *:nth-child(2) { animation-delay: 260ms; }
+[data-rise] > *:nth-child(3) { animation-delay: 370ms; }
+[data-rise] > *:nth-child(4) { animation-delay: 480ms; }
+[data-rise] > *:nth-child(5) { animation-delay: 590ms; }
+[data-rise] > *:nth-child(6) { animation-delay: 700ms; }
+
+/* the leaving slide fades down under the entering one */
+@keyframes slide-out {
+  to {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.99);
+  }
+}
+.slide-exit {
+  animation: slide-out 420ms var(--ease-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide,
+  .slide-exit,
+  [data-rise] > * {
+    animation: none !important;
+  }
+}
