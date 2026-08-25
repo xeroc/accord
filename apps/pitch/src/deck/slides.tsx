@@ -253,7 +253,7 @@ const WhatSlide: FC = () => {
 const MAXIMS = [
   "fully parameterizable, permissionless to use",
   "no token of its own",
-  "the verdict is the only outcome — enforcement happens elsewhere",
+  "the verdict is the only outcome, enforcement happens elsewhere",
   "one CPI call to integrate",
 ];
 
@@ -286,9 +286,9 @@ const HanseSlide: FC = () => {
     >
       <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
         A mutual pools risk and capital; its members manage the payouts. It needs
-        two machines. Both are built.
+        two compoents. We built both: pull payments, dispute resolution
       </p>
-      <div className="flex flex-wrap items-center gap-8">
+      <div className="flex flex-wrap items-center gap-8 mt-8">
         <PayoutFlow frame={frame} at={12} />
       </div>
     </SlideFrame>
@@ -298,21 +298,22 @@ const HanseSlide: FC = () => {
 /* 09 — Hanse: status quo and future --------------------------------------------- */
 
 const REAL_ROWS: { label: string; to: number; at: number }[] = [
-  { label: "mutual cover written worldwide (ICMIF, USD/yr)", to: 1_606_000_000_000, at: 40 },
-  { label: "on-chain cover sector TVL (DeFiLlama)", to: 104_000_000, at: 56 },
-  { label: "of that TVL in one web3 player (%)", to: 84, at: 74 },
+  { label: "Global mutual insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 40 },
+  { label: "mutual cover written worldwide (ICMIF'24, USD/yr)", to: 1_606_000_000_000, at: 80 },
+  { label: "on-chain cover sector TVL (DeFiLlama, USD/yr)", to: 104_000_000, at: 96 },
+  { label: "of that TVL in one web3 player (%)", to: 84, at: 114 },
 ];
 
 const HanseFutureSlide: FC = () => {
   const frame = useSlideFrame();
   return (
     <SlideFrame
-      kicker="STATUS QUO → FUTURE"
+      kicker="STATUS QUO"
       headline="On-chain cover barely exists. Real mutuals are $1.6T."
     >
       <div className="flex min-w-8xl flex-col gap-3 font-mono">
         <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
-          THE REAL WORLD · ANNUAL COVER WRITTEN
+          ANNUAL COVER WRITTEN
         </div>
         {REAL_ROWS.map((r) => (
           <LedgerCounter
@@ -328,9 +329,6 @@ const HanseFutureSlide: FC = () => {
           />
         ))}
       </div>
-      <p className="font-mono text-xl text-amber" style={rise(frame, 110)}>
-        mutuals to insurance: a small step.
-      </p>
     </SlideFrame>
   );
 };
@@ -356,7 +354,7 @@ const CloseSlide: FC = () => {
         />
         <AmberRule enter={Math.min(1, Math.max(0, (frame - 20) / 24))} className="h-1.5 w-56" />
       </div>
-      <div data-rise className="flex flex-wrap justify-center gap-4">
+      <div data-rise className="flex flex-wrap justify-center gap-12">
         {LINKS.map((l, i) => (
           <span key={l.url} className="flex flex-col items-center gap-1" style={rise(frame, 40 + i * 16)}>
             <span className="font-mono text-2xl text-nearwhite">{l.url}</span>
@@ -423,7 +421,7 @@ export const SLIDES: SlideDef[] = [
     id: "maxims",
     label: "Design philosophy",
     notes:
-      "25s. Rapid-fire, one breath each: fully parameterizable, permissionless to use. No token of its own — pure infrastructure. The verdict is the only outcome — enforcement happens elsewhere, with whoever called us. One CPI call to integrate. Accord is infra, built to be called by other programs, not visited.",
+      "25s. Rapid-fire, one breath each: fully parameterizable, permissionless to use. No token of its own — pure infrastructure. The verdict is the only outcome. Enforcement happens elsewhere, with whoever called us. One CPI call to integrate. Accord is infra, built to be called by other programs, not visited.",
     component: MaximsSlide,
   },
   {
