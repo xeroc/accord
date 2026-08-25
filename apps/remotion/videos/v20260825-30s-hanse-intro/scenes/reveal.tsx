@@ -34,7 +34,7 @@ export function RevealScene() {
         className="font-mono text-2xl text-text-secondary"
         style={{ opacity: enterAt(frame, fps, 1.5, 0.5) }}
       >
-        one risk, one pool — no company in the middle.
+        one risk, one pool — permissionless
       </Interactive.Div>
     </Scene>
   );

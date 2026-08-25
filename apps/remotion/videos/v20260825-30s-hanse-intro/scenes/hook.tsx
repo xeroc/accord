@@ -49,7 +49,7 @@ export function HookScene() {
       >
         <LedgerCounter
           frame={frame}
-          label="mutual cover worldwide · ICMIF 2024"
+          label="mutual cover worldwide/$ · ICMIF 2024"
           from={0}
           to={1_606_000_000_000}
           at={55}

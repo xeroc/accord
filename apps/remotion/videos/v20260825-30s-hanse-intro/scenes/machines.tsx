@@ -54,7 +54,7 @@ export function MachinesScene() {
         className="font-mono text-3xl text-amber"
         style={{ opacity: enterAt(frame, fps, 2.1, 0.5) }}
       >
-        on-chain, each one is a protocol problem.
+        on-chain, each one is it's own <span className="underline underline-offset-4 decoration-primary">smart contract</span>.
       </Interactive.Div>
     </Scene>
   );
