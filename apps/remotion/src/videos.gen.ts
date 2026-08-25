@@ -11,6 +11,7 @@ import { video as video_v20260820_30s_canon_intro } from "../videos/v20260820-30
 import { video as video_v20260820_30s_canon_item } from "../videos/v20260820-30s-canon-item/index";
 import { video as video_v20260820_30s_canon_list } from "../videos/v20260820-30s-canon-list/index";
 import { video as video_v20260820_30s_schelling_court_explainer } from "../videos/v20260820-30s-schelling-court-explainer/index";
+import { video as video_v20260825_30s_hanse_intro } from "../videos/v20260825-30s-hanse-intro/index";
 import { video as video_v20260829_dispute_lifecycle } from "../videos/v20260829-dispute-lifecycle/index";
 import { video as video_v20260829_draw_and_sortition } from "../videos/v20260829-draw-and-sortition/index";
 import { video as video_v20260829_economics } from "../videos/v20260829-economics/index";
@@ -28,6 +29,7 @@ export const videos: VideoDefinition[] = [
   video_v20260820_30s_canon_item,
   video_v20260820_30s_canon_list,
   video_v20260820_30s_schelling_court_explainer,
+  video_v20260825_30s_hanse_intro,
   video_v20260829_dispute_lifecycle,
   video_v20260829_draw_and_sortition,
   video_v20260829_economics,

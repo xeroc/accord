@@ -2,7 +2,7 @@
 version: alpha
 name: Passive Pulse — Accord Project video score house style
 purpose: soundtrack
-key: per family — accord: Db major · canon: Eb major · synod: Bb minor
+key: per family — accord: Db major · canon: Eb major · synod: Bb minor · hanse: Ab major
 bpm: 120
 timeSignature: 4/4
 structure: fixed
@@ -19,6 +19,7 @@ palette:
   accent: pluck (canon — VCSL concert harp, registered by src/cli/score.ts) · moog (synod)
 families:
   accord: { key: Db major, accent: none }
+  hanse: { key: Ab major, accent: none }
   canon: { key: Eb major, accent: pluck }
   synod: { key: Bb minor, accent: moog }
 references:
@@ -134,7 +135,7 @@ Never changes: `setcpm(30)` · kick pattern/bank (never four-on-the-floor) · ti
 
 Allowed to flex: **loop rotation** — the mechanism may enter on any chord of the loop to match scene energy (canon-item starts on the IV; the endcard always returns to the family tonic) · rim on beat 3 vs and-of-2 · hum damping variant (canon-challenge uses `sustain(.2).release(.8)` — "fingered string") · kick gain .40–.45, rim .11–.13 · bloom gain .26–.3, rise .15–.16, shadow .18–.2 · section bar counts to the scene map, keeping the phase order.
 
-Family swaps (accent lane only, hum position): accord → `note(x).s("piano").gain(.2).room(.4)` · canon → `s("pluck").lpf(2600).gain(.18).room(.4)` · synod → moog voice, LPF ≤ 1200. Keys: accord Db major (Dbmaj9 · Bbm9 · Gbmaj9 · Ab7sus) · canon Eb major (Ebmaj9 · Cm9 · Abmaj9 · Gm7) · synod Bb minor (Bbm9 · Gbmaj7 · Ebm9 · Ab). Flat spellings throughout.
+Family swaps (accent lane only, hum position): accord → `note(x).s("piano").gain(.2).room(.4)` · canon → `s("pluck").lpf(2600).gain(.18).room(.4)` · synod → moog voice, LPF ≤ 1200. Keys: accord Db major (Dbmaj9 · Bbm9 · Gbmaj9 · Ab7sus) · canon Eb major (Ebmaj9 · Cm9 · Abmaj9 · Gm7) · synod Bb minor (Bbm9 · Gbmaj7 · Ebm9 · Ab) · hanse Ab major (Abmaj9 · Fm9 · Dbmaj9 · Eb7sus). Flat spellings throughout.
 
 ## Context & Mix
 
