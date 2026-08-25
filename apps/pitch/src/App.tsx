@@ -81,7 +81,7 @@ export function App() {
 
       {/* nav bar */}
       <nav className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between gap-6 px-8 py-5 font-mono text-sm text-muted-foreground">
-        <span className="tracking-[0.25em]">HANSE · DEMO DAY</span>
+        <span className="tracking-[0.25em]">ACCORD · DEMO DAY</span>
         <div className="flex items-center gap-2">
           {SLIDES.map((s, i) => (
             <button
