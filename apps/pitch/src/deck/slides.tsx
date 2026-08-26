@@ -17,11 +17,12 @@ import { SlideFrame } from "./shell";
 import { useSlideFrame } from "./useSlideFrame";
 
 /**
- * The pitch deck — Accord-first, the golden circle (grilled outline,
- * 2026-08-25): WHY (the suit dispute → the disconnect) → HOW (trusted
- * coordination between parties that don't trust each other) → WHAT (Accord:
- * conflict resolution on Solana — the flywheel, the four maxims) → the one
- * application we name, Hanse (1+1=3, status quo vs $1.61T) → links +
+ * The pitch deck — Accord-first, the golden circle: WHY (the suit dispute:
+ * the chain knows prices, it can't settle an argument) → HOW (collective
+ * decision-making: consensus / decision markets / adjudication) → WHAT
+ * (Accord: conflict resolution on Solana; juror choreography + economics;
+ * the four maxims) → the one application we name, Hanse (prerequisites,
+ * PayoutFlow, status quo vs a $6.2T world market) → links +
  * "Mechanize the verdict."
  *
  * Staging rules: Accord and Hanse are the only names on stage; Canon/
@@ -48,7 +49,7 @@ const TitleSlide: FC = () => {
       <div data-rise className="flex flex-col items-center gap-6">
         <Wordmark enter={Math.min(1, Math.max(0, (frame - 18) / 30))} className="text-8xl" brandName="Accord" />
         <div className="font-heading text-4xl font-bold tracking-tight text-nearwhite">
-          Composable on-chain dispute resolution
+          Composable on-chain dispute resolution.
         </div>
         <img
           src="mtndao.svg"
@@ -66,7 +67,7 @@ const TitleSlide: FC = () => {
 const SuitSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <SlideFrame kicker="WHY" headline="The chain knows prices but it can&rsquo;t settle an argument.">
+    <SlideFrame kicker="WHY" headline="The chain knows prices, but it can&rsquo;t settle an argument.">
       <div className="flex items-center gap-14">
         <figure className="flex flex-col gap-3" style={rise(frame, 24)}>
           <img
@@ -80,7 +81,7 @@ const SuitSlide: FC = () => {
         </figure>
         <div className="flex flex-col gap-6">
           <div className="font-mono text-xl text-text-secondary" style={rise(frame, 40)}>
-            polymarket, june 2025:
+            polymarket, June 2025:
           </div>
           <div className="font-heading text-3xl font-bold leading-tight text-nearwhite" style={rise(frame, 52)}>
             &ldquo;Will Zelenskyy wear a suit before July?&rdquo;
@@ -102,7 +103,7 @@ const SuitSlide: FC = () => {
   );
 };
 
-/* 04 — HOW: trusted coordination ---------------------------------------------- */
+/* 03 — HOW: trusted coordination ---------------------------------------------- */
 
 const RUNGS = [
   "Consensus handles agreement under adversarial conditions.",
@@ -115,7 +116,7 @@ const HowSlide: FC = () => {
   return (
     <SlideFrame
       kicker="HOW"
-      headline="Coordination problems between parties"
+      headline="Coordination problems between parties."
     >
       <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
         Collective decision-making mechanisms
@@ -137,7 +138,7 @@ const HowSlide: FC = () => {
   );
 };
 
-/* 05 — WHAT: the primitive ----------------------------------------------------- */
+/* 04 — WHAT: the primitive ----------------------------------------------------- */
 const PLAYGROUND_BEAT = {
   drawAt: (i: number) => 24 + i * 6,
   commitAt: (i: number) => 117 + i * 10,
@@ -215,19 +216,19 @@ const WhatSlide: FC = () => {
   );
 };
 
-/* 07 — WHAT: the four maxims --------------------------------------------------- */
+/* 05 — WHAT: the four maxims --------------------------------------------------- */
 
 const MAXIMS = [
   "fully parameterizable, permissionless to use",
   "any staking token, separate fee token",
-  "the verdict is the only outcome, enforcement happens elsewhere",
+  "the verdict is the only outcome; enforcement happens elsewhere",
   "one CPI call to integrate",
 ];
 
 const MaximsSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <SlideFrame kicker="DESIGN PHILOSOPHY" headline="Infrastructure. Build on top">
+    <SlideFrame kicker="DESIGN PHILOSOPHY" headline="Infrastructure. Build on top.">
       <div className="flex max-w-7xl flex-col gap-7">
         {MAXIMS.map((m, i) => (
           <div key={m} className="flex items-baseline gap-6" style={rise(frame, 24 + i * 18)}>
@@ -242,7 +243,7 @@ const MaximsSlide: FC = () => {
   );
 };
 
-/* 08 — Hanse: mutuals, 1+1=3 ---------------------------------------------------- */
+/* 06 — Hanse: mutuals, prerequisites -------------------------------------------- */
 
 const HanseSlide: FC = () => {
   const frame = useSlideFrame();
@@ -253,7 +254,7 @@ const HanseSlide: FC = () => {
     >
       <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
         A mutual pools risk and capital; its members manage the payouts. Two
-        prerequisites. We built both: <span className="text-primary">pull payments</span>, <span className="text-primary">dispute resolution</span>
+        prerequisites. We built both: <span className="text-primary">pull payments</span>, <span className="text-primary">dispute resolution</span>.
       </p>
       <div className="flex flex-wrap items-center gap-8 mt-8">
         <PayoutFlow frame={frame} at={50} />
@@ -262,12 +263,12 @@ const HanseSlide: FC = () => {
   );
 };
 
-/* 09 — Hanse: status quo and future --------------------------------------------- */
+/* 07 — Hanse: status quo and future --------------------------------------------- */
 
 const REAL_ROWS: { label: string; to: number; at: number }[] = [
   { label: "global insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 40 },
   { label: "mutual cover written worldwide (ICMIF'24, USD/yr)", to: 1_606_000_000_000, at: 80 },
-  { label: "on-chain cover sector TVL (DeFiLlama, USD/yr)", to: 104_000_000, at: 96 },
+  { label: "on-chain cover sector TVL (DeFiLlama)", to: 104_000_000, at: 96 },
   { label: "of that TVL in one web3 player (%)", to: 84, at: 114 },
 ];
 
@@ -302,14 +303,14 @@ const HanseFutureSlide: FC = () => {
           style={rise(frame, 0)}
         >
           Building Mutuals on Solana first. <br />
-          On-chain Insurances in 12 months.
+          On-chain insurance in 12 months.
         </div>
       </div>
     </SlideFrame>
   );
 };
 
-/* 10 — close: the deployed apps + the tagline ----------------------------------- */
+/* 08 — close: the deployed apps + the tagline ----------------------------------- */
 
 const LINKS = [
   { url: "app.useaccord.xyz", note: "the court" },
@@ -390,21 +391,21 @@ export const SLIDES: SlideDef[] = [
     id: "maxims",
     label: "Design philosophy",
     notes:
-      "25s. Rapid-fire, one breath each: fully parameterizable, permissionless to use. No token of its own — pure infrastructure. The verdict is the only outcome. Enforcement happens elsewhere, with whoever called us. One CPI call to integrate. Accord is infra, built to be called by other programs, not visited.",
+      "25s. Rapid-fire, one breath each: fully parameterizable, permissionless to use. Any staking token; a separate fee token. The verdict is the only outcome. Enforcement happens elsewhere, with whoever called us. One CPI call to integrate. Accord is infra, built to be called by other programs, not visited.",
     component: MaximsSlide,
   },
   {
     id: "hanse",
     label: "Hanse — 1+1=3",
     notes:
-      "35s. The one application we name: Hanse — mutuals as a protocol. A mutual pools risk and capital; its members manage payouts. It needs exactly two machines: recurring contributions (pull payments — built) and dispute resolution for claims paying from the pool (Accord — built). Put one and one together and you get three. Do not mention other applications here — generality already lives in the maxims; this deck has one story.",
+      "35s. The one application we name: Hanse — mutuals as a protocol. A mutual pools risk and capital; its members manage payouts. Two prerequisites: recurring contributions (pull payments — built) and dispute resolution for claims paying from the pool (Accord — built). Put one and one together and you get three. Do not mention other applications here — generality already lives in the maxims; this deck has one story.",
     component: HanseSlide,
   },
   {
     id: "hanse-future",
     label: "Status quo → future",
     notes:
-      "40s. Numbers only, no incumbent drama: the entire on-chain cover sector is ~$104M TVL with 84% in one player (DeFiLlama, Aug 2026). The real world: $1.61T of mutual cover written per year, 26% of the world's cover, 4,700+ societies in 80 countries (ICMIF 2026, 2024 data). The on-chain version barely exists. And from mutuals to insurance — a small step. If asked about Nexus: it does have claims adjudication — member assessment, moved to a permissioned expert committee in v3; that recentralization is our whole thesis.",
+      "40s. Numbers only, no incumbent drama: the world's insurance market is ~$6.2T a year, mutuals write $1.61T of it, about 26% (ICMIF, 2024 data). The entire on-chain cover sector is ~$104M TVL with 84% in one player (DeFiLlama — TVL is a point-in-time stock, not annual flow; never say USD/yr for it). The on-chain version barely exists. The line: mutuals on Solana first, on-chain insurance in 12 months. If asked about Nexus: it does have claims adjudication — member assessment, moved to a permissioned expert committee in v3; that recentralization is our whole thesis.",
     component: HanseFutureSlide,
   },
   {
