@@ -254,8 +254,9 @@ const HanseSlide: FC = () => {
       headline="Mutuals as a protocol."
     >
       <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
-        A mutual pools risk and capital; its members manage the payouts. Two
-        prerequisites. We built both: <span className="text-primary">pull payments</span>, <span className="text-primary">dispute resolution</span>.
+        Mutuals are the oldest form of pooled protection on earth; its members
+        manage the payouts. We built both prerequisites:
+        <span className="text-primary/70"> pull payments</span>, <span className="text-primary/70">dispute resolution</span>.
       </p>
       <div className="flex flex-wrap items-center gap-8 mt-8">
         <PayoutFlow frame={frame} at={50} />
@@ -273,38 +274,60 @@ const REAL_ROWS: { label: string; to: number; at: number }[] = [
   { label: "global insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 110 },
 ];
 
+const INSURANCE_PROS: string[] = [
+  "insurance becomes programable & composable",
+  "insurances become globally accessible",
+  "micro insurances become scalable",
+  "new insurances products become feasable",
+
+]
+
 const HanseFutureSlide: FC = () => {
   const frame = useSlideFrame();
   return (
     <SlideFrame
-      kicker="STATUS QUO"
+      kicker="OUTLOOK"
       headline="On-chain cover barely exists."
     >
-      <div className="flex min-w-8xl flex-col gap-3 font-mono">
-        <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
-          ANNUAL COVER WRITTEN
+      <div className="flex w-full flex-1 items-center gap-16">
+        {/* left — the Solana pitch */}
+        <div className="flex flex-1 flex-col gap-5 font-mono">
+          <div className="text-lg tracking-[0.25em] text-primary" style={rise(frame, 140)}>
+            With Solana,
+          </div>
+          {INSURANCE_PROS.map((r, i) => (
+            <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 140 + i * 14)}>
+              <span className="text-success">✔</span> {r}
+            </div>
+          ))}
+          <div className="flex justify-center mt-6">
+            <div
+              className="text-xl font-extrabold leading-snug text-primary border-2 border-primary rounded-xl px-8 py-6 text-center max-w-2xl"
+              style={rise(frame, 200)}
+            >
+              HANSE: where risk meets internet capital
+            </div>
+          </div>
         </div>
-        {REAL_ROWS.map((r) => (
-          <LedgerCounter
-            key={r.label}
-            frame={frame}
-            label={r.label}
-            from={0}
-            to={r.to}
-            at={r.at}
-            dur={34}
-            tone="confirm"
-            className="text-2xl"
-          />
-        ))}
-      </div>
-      <div className="flex justify-center w-full">
-        <div
-          className="text-3xl font-extrabold leading-snug text-primary border-2 border-primary rounded-xl px-8 py-6 text-center max-w-2xl"
-          style={rise(frame, 120)}
-        >
-          Building Mutuals on Solana first. <br />
-          On-chain insurance in 12 months.
+        {/* right — the ledger */}
+        <div className="flex flex-1 flex-col items-end gap-6 font-mono">
+          <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
+            ANNUAL COVER WRITTEN
+          </div>
+          {REAL_ROWS.map((r) => (
+            <LedgerCounter
+              key={r.label}
+              frame={frame}
+              label={r.label}
+              from={0}
+              to={r.to}
+              at={r.at}
+              dur={34}
+              tone="confirm"
+              layout="stacked"
+              className="text-2xl"
+            />
+          ))}
         </div>
       </div>
     </SlideFrame>
@@ -322,9 +345,9 @@ const STATIC_ROWS = [
 ];
 
 const ROADMAP: { label: string; status: string; tone: "confirm" | "amber" | "neutral" }[] = [
-  { label: "pull payments", status: "live · mainnet", tone: "confirm" },
-  { label: "dispute resolution", status: "live · mainnet", tone: "confirm" },
-  { label: "mutuals", status: "in development", tone: "amber" },
+  { label: "pull payments for premiums", status: "live · mainnet", tone: "confirm" },
+  { label: "dispute resolution for claims", status: "live · devnet", tone: "confirm" },
+  { label: "mutuals for pooled risk", status: "in development", tone: "amber" },
 ];
 
 /** The achievement wall — ambience, not a reading list. Four copies make
@@ -353,7 +376,7 @@ const KUDOS = [
   "contribute.so — creator funding",
   "board · BitShares Foundation (BBF)",
   "chaoscraft — 1,000 minds, 1 codebase",
-  "CTO · exbet.io — on-chain betting",
+  "exbet.io — on-chain sports exchange",
   "RADAR · honorable mention · 2024",
   "CTO · Blockchain Projects BV",
   "allowly — pocket money for agents",
@@ -395,7 +418,7 @@ const BuilderSlide: FC = () => {
           </figure>
           <div className="flex flex-col gap-5">
             {STATIC_ROWS.map((r, i) => (
-              <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 40 + i * 14)}>
+              <div key={r} className="font-mono text-2xl text-body grayscale" style={rise(frame, 40 + i * 14)}>
                 {r}
               </div>
             ))}
@@ -432,7 +455,7 @@ const BuilderSlide: FC = () => {
             KUDOS.map((k, i) => (
               <div
                 key={`${copy}-${i}`}
-                className="w-full whitespace-nowrap py-2 pr-2 text-right text-lg leading-relaxed text-text-secondary"
+                className="w-full whitespace-nowrap py-2 pr-4 text-right text-lg leading-relaxed text-text-secondary"
               >
                 {k}
               </div>
@@ -477,7 +500,7 @@ const CloseSlide: FC = () => {
         className="font-heading text-7xl font-bold tracking-tight text-nearwhite"
         style={rise(frame, 104)}
       >
-        Mechanize the verdict.
+        Adjudication as a primitive.
       </div>
     </div>
   );
