@@ -72,10 +72,24 @@ body {
   animation: slide-out 420ms var(--ease-expo) both;
 }
 
+/* ---- builder kudos carousel --------------------------------------------- */
+
+/* the achievement wall on the builder slide: two stacked copies of the
+ * list translate up by exactly one copy (50%) for a seamless loop */
+@keyframes kudos-scroll {
+  to {
+    transform: translateY(-50%);
+  }
+}
+.kudos-track {
+  animation: kudos-scroll 110s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .slide,
   .slide-exit,
-  [data-rise] > * {
+  [data-rise] > *,
+  .kudos-track {
     animation: none !important;
   }
 }

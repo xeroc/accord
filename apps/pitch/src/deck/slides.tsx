@@ -22,12 +22,13 @@ import { useSlideFrame } from "./useSlideFrame";
  * decision-making: consensus / decision markets / adjudication) → WHAT
  * (Accord: conflict resolution on Solana; juror choreography + economics;
  * the four maxims) → the one application we name, Hanse (prerequisites,
- * PayoutFlow, status quo vs a $6.2T world market) → links +
+ * PayoutFlow, status quo vs a $6.2T world market) → the builder → links +
  * "Mechanize the verdict."
  *
  * Staging rules: Accord and Hanse are the only names on stage; Canon/
  * Tributary survive as URLs on the close. No status hedging — conceptual
- * pitch (Q&A answer: devnet today, mainnet when we pull the trigger).
+ * pitch (status lives on the builder roadmap: payments + court live on
+ * mainnet, mutuals in development).
  * Numbers carry citations; every mechanism visual is a ui-kit piece
  * driven by the slide-local frame clock.
  */
@@ -266,10 +267,10 @@ const HanseSlide: FC = () => {
 /* 07 — Hanse: status quo and future --------------------------------------------- */
 
 const REAL_ROWS: { label: string; to: number; at: number }[] = [
-  { label: "global insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 40 },
-  { label: "mutual cover written worldwide (ICMIF'24, USD/yr)", to: 1_606_000_000_000, at: 80 },
-  { label: "on-chain cover sector TVL (DeFiLlama)", to: 104_000_000, at: 96 },
-  { label: "of that TVL in one web3 player (%)", to: 84, at: 114 },
+  { label: "of that TVL in one web3 player (%)", to: 84, at: 20 },
+  { label: "on-chain cover sector TVL (DeFiLlama)", to: 104_000_000, at: 60 },
+  { label: "mutual cover written worldwide (ICMIF'24, USD/yr)", to: 1_606_000_000_000, at: 90 },
+  { label: "global insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 110 },
 ];
 
 const HanseFutureSlide: FC = () => {
@@ -300,7 +301,7 @@ const HanseFutureSlide: FC = () => {
       <div className="flex justify-center w-full">
         <div
           className="text-3xl font-extrabold leading-snug text-primary border-2 border-primary rounded-xl px-8 py-6 text-center max-w-2xl"
-          style={rise(frame, 0)}
+          style={rise(frame, 120)}
         >
           Building Mutuals on Solana first. <br />
           On-chain insurance in 12 months.
@@ -310,7 +311,140 @@ const HanseFutureSlide: FC = () => {
   );
 };
 
-/* 08 — close: the deployed apps + the tagline ----------------------------------- */
+/* 08 — the builder ------------------------------------------------------------- */
+
+const STATIC_ROWS = [
+  "🦄 PhD, Engineering",
+  "🇩🇪 Superteam member",
+  "🦍 full-time crypto since 2014",
+  "🔥 fabian@chainsquad.com",
+  "𝕏 @xer0c"
+];
+
+const ROADMAP: { label: string; status: string; tone: "confirm" | "amber" | "neutral" }[] = [
+  { label: "pull payments", status: "live · mainnet", tone: "confirm" },
+  { label: "dispute resolution", status: "live · mainnet", tone: "confirm" },
+  { label: "mutuals", status: "in development", tone: "amber" },
+];
+
+/** The achievement wall — ambience, not a reading list. Four copies make
+ * the marquee seamless; the audience catches fragments, that's the point. */
+const KUDOS = [
+  "Accord — on-chain arbitration",
+  "2× Gold · Colosseum Frontier 2026",
+  "Tributary — Solana payment rail",
+  "Solana Foundation grant · 2026",
+  "Canon — curated-list registry",
+  "500M+ blocks produced",
+  "Synod — N-party escrow",
+  "first hire by a blockchain, ever",
+  "mash.fun — prediction markets · CTO",
+  "Agentic Engineering Grant · 2026",
+  "repo.trade — launchpad for repos",
+  "Solana Security #2 graduate",
+  "Trezor hackathon · 2nd place",
+  "python-bitshares — full L1 SDK",
+  "Cypherpunk · $10k · 2025",
+  "soltrace — Solana indexer",
+  "graphenelib — SDK for a chain family",
+  "Superteam Germany grant · 2024",
+  "Lucky Swaps — leveraged swaps",
+  "Advisor to MakerDAO",
+  "contribute.so — creator funding",
+  "board · BitShares Foundation (BBF)",
+  "chaoscraft — 1,000 minds, 1 codebase",
+  "CTO · exbet.io — on-chain betting",
+  "RADAR · honorable mention · 2024",
+  "CTO · Blockchain Projects BV",
+  "allowly — pocket money for agents",
+  "CTO · BlockOps GmbH",
+  "board · PeerPlays Standards (PBSA)",
+  "polycode — multi-agent automation",
+  "CTO · Flux Capa NV",
+  "Trezor signing for Graphene",
+  "board · Kliq",
+  "CTO · DacTales BV",
+  "lando — agents that invoice",
+  "committee seats: Steem/Hive/BTS",
+  "CTO · Blockchain BV",
+  "board · Coincrete",
+  "python-steem · python-peerplays",
+];
+
+const BuilderSlide: FC = () => {
+  const frame = useSlideFrame();
+  return (
+    <div className="relative h-full w-full">
+      <div className="flex h-full flex-col justify-center gap-10 pl-[7vw] pr-[30vw]">
+        <div className="flex flex-col gap-6">
+          <div className="font-mono text-xl tracking-[0.3em] text-amber">THE BUILDER</div>
+          <h2 className="max-w-[22ch] font-heading text-6xl font-bold leading-[1.05] tracking-tight text-nearwhite">
+            Who&rsquo;s building it.
+          </h2>
+        </div>
+        <div className="flex items-center gap-14" style={rise(frame, 24)}>
+          <figure className="flex flex-col gap-3">
+            <img
+              src="fabian.webp"
+              alt="Dr.-Ing. Fabian Schuh"
+              className="h-[38vh] rounded-lg border border-white/10 object-cover shadow-2xl"
+            />
+            <figcaption className="font-mono text-sm text-text-secondary">
+              Dr.-Ing. Fabian Schuh · xeroc.org
+            </figcaption>
+          </figure>
+          <div className="flex flex-col gap-5">
+            {STATIC_ROWS.map((r, i) => (
+              <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 40 + i * 14)}>
+                {r}
+              </div>
+            ))}
+            <div
+              className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-5"
+              style={rise(frame, 104)}
+            >
+              <div className="font-mono text-sm tracking-[0.25em] text-text-secondary">
+                ROADMAP
+              </div>
+              {ROADMAP.map((r) => (
+                <div key={r.label} className="flex items-center gap-4 font-mono">
+                  <span className="text-lg text-body">{r.label}</span>
+                  <MonoChip tone={r.tone} className="px-3 py-1 text-sm">
+                    {r.status}
+                  </MonoChip>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        className="absolute inset-y-0 right-0 flex w-[50ch] items-center overflow-hidden font-mono"
+        style={{
+          maskImage:
+            "linear-gradient(to bottom, transparent, black 18%, black 82%, transparent)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, transparent, black 18%, black 82%, transparent)",
+        }}
+      >
+        <div className="kudos-track flex w-full flex-col">
+          {[0, 1, 2, 3].flatMap((copy) =>
+            KUDOS.map((k, i) => (
+              <div
+                key={`${copy}-${i}`}
+                className="w-full whitespace-nowrap py-2 pr-2 text-right text-lg leading-relaxed text-text-secondary"
+              >
+                {k}
+              </div>
+            )),
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* 09 — close: the deployed apps + the tagline ----------------------------------- */
 
 const LINKS = [
   { url: "app.useaccord.xyz", note: "the court" },
@@ -363,7 +497,7 @@ export const SLIDES: SlideDef[] = [
     id: "title",
     label: "Accord",
     notes:
-      "10s. Accord — composable on-chain arbitration. No status chips anywhere in this deck: we present conceptually. Q&A answer if asked: devnet today, mainnet when we pull the trigger, audits in flight.",
+      "10s. Accord — composable on-chain arbitration. Status lives on the builder slide's roadmap: pull payments and dispute resolution live on mainnet, mutuals (Hanse) in development. Audits in flight.",
     component: TitleSlide,
   },
   {
@@ -407,6 +541,13 @@ export const SLIDES: SlideDef[] = [
     notes:
       "40s. Numbers only, no incumbent drama: the world's insurance market is ~$6.2T a year, mutuals write $1.61T of it, about 26% (ICMIF, 2024 data). The entire on-chain cover sector is ~$104M TVL with 84% in one player (DeFiLlama — TVL is a point-in-time stock, not annual flow; never say USD/yr for it). The on-chain version barely exists. The line: mutuals on Solana first, on-chain insurance in 12 months. If asked about Nexus: it does have claims adjudication — member assessment, moved to a permissioned expert committee in v3; that recentralization is our whole thesis.",
     component: HanseFutureSlide,
+  },
+  {
+    id: "builder",
+    label: "The builder",
+    notes:
+      "15s. Who builds this: Dr.-Ing. Fabian Schuh. Speak only the static block: PhD in engineering, Superteam DE, full-time crypto since 2014, fabian@chainsquad.com. The scrolling wall on the right is ambience — grants, hackathon golds, the project family (Tributary, mash.fun, repo.trade, Canon, Synod, …). Don't read it; gesture once ('twenty years of shipping, on-chain since 2014 — the wall keeps scrolling'). Not my first governance system.",
+    component: BuilderSlide,
   },
   {
     id: "close",
