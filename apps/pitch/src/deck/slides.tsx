@@ -9,13 +9,12 @@ import {
   TallyBar,
   RulingStamp,
   SealedVote,
-  VaultBox,
   Wordmark,
+  PayoutFlow
 } from "@useaccord/ui";
 
 import { SlideFrame } from "./shell";
 import { useSlideFrame } from "./useSlideFrame";
-import { PayoutFlow } from "@useaccord/ui";
 
 /**
  * The pitch deck — Accord-first, the golden circle (grilled outline,
@@ -48,8 +47,8 @@ const TitleSlide: FC = () => {
       <AccordMark size={128} progress={Math.min(1, frame / 45)} />
       <div data-rise className="flex flex-col items-center gap-6">
         <Wordmark enter={Math.min(1, Math.max(0, (frame - 18) / 30))} className="text-8xl" brandName="Accord" />
-        <div className="font-heading text-5xl font-bold tracking-tight text-nearwhite">
-          Composable on-chain arbitration.
+        <div className="font-heading text-4xl font-bold tracking-tight text-nearwhite">
+          Composable on-chain dispute resolution
         </div>
         <img
           src="mtndao.svg"
@@ -67,7 +66,7 @@ const TitleSlide: FC = () => {
 const SuitSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <SlideFrame kicker="WHY" headline="The real world runs on disputes.">
+    <SlideFrame kicker="WHY" headline="The chain knows prices but it can&rsquo;t settle an argument.">
       <div className="flex items-center gap-14">
         <figure className="flex flex-col gap-3" style={rise(frame, 24)}>
           <img
@@ -94,45 +93,11 @@ const SuitSlide: FC = () => {
               menswear experts: it&rsquo;s a suit
             </MonoChip>
           </div>
-          <div style={rise(frame, 124)}>
+          <div style={rise(frame, 124)} className="mt-12 ml-12">
             <RulingStamp frame={frame} text="NOT A SUIT" at={132} />
           </div>
         </div>
       </div>
-    </SlideFrame>
-  );
-};
-
-/* 03 — WHY: the disconnect ---------------------------------------------------- */
-
-const AWARE = ["price oracles", "tokenized stocks", "real-world assets"];
-
-const DisconnectSlide: FC = () => {
-  const frame = useSlideFrame();
-  return (
-    <SlideFrame kicker="WHY" headline="The chain knows prices. It can&rsquo;t settle an argument.">
-      <div className="flex flex-wrap items-center gap-5">
-        {AWARE.map((a, i) => (
-          <span key={a} className="flex items-center gap-5" style={rise(frame, 24 + i * 12)}>
-            {i > 0 ? <span className="text-2xl text-text-secondary">→</span> : null}
-            <MonoChip tone="neutral" className="px-5 py-2.5 text-xl">
-              {a}
-            </MonoChip>
-          </span>
-        ))}
-        <span className="text-2xl text-text-secondary" style={rise(frame, 62)}>→</span>
-        <MonoChip tone="slash" className="px-5 py-2.5 text-xl" style={rise(frame, 68)}>
-          real-world disputes
-        </MonoChip>
-      </div>
-      <p className="max-w-[64ch] text-2xl leading-snug text-body" style={rise(frame, 92)}>
-        The chain became aware of certain facts and assets. But wherever interests diverge,
-        disagreement is inevitable, and cooperation needs a way through it. Today
-        disputes resolve off-chain, at someone&rsquo;s discretion.
-      </p>
-      <p className="font-mono text-xl text-amber" style={rise(frame, 120)}>
-        technology only matters when it solves real problems for people.
-      </p>
     </SlideFrame>
   );
 };
@@ -152,6 +117,9 @@ const HowSlide: FC = () => {
       kicker="HOW"
       headline="Coordination problems between parties"
     >
+      <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
+        Collective decision-making mechanisms
+      </div>
       <div className="flex max-w-5xl flex-col gap-7">
         {RUNGS.map((r, i) => (
           <div key={r} className="flex items-baseline gap-6" style={rise(frame, 24 + i * 18)}>
@@ -190,8 +158,7 @@ const WHEEL = [
   "stake-weighted random draw (VRF)",
   "votes sealed, then revealed",
   "incoherent jurors are slashed",
-  "coherent jurors earn",
-  "every juror gets a fee",
+  "coherent jurors are rewarded",
 ];
 
 const PLAYGROUND_DOTS = PLAYGROUND_JURORS.map((_, i) => 3 + i * 6);
@@ -252,7 +219,7 @@ const WhatSlide: FC = () => {
 
 const MAXIMS = [
   "fully parameterizable, permissionless to use",
-  "no token of its own",
+  "any staking token, separate fee token",
   "the verdict is the only outcome, enforcement happens elsewhere",
   "one CPI call to integrate",
 ];
@@ -285,11 +252,11 @@ const HanseSlide: FC = () => {
       headline="Mutuals as a protocol."
     >
       <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
-        A mutual pools risk and capital; its members manage the payouts. It needs
-        two compoents. We built both: pull payments, dispute resolution
+        A mutual pools risk and capital; its members manage the payouts. Two
+        prerequisites. We built both: <span className="text-primary">pull payments</span>, <span className="text-primary">dispute resolution</span>
       </p>
       <div className="flex flex-wrap items-center gap-8 mt-8">
-        <PayoutFlow frame={frame} at={12} />
+        <PayoutFlow frame={frame} at={50} />
       </div>
     </SlideFrame>
   );
@@ -298,7 +265,7 @@ const HanseSlide: FC = () => {
 /* 09 — Hanse: status quo and future --------------------------------------------- */
 
 const REAL_ROWS: { label: string; to: number; at: number }[] = [
-  { label: "Global mutual insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 40 },
+  { label: "global insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 40 },
   { label: "mutual cover written worldwide (ICMIF'24, USD/yr)", to: 1_606_000_000_000, at: 80 },
   { label: "on-chain cover sector TVL (DeFiLlama, USD/yr)", to: 104_000_000, at: 96 },
   { label: "of that TVL in one web3 player (%)", to: 84, at: 114 },
@@ -309,7 +276,7 @@ const HanseFutureSlide: FC = () => {
   return (
     <SlideFrame
       kicker="STATUS QUO"
-      headline="On-chain cover barely exists. Real mutuals are $1.6T."
+      headline="On-chain cover barely exists."
     >
       <div className="flex min-w-8xl flex-col gap-3 font-mono">
         <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
@@ -328,6 +295,15 @@ const HanseFutureSlide: FC = () => {
             className="text-2xl"
           />
         ))}
+      </div>
+      <div className="flex justify-center w-full">
+        <div
+          className="text-3xl font-extrabold leading-snug text-primary border-2 border-primary rounded-xl px-8 py-6 text-center max-w-2xl"
+          style={rise(frame, 0)}
+        >
+          Building Mutuals on Solana first. <br />
+          On-chain Insurances in 12 months.
+        </div>
       </div>
     </SlideFrame>
   );
@@ -395,13 +371,6 @@ export const SLIDES: SlideDef[] = [
     notes:
       "45s. 'The real world runs on disputes.' Then the photo. Deadpan: 'In June, Polymarket ran a market: will Zelenskyy wear a suit before July. He showed up at NATO in this. The designer says it's a suit. Menswear experts say it's a suit. How the fuck is the blockchain supposed to know if that's a suit?' $160M rode on the answer — and UMA token holders voted, by a large margin: not a suit. Facts (verified 2026-08-25): market window May 22–Jun 30 2025; garment appeared Jun 24, NATO summit The Hague; designer + Derek Guy endorsements; $160M (CoinDesk Jul 7 2025, via Forbes); UMA DVM stake-weighted vote ruled NO after multiple dispute rounds, with whale-manipulation allegations. Point: the facts were public — the ambiguity was in the meaning. Delivery: no political commentary, the joke is about definitions.",
     component: SuitSlide,
-  },
-  {
-    id: "disconnect",
-    label: "WHY — the disconnect",
-    notes:
-      "25s. The chain got aware of facts (oracles) and assets (stocks, RWAs) — but has no organ for disagreement. Disputes are inevitable wherever interests diverge; without resolution, cooperation can't run on-chain. Today it's resolved off-chain, at someone's discretion. Close the WHY: blockchain only matters when it solves real problems for people — bring its guarantees to where people actually disagree.",
-    component: DisconnectSlide,
   },
   {
     id: "how",
