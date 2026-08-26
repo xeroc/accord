@@ -9,7 +9,7 @@ const meta = {
     frame: { control: { type: "range", min: 0, max: 120, step: 1 } },
     at: { control: { type: "number", min: 0 } },
     dur: { control: { type: "number", min: 4, max: 30 } },
-    tone: { control: { type: "select" }, options: ["confirm", "slash", "amber", "neutral"] },
+    layout: { control: { type: "select" }, options: ["row", "stacked"] },
   },
   args: { frame: 30, at: 0, dur: 12, tone: "neutral" },
 } satisfies Meta<typeof LedgerCounter>;
@@ -39,6 +39,33 @@ export const Static: Story = {
     <div className="flex w-64 flex-col gap-1">
       <LedgerCounter frame={0} label="staked" to={100} />
       <LedgerCounter frame={0} label="pending_withdrawal" to={0} />
+    </div>
+  ),
+};
+
+/** Stacked stats — label above a right-aligned number, for
+ * headline figures (counts up like the row variant). */
+export const StackedStats: Story = {
+  render: () => (
+    <div className="flex w-96 flex-col items-end gap-4 text-2xl">
+      <LedgerCounter
+        frame={30}
+        label="on-chain cover sector TVL"
+        from={0}
+        to={104_000_000}
+        at={2}
+        tone="confirm"
+        layout="stacked"
+      />
+      <LedgerCounter
+        frame={30}
+        label="global insurance market (USD/yr)"
+        from={0}
+        to={6_163_000_000_000}
+        at={10}
+        tone="confirm"
+        layout="stacked"
+      />
     </div>
   ),
 };
