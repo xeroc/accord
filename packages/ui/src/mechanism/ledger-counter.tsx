@@ -20,6 +20,9 @@ const TONE_CLASSES: Record<LedgerTone, { text: string; flash: string }> = {
  * counts from `from` to `to` on `at`, with the row-flash convention
  * (a tinted wash that pops and decays — the slash/econ vocabulary:
  * slashes are row flashes and number deltas, never vault outflows).
+ * `layout="row"` (default) spreads label left / number right;
+ * `layout="stacked"` puts the label above the number, both
+ * right-aligned — the stat-block variant for headline figures.
  * Pure function of `frame`.
  */
 export const LedgerCounter: FC<{
@@ -37,20 +40,26 @@ export const LedgerCounter: FC<{
   tone?: LedgerTone;
   /** row flash on change (default true) */
   flash?: boolean;
+  /** "row": label left, number right. "stacked": label above the number, both right-aligned. */
+  layout?: "row" | "stacked";
   className?: string;
-}> = ({ frame, label, to, from, at = 0, dur = 12, tone = "neutral", flash = true, className }) => {
+}> = ({ frame, label, to, from, at = 0, dur = 12, tone = "neutral", flash = true, layout = "row", className }) => {
   const start = from ?? to;
   const count = Math.round(tween(frame, [at, at + dur], [start, to], easeExpo));
   const changed = from !== undefined && frame >= at;
   const flashOp =
     flash && changed ? tween(frame, [at, at + 8], [1, 0], linear) : 0;
   const t = TONE_CLASSES[tone];
+  const stacked = layout === "stacked";
 
   return (
     <div
       data-row={label}
       className={cn(
-        "relative flex items-center justify-between gap-8 rounded-md px-2.5 py-1.5 font-mono text-xs",
+        "relative rounded-md px-2.5 py-1.5 font-mono text-xs",
+        stacked
+          ? "flex flex-col items-end gap-1 text-right"
+          : "flex items-center justify-between gap-8",
         className,
       )}
     >
@@ -61,7 +70,7 @@ export const LedgerCounter: FC<{
           style={{ opacity: flashOp }}
         />
       ) : null}
-      <span className="text-muted-foreground">{label}</span>
+      <span className={cn("text-muted-foreground", stacked && "text-[0.6em]")}>{label}</span>
       <span data-value className={cn("tabular-nums", changed ? t.text : "text-text-secondary")}>
         {count.toLocaleString("en-US")}
       </span>

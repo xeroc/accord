@@ -183,6 +183,21 @@ describe("LedgerCounter", () => {
     render(<LedgerCounter frame={20} label="active_draws" from={1} to={0} at={0} tone="amber" />);
     expect(screen.getByText("0")).toBeInTheDocument();
   });
+
+  it("stacked layout renders the label above the right-aligned number", () => {
+    const { container } = render(
+      <LedgerCounter frame={20} label="cover_tvl" from={0} to={104} at={0} tone="confirm" layout="stacked" />,
+    );
+    const row = container.querySelector("[data-row='cover_tvl']") as HTMLElement;
+    expect(row).toHaveClass("flex-col", "items-end", "text-right");
+    const label = row.querySelector("span:not([data-value])") as HTMLElement;
+    const value = row.querySelector("[data-value]") as HTMLElement;
+    expect(label).toHaveTextContent("cover_tvl");
+    expect(label).toHaveClass("text-[0.6em]");
+    expect(value).toHaveTextContent("104");
+    // "above" = label precedes the number in DOM order
+    expect(label.compareDocumentPosition(value) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
 });
 
 describe("PanelLadder", () => {
