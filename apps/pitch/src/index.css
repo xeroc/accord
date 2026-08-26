@@ -15,17 +15,20 @@
 :root {
   color-scheme: dark;
 }
+
 html,
 body,
 #root {
   height: 100%;
 }
+
 body {
   background-color: var(--color-ink);
   color: var(--color-body);
   font-family: var(--font-sans);
   overflow: hidden;
 }
+
 ::selection {
   background: var(--accord-amber);
   color: var(--accord-ink);
@@ -40,6 +43,7 @@ body {
     transform: translateY(30px) scale(0.99);
   }
 }
+
 .slide {
   animation: slide-in 700ms var(--ease-expo) both;
 }
@@ -51,15 +55,34 @@ body {
     transform: translateY(18px);
   }
 }
-[data-rise] > * {
+
+[data-rise]>* {
   animation: rise-in 640ms var(--ease-expo) both;
 }
-[data-rise] > *:nth-child(1) { animation-delay: 150ms; }
-[data-rise] > *:nth-child(2) { animation-delay: 260ms; }
-[data-rise] > *:nth-child(3) { animation-delay: 370ms; }
-[data-rise] > *:nth-child(4) { animation-delay: 480ms; }
-[data-rise] > *:nth-child(5) { animation-delay: 590ms; }
-[data-rise] > *:nth-child(6) { animation-delay: 700ms; }
+
+[data-rise]>*:nth-child(1) {
+  animation-delay: 150ms;
+}
+
+[data-rise]>*:nth-child(2) {
+  animation-delay: 260ms;
+}
+
+[data-rise]>*:nth-child(3) {
+  animation-delay: 370ms;
+}
+
+[data-rise]>*:nth-child(4) {
+  animation-delay: 480ms;
+}
+
+[data-rise]>*:nth-child(5) {
+  animation-delay: 590ms;
+}
+
+[data-rise]>*:nth-child(6) {
+  animation-delay: 700ms;
+}
 
 /* the leaving slide fades down under the entering one */
 @keyframes slide-out {
@@ -68,6 +91,7 @@ body {
     transform: translateY(-22px) scale(0.99);
   }
 }
+
 .slide-exit {
   animation: slide-out 420ms var(--ease-expo) both;
 }
@@ -81,14 +105,16 @@ body {
     transform: translateY(-50%);
   }
 }
+
 .kudos-track {
-  animation: kudos-scroll 110s linear infinite;
+  animation: kudos-scroll 60s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .slide,
   .slide-exit,
-  [data-rise] > *,
+  [data-rise]>*,
   .kudos-track {
     animation: none !important;
   }

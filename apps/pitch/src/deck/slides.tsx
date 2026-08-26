@@ -161,6 +161,7 @@ const WHEEL = [
   "votes sealed, then revealed",
   "incoherent jurors are slashed",
   "coherent jurors are rewarded",
+  "appeals with larger panels",
 ];
 
 const PLAYGROUND_DOTS = PLAYGROUND_JURORS.map((_, i) => 3 + i * 6);
@@ -337,11 +338,11 @@ const HanseFutureSlide: FC = () => {
 /* 08 — the builder ------------------------------------------------------------- */
 
 const STATIC_ROWS = [
-  "🦄 PhD, Engineering",
-  "🇩🇪 Superteam member",
-  "🦍 full-time crypto since 2014",
-  "🔥 fabian@chainsquad.com",
-  "𝕏 @xer0c"
+  "PhD, Engineering",
+  "Superteam member",
+  "full-time crypto since 2014",
+  "fabian@chainsquad.com",
+  "x.com/@xer0c · t.me/xeroc"
 ];
 
 const ROADMAP: { label: string; status: string; tone: "confirm" | "amber" | "neutral" }[] = [
@@ -418,8 +419,8 @@ const BuilderSlide: FC = () => {
           </figure>
           <div className="flex flex-col gap-5">
             {STATIC_ROWS.map((r, i) => (
-              <div key={r} className="font-mono text-2xl text-body grayscale" style={rise(frame, 40 + i * 14)}>
-                {r}
+              <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 40 + i * 14)}>
+                <span className="text-primary">▶</span> {r}
               </div>
             ))}
             <div
