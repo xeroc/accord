@@ -4,6 +4,37 @@ import { Backdrop, useWallClockFrame } from "@useaccord/ui";
 
 import { SLIDES } from "./deck/slides";
 
+/** The deck is a fixed-proportion presentation: designed on a
+ * 1440×900 canvas — the CSS viewport of a 2880×1800 panel at Retina
+ * 2× (browsers size in CSS px, never physical px). The canvas is
+ * FULL-BLEED: scaled by min(vw/1440, vh/900) and then sized
+ * vw/scale × vh/scale, anchored top-left — it always covers the
+ * entire viewport (Backdrop everywhere, no letterbox bars), while the
+ * dimension with surplus gets extra design units: wider-than-16:10
+ * screens add canvas width (left-anchored slides keep their geometry,
+ * centered slides center naturally), never a crop. cqh stays pinned
+ * to the design height so portraits scale exactly as designed.
+ * Viewport-relative units inside the canvas are container units
+ * (cqw/cqh), NOT vw/vh — vw ignores ancestor transforms. If the
+ * design screen's scaling ever changes, re-anchor CANVAS_W/H to its
+ * fullscreen innerWidth/innerHeight. */
+const CANVAS_W = 1440;
+const CANVAS_H = 900;
+
+function useCanvasBox(): { scale: number; w: number; h: number } {
+  const [box, setBox] = useState({ scale: 1, w: CANVAS_W, h: CANVAS_H });
+  useEffect(() => {
+    const update = () => {
+      const scale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+      setBox({ scale, w: window.innerWidth / scale, h: window.innerHeight / scale });
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return box;
+}
+
 /**
  * App — the deck shell. One Backdrop runs behind the entire deck (never
  * unmounts, so the ambient canvas is continuous across slides); each
@@ -16,6 +47,7 @@ export function App() {
   const [showNotes, setShowNotes] = useState(false);
   const [leaving, setLeaving] = useState<number | null>(null);
   const backdropFrame = useWallClockFrame({ fps: 30 });
+  const canvas = useCanvasBox();
   const timers = useRef<number[]>([]);
 
   const go = useCallback(
@@ -65,7 +97,17 @@ export function App() {
   const Outgoing = outgoing?.component;
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-ink">
+    <div className="fixed inset-0 overflow-hidden bg-ink">
+      <div
+        className="absolute left-0 top-0 overflow-hidden bg-ink"
+        style={{
+          width: canvas.w,
+          height: canvas.h,
+          transform: `scale(${canvas.scale})`,
+          transformOrigin: "top left",
+          containerType: "size",
+        }}
+      >
       {/* the deck-wide ambient canvas */}
       <Backdrop frame={backdropFrame} seed="pitch" />
 
@@ -110,6 +152,7 @@ export function App() {
           {slide.notes}
         </aside>
       ) : null}
+      </div>
     </div>
   );
 }

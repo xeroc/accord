@@ -12,7 +12,7 @@ export const SlideFrame: FC<{
   align?: "left" | "center";
 }> = ({ kicker, headline, children, align = "left" }) => (
   <div
-    className={`flex h-full w-full flex-col justify-center gap-8 px-[7vw]${
+    className={`flex h-full w-full flex-col justify-center gap-8 px-[7cqw]${
       align === "center" ? " items-center text-center" : ""
     }`}
   >

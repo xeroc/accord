@@ -74,7 +74,7 @@ const SuitSlide: FC = () => {
           <img
             src="suit.jpg"
             alt="President Zelenskyy at the NATO summit, June 2025"
-            className="h-[44vh] rounded-lg border border-white/10 object-cover shadow-2xl"
+            className="h-[44cqh] rounded-lg border border-white/10 object-cover shadow-2xl"
           />
           <figcaption className="font-mono text-sm text-text-secondary">
             NATO summit, The Hague — June 25, 2025
@@ -588,7 +588,7 @@ const BuilderSlide: FC = () => {
   const frame = useSlideFrame();
   return (
     <div className="relative h-full w-full">
-      <div className="flex h-full flex-col justify-center gap-10 pl-[7vw] pr-[30vw]">
+      <div className="flex h-full flex-col justify-center gap-10 pl-[7cqw] pr-[30cqw]">
         <div className="flex flex-col gap-6">
           <div className="font-mono text-xl tracking-[0.3em] text-amber">THE BUILDERS</div>
           <h2 className="max-w-[22ch] font-heading text-6xl font-bold leading-[1.05] tracking-tight text-nearwhite">
@@ -601,7 +601,7 @@ const BuilderSlide: FC = () => {
               <img
                 src={p.img}
                 alt={p.alt}
-                className="h-[30vh] rounded-lg border border-white/10 object-cover shadow-2xl"
+                className="h-[30cqh] rounded-lg border border-white/10 object-cover shadow-2xl"
               />
               <figcaption className="font-mono text-sm text-text-secondary">
                 {p.caption}
@@ -658,7 +658,7 @@ const LINKS = [
 const CloseSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-12 px-[7vw] text-center">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-12 px-[7cqw] text-center">
       <div className="flex flex-col items-center gap-5" style={rise(frame, 0)}>
         <Wordmark
           enter={Math.min(1, Math.max(0, frame / 24))}
