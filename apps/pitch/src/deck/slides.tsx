@@ -22,8 +22,8 @@ import { useSlideFrame } from "./useSlideFrame";
  * decision-making: consensus / decision markets / adjudication) → WHAT
  * (Accord: conflict resolution on Solana; juror choreography + economics;
  * the four maxims) → the one application we name, Hanse (prerequisites,
- * PayoutFlow, status quo vs a $6.2T world market) → the builder → links +
- * "Mechanize the verdict."
+ * PayoutFlow; the field — everyone who tried, tiny; the prize — chain
+ * advantages against a $6.2T market) → the builder → links +
  *
  * Staging rules: Accord and Hanse are the only names on stage; Canon/
  * Tributary survive as URLs on the close. No status hedging — conceptual
@@ -255,9 +255,8 @@ const HanseSlide: FC = () => {
       headline="Mutuals as a protocol."
     >
       <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
-        Mutuals are the oldest form of pooled protection on earth; its members
-        manage the payouts. We built both prerequisites:
-        <span className="text-primary/70"> pull payments</span>, <span className="text-primary/70">dispute resolution</span>.
+        Mutuals <span className="underline underline-offset-4 decoration-primary">risk pools</span> are the oldest form of pooled protection on earth;
+        its members manage the payouts. (Nexus Mutual, Lloyd's Evertas, etc.).
       </p>
       <div className="flex flex-wrap items-center gap-8 mt-8">
         <PayoutFlow frame={frame} at={50} />
@@ -266,56 +265,159 @@ const HanseSlide: FC = () => {
   );
 };
 
-/* 07 — Hanse: status quo and future --------------------------------------------- */
+/* 07 — Hanse: the field — everyone who tried ---------------------------------- */
 
-const REAL_ROWS: { label: string; to: number; at: number }[] = [
-  { label: "of that TVL in one web3 player (%)", to: 84, at: 20 },
-  { label: "on-chain cover sector TVL (DeFiLlama)", to: 104_000_000, at: 60 },
-  { label: "mutual cover written worldwide (ICMIF'24, USD/yr)", to: 1_606_000_000_000, at: 90 },
-  { label: "global insurance market (ICMIF'24, USD/yr)", to: 6_163_000_000_000, at: 110 },
-];
+/** The competitive set: fees / raise / cover per player, chain in tiny
+ * type — every row reads ethereum or off-chain, so the empty Solana
+ * column is the argument. Numbers are report-pinned (Nexus '25 report,
+ * evertas.com, DeFiLlama); the graveyard stays nameless by staging rule. */
+const FIELD_ROWS: {
+  name: string;
+  chain: string;
+  chip?: string;
+  chipTone?: "confirm" | "slash" | "neutral";
+  cells: { v: string; sub?: string; dead?: boolean }[];
+}[] = [
+    {
+      name: "Nexus Mutual",
+      chain: "ethereum · arbitrum · kyc",
+      chip: "the only profitable one",
+      chipTone: "confirm",
+      cells: [
+        { v: "$5.7M", sub: "cover fees '25" },
+        { v: "$2.7M", sub: "ever · no VC" },
+        { v: "$1B+", sub: "purchased '25" },
+      ],
+    },
+    {
+      name: "Evertas",
+      chain: "lloyd's coverholder · off-chain",
+      cells: [
+        { v: "—", sub: "undisclosed" },
+        { v: "$19.8M", sub: "seed + series A" },
+        { v: "$360M", sub: "policy capacity" },
+      ],
+    },
+    {
+      name: "nine more, 2020–22",
+      chain: "shared idle pools · token-vote claims",
+      cells: [{ v: "—" }, { v: "—" }, { v: "dead · dormant", dead: true }],
+    },
+  ];
 
-const INSURANCE_PROS: string[] = [
-  "insurance becomes programable & composable",
-  "insurances become globally accessible",
-  "micro insurances become scalable",
-  "new insurances products become feasable",
-
-]
-
-const HanseFutureSlide: FC = () => {
+const FieldSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <SlideFrame
-      kicker="OUTLOOK"
-      headline="On-chain cover barely exists."
-    >
-      <div className="flex w-full flex-1 items-center gap-16">
-        {/* left — the Solana pitch */}
-        <div className="flex flex-1 flex-col gap-5 font-mono">
-          <div className="text-lg tracking-[0.25em] text-primary" style={rise(frame, 140)}>
-            With Solana,
+    <SlideFrame kicker="THE FIELD" headline="Everyone who tried.">
+      <div className="flex w-full flex-col gap-7 font-mono">
+        <div
+          className="grid grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] gap-x-12 text-sm tracking-[0.2em] text-text-secondary"
+          style={rise(frame, 16)}
+        >
+          <div />
+          <div className="text-right">FEES &rsquo;25</div>
+          <div className="text-right">RAISED</div>
+          <div className="text-right">COVER</div>
+        </div>
+        {FIELD_ROWS.map((r, i) => (
+          <div
+            key={r.name}
+            className="grid grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] items-baseline gap-x-12 border-t border-white/10 pt-5"
+            style={rise(frame, 30 + i * 26)}
+          >
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-4">
+                <span className="font-heading text-3xl font-bold tracking-tight text-nearwhite">
+                  {r.name}
+                </span>
+                {r.chip ? (
+                  <MonoChip
+                    tone={r.chipTone ?? "neutral"}
+                    className="px-3 py-1 text-sm"
+                    style={rise(frame, 96 + i * 26)}
+                  >
+                    {r.chip}
+                  </MonoChip>
+                ) : null}
+              </div>
+              <span className="text-sm text-text-secondary">{r.chain}</span>
+            </div>
+            {r.cells.map((c, j) => (
+              <div key={j} className="flex flex-col items-end gap-1 text-right">
+                <span
+                  className={`text-3xl tabular-nums ${c.dead ? "text-slash" : "text-nearwhite"}`}
+                >
+                  {c.v}
+                </span>
+                {c.sub ? (
+                  <span className="text-sm text-text-secondary">{c.sub}</span>
+                ) : null}
+              </div>
+            ))}
           </div>
-          {INSURANCE_PROS.map((r, i) => (
-            <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 140 + i * 14)}>
+        ))}
+        <div className="mt-2 text-xl text-text-secondary" style={rise(frame, 130)}>
+          total VC into on-chain cover, ever — all of them:{" "}
+          <span className="text-amber">≈$20M</span>
+        </div>
+      </div>
+    </SlideFrame>
+  );
+};
+
+/* 08 — Hanse: the prize -------------------------------------------------------- */
+
+/** The zoom-out: the whole on-chain sector vs the business it copies.
+ * TVL is a point-in-time stock — never USD/yr; the flows are ICMIF '24. */
+const MARKET_ROWS: { label: string; to: number; at: number }[] = [
+  { label: "on-chain cover sector TVL (DeFiLlama)", to: 104_000_000, at: 30 },
+  { label: "mutual cover written (ICMIF '24, USD/yr)", to: 1_606_000_000_000, at: 60 },
+  { label: "global insurance market (ICMIF '24, USD/yr)", to: 6_163_000_000_000, at: 90 },
+];
+
+/** What running on a blockchain gives insurance — the advantages block. */
+const CHAIN_PROS: string[] = [
+  "permissionless to launch",
+  "programmable & composable",
+  "globally accessible",
+  "micro-insurances at scale",
+  "new products become feasable",
+];
+
+const HansePrizeSlide: FC = () => {
+  const frame = useSlideFrame();
+  return (
+    <SlideFrame kicker="THE PRIZE" headline="On-chain cover barely exists.">
+      <div className="flex w-full flex-1 items-center gap-16">
+        {/* left — what the chain gives */}
+        <div className="flex flex-1 flex-col gap-5 font-mono">
+          <div className="text-lg tracking-[0.25em] text-primary" style={rise(frame, 120)}>
+            On the chain, insurance is
+          </div>
+          {CHAIN_PROS.map((r, i) => (
+            <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 130 + i * 12)}>
               <span className="text-success">✔</span> {r}
             </div>
           ))}
-          <div className="flex justify-center mt-6">
-            <div
-              className="text-xl font-extrabold leading-snug text-primary border-2 border-primary rounded-xl px-8 py-6 text-center max-w-2xl"
-              style={rise(frame, 200)}
-            >
-              HANSE: where risk meets internet capital
-            </div>
+          <div
+            className="mt-6 max-w-2xl rounded-xl px-8 pt-6 text-xl font-extrabold leading-snug text-body"
+            style={rise(frame, 200)}
+          >
+            Blockchains excel at capital pooling, autonomous execution, transparency, and audit-proof accounting.
+          </div>
+          <div
+            className="mt-6 max-w-2xl rounded-xl px-8 pt-4 text-xl font-extrabold leading-snug text-primary"
+            style={rise(frame, 200)}
+          >
+            And we use that for memecoins?
           </div>
         </div>
-        {/* right — the ledger */}
+        {/* right — the market */}
         <div className="flex flex-1 flex-col items-end gap-6 font-mono">
           <div className="text-lg tracking-[0.25em] text-confirm" style={rise(frame, 30)}>
-            ANNUAL COVER WRITTEN
+            THE MARKET
           </div>
-          {REAL_ROWS.map((r) => (
+          {MARKET_ROWS.map((r) => (
             <LedgerCounter
               key={r.label}
               frame={frame}
@@ -335,7 +437,7 @@ const HanseFutureSlide: FC = () => {
   );
 };
 
-/* 08 — the builder ------------------------------------------------------------- */
+/* 09 — the builder ------------------------------------------------------------- */
 
 const STATIC_ROWS = [
   "PhD, Engineering",
@@ -345,10 +447,29 @@ const STATIC_ROWS = [
   "x.com/@xer0c · t.me/xeroc"
 ];
 
-const ROADMAP: { label: string; status: string; tone: "confirm" | "amber" | "neutral" }[] = [
-  { label: "pull payments for premiums", status: "live · mainnet", tone: "confirm" },
-  { label: "dispute resolution for claims", status: "live · devnet", tone: "confirm" },
-  { label: "mutuals for pooled risk", status: "in development", tone: "amber" },
+const CORINNA_ROWS = [
+  "AI agent",
+  "market research",
+  "social media",
+  "analytics",
+  "on shift 24/7",
+];
+
+/** The two builder columns — the human and the AI teammate, side by
+ * side: smaller portraits, bullets beneath each. */
+const PERSONAS: { img: string; alt: string; caption: string; rows: string[] }[] = [
+  {
+    img: "fabian.webp",
+    alt: "Dr.-Ing. Fabian Schuh",
+    caption: "Dr.-Ing. Fabian Schuh · xeroc.org",
+    rows: STATIC_ROWS,
+  },
+  {
+    img: "corinna.webp",
+    alt: "Corinna — AI agent",
+    caption: "Corinna · AI agent",
+    rows: CORINNA_ROWS,
+  },
 ];
 
 /** The achievement wall — ambience, not a reading list. Four copies make
@@ -365,6 +486,7 @@ const KUDOS = [
   "mash.fun — prediction markets · CTO",
   "Agentic Engineering Grant · 2026",
   "repo.trade — launchpad for repos",
+  "board · Blockchain BV",
   "Solana Security #2 graduate",
   "Trezor hackathon · 2nd place",
   "python-bitshares — full L1 SDK",
@@ -401,45 +523,35 @@ const BuilderSlide: FC = () => {
     <div className="relative h-full w-full">
       <div className="flex h-full flex-col justify-center gap-10 pl-[7vw] pr-[30vw]">
         <div className="flex flex-col gap-6">
-          <div className="font-mono text-xl tracking-[0.3em] text-amber">THE BUILDER</div>
+          <div className="font-mono text-xl tracking-[0.3em] text-amber">THE BUILDERS</div>
           <h2 className="max-w-[22ch] font-heading text-6xl font-bold leading-[1.05] tracking-tight text-nearwhite">
             Who&rsquo;s building it.
           </h2>
         </div>
-        <div className="flex items-center gap-14" style={rise(frame, 24)}>
-          <figure className="flex flex-col gap-3">
-            <img
-              src="fabian.webp"
-              alt="Dr.-Ing. Fabian Schuh"
-              className="h-[38vh] rounded-lg border border-white/10 object-cover shadow-2xl"
-            />
-            <figcaption className="font-mono text-sm text-text-secondary">
-              Dr.-Ing. Fabian Schuh · xeroc.org
-            </figcaption>
-          </figure>
-          <div className="flex flex-col gap-5">
-            {STATIC_ROWS.map((r, i) => (
-              <div key={r} className="font-mono text-2xl text-body" style={rise(frame, 40 + i * 14)}>
-                <span className="text-primary">▶</span> {r}
+        <div className="flex items-start gap-20">
+          {PERSONAS.map((p, pi) => (
+            <figure key={p.img} className="flex flex-col gap-4" style={rise(frame, 24 + pi * 70)}>
+              <img
+                src={p.img}
+                alt={p.alt}
+                className="h-[30vh] rounded-lg border border-white/10 object-cover shadow-2xl"
+              />
+              <figcaption className="font-mono text-sm text-text-secondary">
+                {p.caption}
+              </figcaption>
+              <div className="flex flex-col gap-2.5 pt-1">
+                {p.rows.map((r, i) => (
+                  <div
+                    key={r}
+                    className="font-mono text-lg text-body"
+                    style={rise(frame, 56 + pi * 70 + i * 8)}
+                  >
+                    <span className="text-primary">▶</span> {r}
+                  </div>
+                ))}
               </div>
-            ))}
-            <div
-              className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-5"
-              style={rise(frame, 104)}
-            >
-              <div className="font-mono text-sm tracking-[0.25em] text-text-secondary">
-                ROADMAP
-              </div>
-              {ROADMAP.map((r) => (
-                <div key={r.label} className="flex items-center gap-4 font-mono">
-                  <span className="text-lg text-body">{r.label}</span>
-                  <MonoChip tone={r.tone} className="px-3 py-1 text-sm">
-                    {r.status}
-                  </MonoChip>
-                </div>
-              ))}
-            </div>
-          </div>
+            </figure>
+          ))}
         </div>
       </div>
       <div
@@ -468,7 +580,7 @@ const BuilderSlide: FC = () => {
   );
 };
 
-/* 09 — close: the deployed apps + the tagline ----------------------------------- */
+/* 10 — close: the deployed apps + the tagline ----------------------------------- */
 
 const LINKS = [
   { url: "app.useaccord.xyz", note: "the court" },
@@ -560,17 +672,24 @@ export const SLIDES: SlideDef[] = [
     component: HanseSlide,
   },
   {
-    id: "hanse-future",
-    label: "Status quo → future",
+    id: "field",
+    label: "Hanse — the field",
     notes:
-      "40s. Numbers only, no incumbent drama: the world's insurance market is ~$6.2T a year, mutuals write $1.61T of it, about 26% (ICMIF, 2024 data). The entire on-chain cover sector is ~$104M TVL with 84% in one player (DeFiLlama — TVL is a point-in-time stock, not annual flow; never say USD/yr for it). The on-chain version barely exists. The line: mutuals on Solana first, on-chain insurance in 12 months. If asked about Nexus: it does have claims adjudication — member assessment, moved to a permissioned expert committee in v3; that recentralization is our whole thesis.",
-    component: HanseFutureSlide,
+      "25s. The whole sector in one table. Nexus Mutual — the only profitable protocol in the sector's history: $5.7M cover fees in '25, $1B+ cover purchased, raised $2.7M total, ever, no VC (Nexus '25 report; CoinDesk). Ethereum + Arbitrum, KYC-gated, one mutual — and in 2025 it moved claims from member vote to a permissioned expert committee (NMPIP-261); that recentralization is our whole thesis. Evertas: $19.8M raised, Lloyd's coverholder, $360M per-policy capacity — traditional paper with crypto underwriting, not a protocol. Nine more launched 2020–22 — one pivoted to audits (Sherlock), the rest dead or dormant: shared idle-capital pools death-spiraled, token-vote claims collapsed. Both failure modes are structurally fixed here (one risk per pool, staked jury) — that is the Q&A answer to 'why has nobody built this?'. Sector lifetime VC ≈$20M. If pressed on Nexus profitability: $14.3M net cash flow '25, but float-driven (investment income + RAMM), not underwriting. Drift, spoken only if it fits: $285M hack on Solana, Apr 2026 — largest DeFi hack ever, nobody paid out.",
+    component: FieldSlide,
+  },
+  {
+    id: "hanse-prize",
+    label: "Hanse — the prize",
+    notes:
+      "35s. Numbers first: the entire on-chain cover sector holds ~$104M TVL (DeFiLlama — a point-in-time stock, never say USD/yr). Mutuals write $1.61T of cover a year, ~26% of all insurance (ICMIF '24). Global insurance: $6.16T a year. On-chain cover rounds to zero against the business it copies. Then the advantages: permissionless to launch, programmable & composable, globally accessible, micro-premiums at scale, products impossible off-chain. Land the punch with feeling: blockchains are machines for pooling capital and keeping honest books — a mutual is exactly that; the hard part, the verdict on claims, is built — why the fuck are we doing memecoins? Q&A only: Anthea $22M Series A 2026 (the sector is re-fundable); Nexus non-EVM listings announced for Q1 2026 — the Solana-native window is 2–4 quarters.",
+    component: HansePrizeSlide,
   },
   {
     id: "builder",
     label: "The builder",
     notes:
-      "15s. Who builds this: Dr.-Ing. Fabian Schuh. Speak only the static block: PhD in engineering, Superteam DE, full-time crypto since 2014, fabian@chainsquad.com. The scrolling wall on the right is ambience — grants, hackathon golds, the project family (Tributary, mash.fun, repo.trade, Canon, Synod, …). Don't read it; gesture once ('twenty years of shipping, on-chain since 2014 — the wall keeps scrolling'). Not my first governance system.",
+      "20s. Who builds this — two columns, one slide. Left: Dr.-Ing. Fabian Schuh — PhD in engineering, Superteam DE, full-time crypto since 2014, fabian@chainsquad.com. Right: Corinna — an AI agent on the team: business development, social media, analytics, on shift 24/7. Line: 'the team is bigger than one — Corinna runs BD, social and analytics; she doesn't sleep.' Roadmap is off-slide for now — status is spoken if asked: pull payments live on mainnet, dispute resolution on devnet, mutuals in development. The scrolling wall on the right is ambience — grants, hackathon golds, the project family (Tributary, mash.fun, repo.trade, Canon, Synod, …). Don't read it; gesture once ('twenty years of shipping, on-chain since 2014 — the wall keeps scrolling'). Not my first governance system.",
     component: BuilderSlide,
   },
   {
