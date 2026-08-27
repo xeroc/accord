@@ -1,0 +1,197 @@
+{
+  "note": "OpenCover backers — logos & avatars, collected 2026-08-27 for pitch reference. Twitter avatars resolved via unavatar at collection time; 'verified' false means the handle was guessed (identity not confirmed).",
+  "backers": [
+    {
+      "name": "Village Global",
+      "position": "The venture firm backed by Gates, Bezos and Zuckerberg.",
+      "group": "visionary",
+      "image": "backers/village-global.jpg",
+      "source": "https://cdn2.opencover.com/investors/village.jpg",
+      "verified": true
+    },
+    {
+      "name": "NFX",
+      "position": "Premier seed-stage venture firm created for founders.",
+      "group": "visionary",
+      "image": "backers/nfx.jpg",
+      "source": "https://cdn2.opencover.com/investors/nfx.jpg",
+      "verified": true
+    },
+    {
+      "name": "Alliance DAO",
+      "position": "Leading Web3 accelerator & founder community.",
+      "group": "visionary",
+      "image": "backers/alliance.jpg",
+      "source": "https://cdn2.opencover.com/investors/alliance.jpg",
+      "verified": true
+    },
+    {
+      "name": "Orange DAO",
+      "position": "Network of 1,000+ Y Combinator alumni backing Web3 founders.",
+      "group": "visionary",
+      "image": "backers/orange-dao.jpg",
+      "source": "https://cdn2.opencover.com/investors/orange-dao.jpg",
+      "verified": true
+    },
+    {
+      "name": "Base Ecosystem Fund",
+      "position": "Invests in and supports early stage projects building on Base.",
+      "group": "visionary",
+      "image": "backers/base-ecosystem-fund.jpg",
+      "source": "https://cdn2.opencover.com/investors/base-ecosystem-fund.jpg",
+      "verified": true
+    },
+    {
+      "name": "Jump Crypto",
+      "position": "Specialist VC backing leading onchain players.",
+      "group": "visionary",
+      "image": "backers/jump-crypto.jpg",
+      "source": "https://cdn2.opencover.com/investors/jump-crypto.jpg",
+      "verified": true
+    },
+    {
+      "name": "Angel DAO",
+      "position": "Investment collective.",
+      "group": "visionary",
+      "image": "backers/angel-dao.png",
+      "source": "https://twitter.com/AngelDAOorg",
+      "verified": true
+    },
+    {
+      "name": "Cibby Pulikkaseril",
+      "position": "CTO @ Baraja.",
+      "group": "angels",
+      "image": "backers/cibby-pulikkaseril.jpg",
+      "source": "https://twitter.com/cibbuano",
+      "verified": true
+    },
+    {
+      "name": "Roberto Riccio",
+      "position": "Head of Product @ Alliance DAO.",
+      "group": "angels",
+      "image": "backers/roberto-riccio.jpg",
+      "source": "https://twitter.com/rriccio",
+      "verified": true
+    },
+    {
+      "name": "Oli White",
+      "position": "Youtuber, actor & author.",
+      "group": "angels",
+      "image": "backers/oli-white.jpg",
+      "source": "https://twitter.com/OliWhiteTV",
+      "verified": true
+    },
+    {
+      "name": "Morgan Beller",
+      "position": "General Partner @ NFX.",
+      "group": "angels",
+      "image": "backers/morgan-beller.jpg",
+      "source": "https://twitter.com/beller",
+      "verified": true
+    },
+    {
+      "name": "Qiao Wang",
+      "position": "Core contributor @ Alliance DAO.",
+      "group": "angels",
+      "image": "backers/qiao-wang.jpg",
+      "source": "https://twitter.com/QwQiao",
+      "verified": true
+    },
+    {
+      "name": "Christophe L.",
+      "position": "Co-founder @ Request (YC W17).",
+      "group": "angels",
+      "image": "backers/christophe-l.jpg",
+      "source": "https://twitter.com/lassuytchristop",
+      "verified": true
+    },
+    {
+      "name": "Third Kind",
+      "position": "Venture Capital.",
+      "group": "angels",
+      "image": "backers/third-kind.ico",
+      "source": "http://3kvc.com/",
+      "verified": true
+    },
+    {
+      "name": "Gareth F.",
+      "position": "Co-founder @ Owl Ventures.",
+      "group": "angels",
+      "image": "backers/gareth-fenney.jpg",
+      "source": "https://twitter.com/gareth_fenney",
+      "verified": false
+    },
+    {
+      "name": "Nohtal Partansky",
+      "position": "CEO @ Sorting Robotics (YC W19).",
+      "group": "angels",
+      "image": "backers/nohtal-partansky.jpg",
+      "source": "https://twitter.com/nohtal",
+      "verified": true
+    },
+    {
+      "name": "Julian Gay",
+      "position": "CEO @ Cred Protocol.",
+      "group": "angels",
+      "image": "backers/julian-gay.png",
+      "source": "https://twitter.com/juliangay",
+      "verified": true
+    },
+    {
+      "name": "Anne Dwane",
+      "position": "Partner @ Village Global.",
+      "group": "angels",
+      "image": "backers/anne-dwane.jpg",
+      "source": "https://twitter.com/adwane",
+      "verified": true
+    },
+    {
+      "name": "Don Ho",
+      "position": "MD @ Quantstamp (YC W18).",
+      "group": "angels",
+      "image": "backers/don-ho.jpg",
+      "source": "https://twitter.com/iamdonho",
+      "verified": true
+    },
+    {
+      "name": "Justin Webb",
+      "position": "Co-founder @ AgriWebb.",
+      "group": "angels",
+      "image": "backers/justin-webb.jpg",
+      "source": "https://twitter.com/Justin_Webb_AW",
+      "verified": true
+    },
+    {
+      "name": "Owl Ventures",
+      "position": "Web3 venture firm.",
+      "group": "angels",
+      "image": "backers/owl-ventures.jpg",
+      "source": "https://twitter.com/OwlVentures",
+      "verified": true
+    },
+    {
+      "name": "Josh Foreman",
+      "position": "CEO @ InDebted.",
+      "group": "angels",
+      "image": "backers/josh-foreman.jpg",
+      "source": "https://twitter.com/joshforeman",
+      "verified": true
+    },
+    {
+      "name": "MacLane Wilkison",
+      "position": "CEO @ NuCypher (YC S16).",
+      "group": "angels",
+      "image": "backers/maclane-wilkison.jpg",
+      "source": "https://twitter.com/MacLaneWilkison",
+      "verified": true
+    },
+    {
+      "name": "Michael Witz",
+      "position": "CEO @ Redemption Games.",
+      "group": "angels",
+      "image": "backers/michael-witz.jpg",
+      "source": "https://twitter.com/realwitz",
+      "verified": true
+    }
+  ]
+}

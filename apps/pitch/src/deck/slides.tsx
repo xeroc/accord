@@ -254,9 +254,13 @@ const HanseSlide: FC = () => {
       kicker="WHAT WE BUILD NEXT — HANSE"
       headline="Mutuals as a protocol."
     >
-      <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
-        Mutuals <span className="underline underline-offset-4 decoration-primary">risk pools</span> are the oldest form of pooled protection on earth;
-        its members manage the payouts. (Nexus Mutual, Lloyd's Evertas, etc.).
+      <p className="max-w-[80ch] text-2xl leading-snug text-body" style={rise(frame, 22)}>
+        <span className="underline underline-offset-4 decoration-primary">Mutual risk pools</span> are the oldest form of pooled protection on earth;
+        <br />
+        its members manage the payouts (Nexus Mutual, Lloyd's Evertas, Opencover, etc.).
+      </p>
+      <p className="max-w-[60ch] text-2xl leading-snug text-body" style={rise(frame, 30)}>
+        Most critical question: <span className="text-primary">Claim legit?</span>
       </p>
       <div className="flex flex-wrap items-center gap-8 mt-8">
         <PayoutFlow frame={frame} at={50} />
@@ -274,15 +278,11 @@ const HanseSlide: FC = () => {
 const FIELD_ROWS: {
   name: string;
   chain: string;
-  chip?: string;
-  chipTone?: "confirm" | "slash" | "neutral";
   cells: { v: string; sub?: string }[];
 }[] = [
     {
       name: "Nexus Mutual",
       chain: "ethereum · arbitrum · kyc",
-      chip: "the only profitable one",
-      chipTone: "confirm",
       cells: [
         { v: "$5.7M", sub: "cover fees '25" },
         { v: "$2.7M", sub: "ever · no VC" },
@@ -292,8 +292,6 @@ const FIELD_ROWS: {
     {
       name: "OpenCover",
       chain: "base · ethereum · off-chain co",
-      chip: "portfolio cover only",
-      chipTone: "neutral",
       cells: [
         { v: "—", sub: "undisclosed" },
         { v: "$4.6M", sub: "seed '22–23" },
@@ -318,11 +316,24 @@ const MISTAKES: { name: string; error: string }[] = [
   { name: "Risk Harbor", error: "wLUNA collateral" },
 ];
 
+/** OpenCover's investors — the only fresh money in the sector, shown
+ * as a grayscale logo cloud (assets in public/backers/, indexed in
+ * open-cover-backers.json). Firm logos only; angels stay JSON-only. */
+const BACKERS: { src: string; alt: string }[] = [
+  { src: "backers/jump-crypto.jpg", alt: "Jump Crypto" },
+  { src: "backers/alliance.jpg", alt: "Alliance DAO" },
+  { src: "backers/village-global.jpg", alt: "Village Global" },
+  { src: "backers/nfx.jpg", alt: "NFX" },
+  { src: "backers/orange-dao.jpg", alt: "Orange DAO" },
+  { src: "backers/base-ecosystem-fund.jpg", alt: "Base Ecosystem Fund" },
+  { src: "backers/angel-dao.png", alt: "Angel DAO" },
+];
+
 const FieldSlide: FC = () => {
   const frame = useSlideFrame();
   return (
     <SlideFrame kicker="THE FIELD" headline="Related, but limited.">
-      <div className="flex w-full flex-col gap-7 font-mono">
+      <div className="flex w-full flex-col gap-3 font-mono">
         <div
           className="grid grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] gap-x-12 text-sm tracking-[0.2em] text-text-secondary"
           style={rise(frame, 16)}
@@ -339,24 +350,16 @@ const FieldSlide: FC = () => {
             style={rise(frame, 28 + i * 22)}
           >
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-4">
-                <span className="font-heading text-3xl font-bold tracking-tight text-nearwhite">
+              <div className="flex items-center gap-2">
+                <span className="font-heading text-xl font-bold tracking-tight text-nearwhite">
                   {r.name}
                 </span>
-                {r.chip ? (
-                  <MonoChip
-                    tone={r.chipTone ?? "neutral"}
-                    style={rise(frame, 96 + i * 22)}
-                  >
-                    {r.chip}
-                  </MonoChip>
-                ) : null}
               </div>
               <span className="text-sm text-text-secondary">{r.chain}</span>
             </div>
             {r.cells.map((c, j) => (
               <div key={j} className="flex flex-col items-end gap-1 text-right">
-                <span className="text-3xl tabular-nums text-nearwhite">
+                <span className="text-xl tabular-nums text-nearwhite">
                   {c.v}
                 </span>
                 {c.sub ? (
@@ -367,20 +370,17 @@ const FieldSlide: FC = () => {
           </div>
         ))}
         <div
-          className="flex items-baseline justify-between mt-2"
-          style={rise(frame, 118)}
+          className="flex items-baseline mt-6"
+          style={rise(frame, 80)}
         >
           <span className="text-sm tracking-[0.2em] text-text-secondary">
-            2020–22 · THE MISTAKES
-          </span>
-          <span className="text-sm text-text-secondary">
-            each one structurally fixed here
+            THE LIMITATIONS
           </span>
         </div>
         <div
           className="relative overflow-hidden py-1"
           style={{
-            ...rise(frame, 124),
+            ...rise(frame, 100),
             maskImage:
               "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
             WebkitMaskImage:
@@ -402,6 +402,29 @@ const FieldSlide: FC = () => {
                 </div>
               )),
             )}
+          </div>
+        </div>
+        <div
+          className="flex items-baseline mt-6"
+          style={rise(frame, 80)}
+        >
+          <span className="text-sm tracking-[0.2em] text-text-secondary">
+            BACKERS IN THE SPACE
+          </span>
+        </div>
+        <div
+          className="flex items-center justify-between mt-6 gap-6"
+          style={rise(frame, 148)}
+        >
+          <div className="flex min-w-0 items-center gap-4">
+            {BACKERS.map((b) => (
+              <img
+                key={b.src}
+                src={b.src}
+                alt={b.alt}
+                className="h-12 shrink-0 rounded-md px-2.5 object-contain grayscale opacity-75"
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -431,7 +454,7 @@ const CHAIN_PROS: string[] = [
 const HansePrizeSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <SlideFrame kicker="THE PRIZE" headline="On-chain cover barely exists.">
+    <SlideFrame kicker="THE PRIZE" headline="Mutuals as stepping stone">
       <div className="flex w-full flex-1 items-center gap-16">
         {/* left — what the chain gives */}
         <div className="flex flex-1 flex-col gap-5 font-mono">
@@ -444,16 +467,16 @@ const HansePrizeSlide: FC = () => {
             </div>
           ))}
           <div
-            className="mt-6 max-w-2xl rounded-xl px-8 pt-6 text-xl font-extrabold leading-snug text-body"
+            className="mt-6 max-w-2xl rounded-xl px-8 text-xl font-extrabold leading-snug text-body"
             style={rise(frame, 200)}
           >
             Blockchains excel at capital pooling, autonomous execution, transparency, and audit-proof accounting.
           </div>
           <div
-            className="mt-6 max-w-2xl rounded-xl px-8 pt-4 text-xl font-extrabold leading-snug text-primary"
+            className="mt-2 max-w-2xl rounded-xl px-8 text-xl font-extrabold leading-snug text-primary"
             style={rise(frame, 200)}
           >
-            And we use that for memecoins?
+            And we use that for memecoins!?
           </div>
         </div>
         {/* right — the market */}
@@ -488,14 +511,14 @@ const STATIC_ROWS = [
   "Superteam member",
   "full-time crypto since 2014",
   "fabian@chainsquad.com",
-  "x.com/@xer0c · t.me/xeroc"
+  "x.com/@xer0c · t.me/xeroc",
 ];
 
 const CORINNA_ROWS = [
-  "AI agent",
-  "market research",
-  "social media",
-  "analytics",
+  "fact ferret",
+  "the unrelenting",
+  "number cruncher",
+  "devils advocate",
   "on shift 24/7",
 ];
 
@@ -510,8 +533,8 @@ const PERSONAS: { img: string; alt: string; caption: string; rows: string[] }[] 
   },
   {
     img: "corinna.webp",
-    alt: "Corinna — AI agent",
-    caption: "Corinna · AI agent",
+    alt: "Corinna — ai agent",
+    caption: "Corinna · ai agent",
     rows: CORINNA_ROWS,
   },
 ];
@@ -574,7 +597,7 @@ const BuilderSlide: FC = () => {
         </div>
         <div className="flex items-start gap-20">
           {PERSONAS.map((p, pi) => (
-            <figure key={p.img} className="flex flex-col gap-4" style={rise(frame, 24 + pi * 70)}>
+            <figure key={p.img} className="flex flex-col gap-4" style={rise(frame, 24 + pi * 40)}>
               <img
                 src={p.img}
                 alt={p.alt}
@@ -588,7 +611,7 @@ const BuilderSlide: FC = () => {
                   <div
                     key={r}
                     className="font-mono text-lg text-body"
-                    style={rise(frame, 56 + pi * 70 + i * 8)}
+                    style={rise(frame, 56 + pi * 40 + i * 8)}
                   >
                     <span className="text-primary">▶</span> {r}
                   </div>
@@ -657,7 +680,7 @@ const CloseSlide: FC = () => {
         className="font-heading text-7xl font-bold tracking-tight text-nearwhite"
         style={rise(frame, 104)}
       >
-        Adjudication as a primitive.
+        Let's solve real-world problems!
       </div>
     </div>
   );
@@ -716,18 +739,18 @@ export const SLIDES: SlideDef[] = [
     component: HanseSlide,
   },
   {
-    id: "field",
-    label: "Hanse — the field",
-    notes:
-      "25s. The whole sector in one table. Nexus Mutual — the only profitable protocol in the sector's history: $5.7M cover fees in '25, $1B+ cover purchased, raised $2.7M total, ever, no VC (Nexus '25 report; CoinDesk). Ethereum + Arbitrum, KYC-gated, one mutual — and in 2025 it moved claims from member vote to a permissioned expert committee (NMPIP-261); that recentralization is our whole thesis. Evertas: $19.8M raised, Lloyd's coverholder, $360M per-policy capacity — traditional paper with crypto underwriting, not a protocol. OpenCover — where the fresh money goes: $4.6M raised (NFX, Jump, Coinbase Ventures, Lloyd's Lab), $141.6M protected across 1,591 policies in '25, $346K claims paid, embedded into Coinbase One, Covered Vaults built with Nexus — and still web3 portfolio cover only: no members, no mutual, no court, EVM only. The carousel is the 2020–22 autopsy, one card per name: Cover exploited itself, Solace shared idle pools, Unslashed had no float income, InsurAce sprawled twenty thin chains, Bridge Mutual was farmed not mutual, Neptune voted claims with tokens, Risk Harbor held wLUNA collateral. Every one of those failure modes is structurally fixed here (one risk per pool, staked jury, surplus to members) — the Q&A answer to 'why has nobody built this?'. Everyone on this slide raised ≈$27M, ever. If pressed on Nexus profitability: $14.3M net cash flow '25, but float-driven (investment income + RAMM), not underwriting. Drift, spoken only if it fits: $285M hack on Solana, Apr 2026 — largest DeFi hack ever, nobody paid out.",
-    component: FieldSlide,
-  },
-  {
     id: "hanse-prize",
     label: "Hanse — the prize",
     notes:
       "35s. Numbers first: the entire on-chain cover sector holds ~$104M TVL (DeFiLlama — a point-in-time stock, never say USD/yr). Mutuals write $1.61T of cover a year, ~26% of all insurance (ICMIF '24). Global insurance: $6.16T a year. On-chain cover rounds to zero against the business it copies. Then the advantages: permissionless to launch, programmable & composable, globally accessible, micro-premiums at scale, products impossible off-chain. Land the punch with feeling: blockchains are machines for pooling capital and keeping honest books — a mutual is exactly that; the hard part, the verdict on claims, is built — why the fuck are we doing memecoins? Q&A only: Anthea $22M Series A 2026 (the sector is re-fundable); Nexus non-EVM listings announced for Q1 2026 — the Solana-native window is 2–4 quarters.",
     component: HansePrizeSlide,
+  },
+  {
+    id: "field",
+    label: "Hanse — the field",
+    notes:
+      "25s. The whole sector in one table. Nexus Mutual — the only profitable protocol in the sector's history: $5.7M cover fees in '25, $1B+ cover purchased, raised $2.7M total, ever, no VC (Nexus '25 report; CoinDesk). Ethereum + Arbitrum, KYC-gated, one mutual — and in 2025 it moved claims from member vote to a permissioned expert committee (NMPIP-261); that recentralization is our whole thesis. Evertas: $19.8M raised, Lloyd's coverholder, $360M per-policy capacity — traditional paper with crypto underwriting, not a protocol. OpenCover — where the fresh money goes: $4.6M raised (NFX, Jump, Coinbase Ventures, Lloyd's Lab), $141.6M protected across 1,591 policies in '25, $346K claims paid, embedded into Coinbase One, Covered Vaults built with Nexus — and still web3 portfolio cover only: no members, no mutual, no court, EVM only. The carousel is the 2020–22 autopsy, one card per name: Cover exploited itself, Solace shared idle pools, Unslashed had no float income, InsurAce sprawled twenty thin chains, Bridge Mutual was farmed not mutual, Neptune voted claims with tokens, Risk Harbor held wLUNA collateral. Every one of those failure modes is structurally fixed here (one risk per pool, staked jury, surplus to members) — the Q&A answer to 'why has nobody built this?'. Everyone on this slide raised ≈$27M, ever. Bottom strip: OpenCover's backers in grayscale (Village Global, NFX, Alliance, Orange DAO, Base Ecosystem Fund, Jump Crypto, Angel DAO) — the sector's only fresh raise; smart money is circling, it just hasn't found a mutual. If pressed on Nexus profitability: $14.3M net cash flow '25, but float-driven (investment income + RAMM), not underwriting. Drift, spoken only if it fits: $285M hack on Solana, Apr 2026 — largest DeFi hack ever, nobody paid out.",
+    component: FieldSlide,
   },
   {
     id: "builder",
