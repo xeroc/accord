@@ -110,12 +110,28 @@ body {
   animation: kudos-scroll 60s linear infinite;
 }
 
+/* ---- field mistakes carousel --------------------------------------------- */
+
+/* the 2020–22 autopsy on the field slide: two copies of the card row
+ * translate left by exactly one copy (50%) for a seamless loop — cards
+ * carry their spacing as margin-right so the half is exact */
+@keyframes mistakes-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.mistakes-track {
+  animation: mistakes-scroll 38s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   .slide,
   .slide-exit,
   [data-rise]>*,
-  .kudos-track {
+  .kudos-track,
+  .mistakes-track {
     animation: none !important;
   }
 }

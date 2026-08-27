@@ -266,17 +266,17 @@ const HanseSlide: FC = () => {
 };
 
 /* 07 — Hanse: the field — everyone who tried ---------------------------------- */
-
 /** The competitive set: fees / raise / cover per player, chain in tiny
  * type — every row reads ethereum or off-chain, so the empty Solana
  * column is the argument. Numbers are report-pinned (Nexus '25 report,
- * evertas.com, DeFiLlama); the graveyard stays nameless by staging rule. */
+ * evertas.com, OpenCover '25 recap). The 2020–22 cohort is no longer a
+ * row — it lives below as the named mistakes carousel. */
 const FIELD_ROWS: {
   name: string;
   chain: string;
   chip?: string;
   chipTone?: "confirm" | "slash" | "neutral";
-  cells: { v: string; sub?: string; dead?: boolean }[];
+  cells: { v: string; sub?: string }[];
 }[] = [
     {
       name: "Nexus Mutual",
@@ -290,25 +290,38 @@ const FIELD_ROWS: {
       ],
     },
     {
-      name: "Evertas",
-      chain: "lloyd's coverholder · off-chain",
+      name: "OpenCover",
+      chain: "base · ethereum · off-chain co",
+      chip: "portfolio cover only",
+      chipTone: "neutral",
       cells: [
         { v: "—", sub: "undisclosed" },
-        { v: "$19.8M", sub: "seed + series A" },
-        { v: "$360M", sub: "policy capacity" },
+        { v: "$4.6M", sub: "seed '22–23" },
+        { v: "$141.6M", sub: "protected '25" },
       ],
     },
-    {
-      name: "nine more, 2020–22",
-      chain: "shared idle pools · token-vote claims",
-      cells: [{ v: "—" }, { v: "—" }, { v: "dead · dormant", dead: true }],
-    },
   ];
+
+/** The 2020–22 autopsy: one card per named failure, the error in three
+ * words or fewer. Each maps to a structural fix in Hanse (one risk per
+ * pool, staked jury, surplus to members) — the Q&A answer to "why has
+ * nobody built this?" */
+const MISTAKES: { name: string; error: string }[] = [
+  { name: "Neptune Mutual", error: "upfront lump sum" },
+  { name: "Cover Protocol", error: "exploited itself" },
+  { name: "Solace", error: "shared idle pool" },
+  { name: "OpenCover", error: "web3 portfolio cover" },
+  { name: "Unslashed", error: "no float income" },
+  { name: "InsurAce", error: "twenty thin chains" },
+  { name: "Bridge Mutual", error: "farmed, not mutual" },
+  { name: "Neptune Mutual", error: "token-vote claims" },
+  { name: "Risk Harbor", error: "wLUNA collateral" },
+];
 
 const FieldSlide: FC = () => {
   const frame = useSlideFrame();
   return (
-    <SlideFrame kicker="THE FIELD" headline="Everyone who tried.">
+    <SlideFrame kicker="THE FIELD" headline="Related, but limited.">
       <div className="flex w-full flex-col gap-7 font-mono">
         <div
           className="grid grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] gap-x-12 text-sm tracking-[0.2em] text-text-secondary"
@@ -323,7 +336,7 @@ const FieldSlide: FC = () => {
           <div
             key={r.name}
             className="grid grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] items-baseline gap-x-12 border-t border-white/10 pt-5"
-            style={rise(frame, 30 + i * 26)}
+            style={rise(frame, 28 + i * 22)}
           >
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-4">
@@ -333,8 +346,7 @@ const FieldSlide: FC = () => {
                 {r.chip ? (
                   <MonoChip
                     tone={r.chipTone ?? "neutral"}
-                    className="px-3 py-1 text-sm"
-                    style={rise(frame, 96 + i * 26)}
+                    style={rise(frame, 96 + i * 22)}
                   >
                     {r.chip}
                   </MonoChip>
@@ -344,9 +356,7 @@ const FieldSlide: FC = () => {
             </div>
             {r.cells.map((c, j) => (
               <div key={j} className="flex flex-col items-end gap-1 text-right">
-                <span
-                  className={`text-3xl tabular-nums ${c.dead ? "text-slash" : "text-nearwhite"}`}
-                >
+                <span className="text-3xl tabular-nums text-nearwhite">
                   {c.v}
                 </span>
                 {c.sub ? (
@@ -356,9 +366,43 @@ const FieldSlide: FC = () => {
             ))}
           </div>
         ))}
-        <div className="mt-2 text-xl text-text-secondary" style={rise(frame, 130)}>
-          total VC into on-chain cover, ever — all of them:{" "}
-          <span className="text-amber">≈$20M</span>
+        <div
+          className="flex items-baseline justify-between mt-2"
+          style={rise(frame, 118)}
+        >
+          <span className="text-sm tracking-[0.2em] text-text-secondary">
+            2020–22 · THE MISTAKES
+          </span>
+          <span className="text-sm text-text-secondary">
+            each one structurally fixed here
+          </span>
+        </div>
+        <div
+          className="relative overflow-hidden py-1"
+          style={{
+            ...rise(frame, 124),
+            maskImage:
+              "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
+            WebkitMaskImage:
+              "linear-gradient(to right, transparent, black 4%, black 96%, transparent)",
+          }}
+        >
+          <div className="mistakes-track flex w-max">
+            {[0, 1].flatMap((copy) =>
+              MISTAKES.map((m, i) => (
+                <div
+                  key={`${copy}-${i}`}
+                  className="mr-4 flex shrink-0 flex-col gap-1 rounded-lg border border-white/10 px-6 py-4"
+                >
+                  <span className="text-sm text-text-secondary">{m.name}</span>
+                  <span className="font-heading text-2xl font-bold tracking-tight text-nearwhite">
+                    <span className="text-slash">✗ </span>
+                    {m.error}
+                  </span>
+                </div>
+              )),
+            )}
+          </div>
         </div>
       </div>
     </SlideFrame>
@@ -675,7 +719,7 @@ export const SLIDES: SlideDef[] = [
     id: "field",
     label: "Hanse — the field",
     notes:
-      "25s. The whole sector in one table. Nexus Mutual — the only profitable protocol in the sector's history: $5.7M cover fees in '25, $1B+ cover purchased, raised $2.7M total, ever, no VC (Nexus '25 report; CoinDesk). Ethereum + Arbitrum, KYC-gated, one mutual — and in 2025 it moved claims from member vote to a permissioned expert committee (NMPIP-261); that recentralization is our whole thesis. Evertas: $19.8M raised, Lloyd's coverholder, $360M per-policy capacity — traditional paper with crypto underwriting, not a protocol. Nine more launched 2020–22 — one pivoted to audits (Sherlock), the rest dead or dormant: shared idle-capital pools death-spiraled, token-vote claims collapsed. Both failure modes are structurally fixed here (one risk per pool, staked jury) — that is the Q&A answer to 'why has nobody built this?'. Sector lifetime VC ≈$20M. If pressed on Nexus profitability: $14.3M net cash flow '25, but float-driven (investment income + RAMM), not underwriting. Drift, spoken only if it fits: $285M hack on Solana, Apr 2026 — largest DeFi hack ever, nobody paid out.",
+      "25s. The whole sector in one table. Nexus Mutual — the only profitable protocol in the sector's history: $5.7M cover fees in '25, $1B+ cover purchased, raised $2.7M total, ever, no VC (Nexus '25 report; CoinDesk). Ethereum + Arbitrum, KYC-gated, one mutual — and in 2025 it moved claims from member vote to a permissioned expert committee (NMPIP-261); that recentralization is our whole thesis. Evertas: $19.8M raised, Lloyd's coverholder, $360M per-policy capacity — traditional paper with crypto underwriting, not a protocol. OpenCover — where the fresh money goes: $4.6M raised (NFX, Jump, Coinbase Ventures, Lloyd's Lab), $141.6M protected across 1,591 policies in '25, $346K claims paid, embedded into Coinbase One, Covered Vaults built with Nexus — and still web3 portfolio cover only: no members, no mutual, no court, EVM only. The carousel is the 2020–22 autopsy, one card per name: Cover exploited itself, Solace shared idle pools, Unslashed had no float income, InsurAce sprawled twenty thin chains, Bridge Mutual was farmed not mutual, Neptune voted claims with tokens, Risk Harbor held wLUNA collateral. Every one of those failure modes is structurally fixed here (one risk per pool, staked jury, surplus to members) — the Q&A answer to 'why has nobody built this?'. Everyone on this slide raised ≈$27M, ever. If pressed on Nexus profitability: $14.3M net cash flow '25, but float-driven (investment income + RAMM), not underwriting. Drift, spoken only if it fits: $285M hack on Solana, Apr 2026 — largest DeFi hack ever, nobody paid out.",
     component: FieldSlide,
   },
   {
