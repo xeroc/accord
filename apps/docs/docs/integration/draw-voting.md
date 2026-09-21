@@ -57,7 +57,7 @@ VRF seed selects the seat, and the submitted leaf must cover it.
 `finalize_round` is gated on a reveal-fraction threshold (`Subaccord.reveal_threshold_bps`,
 default 6_666 = 2/3, frozen into `CaseTerms` at filing):
 
-- **Quorum met** (`reveal_count ≥ ceil(panel × bps / 10_000)`): tally per `terms.aggregation` — Plurality: modal option index, **unless the top count is tied** (ADR-0026: ≥2 options share the max → non-decisive round, treated exactly like a shortfall); Median: median of revealed scalars (see below) — each revealer credited `fees_earned += fee_per_juror`, `fee_paid` decremented →
+- **Quorum met** (`reveal_count ≥ ceil(panel × bps / 10_000)`): tally per `terms.aggregation` — Plurality: modal option index, **unless the top count is tied** (ADR-0026: ≥2 options share the max → non-decisive round, treated exactly like a shortfall); Median: median of revealed scalars (see below) — ADR-0029: no fee credit here — the round's entire fee pot settles at `settle_round`/`finalize_dispute` against the FINAL ruling →
   `RoundResolved` (appeal window / finalization).
 - **Shortfall or Plurality tie**: no credits, no result → `RedrawEligible`. The permissionless
   `redraw` crank then slashes the no-shows into `stake_delta` (pending, not

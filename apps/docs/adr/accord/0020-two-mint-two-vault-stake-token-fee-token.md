@@ -35,8 +35,9 @@ Four decisions, resolved in the 2026-08-07 grilling:
    "rich-get-richer" stake drift this causes was judged less harmful than the weaker coherence
    carrot of burning slash proceeds.
 
-Participation-fee **conditionality** (paid only when the round reaches its reveal threshold, at
-`finalize_round`, not on `reveal`) is locked in [ADR-0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md);
+Participation-fee **conditionality** is set by [ADR-0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md),
+which supersedes this ADR's `finalize_round`-time credit: no fee moves before settlement — the
+round's entire pot settles at finality against the final ruling; the earlier conditionality was [ADR-0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md);
 it is what makes failed rounds pay nothing and the filer's single deposit suffice across the
 redraw ladder.
 
@@ -92,7 +93,7 @@ redraw ladder.
   slash ledger (never by dispute fee economics); `fee_vault` by `create_dispute`/`appeal`/
   `withdraw_fees`/`cancel_dispute`/`claim_appeal_refund`.
 - `reveal` becomes vote-recording only (no fee credit, no ATA, no SPL transfer). The participation
-  fee is credited at `finalize_round`, gated on the reveal threshold (ADR-0021).
+  fee settles with the round's entire pot at settlement, gated on the final ruling (amended by ADR-0029).
 - `dispute.fee_paid` changes meaning from "total deposited" to **"running available fee pool"**
   (decremented as jurors earn, incremented on an appeal's fee portion). The bond portion stays
   tracked in `AppealBond`.

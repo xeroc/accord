@@ -112,9 +112,12 @@ export type Dispute = {
   finalizedAt: bigint;
   /**
    * Round-0 filing fee deposited by the filer (`N · fee_per_juror` at
-   * creation). Decremented as round-0 jurors earn (`finalize_round`). This
-   * is the filer's refundable pool on cancel/redraw-exhaustion. Appeal-round
-   * fees live in their `AppealBond`, NOT here (bean accord-xftx).
+   * creation). Untouched until settlement consumes the round-0 pot
+   * (ADR-0029 — `settle_round`/`finalize_dispute` debit it when the round
+   * settles; the Failed path debits only resolved-round participation).
+   * This is the filer's refundable pool on cancel/redraw-exhaustion.
+   * Appeal-round fees live in their `AppealBond`, NOT here (bean
+   * accord-xftx).
    */
   feePaid: bigint;
   /**
@@ -207,9 +210,12 @@ export type DisputeArgs = {
   finalizedAt: number | bigint;
   /**
    * Round-0 filing fee deposited by the filer (`N · fee_per_juror` at
-   * creation). Decremented as round-0 jurors earn (`finalize_round`). This
-   * is the filer's refundable pool on cancel/redraw-exhaustion. Appeal-round
-   * fees live in their `AppealBond`, NOT here (bean accord-xftx).
+   * creation). Untouched until settlement consumes the round-0 pot
+   * (ADR-0029 — `settle_round`/`finalize_dispute` debit it when the round
+   * settles; the Failed path debits only resolved-round participation).
+   * This is the filer's refundable pool on cancel/redraw-exhaustion.
+   * Appeal-round fees live in their `AppealBond`, NOT here (bean
+   * accord-xftx).
    */
   feePaid: number | bigint;
   /**

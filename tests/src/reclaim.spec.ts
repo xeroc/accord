@@ -52,7 +52,7 @@ const ATA_PROGRAM_ID =
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 
-const FEE_PER_JUROR = 1_000_000n;
+const FEE_PER_JUROR = 50n; // ADR-0029
 const MIN_STAKE = 1_000n;
 const STAKE_FUND = 50_000n;
 const STAKE_AMT = 5_000n;

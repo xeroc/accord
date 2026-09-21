@@ -139,7 +139,11 @@ impl<'info> Redraw<'info> {
         }
 
         if exhausted {
-            // --- Fail branch: release prior appeal rounds + refund filer → Failed.
+            // --- Fail branch: release prior appeal rounds + refund filer → Failed. ---
+            // ADR-0029 D3: `release_prior_rounds` also pays each RESOLVED
+            // prior round's revealers their base participation fee (no final
+            // ruling exists — no coherence judgment is possible); the round-0
+            // share leaves `fee_paid` before the filer refund below.
             let rounds_end = release_prior_rounds(
                 ctx.remaining_accounts,
                 &dispute_key,
@@ -147,6 +151,8 @@ impl<'info> Redraw<'info> {
                 panel,
                 round_idx,
                 slash_per_juror,
+                terms.fee_per_juror,
+                &mut dispute.fee_paid,
             )?;
             // Strict accounting: prior rounds + this dispute's AppealBond PDAs
             // must fill the rest (same layout as `cancel_dispute`). Bonds are

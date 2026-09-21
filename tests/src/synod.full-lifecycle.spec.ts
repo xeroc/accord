@@ -147,7 +147,6 @@ describe("e2e: synod full lifecycle (requires Surfpool)", () => {
         env.accord.adapter,
         env.programId,
         { signer: env.payer.address, subaccord: arm.subaccord, dispute, round: roundPda },
-        jurorStakeAccounts,
       ),
     );
     expect(await readDisputeState(env, dispute)).toBe(ROUND_RESOLVED);

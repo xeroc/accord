@@ -271,7 +271,7 @@ fn setup_accumulator() -> AccEnv {
                 max_appeals: 3,
                 min_jury_size: 3,
                 aggregation: Aggregation::Plurality,
-                fee_per_juror: 1_000_000,
+                fee_per_juror: 50,
                 reveal_threshold_bps: 6_666,
                 coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,

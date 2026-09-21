@@ -58,8 +58,21 @@ type State = {
   panel_size    : U32,                          // ≤ MAX_JURORS; set at create_dispute
   // 0/1 discriminator: 1 if slot i revealed the final ruling (coherent).
   coherent_flag : Map[MAX_JURORS] U8,
-  // Tally output (set by finalize_round, read by finalize_slot):
-  share         : U64,                          // pool / coherent_count (0 if none)
+  // Tally output (set by finalize_round, read by settle_slot):
+  share         : U64,                          // stake pool / coherent_count (0 if none)
+
+  // Fee settlement (ADR-0029 — fees settle at finality against the FINAL
+  // ruling). `fee_pot` is the round's ENTIRE pot: every drawn seat's base
+  // fee (round 0: the filer's fee_paid deposit; r>0: the appeal-fee portion
+  // of the bond) + forfeited no-flip bonds. `fee_share = fee_pot /
+  // reward_count` (coherent, else revealers; integer div). Round 0's pot is
+  // debited from `fee_paid` at settlement — nothing decrements it before.
+  fee_pot           : U64,
+  fee_share         : U64,
+  fee_pot_distributed : U64,   // Σ fee_share credited so far (+ trapped remainder below)
+  fee_pot_remainder : U64,    // integer-div surplus → protocol surplus (trapped)
+  fee_paid          : U64,    // filer's round-0 refundable pool
+  fees_earned       : Map[MAX_JURORS] U64,
 
   // Per-juror stake (slash + active_draws).
   juror_amount       : Map[MAX_JURORS] U64,
@@ -117,6 +130,36 @@ handler finalize_coherent_slot (i : Slot) : State -> State {
 // non-revealing juror: slashed by `slash_per_juror = α·min_stake/10_000`,
 // floored at their amount (saturating sub, so amount stays ≥ 0), and
 // active_draws decremented by 1.
+
+// `settle_slot` models one iteration of `settle_round_accounts`
+// (utils.rs, ADR-0029) for a coherent juror: receives `fee_share`
+// (fee_pot / reward_count, computed by the settlement's first pass) into
+// `fees_earned` — the ENTIRE round pot (base fees + forfeited bonds +
+// non-revealer fees) redistributes at finality; nothing was pre-paid at
+// finalize_round. active_draws decremented (unfreezes stake).
+handler settle_slot (i : Slot) : State -> State {
+  permissionless
+  requires i < state.panel_size else NotDrawnJuror
+  requires state.coherent_flag[i] == 1 else NotDrawnJuror
+
+  effect {
+    fees_earned[i] +=! state.fee_share
+    fee_pot_distributed +=! state.fee_share
+    juror_active_draws[i] -=! 1
+  }
+}
+
+// Round-0 settlement consumes the filer's pot: the whole `fee_pot` leaves
+// `fee_paid` exactly once (ADR-0029 — fee_paid is untouched before
+// settlement; the Failed path debits only resolved-round participation).
+handler consume_round0_pot : State -> State {
+  permissionless
+  requires state.fee_pot <= state.fee_paid else ArithmeticOverflow
+
+  effect {
+    fee_paid -=! state.fee_pot
+  }
+}
 handler finalize_incoherent_slot (i : Slot) : State -> State {
   permissionless
   requires i < state.panel_size else NotDrawnJuror
@@ -205,12 +248,26 @@ property active_draws_dec_on_finalize :
   forall i : Slot,
     i < state.panel_size implies
     state.juror_active_draws[i] == old(state.juror_active_draws[i]) - 1
-  preserved_by [finalize_coherent_slot, finalize_incoherent_slot]
+  preserved_by [finalize_coherent_slot, finalize_incoherent_slot, settle_slot]
 
 property active_draws_untouched_by_claim :
   forall i : Slot,
     state.juror_active_draws[i] == old(state.juror_active_draws[i])
   preserved_by [claim_appeal_refund]
+
+/// (5) FEE CONSERVATION (ADR-0029) — the round's entire fee pot is accounted
+/// for exactly once: what settlement distributes to `fees_earned` plus the
+/// integer-div remainder equals the pot. No fee is credited outside this
+/// equation (finalize_round credits nothing), and round 0's debit from
+/// `fee_paid` equals the pot — the filer's refundable pool and the juror
+/// compensation pool are disjoint by construction. This is the ledger mirror
+/// of the vault invariant
+/// `fee_vault.balance == Σ fee_paid + Σ fees_earned + Σ AppealBond.amount`
+/// (trapped remainders are vault surplus).
+property fee_conservation :
+  state.fee_pot_distributed + state.fee_pot_remainder == state.fee_pot
+  preserved_by [draw_slot, settle_slot, finalize_coherent_slot, finalize_incoherent_slot, claim_appeal_refund, consume_round0_pot]
+
 
 // Lifecycle-level balance (draw opens, finalize closes → net zero): the
 // inc_on_draw + dec_on_finalize pair pins the full balance — every increment

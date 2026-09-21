@@ -135,6 +135,16 @@ impl<'info> CreateSubaccord<'info> {
         (MAX_JURORS as u64)
             .checked_mul(fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
+        // ADR-0029: same-mint slash-dominance — the numeric pin is only
+        // sound where staking_token == fee_token; split-mint pools are
+        // explicitly un-gated (see `require_slash_dominance`).
+        require_slash_dominance(
+            &ctx.accounts.staking_token.key(),
+            &ctx.accounts.fee_token.key(),
+            alpha_bps,
+            min_stake,
+            fee_per_juror,
+        )?;
         // PROG-ATTESTTION: credential binding is both-or-neither. A half-bound
         // Subaccord (credential set, schema unset — or vice versa) is rejected;
         // both `Pubkey::default()` ⇒ stake-only (today's behavior, unchanged).

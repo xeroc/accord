@@ -438,7 +438,9 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
       );
     },
     buildFinalizeRound(input) {
-      const ix = getFinalizeRoundInstruction(
+      // ADR-0029: finalize_round takes no remaining_accounts — fees settle
+      // at settle_round/finalize_dispute against the final ruling.
+      return getFinalizeRoundInstruction(
         {
           caller: accord.signer,
           subaccord: input.accounts.subaccord,
@@ -447,7 +449,6 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         },
         { programAddress: input.programId },
       );
-      return appendRemaining(ix, input.remainingAccounts ?? []);
     },
     buildFinalizeDispute(input) {
       const ix = getFinalizeDisputeInstruction(

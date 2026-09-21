@@ -88,7 +88,7 @@ impl<'info> CancelDispute<'info> {
             );
 
             // Load the zero-copy Round to read its deadline + juror list.
-            let (juror_count, jurors) = {
+            let (juror_count, jurors, reveals) = {
                 let loader = AccountLoader::<Round>::try_from(round_info)?;
                 let round = loader.load()?;
                 let deadline = round
@@ -98,11 +98,22 @@ impl<'info> CancelDispute<'info> {
                     .ok_or(AccordError::ArithmeticOverflow)?;
                 require!(now > deadline, AccordError::CancelTooEarly);
                 let count = round.juror_count as usize;
-                (count, round.jurors[..count].to_vec())
+                (
+                    count,
+                    round.jurors[..count].to_vec(),
+                    round.reveals[..count].to_vec(),
+                )
             };
 
             // Release active_draws for every drawn juror in the current round.
+            // ADR-0029 D3: a RoundResolved current round pays its revealers
+            // the base participation fee (no final ruling on the Failed path —
+            // no coherence judgment possible). Earlier states (Drawn/Commit/
+            // Reveal) pay nothing for the current round.
             const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF; // CU-opt — see crate::layout
+            const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
+            let fee_per_juror = dispute.terms.fee_per_juror;
+            let mut cur_round0_earned = 0u64;
             require!(
                 juror_count < ctx.remaining_accounts.len(),
                 AccordError::InvalidPanelSize
@@ -122,6 +133,27 @@ impl<'info> CancelDispute<'info> {
                     AccordError::InvalidMembershipProof
                 );
                 let mut data = acct_info.try_borrow_mut_data()?;
+                // Participation pay (ADR-0029): current round is resolved.
+                if fee_per_juror > 0
+                    && state == DisputeState::RoundResolved
+                    && reveals[i] != u64::MAX
+                {
+                    let fees = u64::from_le_bytes(
+                        data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    let new_fees = fees
+                        .checked_add(fee_per_juror)
+                        .ok_or(AccordError::ArithmeticOverflow)?;
+                    data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                        .copy_from_slice(&new_fees.to_le_bytes());
+                    if current_round == 0 {
+                        cur_round0_earned = cur_round0_earned
+                            .checked_add(fee_per_juror)
+                            .ok_or(AccordError::ArithmeticOverflow)?;
+                    }
+                }
                 let draws = u32::from_le_bytes(
                     data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                         .try_into()
@@ -143,6 +175,13 @@ impl<'info> CancelDispute<'info> {
                         .copy_from_slice(&new_reserve.to_le_bytes());
                 }
             }
+            // Round-0 participation leaves the filer's refundable pool.
+            if cur_round0_earned > 0 {
+                dispute.fee_paid = dispute
+                    .fee_paid
+                    .checked_sub(cur_round0_earned)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
 
             // Release prior-round jurors.
             let rounds_end = release_prior_rounds(
@@ -152,6 +191,8 @@ impl<'info> CancelDispute<'info> {
                 1 + juror_count,
                 current_round,
                 slash_per_juror,
+                fee_per_juror,
+                &mut dispute.fee_paid,
             )?;
 
             // Strict accounting: rounds + bonds must exactly fill remaining_accounts.
@@ -257,7 +298,9 @@ impl<'info> CancelDispute<'info> {
             }
 
             // Release prior-round jurors (appeal rounds that completed but
-            // were never settled).
+            // were never settled). ADR-0029 D3: prior resolved rounds pay
+            // their revealers the base participation fee out of `fee_paid`
+            // (round 0) / the bonds' fee portions (appeal rounds).
             let rounds_end = release_prior_rounds(
                 ctx.remaining_accounts,
                 &dispute_key,
@@ -265,6 +308,8 @@ impl<'info> CancelDispute<'info> {
                 idx,
                 current_round,
                 slash_per_juror,
+                dispute.terms.fee_per_juror,
+                &mut dispute.fee_paid,
             )?;
 
             // Strict accounting: rounds + bonds must exactly fill remaining_accounts.

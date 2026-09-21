@@ -121,6 +121,15 @@ pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
 pub const DEFAULT_COHERENCE_TOL_BPS: u16 = 100;
 /// Program ceiling on per-round redraw attempts (bounds the redraw ladder).
 pub const MAX_DRAW_ATTEMPTS: u8 = 10;
+/// Same-mint slash-dominance margin (ADR-0029): where `staking_token ==
+/// fee_token`, creation + both update gates enforce
+/// `α·min_stake/10_000 ≥ MIN_SLASH_FEE_RATIO · fee_per_juror`. Ratio 2 = the
+/// pre-0029 binary-P bound, kept (not the post-0029 theoretical 1) as margin —
+/// coherent-pool shares are endogenous (forfeited bonds) and widen the
+/// lucky-noise edge. Split-mint pools are explicitly NOT numerically checked
+/// (units are incommensurable; the 2026-08-31 reverted gate is the recorded
+/// proof) — operator/governance discipline governs those.
+pub const MIN_SLASH_FEE_RATIO: u64 = 2;
 
 /// Maximum sortition retries per seat in `draw_seat` (bean accord-tzo0). The
 /// deterministic collision re-roll increments this counter until the selected

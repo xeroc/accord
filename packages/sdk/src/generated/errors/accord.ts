@@ -154,6 +154,8 @@ export const ACCORD_ERROR__SLOT_AWAITING_RECYCLE = 0x17b3; // 6067
 export const ACCORD_ERROR__EVEN_JURY_SIZE = 0x17b4; // 6068
 /** LadderExceedsMaxJurors: The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round. */
 export const ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS = 0x17b5; // 6069
+/** FeeDominatesSlash: Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror. */
+export const ACCORD_ERROR__FEE_DOMINATES_SLASH = 0x17b6; // 6070
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -177,6 +179,7 @@ export type AccordError =
   | typeof ACCORD_ERROR__DISPUTE_NOT_FINAL
   | typeof ACCORD_ERROR__DUPLICATE_JUROR
   | typeof ACCORD_ERROR__EVEN_JURY_SIZE
+  | typeof ACCORD_ERROR__FEE_DOMINATES_SLASH
   | typeof ACCORD_ERROR__FEE_MISMATCH
   | typeof ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH
   | typeof ACCORD_ERROR__IMMUTABLE_SUBACCORD
@@ -251,6 +254,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__DISPUTE_NOT_FINAL]: `Dispute is not in a finalizable state.`,
     [ACCORD_ERROR__DUPLICATE_JUROR]: `Draw selected a duplicate Juror.`,
     [ACCORD_ERROR__EVEN_JURY_SIZE]: `Round-1 jury size (min_jury_size) must be odd (tie avoidance).`,
+    [ACCORD_ERROR__FEE_DOMINATES_SLASH]: `Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror.`,
     [ACCORD_ERROR__FEE_MISMATCH]: `Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).`,
     [ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH]: `Provided freed-slot account does not match the free-list head.`,
     [ACCORD_ERROR__IMMUTABLE_SUBACCORD]: `Subaccord is immutable (authority == default).`,

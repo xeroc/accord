@@ -187,4 +187,9 @@ pub enum AccordError {
     EvenJurySize,
     #[msg("The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.")]
     LadderExceedsMaxJurors,
+    // --- same-mint slash dominance (ADR-0029) ---
+    #[msg(
+        "Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror."
+    )]
+    FeeDominatesSlash,
 }

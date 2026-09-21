@@ -56,8 +56,8 @@ const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 const SEED_DISPUTE = new Uint8Array([100, 105, 115, 112, 117, 116, 101]); // "dispute"
 
 const INITIAL_NUM_JURORS = 3; // fixed round-1 panel size (ADR-0019)
-const FEE_PER_JUROR = 1_000_000n;
-const REQUIRED_FEE = requiredFee(FEE_PER_JUROR)!; // 3_000_000
+const FEE_PER_JUROR = 50n; // ADR-0029
+const REQUIRED_FEE = requiredFee(FEE_PER_JUROR)!; // 3 · FEE_PER_JUROR (ADR-0029: fee 50)
 // DisputeState::Created is the first variant of the numeric enum (state.rs) = 0.
 const STATE_CREATED = 0;
 

@@ -28,17 +28,24 @@ coherent        = reveals[i] != u64::MAX && match aggregation (ADR-0025):
                     Median:    |reveals[i] − final_ruling| · 10_000
                                ≤ final_ruling · coherence_tol_bps
 stake_pool      = Σ slashes       (stake_token)
-fee_pool        = (panel − reveal_count) · fee_per_juror + forfeited_bonds  (fee_token)
+fee_pool        = panel · fee_per_juror + forfeited_bonds  (fee_token, ADR-0029)
 ```
 
 - **Incoherent / non-revealer:** `stake_delta -= min(slash_per_juror, staked)`,
-  `slash_reserve -= slash_per_juror`.
+  `slash_reserve -= slash_per_juror`, NO fee (their base fee stays in the pot).
 - **Coherent:** `stake_delta += stake_pool / coherent_count` (stake share),
   `fees_earned += fee_pool / coherent_count` (fee share).
 - Every drawn juror: `active_draws -= 1` (releases the unstake lock).
+- Round 0 only: `dispute.fee_paid -= fee_pool` — the pot leaves the filer's
+  refundable pool at consumption (ADR-0029: nothing decrements it earlier).
 
-> `forfeited_bonds` is non-zero only on the **final** round (`finalize_dispute`
-> folds no-flip appeal bonds in). Prior-round `settle_round` passes `0`.
+> ADR-0029: the fee pool is the round's ENTIRE pot — every drawn seat's base
+> fee (round 0: the filer's deposit; r>0: the appeal-fee portion of the bond)
+> plus `forfeited_bonds` (non-zero only on the **final** round —
+> `finalize_dispute` folds no-flip appeal bonds in; prior-round `settle_round`
+> passes `0`). No fee is credited before settlement (`finalize_round` credits
+> nothing); a full-coherent panel yields exactly the base fee per juror, and a
+> vindicated minority takes the whole pot ("lone voice of reason").
 
 ## `settle:round` — prior-round settlement
 

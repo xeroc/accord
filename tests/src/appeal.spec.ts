@@ -67,7 +67,7 @@ import {
 import { injectCommittedVrf } from "./setup/vrf.js";
 
 // --- economics mirroring appeal_litesvm.rs -----------------------------------
-const FEE_PER_JUROR = 1_000_000n;
+const FEE_PER_JUROR = 50n; // ADR-0029
 // Round-1 panel is the fixed INITIAL_NUM_JURORS (=3); the first appeal grows it
 // to 7. draw_seat is per-seat, so a panel-7 round-1 draw is seven txs.
 const STAKE_AMOUNT = 5_000n;
@@ -324,7 +324,6 @@ async function resolveRound(
         dispute,
         round: roundPda,
       },
-      jurorStakes,
     ),
   );
 
@@ -669,29 +668,29 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
     expect(dFinal.finalRuling).toBe(0n);
 
-    // Coherence redistribution (ADR-0004 + ADR-0020 two-mint/two-vault split):
-    // `finalize_dispute` settles the final round against the finalized ruling
-    // via `settle_round_accounts`, which distributes TWO distinct pools — never
-    // mixing mints, even when staking_token == fee_token:
+    // Coherence redistribution (ADR-0004 + ADR-0020 two-mint/two-vault split,
+    // ADR-0029 finality-conditional fees): `finalize_dispute` settles the
+    // final round against the finalized ruling via `settle_round_accounts`,
+    // which distributes TWO distinct pools — never mixing mints, even when
+    // staking_token == fee_token:
     //
     // 1. STAKE pool (staking_token → stake_delta, folded into `staked` later
     //    by `reconcile_stake`; the stake_vault balance is invariant):
     //    the slash proceeds from incoherent jurors.
     // 2. FEE pool (fee_token → fees_earned, pulled by `withdraw_fees`; lives
-    //    in fee_vault): non-revealer fees + the forfeited (no-flip) appeal bond.
+    //    in fee_vault): the round's ENTIRE pot — every seat's base fee (the
+    //    appeal-fee portion of the bond; NOT pre-paid at finalize_round under
+    //    ADR-0029) + the forfeited (no-flip) bond portion.
     //
-    // The forfeited bond was deposited into fee_vault at `appeal`, so it is
-    // fee_token and MUST route to `fees_earned`, not `stake_delta`.
-    //
-    // All 7 revealed ⇒ non-revealer fee = 0.
+    // All 7 revealed, 4 coherent with the final ruling.
     //   slash_total = 3·100 (three incoherent jurors; α·min_stake each) = 300
-    //   forfeit     = bond portion = total − fee = 14·fee − 7·fee = 7·fee (= 7_000_000)
-    //   stake_pool  = 300  ⇒ stake_share = 300 / 4        = 75
-    //   fee_pool    = 0 + 7_000_000                       = 7_000_000
-    //   fee_share   = 7_000_000 / 4                       = 1_750_000
+    //   forfeit     = bond portion = total − fee = 14·fee − 7·fee = 7·fee (= 350)
+    //   stake_pool  = 300  ⇒ stake_share = 300 / 4 = 75
+    //   fee_pool    = 7·fee + 7·fee          = 700
+    //   fee_share   = 700 / 4                = 175
     const SLASH_PER_JUROR = 100n;
     const STAKE_SHARE = (3n * SLASH_PER_JUROR) / 4n; // 75
-    const FEE_SHARE = (7n * FEE_PER_JUROR) / 4n; // 1_750_000
+    const FEE_SHARE = (7n * FEE_PER_JUROR + 7n * FEE_PER_JUROR) / 4n; // 175
     for (let i = 0; i < coherentPdas.length; i++) {
       expect(
         (await readJurorSettlementDelta(env, coherentPdas[i]!)) -

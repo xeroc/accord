@@ -338,10 +338,10 @@ pub mod accord {
     }
 
     /// Reveal a committed vote. Verifies `hash(vote_le ‖ salt ‖ juror_pubkey)`
-    /// matches the stored commit, records the vote. ADR-0020: vote-recording
-    /// only — no fee credit, no SPL transfer. The participation fee is credited
-    /// to `JurorStake.fees_earned` at `finalize_round` instead (aggregated, not
-    /// per-reveal ATA creation). Allowed once `now ≥ commit_end`, OR as soon as
+    /// matches the stored commit, records the vote. Vote-recording only — no
+    /// fee, no SPL transfer (ADR-0020/0029: the round's entire fee pot settles
+    /// at `settle_round`/`finalize_dispute`, judged against the final ruling).
+    /// Allowed once `now ≥ commit_end`, OR as soon as
     /// every juror has committed (early reveal — the panel-full commit flips
     /// state to `Reveal`), through `reveal_end`.
     ///
@@ -360,20 +360,20 @@ pub mod accord {
     /// quorum; ADR-0026 gates it on decisiveness:
     ///
     /// - **Quorum met** (`reveal_count >= ceil(panel × threshold_bps / 10_000)`)
-    ///   **and decisive**: credits each revealer's `fees_earned` (ADR-0020),
-    ///   sets the tally result per `terms.aggregation` — the plurality winner
-    ///   (option index; a top-count tie is non-decisive, see below) or the
-    ///   **median** of the revealed scalar votes (ADR-0025) — and transitions
-    ///   to `RoundResolved` (appeal window / final).
+    ///   **and decisive**: sets the tally result per `terms.aggregation` —
+    ///   the plurality winner (option index; a top-count tie is
+    ///   non-decisive, see below) or the **median** of the revealed scalar
+    ///   votes (ADR-0025) — and transitions to `RoundResolved` (appeal
+    ///   window / final).
     /// - **Quorum not met, or a Plurality top-count tie** (≥2 options share the
     ///   max count — odd panels only prevent binary full-reveal ties):
-    ///   no credits, no result — transitions to `RedrawEligible` so the
+    ///   no result — transitions to `RedrawEligible` so the
     ///   `redraw` crank can reconvene the panel (or, on `max_draw_attempts`
     ///   exhaustion, fail the dispute).
     ///
-    /// The drawn `JurorStake` PDAs are `remaining_accounts` (mut), verified
-    /// against the round's juror list + PDA derivation; they are only consumed
-    /// on the quorum-met path.
+    /// ADR-0029: no fee credit here — the round's entire fee pot settles at
+    /// `settle_round`/`finalize_dispute` against the FINAL ruling, so this
+    /// instruction takes no `remaining_accounts`.
     pub fn finalize_round(ctx: Context<FinalizeRound>) -> Result<()> {
         FinalizeRound::handler_finalize_round(ctx)
     }
@@ -393,9 +393,11 @@ pub mod accord {
     /// 3. Stake pool = slash_total → coherent `stake_delta` (stake_token).
     ///    When no juror is coherent but some revealed, pools go to revealers
     ///    instead (bean accord-aqmw). Zero reveals → surplus trapped.
-    /// 4. Fee pool = non-revealer fees + forfeited (no-flip) bonds → coherent
-    ///    `fees_earned` (fee_token). (Revealer base fees were credited at
-    ///    `finalize_round`; only the forfeited portion redistributes here.)
+    /// 4. Fee pool = the round's ENTIRE pot — every drawn seat's base fee
+    ///    (round 0: the filer's `fee_paid`; r>0: the appeal-fee portion of the
+    ///    bond) + forfeited (no-flip) bonds → coherent `fees_earned`
+    ///    (fee_token). Incoherent revealers forfeit their base fee into the
+    ///    pot (ADR-0029 — Kleros parity). Round 0's pot leaves `fee_paid`.
     /// 5. Decrement `active_draws` for the final round's drawn jurors.
     /// 6. Write `final_ruling`, mark the round settled, transition to `Final`.
     ///
@@ -415,9 +417,10 @@ pub mod accord {
     /// result: a round-0 juror who voted the option the final panel overturned
     /// is slashed; one who voted the final ruling gets a coherence share.
     /// When no juror is coherent (overturned prior round), pools fall back to
-    /// revealers; zero reveals → surplus trapped (bean accord-aqmw).
-    /// Revealer base fees were credited at `finalize_round`; non-revealer fees
-    /// fold into the coherent fee pool (ADR-0020).
+    /// revealers; zero reveals → surplus trapped (bean accord-aqmw). The whole
+    /// round fee pot (ADR-0029) splits among the recipients — an incoherent
+    /// revealer forfeits their base fee into it; round 0's pot leaves
+    /// `fee_paid` at consumption.
     pub fn settle_round(ctx: Context<SettleRound>, round_idx: u32) -> Result<()> {
         SettleRound::handler_settle_round(ctx, round_idx)
     }
@@ -479,9 +482,13 @@ pub mod accord {
     ///   drawn `JurorStake` PDAs follow (`[1..=panel]`).
     ///
     /// `Final`/`Closed`/`Failed` are terminal and revert. The filer refund is
-    /// exactly `dispute.fee_paid` (C-1: the per-dispute fee pool — NOT the
-    /// shared vault balance; the fee_vault is one ATA for the entire
-    /// Subaccord). Appeal bonds stay claimable via `claim_appeal_refund`.
+    /// exactly the REMAINING `dispute.fee_paid` (C-1: the per-dispute fee pool
+    /// — NOT the shared vault balance; the fee_vault is one ATA for the entire
+    /// Subaccord). ADR-0029 D3: resolved rounds (a `RoundResolved` current
+    /// round, and prior appeal rounds) pay their revealers the base
+    /// participation fee out of `fee_paid`/bond fee portions BEFORE the refund
+    /// — no final ruling exists, so participation is the only judgeable act.
+    /// Appeal bonds stay claimable via `claim_appeal_refund`.
     pub fn cancel_dispute(ctx: Context<CancelDispute>) -> Result<()> {
         CancelDispute::handler_cancel_dispute(ctx)
     }
@@ -523,10 +530,14 @@ pub mod accord {
     ///   seats at the same panel size.
     /// - **Fail on exhaustion** (`draw_attempt + 1 >= max_draw_attempts`): same
     ///   slash/release for the current round (+ prior appeal rounds'
-    ///   `active_draws` via `release_prior_rounds`), refunds the filer's
-    ///   remaining `dispute.fee_paid` (per-dispute, vault-safe), and transitions
-    ///   to terminal `Failed`. No-shows' accumulated slashes stand; outstanding
-    ///   appeal bonds remain claimable via `claim_appeal_refund`.
+    ///   `active_draws` via `release_prior_rounds`), pays each RESOLVED prior
+    ///   round's revealers their base `fee_per_juror` participation fee
+    ///   (ADR-0029 D3 — no final ruling exists, so no coherence judgment is
+    ///   possible; round 0's share leaves `fee_paid` first), refunds the
+    ///   filer's remaining `dispute.fee_paid` (per-dispute, vault-safe), and
+    ///   transitions to terminal `Failed`. No-shows' accumulated slashes
+    ///   stand; outstanding appeal bonds remain claimable via
+    ///   `claim_appeal_refund`.
     ///
     /// `remaining_accounts` = [current-round `JurorStake` PDAs (panel)]; on the
     /// Fail branch additionally [...prior `Round` PDAs + their `JurorStake`

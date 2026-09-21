@@ -64,7 +64,7 @@ impl<'info> FinalizeRound<'info> {
             return Ok(());
         }
 
-        // --- Quorum met: tally (ADR-0019 aggregation) + credit + resolve ---
+        // --- Quorum met: tally (ADR-0019 aggregation) + resolve (ADR-0029: fees settle at finality) ---
         let winner = match dispute.terms.aggregation {
             Aggregation::Plurality => {
                 let mut counts = [0u32; MAX_OPTIONS];
@@ -114,61 +114,13 @@ impl<'info> FinalizeRound<'info> {
             }
         };
         round.result = winner;
-
-        // --- ADR-0020: credit fees_earned to each revealer ---
-        let sub_key = ctx.accounts.subaccord.key();
-        let fee_per_juror = dispute.terms.fee_per_juror;
-        let panel_us = round.juror_count as usize;
-        if fee_per_juror > 0 {
-            require!(
-                ctx.remaining_accounts.len() == panel_us,
-                AccordError::InvalidPanelSize
-            );
-            // CU-opt field access — see `crate::layout`.
-            const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
-            for i in 0..panel_us {
-                if round.reveals[i] == u64::MAX {
-                    continue; // non-revealer: no credit
-                }
-                let expected_pda = Pubkey::find_program_address(
-                    &[SEED_JUROR_STAKE, sub_key.as_ref(), round.jurors[i].as_ref()],
-                    &crate::ID,
-                )
-                .0;
-                let js_info = &ctx.remaining_accounts[i];
-                require!(
-                    js_info.key == &expected_pda,
-                    AccordError::InvalidMembershipProof
-                );
-                require!(
-                    js_info.owner == &crate::ID,
-                    AccordError::InvalidMembershipProof
-                );
-                let mut data = js_info.try_borrow_mut_data()?;
-                let existing = u64::from_le_bytes(
-                    data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                        .try_into()
-                        .unwrap(),
-                );
-                let new_fees = existing
-                    .checked_add(fee_per_juror)
-                    .ok_or(AccordError::ArithmeticOverflow)?;
-                data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                    .copy_from_slice(&new_fees.to_le_bytes());
-            }
-            // fee_paid owns ONLY the round-0 filing fee (bean accord-xftx):
-            // appeal-round fees live in their AppealBond, not here. Decrement
-            // the filer's refundable pool only as round-0 jurors earn. The
-            // fees_earned credit above still runs for every round — that is the
-            // vault liability (juror compensation), tracked separately from this
-            // filer-refund bookkeeping.
-            if round.round_idx == 0 {
-                dispute.fee_paid = (round.reveal_count as u64)
-                    .checked_mul(fee_per_juror)
-                    .and_then(|earned| dispute.fee_paid.checked_sub(earned))
-                    .ok_or(AccordError::ArithmeticOverflow)?;
-            }
-        }
+        // ADR-0029: no fee credit here. The round's ENTIRE fee pot settles at
+        // `settle_round` / `finalize_dispute` against `final_ruling` —
+        // coherent jurors split the whole pot, incoherent revealers forfeit
+        // their base fee into it. `dispute.fee_paid` is likewise untouched
+        // until settlement consumes the round-0 pot, so filer refunds on
+        // cancel/redraw-exhaustion are trivially exact. This instruction no
+        // longer needs the panel's JurorStake PDAs in remaining_accounts.
 
         dispute.state = DisputeState::RoundResolved;
 

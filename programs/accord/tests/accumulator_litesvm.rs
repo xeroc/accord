@@ -16,8 +16,8 @@
 //! no-entrypoint`). One fresh `AnchorLiteSVM` context per test.
 
 use accord::constants::{
-    PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE, SEED_PENDING_UPDATE,
-    WITHDRAWAL_DELAY,
+    POST_DRAW_CANCEL_GRACE_SECS, PRE_DRAW_CANCEL_TIMEOUT_SECS, SEED_APPEAL_BOND, SEED_JUROR_STAKE,
+    SEED_PENDING_UPDATE, WITHDRAWAL_DELAY,
 };
 use accord::state::{
     Aggregation, CreateSubaccordParams, Dispute, DisputeState, JurorStake, LeafClaim, MSTNode,
@@ -237,6 +237,11 @@ struct AccEnv {
 
 const TEST_DEPTH: u8 = 4;
 
+/// Harness fee per juror (ADR-0029): same-mint harness pools keep the
+/// slash-dominance gate green — slash = 10% · 1_000 = 100, so the gate pins
+/// fee ≤ 50 (2·100 ≥ 50).
+const TEST_FPJ: u64 = 50;
+
 fn setup_accumulator() -> AccEnv {
     setup_accumulator_with(6_666, 3, 3)
 }
@@ -338,7 +343,7 @@ fn setup_accumulator_kind(
                 min_jury_size,
                 aggregation,
                 coherence_tol_bps,
-                fee_per_juror: 1_000_000,
+                fee_per_juror: TEST_FPJ,
                 reveal_threshold_bps,
                 shortfall_policy: ShortfallPolicy::Redraw,
                 max_draw_attempts,
@@ -778,7 +783,7 @@ fn commit_vrf_callback_freezes_live_root() {
 
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64; // initial_num_jurors * fee_per_juror
+    let fee = 3 * TEST_FPJ; // initial_num_jurors * fee_per_juror
 
     let ix = env
         .ctx
@@ -866,7 +871,7 @@ fn draw_seat_fills_round_against_frozen_root() {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64;
+    let fee = 3 * TEST_FPJ;
 
     let ix = env
         .ctx
@@ -1091,7 +1096,7 @@ fn out_of_order_seat_rejected() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -1210,7 +1215,7 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64;
+    let fee = 3 * TEST_FPJ;
     let ix = env
         .ctx
         .program()
@@ -1518,7 +1523,7 @@ fn create_second_subaccord(env: &mut AccEnv) -> Pubkey {
                 max_appeals: 3,
                 min_jury_size: 3,
                 aggregation: Aggregation::Plurality,
-                fee_per_juror: 1_000_000,
+                fee_per_juror: TEST_FPJ,
                 reveal_threshold_bps: 6_666,
                 coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
@@ -1559,7 +1564,7 @@ fn create_dispute_under_a(env: &mut AccEnv) -> (Pubkey, Keypair) {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64;
+    let fee = 3 * TEST_FPJ;
     let ix = env
         .ctx
         .program()
@@ -1893,13 +1898,13 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
     let mut env = setup_accumulator();
     let (dispute, filer) = create_dispute_under_a(&mut env);
 
-    // The filer deposited 3 * fee_per_juror = 3_000_000 into the vault.
-    let round_0_fee = 3u64 * 1_000_000;
+    // The filer deposited 3 * fee_per_juror = 150 into the vault.
+    let round_0_fee = 3 * TEST_FPJ;
 
     // Simulate an appeal: appellant deposits appeal_fee (7 × fpj) + bond
-    // (== appeal_fee) = 14_000_000. The appeal fee is juror compensation for
+    // (== appeal_fee) = 700. The appeal fee is juror compensation for
     // the new panel; the bond is appellant skin-in-the-game.
-    let appeal_fee = 7u64 * 1_000_000;
+    let appeal_fee = 7 * TEST_FPJ;
     let bond = appeal_fee; // bond == appeal_fee (see `appeal`)
     let total_deposit = appeal_fee + bond;
     add_vault_tokens(&mut env, total_deposit);
@@ -2093,7 +2098,7 @@ fn cancel_after_real_appeal_no_double_refund() {
     let appellant = fund_appellant(&mut env, 100_000_000);
     do_appeal(&mut env, &dispute, &appellant, [0xBB; 32]).assert_success();
 
-    let fee_per_juror = 1_000_000u64;
+    let fee_per_juror = TEST_FPJ;
     let round_0_fee = 3 * fee_per_juror; // filing fee the filer deposited
     let appeal_fee = 7 * fee_per_juror; // panel_size_for_round(1) × fpj
     let bond = appeal_fee; // bond == appeal_fee (see `appeal`)
@@ -2207,7 +2212,7 @@ fn cancel_dispute_does_not_drain_shared_vault() {
 
     // File dispute A (stakes 3 jurors + deposits 3 × fee_per_juror).
     let (dispute_a, _filer_a) = create_dispute_under_a(&mut env);
-    let fee_per_dispute = 3u64 * 1_000_000;
+    let fee_per_dispute = 3 * TEST_FPJ;
 
     // File dispute B under the same Subaccord (different filer, same vault).
     let filer_b = Keypair::new();
@@ -2351,7 +2356,7 @@ fn cancel_releases_partially_drawn_panel() {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64;
+    let fee = 3 * TEST_FPJ;
     let ix = env
         .ctx
         .program()
@@ -2826,7 +2831,7 @@ fn commit_reveal_finalize_settle_single_round() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -2989,23 +2994,8 @@ fn commit_reveal_finalize_settle_single_round() {
         .args(instruction::FinalizeRound {})
         .instruction()
         .unwrap();
-    // ADR-0020: finalize_round credits fees_earned — needs panel JurorStake PDAs.
-    let ix = {
-        let mut accts = ix.accounts.clone();
-        for &(_, leaf_idx) in &drawn {
-            let js = juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey());
-            accts.push(solana_program::instruction::AccountMeta {
-                pubkey: js,
-                is_signer: false,
-                is_writable: true,
-            });
-        }
-        solana_program::instruction::Instruction {
-            program_id: ix.program_id,
-            accounts: accts,
-            data: ix.data.clone(),
-        }
-    };
+    // ADR-0029: finalize_round takes no remaining_accounts (fees settle at
+    // settlement) — send the bare instruction.
     env.ctx
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
@@ -3071,7 +3061,7 @@ fn commit_reveal_finalize_settle_single_round() {
         if seat < 2 {
             // Coherent: stake_delta = slash share (50); fees_earned = base + fee share.
             assert_eq!(js.stake_delta, 50i64, "seat {seat} stake_delta");
-            assert_eq!(js.fees_earned, 1_500_000u64, "seat {seat} fees_earned");
+            assert_eq!(js.fees_earned, 3 * TEST_FPJ / 2, "seat {seat} fees_earned");
         } else {
             // Incoherent: stake_delta = -slash; fees_earned = 0 (didn't reveal).
             assert_eq!(js.stake_delta, -100i64, "seat {seat} stake_delta");
@@ -3150,7 +3140,7 @@ fn drawn_panel_with(mut env: AccEnv, options: Vec<[u8; 32]>) -> DrawnPanel {
             options,
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -3434,21 +3424,7 @@ fn finalize_round_resolves_early_once_all_jurors_reveal() {
         .args(instruction::FinalizeRound {})
         .instruction()
         .unwrap();
-    let ix = {
-        let mut accts = ix.accounts.clone();
-        for &(_, leaf_idx) in &drawn {
-            accts.push(solana_program::instruction::AccountMeta {
-                pubkey: juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey()),
-                is_signer: false,
-                is_writable: true,
-            });
-        }
-        solana_program::instruction::Instruction {
-            program_id: ix.program_id,
-            accounts: accts,
-            data: ix.data.clone(),
-        }
-    };
+    // ADR-0029: no remaining_accounts (fees settle at settlement).
     env.ctx
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
@@ -3529,7 +3505,7 @@ fn pause_blocks_stake_and_create_dispute() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -3643,7 +3619,7 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -3885,7 +3861,7 @@ fn setup_prior_round_settlement() -> PriorRoundSetup {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -4043,19 +4019,23 @@ fn settle_round_no_coherent_rewards_revealers_only() {
     // reward_count = reveal_count = 2.
     // slash_total = 3 × 100 = 300 (all non-coherent).
     // fee_pool = (3 - 2) × 1_000_000 = 1_000_000 (1 non-revealer's fee).
-    // stake_share = 300 / 2 = 150; fee_share = 1_000_000 / 2 = 500_000.
+    // fee pot = 3 × 50 = 150 (ADR-0029 whole pot); fee_share = 150 / 2 = 75.
     for &(seat, leaf_idx) in &drawn {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
         assert_eq!(js.active_draws, 0, "seat {seat}: active_draws released");
         assert_eq!(js.slash_reserve, 0, "seat {seat}: slash_reserve released");
 
         if seat < 2 {
-            // Revealer: slashed -100, rewarded +150 stake + 500_000 fee.
+            // Revealer: slashed -100, rewarded +150 stake + 75 fee.
             assert_eq!(
                 js.stake_delta, 50,
                 "seat {seat}: revealer net stake_delta = -100 + 150"
             );
-            assert_eq!(js.fees_earned, 500_000, "seat {seat}: revealer fee share");
+            assert_eq!(
+                js.fees_earned,
+                3 * TEST_FPJ / 2,
+                "seat {seat}: revealer fee share"
+            );
         } else {
             // Non-revealer: slashed, no reward.
             assert_eq!(
@@ -4092,7 +4072,7 @@ fn settle_round_zero_reveals_traps_surplus() {
 
     // reward_count = 0 → stake_share = 0, fee_share = 0.
     // All jurors slashed (-100), no rewards.
-    // fee_pool = 3 × 1_000_000 = 3_000_000 → trapped in fee_vault.
+    // fee pot = 3 × 50 = 150 → trapped in fee_vault.
     // slash_total = 3 × 100 = 300 → trapped (nobody gets stake_share).
     for &(seat, leaf_idx) in &drawn {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
@@ -4172,7 +4152,7 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -4437,7 +4417,7 @@ fn setup_and_finalize_cfg(
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let filer_fee = (panel_size as u64) * 1_000_000u64;
+    let filer_fee = (panel_size as u64) * TEST_FPJ;
     let ix = env
         .ctx
         .program()
@@ -4591,8 +4571,8 @@ fn finalize_round_for(
     env: &mut AccEnv,
     dispute: Pubkey,
     rnd: Pubkey,
-    drawn: &[(u32, usize)],
-    jurors: &[Keypair],
+    _drawn: &[(u32, usize)],
+    _jurors: &[Keypair],
 ) {
     let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
     let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
@@ -4612,21 +4592,8 @@ fn finalize_round_for(
         .args(instruction::FinalizeRound {})
         .instruction()
         .unwrap();
-    let ix = {
-        let mut accts = ix.accounts.clone();
-        for &(_, leaf_idx) in drawn {
-            accts.push(solana_program::instruction::AccountMeta {
-                pubkey: juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey()),
-                is_signer: false,
-                is_writable: true,
-            });
-        }
-        solana_program::instruction::Instruction {
-            program_id: ix.program_id,
-            accounts: accts,
-            data: ix.data.clone(),
-        }
-    };
+    // ADR-0029: finalize_round takes no remaining_accounts — fees settle at
+    // settlement time, so the panel's JurorStake PDAs are not passed.
     env.ctx
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
@@ -4695,25 +4662,27 @@ fn round_draw_attempt(dd: &DrawnDispute) -> u32 {
 }
 
 #[test]
-fn threshold_met_credits_fees_and_resolves() {
+fn threshold_met_resolves_without_fee_credit() {
+    // ADR-0029 L1: finalize_round credits NOTHING. Fees settle at
+    // settle_round/finalize_dispute against the FINAL ruling; fee_paid is
+    // untouched until settlement consumes the round-0 pot.
     // Low threshold (3_333 ⇒ needs 1); 1 reveal meets it.
     let mut dd = setup_and_finalize(3_333, 3, 1);
     assert_eq!(dispute_state(&dd), DisputeState::RoundResolved);
 
-    // The single revealer is credited fee_per_juror; fee_paid decremented.
-    let revealer_idx = dd.drawn[0].1;
-    let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[revealer_idx].0);
-    assert_eq!(js.fees_earned, 1_000_000, "revealer fees_earned credited");
+    // No fees_earned for anyone — not the revealer, not the no-shows.
+    for &(_, leaf_idx) in &dd.drawn {
+        let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[leaf_idx].0);
+        assert_eq!(
+            js.fees_earned, 0,
+            "no fee credit before finality (ADR-0029)"
+        );
+    }
+    // fee_paid intact — the round-0 pot is consumed only at settlement.
     let d =
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
-    assert_eq!(d.fee_paid, 3_000_000 - 1_000_000, "fee_paid decremented");
-
-    // Non-revealers earn nothing.
-    for &(_, leaf_idx) in &dd.drawn[1..] {
-        let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[leaf_idx].0);
-        assert_eq!(js.fees_earned, 0, "non-revealer fees_earned");
-    }
+    assert_eq!(d.fee_paid, 3 * TEST_FPJ, "fee_paid intact until settlement");
     let _ = &mut dd;
 }
 
@@ -4732,7 +4701,7 @@ fn shortfall_round_goes_redraw_eligible_no_credits() {
     let d =
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
-    assert_eq!(d.fee_paid, 3_000_000, "fee_paid intact on shortfall");
+    assert_eq!(d.fee_paid, 3 * TEST_FPJ, "fee_paid intact on shortfall");
 }
 
 #[test]
@@ -4777,7 +4746,7 @@ fn redraw_slashes_noshows_and_reopens_created() {
     let d =
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
-    assert_eq!(d.fee_paid, 3_000_000);
+    assert_eq!(d.fee_paid, 3 * TEST_FPJ);
 }
 
 #[test]
@@ -4818,7 +4787,7 @@ fn redraw_exhaustion_fails_and_refunds_filer() {
                 .amount
         })
         .unwrap_or(0);
-    assert_eq!(after - before, 3_000_000, "filer refunded fee_paid");
+    assert_eq!(after - before, 3 * TEST_FPJ, "filer refunded fee_paid");
     let d =
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
@@ -4901,7 +4870,7 @@ fn plurality_tie_binary_nonreveal_goes_redraw_eligible() {
     let d =
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
-    assert_eq!(d.fee_paid, 5 * 1_000_000, "fee_paid intact on a tie");
+    assert_eq!(d.fee_paid, 5 * TEST_FPJ, "fee_paid intact on a tie");
 }
 
 #[test]
@@ -5046,7 +5015,7 @@ fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * 1_000_000,
+            fee: 3 * TEST_FPJ,
         })
         .instruction()
         .unwrap();
@@ -5268,7 +5237,7 @@ fn try_create_subaccord(
                 max_appeals,
                 min_jury_size: 3,
                 aggregation,
-                fee_per_juror: 1_000_000,
+                fee_per_juror: TEST_FPJ,
                 reveal_threshold_bps,
                 coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
@@ -5536,9 +5505,11 @@ fn propose_update_accepts_valid_params() {
     let pu = PendingUpdate::try_deserialize(&mut &acc.data[..]).unwrap();
     assert_eq!(pu.proposed, UpdatePayload::MinStake(2_000));
 
-    // Also test a valid AlphaBps change.
+    // Also test a valid AlphaBps change (ADR-0029: must keep the same-mint
+    // dominance pin — slash 200 ≥ 2·50; 500 would drop slash to 50 and is
+    // now correctly rejected).
     let mut env = setup_accumulator();
-    let r = do_propose_update(&mut env, 1, UpdatePayload::AlphaBps(500));
+    let r = do_propose_update(&mut env, 1, UpdatePayload::AlphaBps(2_000));
     r.assert_success();
 
     // Valid AppealWindow at exactly the floor.
@@ -5659,7 +5630,7 @@ fn withdraw_fees_pays_full_amount_when_vault_has_enough() {
     do_stake(&mut env, &juror, 5_000, path).assert_success();
 
     // Fund the vault with fee tokens (simulates a dispute fee deposit).
-    let fee_amount = 3_000_000u64;
+    let fee_amount = 3 * TEST_FPJ;
     add_vault_tokens(&mut env, fee_amount);
 
     // Simulate a settlement credit: set fees_earned on the juror's stake.
@@ -5700,13 +5671,13 @@ fn vault_invariant_exact_after_stake_and_dispute() {
     let jurors = arm_n_stakers(&mut env, 3);
     assert_vault_invariant(&env);
 
-    // Filing fee: 3 × fee_per_juror (1_000_000) = 3_000_000 fee tokens in.
+    // Filing fee: 3 × fee_per_juror (50) = 150 fee tokens in.
     let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
     assert_vault_invariant(&env);
 
-    // The vault now holds 15_000 stake + 3_000_000 fees = 3_015_000.
+    // The vault now holds 15_000 stake + 150 fees = 15_150.
     let vault = vault_ata(&env.subaccord, &env.mint);
-    assert_eq!(spl_balance(&env, &vault), 3_015_000);
+    assert_eq!(spl_balance(&env, &vault), 3 * 5_000 + 3 * TEST_FPJ);
 
     let _ = (dispute, jurors);
 }
@@ -5721,8 +5692,8 @@ fn withdraw_fees_cannot_drain_stake_same_mint() {
     let jurors = arm_n_stakers(&mut env, 3);
     let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
 
-    // Vault: 15_000 stake + 3_000_000 fee = 3_015_000 (all same-mint ATA).
-    let fee_per_juror = 1_000_000u64;
+    // Vault: 15_000 stake + 150 fee (all same-mint ATA).
+    let fee_per_juror = TEST_FPJ;
     let filing_fee = 3 * fee_per_juror;
     let total_stake = 3 * 5_000u64;
 
@@ -5767,9 +5738,9 @@ fn multi_claimant_withdraw_order_does_not_starve() {
     let jurors = arm_n_stakers(&mut env, 3);
     let _dispute = create_dispute_with_evidence(&mut env, [0xAA; 32]);
 
-    // Split the 3_000_000 filing fee between two jurors (settlement
+    // Split the 150 filing fee between two jurors (settlement
     // redistribution — ledger-only, no vault movement).
-    let half = 1_500_000u64;
+    let half = 3 * TEST_FPJ / 2;
     let pda0 = juror_stake_pda(&env.subaccord, &jurors[0].pubkey());
     set_fees_earned(&mut env, &pda0, half);
     let pda1 = juror_stake_pda(&env.subaccord, &jurors[1].pubkey());
@@ -5838,7 +5809,7 @@ fn create_dispute_with_evidence(env: &mut AccEnv, evidence_hash: [u8; 32]) -> (P
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * 1_000_000u64;
+    let fee = 3 * TEST_FPJ;
     let ix = env
         .ctx
         .program()
@@ -6018,8 +5989,8 @@ fn appeal_writes_new_evidence_hash_to_next_round_slot() {
     force_round_resolved(&mut env, &dispute, 0);
     fabricate_resolved_round(&mut env, &dispute, 0, 0);
 
-    // Round-1 fee = 7 * fee_per_juror (1_000_000) = 7_000_000; bond == fee;
-    // total = 14_000_000. Fund well above.
+    // Round-1 fee = 7 * fee_per_juror (50) = 350; bond == fee;
+    // total = 700. Fund well above.
     let appellant = fund_appellant(&mut env, 100_000_000);
     let new_hash = [0xBB; 32];
     do_appeal(&mut env, &dispute, &appellant, new_hash).assert_success();
@@ -6092,10 +6063,11 @@ fn run_finalize_round(
     env: &mut AccEnv,
     dispute: Pubkey,
     rnd: Pubkey,
-    drawn: &[(u32, usize)],
-    jurors: &[Keypair],
+    _drawn: &[(u32, usize)],
+    _jurors: &[Keypair],
 ) {
-    let mut ix = env
+    // ADR-0029: no remaining_accounts — finalize_round credits nothing.
+    let ix = env
         .ctx
         .program()
         .accounts(accounts::FinalizeRound {
@@ -6107,14 +6079,6 @@ fn run_finalize_round(
         .args(instruction::FinalizeRound {})
         .instruction()
         .unwrap();
-    for &(.., leaf_idx) in drawn {
-        let js = juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey());
-        ix.accounts.push(solana_program::instruction::AccountMeta {
-            pubkey: js,
-            is_signer: false,
-            is_writable: true,
-        });
-    }
     env.ctx
         .execute_instruction(ix, &[&env.creator])
         .unwrap()
@@ -6279,7 +6243,7 @@ fn scalar_median_full_lifecycle() {
     for &(.., leaf_idx) in &drawn {
         let js = read_juror_stake(&env, &env.subaccord, &jurors[leaf_idx].pubkey());
         assert_eq!(js.stake_delta, 0i64, "coherent juror not slashed");
-        assert_eq!(js.fees_earned, 1_000_000u64);
+        assert_eq!(js.fees_earned, TEST_FPJ);
         assert_eq!(js.active_draws, 0);
     }
 }
@@ -6536,5 +6500,466 @@ fn scalar_vote_sentinel_and_plurality_range_rejected() {
         !r.is_success(),
         "out-of-range plurality vote must be rejected; logs={:?}",
         r.logs()
+    );
+}
+
+// ─── ADR-0029: finality-conditional fees + same-mint slash dominance ─────────
+
+/// Raw `create_subaccord` driver for gate tests: explicit mints + economics.
+/// Returns the transaction result (failure encoded per anchor-litesvm 0.4).
+#[allow(clippy::too_many_arguments)]
+fn try_create_pool(
+    ctx: &mut anchor_litesvm::AnchorContext,
+    creator: &Keypair,
+    staking: &Pubkey,
+    fee_mint: &Pubkey,
+    fee_per_juror: u64,
+    min_stake: u64,
+    alpha_bps: u16,
+    salt: u8,
+) -> TransactionResult {
+    let mut domain_ref = [0u8; 32];
+    domain_ref[0] = 7;
+    domain_ref[1] = salt;
+    let sub = subaccord_pda(&creator.pubkey(), &domain_ref);
+    let ix = ctx
+        .program()
+        .accounts(accounts::CreateSubaccord {
+            creator: creator.pubkey(),
+            subaccord: sub,
+            staking_token: *staking,
+            fee_token: *fee_mint,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateSubaccord {
+            domain_ref,
+            evidence_spec: [0u8; 32],
+            params: CreateSubaccordParams {
+                min_stake,
+                alpha_bps,
+                review_window: 60,
+                commit_window: 60,
+                reveal_window: 60,
+                appeal_window: accord::constants::MIN_APPEAL_WINDOW_SECS,
+                max_appeals: 3,
+                min_jury_size: 3,
+                aggregation: Aggregation::Plurality,
+                fee_per_juror,
+                reveal_threshold_bps: 6_666,
+                coherence_tol_bps: 0,
+                shortfall_policy: ShortfallPolicy::Redraw,
+                max_draw_attempts: 3,
+                authority: creator.pubkey(),
+                evidence_operator: Pubkey::default(),
+                depth: TEST_DEPTH,
+                juror_credential: Pubkey::default(),
+                juror_schema: Pubkey::default(),
+            },
+        })
+        .instruction()
+        .unwrap();
+    ctx.execute_instruction(ix, &[creator]).unwrap()
+}
+
+fn gate_env() -> (anchor_litesvm::AnchorContext, Keypair, Pubkey, Pubkey) {
+    let mut ctx = AnchorLiteSVM::build_with_program(ID, &load_program());
+    let creator = Keypair::new();
+    ctx.svm
+        .airdrop(&creator.pubkey(), 100 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let stake_mint = Pubkey::new_unique();
+    create_mint(&mut ctx, &stake_mint);
+    let fee_mint = Pubkey::new_unique();
+    create_mint(&mut ctx, &fee_mint);
+    (ctx, creator, stake_mint, fee_mint)
+}
+
+#[test]
+fn same_mint_dominance_gate_at_creation() {
+    // ADR-0029 L4: same-mint pools enforce
+    // `α·min_stake/10_000 ≥ MIN_SLASH_FEE_RATIO · fee_per_juror`.
+    // slash = 1_000 bps · 1_000 / 10_000 = 100 ⇒ fee ≤ 50 (ratio 2).
+    let (mut ctx, creator, stake_mint, _fee_mint) = gate_env();
+
+    // Same-mint, fee 51 at slash 100: 100 < 2·51 ⇒ rejected (knife edge + 1).
+    let r = try_create_pool(
+        &mut ctx,
+        &creator,
+        &stake_mint,
+        &stake_mint,
+        51,
+        1_000,
+        1_000,
+        1,
+    );
+    assert!(
+        !r.is_success(),
+        "fee-dominated same-mint pool must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // Same-mint, fee 50: 100 ≥ 2·50 ⇒ accepted (the exact knife edge).
+    let (mut ctx, creator, stake_mint, fee_mint) = gate_env();
+    let r = try_create_pool(
+        &mut ctx,
+        &creator,
+        &stake_mint,
+        &stake_mint,
+        50,
+        1_000,
+        1_000,
+        2,
+    );
+    r.assert_success();
+
+    // Same-mint, fee 0 (feeless): unconstrained — any α legal, even 0.
+    let r = try_create_pool(&mut ctx, &creator, &stake_mint, &stake_mint, 0, 1_000, 0, 3);
+    r.assert_success();
+
+    // Split-mint: the numeric comparison is unsound cross-mint — explicitly
+    // NOT gated. A fee 10_000× the slash must be accepted.
+    let r = try_create_pool(
+        &mut ctx,
+        &creator,
+        &stake_mint,
+        &fee_mint,
+        1_000_000,
+        1_000,
+        1_000,
+        4,
+    );
+    r.assert_success();
+}
+
+#[test]
+fn settle_round_lone_coherent_takes_whole_pot() {
+    // ADR-0029 L2(c): the whole round fee pot (incl. the incoherent
+    // revealers' forfeited base fees) goes to the coherent minority. Round 0
+    // overturned on appeal (final_ruling = 1): seat 0 alone voted 1 → it
+    // takes the entire 3 × TEST_FPJ pot plus both incoherent slashes.
+    let PriorRoundSetup {
+        mut env,
+        leaves,
+        drawn,
+        dispute,
+        rnd,
+    } = setup_prior_round_settlement();
+
+    // Seat 0 voted the final ruling (1); seats 1,2 revealed incoherently (0).
+    write_round_reveals(&mut env, rnd, 3, 0, &[(0, 1), (1, 0), (2, 0)]);
+    run_settle_round(&mut env, dispute, rnd, &drawn, &leaves);
+
+    for &(seat, leaf_idx) in &drawn {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        if seat == 0 {
+            assert_eq!(js.stake_delta, 200, "lone coherent banks both slashes");
+            assert_eq!(
+                js.fees_earned,
+                3 * TEST_FPJ,
+                "lone coherent takes the whole round-0 pot"
+            );
+        } else {
+            assert_eq!(js.stake_delta, -100, "incoherent revealer slashed");
+            assert_eq!(
+                js.fees_earned, 0,
+                "incoherent revealer forfeits the base fee (ADR-0029)"
+            );
+        }
+    }
+    // Round-0 pot fully consumed: the filer's refundable pool is zero.
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.fee_paid, 0, "round-0 pot leaves fee_paid at settlement");
+}
+
+#[test]
+fn cancel_after_resolved_round_pays_participation_then_refunds_remainder() {
+    // ADR-0029 L3 (cancel path): a RoundResolved current round pays its
+    // revealers the base participation fee out of fee_paid BEFORE the filer
+    // refund — no final ruling exists on the Failed path.
+    let mut dd = setup_and_finalize(3_333, 3, 2); // 2 of 3 reveal vote 0 → resolved
+    assert_eq!(dispute_state(&dd), DisputeState::RoundResolved);
+
+    let fata = juror_ata(&dd.filer.pubkey(), &dd.env.mint);
+    let before = spl_balance(&dd.env, &fata);
+
+    // Warp past reveal_end + appeal_window + grace.
+    let round_acc = dd.env.ctx.svm.get_account(&dd.rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let deadline = round.reveal_end;
+    drop(round_acc);
+    let now = dd.env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(
+        &mut dd.env,
+        deadline - now
+            + accord::constants::MIN_APPEAL_WINDOW_SECS as i64
+            + POST_DRAW_CANCEL_GRACE_SECS
+            + 1,
+    );
+
+    let vault = vault_ata(&dd.env.subaccord, &dd.env.mint);
+    let ix = dd
+        .env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: dd.env.creator.pubkey(),
+            subaccord: dd.env.subaccord,
+            dispute: dd.dispute,
+            fee_token: dd.env.mint,
+            filer_token_account: fata,
+            fee_vault: vault,
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let mut accts = ix.accounts;
+    accts.push(solana_program::instruction::AccountMeta {
+        pubkey: dd.rnd,
+        is_signer: false,
+        is_writable: false,
+    });
+    for &(_, leaf_idx) in &dd.drawn {
+        accts.push(solana_program::instruction::AccountMeta {
+            pubkey: juror_stake_pda(&dd.env.subaccord, &dd.leaves[leaf_idx].0),
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    let ix = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: accts,
+        data: ix.data,
+    };
+    dd.env
+        .ctx
+        .execute_instruction(ix, &[&dd.env.creator])
+        .unwrap()
+        .assert_success();
+
+    assert_eq!(dispute_state(&dd), DisputeState::Failed);
+
+    // Both revealers banked the base participation fee; the no-show nothing.
+    for (seat, &(_, leaf_idx)) in dd.drawn.iter().enumerate() {
+        let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[leaf_idx].0);
+        if seat < 2 {
+            assert_eq!(
+                js.fees_earned, TEST_FPJ,
+                "revealer seat {seat} participation"
+            );
+        } else {
+            assert_eq!(js.fees_earned, 0, "no-show seat {seat} gets nothing");
+        }
+    }
+    // Filer refund = remaining fee_paid = 3·fee − 2·fee.
+    assert_eq!(
+        spl_balance(&dd.env, &fata) - before,
+        3 * TEST_FPJ - 2 * TEST_FPJ,
+        "filer refunded exactly the unconsumed remainder"
+    );
+}
+
+#[test]
+fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
+    // ADR-0029 L3 (redraw path): on exhaustion → Failed, each RESOLVED prior
+    // round's revealers bank the base fee (round 0 from fee_paid; the appeal
+    // round's from its bond's fee portion), the filer is refunded the
+    // remainder, and the bond stays claimable (bond-only).
+    let mut env = setup_accumulator_with(6_666, 1, 3); // max_draw_attempts = 1
+    let jurors = arm_n_stakers(&mut env, 7);
+    let leaves: Vec<(Pubkey, u64)> = jurors.iter().map(|j| (j.pubkey(), 5_000u64)).collect();
+    let sub = read_subaccord(&env);
+    let (dispute, filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+
+    // Freeze the root and draw round 0 (3 seats).
+    let vrf = {
+        let mut c = [0u8; 32];
+        c.copy_from_slice(&dispute.to_bytes());
+        c
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+    let rnd0 = round_pda(&dispute, 0);
+    let panel0 = submit_draw_panel(&mut env, dispute, rnd0, &vrf, 0, 0, 3, &leaves);
+    let drawn0: Vec<(u32, usize)> = panel0.iter().map(|&(s, l, _)| (s, l)).collect();
+
+    // 2 of 3 reveal vote 0 → decisive → RoundResolved.
+    let votes0: Vec<Option<u64>> = panel0
+        .iter()
+        .enumerate()
+        .map(|(i, _)| if i < 2 { Some(0) } else { None })
+        .collect();
+    commit_reveal_votes(&mut env, dispute, rnd0, &jurors, &panel0, &votes0);
+    finalize_round_for(&mut env, dispute, rnd0, &drawn0, &jurors);
+    assert_eq!(
+        Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+            .unwrap()
+            .state,
+        DisputeState::RoundResolved
+    );
+
+    // Appeal → round 1 (panel 7), dispute back to Created.
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant, [0u8; 32]).assert_success();
+    let appeal_fee = 7 * TEST_FPJ;
+    let bond = appeal_fee; // bond == appeal fee (see `appeal`)
+
+    // Round 1: draw 7 seats, only 1 reveals → shortfall → RedrawEligible.
+    let rnd1 = round_pda(&dispute, 1);
+    let panel1 = submit_draw_panel(&mut env, dispute, rnd1, &vrf, 1, 0, 7, &leaves);
+    let drawn1: Vec<(u32, usize)> = panel1.iter().map(|&(s, l, _)| (s, l)).collect();
+    let votes1: Vec<Option<u64>> = panel1
+        .iter()
+        .enumerate()
+        .map(|(i, _)| if i < 1 { Some(0) } else { None })
+        .collect();
+    commit_reveal_votes(&mut env, dispute, rnd1, &jurors, &panel1, &votes1);
+    finalize_round_for(&mut env, dispute, rnd1, &drawn1, &jurors);
+    assert_eq!(
+        Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+            .unwrap()
+            .state,
+        DisputeState::RedrawEligible
+    );
+
+    // Exhausting redraw: remaining = [round-1 JS ×7] + [Round_0, JS ×3] +
+    // [Bond_0]. max_draw_attempts = 1 ⇒ first redraw exhausts → Failed.
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    let before = spl_balance(&env, &fata);
+    // Round-1 jurors' fees BEFORE the redraw (a juror drawn in both rounds
+    // legitimately carries round-0 participation; only the DELTA must be 0 —
+    // the shortfall round never resolved).
+    let fees_before: Vec<u64> = drawn1
+        .iter()
+        .map(|&(_, li)| read_juror_stake(&env, &env.subaccord, &leaves[li].0).fees_earned)
+        .collect();
+    let bond_pda = Pubkey::find_program_address(
+        &[SEED_APPEAL_BOND, dispute.as_ref(), &0u32.to_le_bytes()],
+        &ID,
+    )
+    .0;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Redraw {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd1,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::Redraw {})
+        .instruction()
+        .unwrap();
+    let mut accts = ix.accounts;
+    for &(_, leaf_idx) in &drawn1 {
+        accts.push(solana_program::instruction::AccountMeta {
+            pubkey: juror_stake_pda(&env.subaccord, &leaves[leaf_idx].0),
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    accts.push(solana_program::instruction::AccountMeta {
+        pubkey: rnd0,
+        is_signer: false,
+        is_writable: false,
+    });
+    for &(_, leaf_idx) in &drawn0 {
+        accts.push(solana_program::instruction::AccountMeta {
+            pubkey: juror_stake_pda(&env.subaccord, &leaves[leaf_idx].0),
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    accts.push(solana_program::instruction::AccountMeta {
+        pubkey: bond_pda,
+        is_signer: false,
+        is_writable: false,
+    });
+    let ix = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: accts,
+        data: ix.data,
+    };
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    assert_eq!(
+        Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+            .unwrap()
+            .state,
+        DisputeState::Failed
+    );
+
+    // Round-0's two revealers banked participation; round 1 (never resolved)
+    // paid nothing — its lone revealer gets no fee.
+    for &(seat, leaf_idx) in &drawn0 {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        if votes0[seat as usize].is_some() {
+            assert_eq!(js.fees_earned, TEST_FPJ, "round-0 revealer participation");
+        } else {
+            assert_eq!(js.fees_earned, 0);
+        }
+    }
+    // Round-1 jurors: a juror ALSO drawn (and revealing) in round 0 gains its
+    // round-0 participation inside this redraw; everyone else gains nothing —
+    // the unresolved shortfall round itself pays no one.
+    let r0_revealers: std::collections::HashSet<usize> = drawn0
+        .iter()
+        .filter(|&&(s, _)| votes0[s as usize].is_some())
+        .map(|&(_, l)| l)
+        .collect();
+    for (i, &(seat, leaf_idx)) in drawn1.iter().enumerate() {
+        let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
+        let expected = fees_before[i]
+            + if r0_revealers.contains(&leaf_idx) {
+                TEST_FPJ
+            } else {
+                0
+            };
+        assert_eq!(
+            js.fees_earned, expected,
+            "unresolved shortfall round pays nothing (seat {seat})"
+        );
+    }
+
+    // Filer refund = fee_paid minus round-0 participation = 150 − 100.
+    assert_eq!(
+        spl_balance(&env, &fata) - before,
+        3 * TEST_FPJ - 2 * TEST_FPJ,
+        "filer refunded the unconsumed round-0 remainder"
+    );
+
+    // The bond stays claimable — bond portion only (the fee portion funded
+    // the never-resolved round 1 and is trapped).
+    let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ClaimAppealRefund {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            appeal_bond: bond_pda,
+            fee_token: env.mint,
+            claimant_token_account: appellant_ata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::ClaimAppealRefund { round_idx: 0u32 })
+        .instruction()
+        .unwrap();
+    let appellant_before_claim = spl_balance(&env, &appellant_ata);
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+    assert_eq!(
+        spl_balance(&env, &appellant_ata) - appellant_before_claim,
+        bond,
+        "appellant recovers only the bond; the appeal fee is not theirs"
     );
 }

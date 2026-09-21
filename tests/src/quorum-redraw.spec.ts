@@ -175,7 +175,6 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
           dispute: armed.dispute,
           round: roundPda,
         },
-        panelPdas,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(REDRAW_ELIGIBLE);
@@ -277,7 +276,6 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
           dispute: armed.dispute,
           round: roundPda,
         },
-        rePanelPdas,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
@@ -285,10 +283,11 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
     const finalRound = await readRound(env, roundPda);
     expect(finalRound!.result).toBe(0n); // unanimous option 0
 
-    // Each revealer's feesEarned credited (ADR-0020).
+    // ADR-0029: no fee credit at finalize_round — fees settle at
+    // settlement against the FINAL ruling.
     for (const j of reDrawn) {
       const js = await fetchDecoded(env, j.stakePda, getJurorStakeDecoder());
-      expect(js?.feesEarned).toBe(BigInt(FEE_PER_JUROR));
+      expect(js?.feesEarned).toBe(0n);
     }
   }, 600_000);
 
@@ -363,7 +362,6 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
           dispute: armed.dispute,
           round: roundPda,
         },
-        panelPdas,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(REDRAW_ELIGIBLE);
@@ -473,7 +471,6 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
           dispute: armed.dispute,
           round: roundPda,
         },
-        panelPdas,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(REDRAW_ELIGIBLE);
@@ -585,7 +582,6 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
           dispute: armed.dispute,
           round: roundPda,
         },
-        panelPdas,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(REDRAW_ELIGIBLE);
@@ -698,7 +694,6 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
           dispute: armed.dispute,
           round: roundPda,
         },
-        rePanelPdas,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
@@ -710,7 +705,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
     // drawn in both panels earned nothing in the tied attempt).
     for (const j of reDrawn) {
       const js = await fetchDecoded(env, j.stakePda, getJurorStakeDecoder());
-      expect(js?.feesEarned).toBe(BigInt(FEE_PER_JUROR));
+      expect(js?.feesEarned).toBe(0n); // ADR-0029: nothing before finality
     }
   }, 600_000);
 });

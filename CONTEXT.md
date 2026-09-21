@@ -43,7 +43,7 @@ The Accord's verdict on a Dispute — the option that received the majority of J
 _Avoid_: verdict, judgment, decision
 
 **Coherence**:
-Voting with the Ruling majority. Coherent Jurors earn arbitration fees (in `fee_token`, via `fees_earned`) + slashed stake (in `staking_token`, via `stake_delta`) from Incoherent Jurors.
+Voting with the Ruling majority. Coherent Jurors earn arbitration fees (in `fee_token`, via `fees_earned`) + slashed stake (in `staking_token`, via `stake_delta`) from Incoherent Jurors. ADR-0029: fees are finality-conditional — a round's entire fee pot settles only at `settle_round`/`finalize_dispute` against the FINAL ruling (coherent jurors split the whole pot; incoherent revealers forfeit their base fee into it; on the Failed path, resolved rounds' revealers bank base participation only).
 _Avoid_: correct vote, winning vote
 
 **Incoherence**:

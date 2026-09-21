@@ -85,6 +85,44 @@ pub(crate) fn validate_update_cross_field(sub: &Subaccord, payload: &UpdatePaylo
             AccordError::InvalidThreshold
         );
     }
+    // ADR-0029: same-mint slash-dominance. Compose the updated leg with the
+    // live pool (the two untouched fields are authoritative) and check the
+    // numeric pin — only meaningful where staking_token == fee_token.
+    let (alpha, min_stake, fee) = match payload {
+        UpdatePayload::AlphaBps(v) => (*v, sub.min_stake, sub.fee_per_juror),
+        UpdatePayload::MinStake(v) => (sub.alpha_bps, *v, sub.fee_per_juror),
+        UpdatePayload::FeePerJuror(v) => (sub.alpha_bps, sub.min_stake, *v),
+        _ => return Ok(()),
+    };
+    require_slash_dominance(&sub.staking_token, &sub.fee_token, alpha, min_stake, fee)
+}
+
+/// Same-mint slash-dominance gate (ADR-0029 decision 2). Where
+/// `staking_token == fee_token` the `slash ≥ ratio·fee` comparison is unit-true
+/// and IS enforced: `α·min_stake/10_000 · MIN_SLASH_FEE_RATIO ≥ fee_per_juror`.
+/// `fee_per_juror == 0` bypasses (feeless pools unconstrained; `alpha_bps = 0`
+/// stays legal only for them). Split-mint pools are explicitly NOT checked —
+/// the units are incommensurable (the 2026-08-31 reverted cross-mint gate is
+/// the recorded proof of unsoundness); that ratio is operator/governance
+/// discipline, retunable through the 48h timelock.
+pub(crate) fn require_slash_dominance(
+    staking_token: &Pubkey,
+    fee_token: &Pubkey,
+    alpha_bps: u16,
+    min_stake: u64,
+    fee_per_juror: u64,
+) -> Result<()> {
+    if fee_per_juror == 0 || staking_token != fee_token {
+        return Ok(());
+    }
+    let slash = (alpha_bps as u64)
+        .checked_mul(min_stake)
+        .and_then(|v| v.checked_div(10_000))
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    let max_fee = MIN_SLASH_FEE_RATIO
+        .checked_mul(fee_per_juror)
+        .ok_or(AccordError::ArithmeticOverflow)?;
+    require!(slash >= max_fee, AccordError::FeeDominatesSlash);
     Ok(())
 }
 
@@ -277,10 +315,6 @@ pub(crate) fn read_bond_amounts<'info>(
             AccordError::InvalidMembershipProof
         );
         let d = bond_info.try_borrow_data()?;
-        require!(
-            d.len() >= BOND_AMOUNT_OFFSET + 8,
-            AccordError::InvalidMembershipProof
-        );
         let amt = u64::from_le_bytes(
             d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
                 .try_into()
@@ -294,10 +328,16 @@ pub(crate) fn read_bond_amounts<'info>(
 }
 
 /// Release `active_draws` for every juror in every prior round
-/// (`0..current_round`). Used by `cancel_dispute` so that appeal-escalated
-/// disputes that stall don't permanently lock prior-round jurors
-/// (REVIEW #2).  Each round's `JurorStake` PDAs must follow the `Round` PDA
-/// in `remaining_accounts`, laid out sequentially starting at `start`.
+/// (`0..current_round`), and — ADR-0029 D3 — pay each prior round's
+/// **revealers** their base `fee_per_juror` participation fee. Used by
+/// `cancel_dispute` and `redraw`'s exhaustion branch (the Failed path: no
+/// final ruling exists, so no coherence judgment is possible — participation
+/// only). Round 0's consumption debits `dispute.fee_paid` (the filer's
+/// refundable pool); appeal rounds' fees are covered by their `AppealBond`'s
+/// fee portion (never the appellant's to reclaim — bean accord-xftx).
+///
+/// Each round's `JurorStake` PDAs must follow the `Round` PDA in
+/// `remaining_accounts`, laid out sequentially starting at `start`.
 /// Returns the index past the last consumed account.
 pub(crate) fn release_prior_rounds<'info>(
     accounts: &'info [AccountInfo<'info>],
@@ -306,6 +346,8 @@ pub(crate) fn release_prior_rounds<'info>(
     start: usize,
     current_round: u32,
     slash_per_juror: u64,
+    fee_per_juror: u64,
+    fee_paid: &mut u64,
 ) -> Result<usize> {
     if current_round == 0 {
         return Ok(start);
@@ -314,6 +356,7 @@ pub(crate) fn release_prior_rounds<'info>(
     // CU-opt field access — see `crate::layout`.
     const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
     const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
+    const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
     for round_idx in 0..current_round {
         require!(idx < accounts.len(), AccordError::InvalidState);
         let round_info = &accounts[idx];
@@ -327,12 +370,20 @@ pub(crate) fn release_prior_rounds<'info>(
             AccordError::InvalidMembershipProof
         );
 
-        let jurors: Vec<Pubkey> = {
+        let (jurors, reveals): (Vec<Pubkey>, Vec<u64>) = {
             let loader = AccountLoader::<Round>::try_from(round_info)?;
             let round = loader.load()?;
-            round.jurors[..round.juror_count as usize].to_vec()
+            let count = round.juror_count as usize;
+            (
+                round.jurors[..count].to_vec(),
+                round.reveals[..count].to_vec(),
+            )
         };
         let count = jurors.len();
+
+        // ADR-0029 D3: participation pay — every revealer of a resolved prior
+        // round banks the base fee; the round-0 pot leaves `fee_paid`.
+        let mut round0_earned = 0u64;
         idx += 1;
         require!(idx + count <= accounts.len(), AccordError::InvalidPanelSize);
 
@@ -352,6 +403,24 @@ pub(crate) fn release_prior_rounds<'info>(
                 AccordError::InvalidMembershipProof
             );
             let mut data = acct_info.try_borrow_mut_data()?;
+            // Participation credit (ADR-0029 Failed path): revealers only.
+            if fee_per_juror > 0 && reveals[j] != u64::MAX {
+                let fees = u64::from_le_bytes(
+                    data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                        .try_into()
+                        .unwrap(),
+                );
+                let new_fees = fees
+                    .checked_add(fee_per_juror)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+                data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
+                    .copy_from_slice(&new_fees.to_le_bytes());
+                if round_idx == 0 {
+                    round0_earned = round0_earned
+                        .checked_add(fee_per_juror)
+                        .ok_or(AccordError::ArithmeticOverflow)?;
+                }
+            }
             let draws = u32::from_le_bytes(
                 data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
                     .try_into()
@@ -372,21 +441,30 @@ pub(crate) fn release_prior_rounds<'info>(
                     .copy_from_slice(&new_reserve.to_le_bytes());
             }
         }
+        if round_idx == 0 && round0_earned > 0 {
+            *fee_paid = fee_paid
+                .checked_sub(round0_earned)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+        }
         idx += count;
     }
     Ok(idx)
 }
 
 /// Shared per-round coherence settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti,
-/// ADR-0020 two-mint rework).
+/// ADR-0020 two-mint rework; ADR-0029 finality-conditional fees).
 ///
 /// Judges every drawn juror against `final_ruling` (NOT the round's own result),
 /// slashes incoherent/non-revealing jurors by `α·min_stake`, and redistributes
 /// two distinct pools:
 /// - **stake pool** (`stake_token`): slash proceeds → written to `stake_delta`.
-/// - **fee pool** (`fee_token`): non-revealer fees + forfeited bonds → written
-///   to `fees_earned`. Revealers already received their base `fee_per_juror`
-///   credit at `finalize_round`; only the forfeited portion redistributes here.
+/// - **fee pool** (`fee_token`): the round's ENTIRE fee pot — every drawn
+///   seat's base fee (round 0: the filer's `fee_paid` deposit; round r>0: the
+///   appeal-fee portion of `AppealBond.amount`) + `pool_extra` (forfeited
+///   no-flip bonds, final round only) → written to `fees_earned`. No fee is
+///   credited before settlement (ADR-0029 supersedes the `finalize_round`
+///   credit); incoherent revealers forfeit their base fee into the pot
+///   (Kleros parity — the vindicated minority's "lone voice of reason" payoff).
 ///
 /// Recipient selection (bean accord-aqmw):
 /// - `coherent_count > 0`: pools split among **coherent** jurors (normal).
@@ -399,9 +477,11 @@ pub(crate) fn release_prior_rounds<'info>(
 ///   (follow-up: authority-claimable withdrawal).
 ///
 /// Decrements `active_draws` for every drawn juror (releases the unstake lock).
+/// Round 0's consumed pot is debited from `fee_paid` (which then holds only
+/// the filer's refundable remainder — zero once round 0 settles, since nothing
+/// decrements it before settlement).
 ///
-/// `pool_extra` is the forfeited (no-flip) appeal-bond total (final round only;
-/// 0 for prior rounds). All adjustments are ledger-only — no SPL transfers.
+/// All adjustments are ledger-only — no SPL transfers.
 pub(crate) fn settle_round_accounts(
     round: &Round,
     terms: &CaseTerms,
@@ -409,6 +489,7 @@ pub(crate) fn settle_round_accounts(
     accounts: &[AccountInfo],
     final_ruling: u64,
     pool_extra: u64,
+    fee_paid: &mut u64,
 ) -> Result<()> {
     let panel = round.juror_count as usize;
     require!(accounts.len() == panel, AccordError::InvalidPanelSize);
@@ -478,15 +559,23 @@ pub(crate) fn settle_round_accounts(
         }
     }
 
-    // Fee pool (fee_token): non-revealer fees + forfeited bonds (ADR-0020).
-    // Revealers already got their base fee at finalize_round; only the
-    // forfeited portion redistributes here.
-    let non_revealer_fee = ((panel as u64).saturating_sub(round.reveal_count as u64))
+    // Fee pool (fee_token, ADR-0029): the round's ENTIRE pot — every drawn
+    // seat's base `fee_per_juror` (round 0: the filer's filing deposit; round
+    // r>0: the appeal-fee portion of the bond) + the forfeited no-flip bonds
+    // (`pool_extra`, final round only). Non-revealer and incoherent-revealer
+    // fees stay inside the pot for the coherent to split — nothing is paid
+    // before settlement.
+    let fee_pool = (panel as u64)
         .checked_mul(terms.fee_per_juror)
+        .and_then(|v| v.checked_add(pool_extra))
         .ok_or(AccordError::ArithmeticOverflow)?;
-    let fee_pool = non_revealer_fee
-        .checked_add(pool_extra)
-        .ok_or(AccordError::ArithmeticOverflow)?;
+    if round.round_idx == 0 && fee_pool > 0 {
+        // Round-0 pot leaves the filer's refundable pool at consumption time
+        // (ADR-0029: `fee_paid` is never decremented before settlement).
+        *fee_paid = fee_paid
+            .checked_sub(fee_pool)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+    }
 
     // Recipient pool: coherent jurors normally; when none are coherent
     // (a prior round overturned on appeal, or a degenerate

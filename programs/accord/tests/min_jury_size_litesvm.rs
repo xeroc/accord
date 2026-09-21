@@ -77,7 +77,7 @@ fn params(min_jury_size: u32, max_appeals: u8) -> CreateSubaccordParams {
         max_appeals,
         min_jury_size,
         aggregation: Aggregation::Plurality,
-        fee_per_juror: 1_000_000,
+        fee_per_juror: 50,
         reveal_threshold_bps: 6_666,
         coherence_tol_bps: 0,
         shortfall_policy: ShortfallPolicy::Redraw,
@@ -291,7 +291,8 @@ fn zero_voting_window_rejected_at_creation() {
 fn valid_bounds_accepted_at_creation() {
     // Boundary values that MUST pass: alpha exactly 10_000, min_stake 1,
     // 1-second windows — the creation gate mirrors the update path without
-    // over-rejecting.
+    // over-rejecting. Feeless (ADR-0029): at min_stake 1 the slash is dust, so
+    // a non-zero fee would be fee-dominated — fee 0 is the unconstrained case.
     let (mut ctx, creator, mint) = setup();
     let mut p = params(3, 3);
     p.alpha_bps = 10_000;
@@ -299,5 +300,6 @@ fn valid_bounds_accepted_at_creation() {
     p.review_window = 1;
     p.commit_window = 1;
     p.reveal_window = 1;
+    p.fee_per_juror = 0;
     try_create(&mut ctx, &creator, &mint, nonzero_risk(10), p).assert_success();
 }

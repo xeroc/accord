@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (implementation pending — bean `accord-3j58`)
+Accepted — implemented (bean `accord-3j58`)
 
 ## Context
 

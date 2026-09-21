@@ -57,6 +57,7 @@ impl<'info> FinalizeDispute<'info> {
         let panel = round.juror_count as usize;
         let appeal_n = dispute.current_round as usize;
         let fee_per_juror = dispute.terms.fee_per_juror;
+        let terms = dispute.terms; // Copy — splits the terms/fee_paid borrows below
         require!(
             ctx.remaining_accounts.len() == panel + appeal_n,
             AccordError::InvalidPanelSize
@@ -131,11 +132,12 @@ impl<'info> FinalizeDispute<'info> {
         // --- Settle the final round's jurors (coherence vs final_ruling) ---
         settle_round_accounts(
             &round,
-            &dispute.terms,
+            &terms,
             &sub_key,
             &ctx.remaining_accounts[..panel],
             final_ruling,
             forfeited_total,
+            &mut dispute.fee_paid,
         )?;
 
         round.settled = 1;
