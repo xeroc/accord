@@ -44,6 +44,8 @@ status banner is annotated.
 | [0026](0026-plurality-tie-non-decisive-redraw.md)                             | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner         | Accepted             |
 | [0027](0027-domain-document-registry-public-cas.md)                           | Domain document registry — public content-addressed CAS on the evidence daemon (amends 0011)        | Accepted             |
 | [0028](0028-pda-authorities-rent-payer-split-retunable-court-params.md)      | PDA update authorities — rent-payer split + retunable court params (amends 0005)                    | Proposed             |
+| [0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md)   | Juror fees settle at finality vs the final ruling; same-mint slash-dominance guard (supersedes 0018 §1) | Accepted (impl pending) |
+| [0030](0030-flip-bounty-finality-settled-appellant-reward.md)               | Flip-bounty — finality-settled reward for verdict-flipping appellants (blocked by 0029 plumbing)     | Accepted (impl pending) |
 
 ### Supersession map
 
@@ -90,9 +92,7 @@ status banner is annotated.
 - **Auditing**: 0008 + 0009 + 0012 are the security-critical ADRs (snapshot fraud
   proofs → canonical accumulator, sortition enforcement, VRF integration).
 
-## Authoring a new Accord ADR
-
-1. Number = next sequential (currently **0029**).
+1. Number = next sequential (currently **0031**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

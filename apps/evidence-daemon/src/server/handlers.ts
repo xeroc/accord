@@ -11,6 +11,7 @@
  * (codec, integrity gate, store, chain reads, re-encryption).
  */
 
+import type { DomainPreimageProof } from "../pipeline/domain.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
 
 /** 32-byte SHA-256 digest, hex- or base58-style opaque to the server. */
@@ -145,12 +146,13 @@ export type DomainGetResult =
     }
   | { readonly ok: false; readonly status: 400 | 404; readonly error: string };
 
-/** PUT /domains/{hash}?subaccord={addr} — bytes + Content-Type (default text/markdown) + anchor. */
+/** PUT /domains/{hash}?subaccord={addr}[&preimage={hex}&offset={n}] — bytes + Content-Type (default text/markdown) + anchor + optional preimage proof (derived domain_ref). */
 export type DomainPutHandler = (
   hash: string,
   bytes: Uint8Array,
   contentType: string,
   subaccord: string,
+  proof?: DomainPreimageProof,
 ) => Promise<DomainPutResult>;
 
 /** GET /domains/{hash} — the stored bytes + stored Content-Type. */

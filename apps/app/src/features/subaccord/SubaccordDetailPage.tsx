@@ -306,7 +306,7 @@ function SubaccordDetail({
 
       {/* Domain document (ADR-0027): the rules this subaccord arbitrates under */}
       <div className="mt-8">
-        <DomainDocPanel hash={hexIfSet(d.domainRef)} />
+        <DomainDocPanel hash={hexIfSet(d.domainRef)} subaccord={address} />
       </div>
     </>
   );

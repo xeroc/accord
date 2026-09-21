@@ -100,14 +100,21 @@ function makeApp(opts: MakeAppOpts = {}) {
     health: async () => ({ ok: true }),
     publicKeys: STUB_PUBLIC_KEYS,
     // Same outcome→result mapping wire.ts applies (pipeline ⇒ handler shape).
-    domainPut: async (hash, bytes, contentType, subaccord) => {
-      const out = await putDomain(hash, bytes, contentType, subaccord, {
-        store,
-        maxBytes: opts.maxBytes ?? MAX_DOMAIN_BYTES,
-        sha256: sdkSha256,
-        readAnchor: anchor,
-        anchorPollMs: opts.anchorPollMs ?? 25,
-      });
+    domainPut: async (hash, bytes, contentType, subaccord, proof) => {
+      const out = await putDomain(
+        hash,
+        bytes,
+        contentType,
+        subaccord,
+        {
+          store,
+          maxBytes: opts.maxBytes ?? MAX_DOMAIN_BYTES,
+          sha256: sdkSha256,
+          readAnchor: anchor,
+          anchorPollMs: opts.anchorPollMs ?? 25,
+        },
+        proof,
+      );
       return out.status === 200 || out.status === 201
         ? { ok: true, status: out.status }
         : { ok: false, status: out.status, error: out.reason };
@@ -309,5 +316,173 @@ describe("GET /domains/:hash", () => {
     // NB: "../x" can't reach the route — URL path normalization resolves it
     // client-side; the route-level guard covers shape ("nothex" below).
     expect((await app.request(get("nothex"))).status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Preimage-proved upload (derived domain_ref): Arbitrables whose on-chain
+// domain_ref is NOT sha256(doc) (e.g. a composite hash over seed + doc hash)
+// prove the binding instead of relying on it: PUT carries the opaque preimage
+// with sha256(preimage) == domain_ref and the byte offset of the 32-byte
+// sha256(doc) slice inside it. The daemon stays derivation-agnostic.
+// ---------------------------------------------------------------------------
+
+describe("PUT /domains/:hash — preimage-proved upload (derived domain_ref)", () => {
+  // Synthetic derivation — any layout with sha256(doc) contiguous inside the
+  // preimage works. prefix(14) ‖ seed_u64le ‖ sha256(doc) ⇒ offset 22.
+  const PREFIX = new TextEncoder().encode("arb:domain:v1");
+  const SEED = 7n;
+  const OFFSET = PREFIX.length + 8;
+
+  function u64le(v: bigint): Uint8Array {
+    const b = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) {
+      b[i] = Number((v >> BigInt(8 * i)) & 0xffn);
+    }
+    return b;
+  }
+
+  function bytesToHex(b: Uint8Array): string {
+    return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+
+  /** Build the preimage + derived ref for a doc (the uploader's job). */
+  async function derive(doc: Uint8Array): Promise<{ ref: string; preimage: Uint8Array }> {
+    const preimage = new Uint8Array([...PREFIX, ...u64le(SEED), ...(await sdkSha256(doc))]);
+    return { ref: sha256Hex(preimage), preimage };
+  }
+
+  function putProof(
+    ref: string,
+    body: Uint8Array,
+    preimage: Uint8Array,
+    offset: number = OFFSET,
+    subaccord: string = SUB,
+  ): Request {
+    if (!anchorRefs.has(subaccord)) setAnchor(subaccord, ref); // honest-author default
+    return new Request(
+      `http://x/domains/${ref}?subaccord=${subaccord}&preimage=${bytesToHex(preimage)}&offset=${offset}`,
+      { method: "PUT", body },
+    );
+  }
+
+  it("valid preimage → 201; doc served at BOTH the derived ref and its content hash", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const res = await app.request(putProof(ref, DOC, preimage));
+    expect(res.status).toBe(201);
+    expect(res.headers.get("location")).toBe(`/domains/${ref}`);
+
+    // On-chain key: anyone holding the subaccord's domain_ref can fetch.
+    const byRef = await app.request(get(ref));
+    expect(byRef.status).toBe(200);
+    expect(new Uint8Array(await byRef.arrayBuffer())).toEqual(DOC);
+    expect(byRef.headers.get("etag")).toBe(ref);
+
+    // Content key: anyone holding just sha256(doc) (the old way) can fetch.
+    const byContent = await app.request(get(sha256Hex(DOC)));
+    expect(byContent.status).toBe(200);
+    expect(new Uint8Array(await byContent.arrayBuffer())).toEqual(DOC);
+  });
+
+  it("identical re-PUT → 200 no-op; both keys still served", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    expect((await app.request(putProof(ref, DOC, preimage))).status).toBe(201);
+    expect((await app.request(putProof(ref, DOC, preimage))).status).toBe(200);
+    expect((await app.request(get(ref))).status).toBe(200);
+    expect((await app.request(get(sha256Hex(DOC)))).status).toBe(200);
+  });
+
+  it("different bytes already at the derived ref → 409 (collision alarm)", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const store = new FsDomainStore({ rootDir });
+    await store.put({
+      hash: ref,
+      bytes: new TextEncoder().encode("different"),
+      contentType: "text/plain",
+    });
+    const res = await app.request(putProof(ref, DOC, preimage));
+    expect(res.status).toBe(409);
+  });
+
+  it("preimage whose sha256 ≠ route hash → 400; nothing stored", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const wrong = new Uint8Array(preimage);
+    wrong[0]! ^= 0xff; // same length, different hash
+    const res = await app.request(putProof(ref, DOC, wrong));
+    expect(res.status).toBe(400);
+    expect((await app.request(get(ref))).status).toBe(404);
+    expect((await app.request(get(sha256Hex(DOC)))).status).toBe(404);
+  });
+
+  it("tampered document (preimage proves another doc) → 400", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const other = new TextEncoder().encode("# Rules\n\nBe terrible to each other.\n");
+    const res = await app.request(putProof(ref, other, preimage));
+    expect(res.status).toBe(400);
+    expect((await app.request(get(ref))).status).toBe(404);
+  });
+
+  it("offset beyond the preimage end → 400", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const res = await app.request(putProof(ref, DOC, preimage, preimage.length - 5));
+    expect(res.status).toBe(400);
+  });
+
+  it("offset pointing at non-content bytes → 400 (binding gate)", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const res = await app.request(putProof(ref, DOC, preimage, 0)); // lands on the prefix
+    expect(res.status).toBe(400);
+  });
+
+  it("anchor gate still applies: valid proof but mismatching on-chain domain_ref → 400", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    setAnchor(SUB, sha256Hex(DOC)); // anchor pins a DIFFERENT ref
+    const res = await app.request(putProof(ref, DOC, preimage));
+    expect(res.status).toBe(400);
+  });
+
+  it("anchor never appears → 404", async () => {
+    const app = makeApp({ anchorPollMs: 1 });
+    const { ref, preimage } = await derive(DOC);
+    const req = putProof(ref, DOC, preimage); // auto-anchors the honest default…
+    setAnchor(SUB, null); // …then the gate test removes it
+    const res = await app.request(req);
+    expect(res.status).toBe(404);
+  });
+
+  it("legacy PUT (no preimage) at a derived-anchored key → 400 (mode selection)", async () => {
+    const app = makeApp();
+    const { ref } = await derive(DOC);
+    setAnchor(SUB, ref); // anchor IS the derived ref
+    // sha256(DOC) ≠ ref, so the identity gate rejects — proof params required.
+    const res = await app.request(put(ref, DOC));
+    expect(res.status).toBe(400);
+  });
+
+  it("param validation → 400: solo/odd/uppercase preimage, bad offset", async () => {
+    const app = makeApp();
+    const { ref, preimage } = await derive(DOC);
+    const hex = bytesToHex(preimage);
+    const q = (qs: string) =>
+      new Request(`http://x/domains/${ref}?subaccord=${SUB}&${qs}`, { method: "PUT", body: DOC });
+    setAnchor(SUB, ref);
+    expect((await app.request(q("preimage=" + hex))).status).toBe(400); // no offset
+    expect((await app.request(q("offset=" + OFFSET))).status).toBe(400); // no preimage
+    expect((await app.request(q(`preimage=${hex.slice(1)}&offset=${OFFSET}`))).status).toBe(400); // odd length
+    expect((await app.request(q(`preimage=${hex.toUpperCase()}&offset=${OFFSET}`))).status).toBe(
+      400,
+    ); // uppercase
+    expect((await app.request(q(`preimage=${hex}&offset=-1`))).status).toBe(400); // negative
+    expect((await app.request(q(`preimage=${hex}&offset=abc`))).status).toBe(400); // non-numeric
+    expect((await app.request(q(`preimage=&offset=${OFFSET}`))).status).toBe(400); // empty
+    expect((await app.request(get(ref))).status).toBe(404); // nothing stored by any of them
   });
 });

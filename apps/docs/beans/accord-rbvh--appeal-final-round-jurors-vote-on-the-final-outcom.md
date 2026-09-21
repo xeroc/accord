@@ -1,11 +1,11 @@
 ---
 # accord-rbvh
 title: 'Test: finalize implements cross-round-final settlement (agree-with-final-round) — Ugly 5 / accord-r6ti'
-status: draft
+status: scrapped
 type: task
 priority: normal
 created_at: 2026-08-06T02:13:34Z
-updated_at: 2026-08-07T02:35:56Z
+updated_at: 2026-08-31T18:03:02Z
 parent: accord-ukqg
 blocked_by:
     - accord-r6ti
@@ -31,3 +31,13 @@ So this bean is **repurposed** from "parked mechanism idea" → the **TDD TEST**
 ## Authority
 
 `SPEC.md` §Economics · `accord-r6ti` (Ugly 5) · `CONCEPT-REVIEW.md` §Ugly 5 · `lib.rs:1309-1345`
+
+## Reasons for Scrapping (2026-08-31 — subsumed by accord-r6ti's shipped test suite)
+
+Every checkbox is green in the tree today, delivered as part of accord-r6ti (completed) rather than as this blocked follow-up:
+
+- Prior-round settlement vs the FINAL ruling + `active_draws` release: `programs/accord/tests/accumulator_litesvm.rs` prior-round settlement suite (~:3833–4072, incl. `settle_round_no_coherent_rewards_revealers_only`) asserts coherence against `dispute.final_ruling` and released `active_draws`/`slash_reserve`.
+- Bond flip → refund / no-flip → final round's coherent jurors: `tests/src/appeal.spec.ts` :501-614 (flip: bond survives, refund, idempotent) and :615-743 (no-flip: bond zeroed, forfeit 7·fee split across the final round's 4 coherent jurors).
+- 'Round-1 bribe does not pay as round-coherent when flipped': covered by settle-vs-final (not own-round) coherence in `utils::settle_round_accounts` + its LiteSVM tests (the overturn path slashes the prior round's majority even though it was round-coherent).
+
+Forward note: accord-3j58 (ADR-0029) will move the FEE assertions in these same tests (participation credit → settlement) — that rework is already tracked on 3j58's leaf list (L2), so no test intent is lost by scrapping this bean.

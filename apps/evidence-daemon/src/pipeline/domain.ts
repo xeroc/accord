@@ -8,6 +8,15 @@
  * anchor read polls for up to {@link DEFAULT_ANCHOR_POLL_MS} to absorb
  * commitment lag right after the create-tx confirms. The daemon still never
  * parses the body, and retention is forever — nothing here ever deletes.
+ *
+ * Derived domain_refs (proof mode): when an Arbitrable's on-chain
+ * `domain_ref` is NOT `sha256(doc)` (a composite hash over seed + doc hash,
+ * say), the uploader supplies the derivation's PREIMAGE plus the offset of
+ * the 32-byte `sha256(doc)` slice inside it — see
+ * {@link DomainPreimageProof}. The daemon stays derivation-agnostic; the
+ * proof + anchor gates together pin exactly one document per domain_ref.
+ * Proof mode dual-writes: the anchor key AND `domains/{sha256(doc)}`, so the
+ * document stays fetchable the content-addressed way.
  * GET stays ungated.
  *
  * Authority: apps/evidence-daemon/SPEC.md §"Domain CAS namespace".
@@ -85,10 +94,26 @@ async function resolveAnchorRef(subaccord: string, deps: DomainDeps): Promise<Ui
 }
 
 /**
+ * Proof for a derived `domain_ref`: the opaque preimage whose sha256 IS the
+ * on-chain `domain_ref`, plus the byte offset of the 32-byte `sha256(bytes)`
+ * slice inside it. The daemon never learns the derivation — it verifies the
+ * binding (`sha256(preimage) == domain_ref`, `preimage[offset..] ==
+ * sha256(bytes)`) and reuses the unchanged anchor gate.
+ */
+export interface DomainPreimageProof {
+  /** Opaque preimage bytes; `sha256(preimage) == subaccord.domain_ref`. */
+  readonly preimage: Uint8Array;
+  /** Byte offset of the content-hash slice: `preimage[offset .. offset+32]`. */
+  readonly offset: number;
+}
+
+/**
  * Validate + store a public document at `domains/{hash}`. Order is
  * load-bearing: hash shape → size cap (413 before any store write) →
- * sha256(body) == hash → idempotency/conflict against stored bytes →
- * anchor gate (chain read only on the store path) → write.
+ * sha256(body) == hash (identity mode only) → idempotency/conflict against
+ * stored bytes → preimage gates (proof mode only, local) → anchor gate
+ * (chain read only on the store path) → write (+ content-key dual write in
+ * proof mode).
  */
 export async function putDomain(
   hash: string,
@@ -96,6 +121,7 @@ export async function putDomain(
   contentType: string,
   subaccord: string,
   deps: DomainDeps,
+  proof?: DomainPreimageProof,
 ): Promise<DomainPutOutcome> {
   try {
     assertDomainHash(hash);
@@ -106,7 +132,10 @@ export async function putDomain(
     return { status: 413, reason: `domain document exceeds ${deps.maxBytes}-byte cap` };
   }
   const digest = toHex(await deps.sha256(bytes));
-  if (digest !== hash) {
+  // Identity mode (no proof): the CAS contract — the route hash IS the
+  // content hash. Proof mode skips this: the hash is a derived domain_ref
+  // and the byte binding moves to the preimage gates below.
+  if (proof === undefined && digest !== hash) {
     return { status: 400, reason: "body sha256 does not match route hash" };
   }
 
@@ -115,9 +144,36 @@ export async function putDomain(
   // put() re-checks under the race window; its DomainConflictError ⇒ 409.
   const existing = await deps.store.get(hash);
   if (existing !== null) {
-    return bytesEqual(existing.bytes, bytes)
-      ? { status: 200 }
-      : { status: 409, reason: "different bytes already stored at this hash" };
+    if (!bytesEqual(existing.bytes, bytes)) {
+      return { status: 409, reason: "different bytes already stored at this hash" };
+    }
+    if (proof !== undefined) {
+      // Heal the content-addressed copy — a prior dual write may have been
+      // interrupted between the two keys. Idempotent on equal bytes.
+      await deps.store.put({ hash: digest, bytes, contentType });
+    }
+    return { status: 200 };
+  }
+
+  // Proof gates (local, before the chain read): the preimage must hash to
+  // the route hash AND embed sha256(bytes) at the declared offset. With the
+  // anchor gate below, this pins exactly one document per domain_ref — the
+  // same preimage-resistance property identity mode gets from
+  // `sha256(bytes) == hash` directly.
+  if (proof !== undefined) {
+    const { preimage, offset } = proof;
+    if (preimage.length < offset + 32) {
+      return { status: 400, reason: "preimage too short for the declared content offset" };
+    }
+    if (toHex(await deps.sha256(preimage)) !== hash) {
+      return { status: 400, reason: "preimage sha256 does not match route hash" };
+    }
+    if (toHex(preimage.subarray(offset, offset + 32)) !== digest) {
+      return {
+        status: 400,
+        reason: "preimage does not bind the uploaded bytes (content-hash slice mismatch)",
+      };
+    }
   }
 
   // Chain gate (create-first): the anchor Subaccord must exist on-chain with
@@ -134,6 +190,12 @@ export async function putDomain(
   const obj: DomainObject = { hash, bytes, contentType };
   try {
     await deps.store.put(obj);
+    // Proof mode dual-writes: the content-addressed copy keeps the document
+    // fetchable the pre-derivation way (`domains/{sha256(bytes)}`) and
+    // dedups identical documents across different anchors.
+    if (proof !== undefined) {
+      await deps.store.put({ hash: digest, bytes, contentType });
+    }
     return { status: 201 };
   } catch (e) {
     if (e instanceof DomainConflictError) {
