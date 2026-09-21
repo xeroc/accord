@@ -479,16 +479,29 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
   // --- Domain CAS handlers (ADR-0027 as amended): outcome → handler result ---
   // PUT anchor gate: resolve the ?subaccord anchor's on-chain domain_ref via
   // the chain reader (create-first — the pipeline polls for commitment lag).
-  const domainPutHandler: DomainPutHandler = async (hash, bytes, contentType, subaccordStr) => {
-    const out = await putDomain(hash, bytes, contentType, subaccordStr, {
-      store: deps.domainStore,
-      maxBytes: deps.maxDomainBytes,
-      sha256,
-      readAnchor: async (sa) => {
-        const v = await readSubaccord(accord, address(sa));
-        return v === null ? null : new Uint8Array(v.domainRef);
+  const domainPutHandler: DomainPutHandler = async (
+    hash,
+    bytes,
+    contentType,
+    subaccordStr,
+    proof,
+  ) => {
+    const out = await putDomain(
+      hash,
+      bytes,
+      contentType,
+      subaccordStr,
+      {
+        store: deps.domainStore,
+        maxBytes: deps.maxDomainBytes,
+        sha256,
+        readAnchor: async (sa) => {
+          const v = await readSubaccord(accord, address(sa));
+          return v === null ? null : new Uint8Array(v.domainRef);
+        },
       },
-    });
+      proof,
+    );
     return out.status === 200 || out.status === 201
       ? { ok: true, status: out.status }
       : { ok: false, status: out.status, error: out.reason };

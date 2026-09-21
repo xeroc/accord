@@ -39,3 +39,6 @@ target/
 meta
 .omp
 .claude
+
+# Cross-repo handoff notes (never committed)
+HANSE_DOMAIN_SPEC_UPLOAD.md
