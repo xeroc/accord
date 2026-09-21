@@ -4,28 +4,43 @@
 # scripts; they'd duplicate the Makefile.
 
 SOLANA_VERSION ?= 3.1.10
-ANCHOR_VERSION ?= 1.0.2
+ANCHOR_VERSION ?= 1.2.0
 ACCORD_PROGRAM_ID ?= cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed
+
+# sBPFv3 bytecode (SIMD-0178/0189/0377; static syscalls). SIMD-0500 will reject
+# deployments/upgrades of older bytecode, so pin arch + platform-tools explicitly
+# instead of relying on anchor's defaults. NEVER pass --arch v3 to platform-tools
+# older than v1.53 — it silently emits non-v3 bytecode.
+SBPF_ARCH ?= v3
+SBPF_TOOLS ?= v1.57
+ANCHOR_BUILD_FLAGS := --ignore-keys --arch $(SBPF_ARCH) --tools-version $(SBPF_TOOLS)
 
 TODAY := $(shell date +%Y-%m-%d)
 DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
 SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
 SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
-.PHONY: prep build codegen sdk docs test test_unit lint clean help
+.PHONY: prep build codegen sdk docs test test_unit lint verify-sbf clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+verify-sbf: ## Assert every program ELF carries sBPFv3 e_flags (0x3)
+	@for so in target/deploy/accord.so target/deploy/canon.so target/deploy/synod.so; do \
+		readelf -h $$so | grep -Eq 'Flags:.*0x3(,| |$$)' || { echo "FAIL: $$so is not sBPFv3"; exit 1; }; \
+		echo "OK: $$so -> $$(readelf -h $$so | grep Flags:)"; \
+	done
+
 prep: ## Install Solana + Anchor toolchains, then workspace deps
-	solana-install init $(SOLANA_VERSION)
+	agave-install init $(SOLANA_VERSION)
 	cargo install avm --locked || true
 	avm install $(ANCHOR_VERSION) && avm use $(ANCHOR_VERSION)
 	pnpm install
 	cd apps/docs && poetry install --no-root
 
-build: ## Build programs + packages + docs
-	anchor build --ignore-keys
+build: ## Build programs (sBPFv3) + packages + docs
+	anchor build $(ANCHOR_BUILD_FLAGS)
+	$(MAKE) verify-sbf
 	pnpm -r run build
 	$(MAKE) -C apps/docs build
 	$(MAKE) codegen
@@ -44,7 +59,8 @@ docs-serve: ## Live-reload MkDocs dev server
 	$(MAKE) -C apps/docs serve
 
 test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Surfpool)
-	anchor build --ignore-keys
+	anchor build $(ANCHOR_BUILD_FLAGS)
+	$(MAKE) verify-sbf
 	anchor test --skip-build
 
 test_unit: ## LiteSVM + unit tests. The no-entrypoint feature is REQUIRED per
