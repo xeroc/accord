@@ -20,6 +20,7 @@ import {
   base64ToBytes,
   EvidenceConflictError,
   type EvidenceBundle,
+  isSafeEntryPath,
   serializeBundle,
 } from "./store.js";
 
@@ -272,5 +273,110 @@ describe("FsStore — directory layout", () => {
     const store = new FsStore({ rootDir: freshRoot });
     expect(await store.get(SUBACCORD, DISPUTE, 0)).toBeNull();
     expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(false);
+  });
+});
+
+describe("FsStore — v2 per-file objects (EVIDENCE-FORMAT §7.1)", () => {
+  test("putFile then getFile round-trips under the entry path", async () => {
+    const store = setup();
+    const b = mkBundle();
+    await store.putFile(b, "01-ticket.pdf");
+    const got = await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf");
+    expect(got).not.toBeNull();
+    expect(Array.from(got!.plaintextHash)).toEqual(Array.from(b.plaintextHash));
+    expect(Array.from(got!.ct)).toEqual(Array.from(b.ct));
+  });
+
+  test("getFile on a missing path returns null", async () => {
+    const store = setup();
+    expect(await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf")).toBeNull();
+  });
+
+  test("per-path isolation — two paths in one round are distinct objects", async () => {
+    const store = setup();
+    const a = mkBundle({ plaintextHash: new Uint8Array(32).fill(0x01) });
+    const c = mkBundle({ plaintextHash: new Uint8Array(32).fill(0x02) });
+    await store.putFile(a, "01-ticket.pdf");
+    await store.putFile(c, "02-id-document.jpg");
+    const ga = await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf");
+    const gc = await store.getFile(SUBACCORD, DISPUTE, 0, "02-id-document.jpg");
+    expect(Array.from(ga!.plaintextHash)).toEqual(Array.from(a.plaintextHash));
+    expect(Array.from(gc!.plaintextHash)).toEqual(Array.from(c.plaintextHash));
+  });
+
+  test("nested entry path round-trips; listFiles reports the relative POSIX path", async () => {
+    const store = setup();
+    await store.putFile(mkBundle(), "docs/report.pdf");
+    const got = await store.getFile(SUBACCORD, DISPUTE, 0, "docs/report.pdf");
+    expect(got).not.toBeNull();
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0)).map((x) => x.path)).toEqual([
+      "docs/report.pdf",
+    ]);
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0))[0]!.bytes).toBeGreaterThan(0);
+  });
+
+  test("putFile idempotent on the SAME hash (no-op)", async () => {
+    const store = setup();
+    await store.putFile(mkBundle(), "01-ticket.pdf");
+    await store.putFile(mkBundle({ ingestedAt: 2 }), "01-ticket.pdf");
+    const got = await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf");
+    expect(got!.ingestedAt).toBe(1_700_000_000_000); // first write untouched
+  });
+
+  test("putFile with a DIFFERENT hash at the same path raises EvidenceConflictError", async () => {
+    const store = setup();
+    await store.putFile(mkBundle(), "01-ticket.pdf");
+    expect(
+      store.putFile(mkBundle({ plaintextHash: new Uint8Array(32).fill(0xcd) }), "01-ticket.pdf"),
+    ).rejects.toBeInstanceOf(EvidenceConflictError);
+  });
+
+  test("manifest object and file objects coexist (round.json vs round.files/)", async () => {
+    const store = setup();
+    await store.put(mkBundle());
+    await store.putFile(
+      mkBundle({ plaintextHash: new Uint8Array(32).fill(0x02) }),
+      "01-ticket.pdf",
+    );
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(true);
+    expect(await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf")).not.toBeNull();
+  });
+
+  test("listFiles on an empty round returns []", async () => {
+    const store = setup();
+    expect(await store.listFiles(SUBACCORD, DISPUTE, 0)).toEqual([]);
+  });
+
+  test("listFiles returns sorted POSIX-relative paths", async () => {
+    const store = setup();
+    await store.putFile(mkBundle({ plaintextHash: new Uint8Array(32).fill(0x02) }), "02-id.jpg");
+    await store.putFile(
+      mkBundle({ plaintextHash: new Uint8Array(32).fill(0x03) }),
+      "01-ticket.pdf",
+    );
+    await store.putFile(mkBundle({ plaintextHash: new Uint8Array(32).fill(0x04) }), "a/nested.pdf");
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0)).map((x) => x.path)).toEqual([
+      "01-ticket.pdf",
+      "02-id.jpg",
+      "a/nested.pdf",
+    ]);
+  });
+
+  test("putFile rejects unsafe paths and writes nothing", async () => {
+    const store = setup();
+    const unsafe = ["../escape.pdf", "/abs.pdf", "a\\b.pdf", "a//b.pdf", "..", "a/../b.pdf", ""];
+    for (const p of unsafe) {
+      expect(store.putFile(mkBundle(), p)).rejects.toThrow(/unsafe entry path/i);
+    }
+    expect(await store.listFiles(SUBACCORD, DISPUTE, 0)).toEqual([]);
+  });
+
+  test("isSafeEntryPath — accepts relative POSIX (flat + nested), rejects traversal/absolute/backslash", () => {
+    expect(isSafeEntryPath("01-ticket.pdf")).toBe(true);
+    expect(isSafeEntryPath("docs/report.pdf")).toBe(true);
+    expect(isSafeEntryPath("a/b/c.bin")).toBe(true);
+    for (const bad of ["../x", "/x", "a\\b", "a//b", "..", ".", "a/..", "", "a/"]) {
+      expect(isSafeEntryPath(bad)).toBe(false);
+    }
   });
 });

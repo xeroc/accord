@@ -19,6 +19,8 @@ import {
   ACCORD_PROGRAM_ID,
   Aggregation,
   DisputeState,
+  DISPUTE_DISCRIMINATOR,
+  ROUND_DISCRIMINATOR,
   ShortfallPolicy,
   findRoundPda,
   getDisputeEncoder,
@@ -93,6 +95,7 @@ const CASE_TERMS_DEFAULT = {
 };
 
 const DISPUTE_DEFAULT = {
+  discriminator: DISPUTE_DISCRIMINATOR,
   subaccord: ZERO,
   filer: ZERO,
   nonce: 0n,
@@ -110,11 +113,12 @@ const DISPUTE_DEFAULT = {
   frozenTotalStake: 0n,
   filedAt: 0n,
   bump: 0,
-  padding: new Uint8Array(64),
+  drawnSeats: 0,
+  bountyPool: 0n,
+  padding: new Uint8Array(52), // resized by ADR-0030 (was 64)
 };
-
 const ROUND_DEFAULT = {
-  roundIdx: 0,
+  discriminator: ROUND_DISCRIMINATOR,
   jurorCount: 0,
   commitCount: 0,
   revealCount: 0,

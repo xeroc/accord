@@ -106,6 +106,36 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     return Response.json({ error: res.error }, { status: res.status });
   });
 
+  // v2 multifile (accord-5d0r): one document per PUT, path = manifest entry
+  // (relative POSIX; the splat captures nested paths like docs/x.pdf).
+  app.put("/evidence/:subaccord/:dispute/:round/*", async (c) => {
+    const subaccord = c.req.param("subaccord");
+    const dispute = c.req.param("dispute");
+    const roundStr = c.req.param("round");
+    if (!ADDRESS.test(subaccord)) return badAddress("subaccord");
+    if (!ADDRESS.test(dispute)) return badAddress("dispute");
+    if (!ROUND.test(roundStr)) {
+      return Response.json({ error: "invalid round" }, { status: 400 });
+    }
+    // Hono 4 splat: no named param — slice the decoded remainder.
+    const prefix = `/evidence/${subaccord}/${dispute}/${roundStr}/`;
+    const path = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
+    if (path === "" || path.includes("\\")) {
+      return Response.json({ error: "invalid entry path" }, { status: 400 });
+    }
+
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== "object") {
+      return Response.json({ error: "invalid json body" }, { status: 400 });
+    }
+
+    const res = await deps.ingestFile(subaccord, dispute, Number(roundStr), path, body);
+    if (res.ok) {
+      return c.body(null, 201);
+    }
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
   app.get("/evidence/:dispute/for/:juror", async (c) => {
     const dispute = c.req.param("dispute");
     const juror = c.req.param("juror");
@@ -113,6 +143,29 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     if (!ADDRESS.test(juror)) return badAddress("juror");
 
     const res = await deps.deliver(dispute, juror);
+    if (res.ok) {
+      return Response.json(res.body, { status: 200 });
+    }
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  // v2 per-file delivery (accord-5d0r): one document per GET, juror-bound.
+  app.get("/evidence/:dispute/for/:juror/:round/*", async (c) => {
+    const dispute = c.req.param("dispute");
+    const juror = c.req.param("juror");
+    const roundStr = c.req.param("round");
+    if (!ADDRESS.test(dispute)) return badAddress("dispute");
+    if (!ADDRESS.test(juror)) return badAddress("juror");
+    if (!ROUND.test(roundStr)) {
+      return Response.json({ error: "invalid round" }, { status: 400 });
+    }
+    const prefix = `/evidence/${dispute}/for/${juror}/${roundStr}/`;
+    const path = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
+    if (path === "") {
+      return Response.json({ error: "missing entry path" }, { status: 400 });
+    }
+
+    const res = await deps.deliverFile(dispute, juror, Number(roundStr), path);
     if (res.ok) {
       return Response.json(res.body, { status: 200 });
     }

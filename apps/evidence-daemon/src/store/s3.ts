@@ -16,6 +16,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   NotFound,
   PutObjectCommand,
@@ -29,7 +30,9 @@ import {
   type EvidenceBundle,
   EvidenceConflictError,
   hashEquals,
+  isSafeEntryPath,
   type EvidenceStore,
+  type FileStat,
   serializeBundle,
 } from "./store.js";
 
@@ -75,15 +78,24 @@ export class S3Store implements EvidenceStore {
   }
 
   async put(b: EvidenceBundle): Promise<void> {
-    const key = objectKey(b.subaccord, b.dispute, b.round);
+    await this.putObject(objectKey(b.subaccord, b.dispute, b.round), b);
+  }
 
-    // Idempotent: HEAD the key first. S3 HEAD is eventually-consistent for new
-    // objects in some deployments, but for the put-after-put pattern here the
-    // ponytail: race window between HEAD and PUT is acceptable — honest
-    // re-PUTs are no-ops on equal hashes; a conflicting PUT (different hash
-    // for one dispute+round) does not occur in the protocol (one
-    // dispute+round ⇒ one plaintext). Last-writer-wins on the metastable race.
-    let exists = false;
+  /**
+   * HEAD-then-PUT with plaintextHash idempotency (v1 put and v2 putFile):
+   *  - same hash already stored ⇒ no-op;
+   *  - different hash already stored ⇒ EvidenceConflictError;
+   *  - object present without our metadata (foreign) ⇒ conflict;
+   *  - absent ⇒ PutObject.
+   *
+   * S3 HEAD is eventually-consistent for new objects in some deployments, but
+   * for the put-after-put pattern here the
+   * ponytail: race window between HEAD and PUT is acceptable — honest
+   * re-PUTs are no-ops on equal hashes; a conflicting PUT (different hash
+   * for one key) does not occur in the protocol (one key ⇒ one plaintext).
+   * Last-writer-wins on the metastable race.
+   */
+  private async putObject(key: string, b: EvidenceBundle, path?: string): Promise<void> {
     try {
       const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
       const existingB64 = head.Metadata?.[META_HASH];
@@ -94,6 +106,7 @@ export class S3Store implements EvidenceStore {
           dispute: b.dispute,
           round: b.round,
           existingHash: new Uint8Array(),
+          ...(path === undefined ? {} : { path }),
         });
       }
       if (!hashEquals(b.plaintextHash, base64ToBytes(existingB64))) {
@@ -102,18 +115,14 @@ export class S3Store implements EvidenceStore {
           dispute: b.dispute,
           round: b.round,
           existingHash: base64ToBytes(existingB64),
+          ...(path === undefined ? {} : { path }),
         });
       }
       return; // idempotent no-op — same hash already stored
     } catch (e) {
       if (e instanceof EvidenceConflictError) throw e;
-      if (e instanceof NotFound) {
-        exists = false;
-      } else {
-        throw e;
-      }
+      if (!(e instanceof NotFound)) throw e;
     }
-    void exists; // kept for readability of the control flow
 
     await this.client.send(
       new PutObjectCommand({
@@ -130,6 +139,67 @@ export class S3Store implements EvidenceStore {
         ...(this.kmsKeyId ? { SSEKMSKeyId: this.kmsKeyId } : {}),
       }),
     );
+  }
+
+  /** v2 multifile key: `{sa}/{d}/{round}.files/{path}`. */
+  private fileKey(subaccord: Address, dispute: Address, round: number, path: string): string {
+    return `${objectKey(subaccord, dispute, round)}.files/${path}`;
+  }
+
+  async putFile(b: EvidenceBundle, path: string): Promise<void> {
+    if (!isSafeEntryPath(path)) {
+      throw new Error(`unsafe entry path: ${JSON.stringify(path)}`);
+    }
+    await this.putObject(this.fileKey(b.subaccord, b.dispute, b.round, path), b, path);
+  }
+
+  async getFile(
+    subaccord: Address,
+    dispute: Address,
+    round: number,
+    path: string,
+  ): Promise<EvidenceBundle | null> {
+    if (!isSafeEntryPath(path)) return null;
+    try {
+      const res = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: this.fileKey(subaccord, dispute, round, path),
+        }),
+      );
+      if (res.Body === undefined) return null;
+      // ponytail: transformToString keeps JSON UTF-8 intact without a
+      // streaming parser; size capped by the HTTP layer's per-doc limit.
+      const text = await res.Body.transformToString("utf-8");
+      return deserializeBundle(text);
+    } catch (e) {
+      if (e instanceof NoSuchKey) return null;
+      // Some S3-compatible backends (MinIO variants) emit NotFound on GET too.
+      if (e instanceof NotFound) return null;
+      throw e;
+    }
+  }
+
+  async listFiles(subaccord: Address, dispute: Address, round: number): Promise<FileStat[]> {
+    const prefix = `${objectKey(subaccord, dispute, round)}.files/`;
+    const out: FileStat[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ...(token === undefined ? {} : { ContinuationToken: token }),
+        }),
+      );
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key !== undefined) {
+          out.push({ path: obj.Key.slice(prefix.length), bytes: obj.Size ?? 0 });
+        }
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token !== undefined);
+    return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
   async get(subaccord: Address, dispute: Address, round: number): Promise<EvidenceBundle | null> {

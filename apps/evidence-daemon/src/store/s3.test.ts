@@ -19,6 +19,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   NotFound,
   NoSuchKey,
   PutObjectCommand,
@@ -108,6 +109,25 @@ class MockS3 {
         .input;
       this.objects.delete(this.k(Bucket!, Key!));
       return {};
+    }
+    // ListObjectsV2 — keys under a prefix, sorted (real S3 returns sorted keys).
+    if (cmd instanceof ListObjectsV2Command) {
+      const { Bucket, Prefix, ContinuationToken } = cmd.input;
+      const all = [...this.objects.keys()]
+        .filter((k) => k.startsWith(`${Bucket}/`))
+        .map((k) => k.slice(`${Bucket}/`.length))
+        .sort();
+      // ponytail: no pagination in the mock — everything comes back in one page.
+      const page = ContinuationToken === undefined ? all : [];
+      return {
+        IsTruncated: false,
+        Contents: page
+          .filter((key) => key.startsWith(Prefix ?? ""))
+          .map((Key) => ({
+            Key,
+            Size: this.objects.get(this.k(Bucket ?? "", Key))?.body.length ?? 0,
+          })),
+      };
     }
     throw new Error(
       `MockS3: unhandled command ${(cmd as { constructor?: { name?: string } })?.constructor?.name}`,
@@ -344,5 +364,82 @@ describe("S3Store — exists / delete", () => {
     await store.delete(SUBACCORD, DISPUTE, 1);
     expect(await store.exists(SUBACCORD, DISPUTE, 1)).toBe(false);
     expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(true);
+  });
+});
+
+describe("S3Store — v2 per-file objects (EVIDENCE-FORMAT §7.1)", () => {
+  test("putFile then getFile round-trips under the entry-path key", async () => {
+    const { store, mock } = setup();
+    const b = mkBundle();
+    await store.putFile(b, "01-ticket.pdf");
+    expect(mock.objects.has(`${BUCKET}/${SUBACCORD}/${DISPUTE}/0.files/01-ticket.pdf`)).toBe(true);
+    const got = await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf");
+    expect(got).not.toBeNull();
+    expect(Array.from(got!.plaintextHash)).toEqual(Array.from(b.plaintextHash));
+    expect(Array.from(got!.ct)).toEqual(Array.from(b.ct));
+  });
+
+  test("getFile on a missing path returns null", async () => {
+    const { store } = setup();
+    expect(await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf")).toBeNull();
+  });
+
+  test("putFile idempotent on the SAME hash; DIFFERENT hash raises EvidenceConflictError", async () => {
+    const { store } = setup();
+    await store.putFile(mkBundle(), "01-ticket.pdf");
+    await store.putFile(mkBundle({ ingestedAt: 2 }), "01-ticket.pdf"); // no-op
+    await expect(
+      store.putFile(mkBundle({ plaintextHash: new Uint8Array(32).fill(0xcd) }), "01-ticket.pdf"),
+    ).rejects.toBeInstanceOf(EvidenceConflictError);
+  });
+
+  test("nested entry path round-trips; listFiles reports the relative POSIX path", async () => {
+    const { store } = setup();
+    await store.putFile(mkBundle(), "docs/report.pdf");
+    const got = await store.getFile(SUBACCORD, DISPUTE, 0, "docs/report.pdf");
+    expect(got).not.toBeNull();
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0)).map((x) => x.path)).toEqual([
+      "docs/report.pdf",
+    ]);
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0))[0]!.bytes).toBeGreaterThan(0);
+  });
+
+  test("listFiles on an empty round returns []; sorted otherwise", async () => {
+    const { store } = setup();
+    expect(await store.listFiles(SUBACCORD, DISPUTE, 0)).toEqual([]);
+    await store.putFile(mkBundle({ plaintextHash: new Uint8Array(32).fill(0x02) }), "02-id.jpg");
+    await store.putFile(
+      mkBundle({ plaintextHash: new Uint8Array(32).fill(0x03) }),
+      "01-ticket.pdf",
+    );
+    await store.putFile(mkBundle({ plaintextHash: new Uint8Array(32).fill(0x04) }), "a/nested.pdf");
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0)).map((x) => x.path)).toEqual([
+      "01-ticket.pdf",
+      "02-id.jpg",
+      "a/nested.pdf",
+    ]);
+  });
+
+  test("putFile rejects unsafe paths and writes nothing", async () => {
+    const { store, mock } = setup();
+    for (const p of ["../escape.pdf", "/abs.pdf", "a\\b.pdf", "a//b.pdf", "..", ""]) {
+      await expect(store.putFile(mkBundle(), p)).rejects.toThrow(/unsafe entry path/i);
+    }
+    expect(mock.objects.size).toBe(0);
+  });
+
+  test("manifest object and file objects coexist (round key vs round.files/ prefix)", async () => {
+    const { store } = setup();
+    await store.put(mkBundle());
+    await store.putFile(
+      mkBundle({ plaintextHash: new Uint8Array(32).fill(0x02) }),
+      "01-ticket.pdf",
+    );
+    expect(await store.exists(SUBACCORD, DISPUTE, 0)).toBe(true);
+    expect(await store.getFile(SUBACCORD, DISPUTE, 0, "01-ticket.pdf")).not.toBeNull();
+    // listFiles must NOT include the manifest object key.
+    expect((await store.listFiles(SUBACCORD, DISPUTE, 0)).map((x) => x.path)).toEqual([
+      "01-ticket.pdf",
+    ]);
   });
 });

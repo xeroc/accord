@@ -139,7 +139,7 @@ policy:
 | `public.options`                  | no       | Bool, default `true` when `public` is present. Publish the option labels **and the salt** so any observer can verify against the chain.                                                                                                                                                                                                                                                |
 | `public.entries`                  | no       | List of `entries[].path` values to publish openly. **This is the single source of file visibility** — `entries[]` carries no visibility field.                                                                                                                                                                                                                                         |
 | `entries`                         | yes      | The complete bill of materials. One row per delivered file: `{ path, sha256 }`. The manifest is **not** listed here (it would be a self-hash paradox; it is anchored directly by `evidence_hash`).                                                                                                                                                                                     |
-| `entries[].path`                  | yes      | A URL (any scheme the operator/Juror can fetch) **or** a relative POSIX path, UTF-8. Relative paths: no leading `/`, no `..`, no backslash, unique within the package. Both forms are valid in v1 and v2; the v1 transport typically pairs URL paths with the all-zero `sha256` sentinel (no leaf bytes shipped), while v2 adds relative-path archive bundles with real leaves (§7.1). |
+| `entries[].path`                  | yes      | A URL (any scheme the operator/Juror can fetch) **or** a relative POSIX path, UTF-8. Relative paths: no leading `/`, no `..`, no backslash, unique within the package. Both forms are valid in v1 and v2; the v1 transport typically pairs URL paths with the all-zero `sha256` sentinel (no leaf bytes shipped), while the v2 transport ships relative-path payloads per-file with real leaves (§7.1). |
 | `entries[].sha256`                | yes      | Lowercase hex (64 chars) of the file's bytes, **or** the all-zero sentinel `0000…0000` (64 zeros) to skip leaf verification — root gate still covers the entry (§2).                                                                                                                                                                                                                   |
 | `policy`                          | no       | Operator hints (non-binding on the mechanism): `watermark`, `retain_until`, etc.                                                                                                                                                                                                                                                                                                       |
 
@@ -256,20 +256,31 @@ compressed, encrypted, or delivered. That is the daemon's transport layer
   manifest, rather than one monolithic re-encrypted blob — preferable for
   packages containing large binaries.
 
-### 7.1 v1 vs v2 transport (TODO — multi-MIME blob transport, HANDOFF §7)
+### 7.1 v1 vs v2 transport (v2 shipped — loose per-file, accord-5d0r)
 
-The format above is the full intent. The **v1 implementation is a subset**:
+The **v1 implementation is a subset**; v2 completes the §1–6 model:
 
 - **v1 (shipped):** manifest-only. Entries carry a `path` (URL or relative)
   and either a real `sha256` leaf or the all-zero sentinel. The daemon stores
   one encrypted manifest bundle keyed `(subaccord, dispute, round)`; no
   archive of file payloads is transported — URLs are fetched by the
   operator/Juror out-of-band, sentinel entries skip leaf verification (§2).
-- **v2 (deferred — "daemon path A"):** the full multi-MIME archive-bundle
-  model. Store key `(subaccord, dispute, round, path)`, per-file re-encrypt to
-  each Juror, **real leaf gates** on every entry (sentinel unused), and an
-  archive-bundle upload path. The relative-POSIX-path + real-`sha256` package
-  described in §1–6 is the v2 target. Tracked as TODO in §11.
+- **v2 (shipped — "daemon path A", milestone accord-5d0r):** **loose per-file
+  transport**. Store key `(subaccord, dispute, round, path)`; upload is
+  manifest-first — `POST` the encrypted manifest (decrypt-verified at ingest,
+  dispatched on `schema` + `entries`), then one `PUT` per document, each an
+  independent ECIES bundle gated against its manifest leaf (`sha256` ==
+  `entries[].sha256`, checked pre-decrypt and again after decrypt). Delivery is
+  per-file too: a small index GET (per-round manifest bundle + per-entry
+  status, derived on read from the store listing — no persisted index) plus a
+  per-file juror-bound GET. Real leaf gates on every daemon-tracked entry;
+  URL-path and all-zero-sentinel entries remain born satisfied (out-of-band,
+  §2). A round is deliverable only when every tracked entry is stored — Jurors
+  never see half a case. Known multifile schemas: `accord-evidence/v1`,
+  `riprap-claim/v1` (an unknown schema WITH entries is rejected loudly at
+  POST, never silently degraded). An **archive-bundle (zip-as-one-blob)
+  upload is rejected**: it re-introduces the monolith and kills per-document
+  retry — per-file is strictly better on conference wifi.
 
 ---
 
@@ -286,7 +297,9 @@ The format above is the full intent. The **v1 implementation is a subset**:
 7. Compute `Dispute.options[i] = sha256(option_salt ‖ utf8(label_i))`.
 8. `create_dispute(subaccord, options, evidence_hash, fee)` via CPI.
 9. Submit the package (manifest + payloads) to the Subaccord's Evidence Operator
-   per ADR-0011 (claimant→operator ingest encryption).
+   per ADR-0011 (claimant→operator ingest encryption). v2 (§7.1): POST the
+   manifest bundle first, then PUT each document individually (same ECIES
+   envelope per object, independently retryable).
 
 ### Juror (verify + read)
 
@@ -402,11 +415,11 @@ require a new schema version.
 > milestone (`accord-ebel`). Each is recorded as a TODO so the spec tracks what
 > v1 ships vs what is parked.
 
-- **Multi-MIME blob transport / relative-path archive bundles (v2)** — daemon
-  "path A": store key `(subaccord, dispute, round, path)`, per-file re-encrypt,
-  real leaf gates on every entry, archive-bundle upload. The full
-  relative-POSIX-path + real-`sha256` package of §1–6 is the v2 target; v1
-  ships manifest-only with URL/sentinel entries (§7.1).
+- ~~**Multi-MIME blob transport (v2)**~~ — **shipped as loose per-file
+  transport** (§7.1, milestone accord-5d0r): store key
+  `(subaccord, dispute, round, path)`, per-file re-encrypt, real leaf gates.
+  The archive-bundle variant was considered and rejected (monolith, no
+  per-document retry).
 - **Best-effort URL fetch + paste** — an alternative to the all-zero sentinel:
   the filer pastes a URL, the app fetches and hashes it, and a real leaf fills
   `entries[].sha256`. Post-MVP; until then the sentinel covers URL entries (§2).

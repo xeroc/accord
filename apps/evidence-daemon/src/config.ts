@@ -167,6 +167,12 @@ export interface ServerConfig {
   readonly maxEvidenceBytes: number;
   /** Domain-doc PUT body cap in bytes (ADR-0027). Default: 1 MiB. */
   readonly maxDomainBytes: number;
+  /** v2 per-document cap in bytes (accord-5d0r). Default: 10 MiB. */
+  readonly maxDocBytes: number;
+  /** v2 per-package (round) cumulative cap in bytes. Default: 100 MiB. */
+  readonly maxPackageBytes: number;
+  /** v2 max manifest entries per round. Default: 64. */
+  readonly maxEntries: number;
   /** Accounting-only X-Account-Key (never denies). */
   readonly accountKeyEnabled: boolean;
   /**
@@ -204,6 +210,9 @@ export function loadServerConfig(
     rateLimitPerMin: num(env, "EVIDENCE_RATE_LIMIT_PER_MIN", 0),
     maxEvidenceBytes: num(env, "EVIDENCE_MAX_EVIDENCE_BYTES", 0),
     maxDomainBytes: num(env, "EVIDENCE_MAX_DOMAIN_BYTES", 1_048_576),
+    maxDocBytes: num(env, "EVIDENCE_MAX_DOC_BYTES", 10_485_760),
+    maxPackageBytes: num(env, "EVIDENCE_MAX_PACKAGE_BYTES", 104_857_600),
+    maxEntries: num(env, "EVIDENCE_MAX_ENTRIES", 64),
     accountKeyEnabled: (env.EVIDENCE_ACCOUNT_KEY_ENABLED ?? "").toLowerCase() === "true",
     trustProxy: (env.EVIDENCE_TRUST_PROXY ?? "").toLowerCase() === "true",
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
