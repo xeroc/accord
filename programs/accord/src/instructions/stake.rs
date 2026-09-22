@@ -141,10 +141,9 @@ impl<'info> Stake<'info> {
         // carries `next_free == MAX`, identical to an active juror), so
         // disambiguate cryptographically: the same sibling path authenticates
         // either leaf — test which one the stored root actually contains. A
-        // blank leaf re-claims its slot when it is the free-list head (O(1)
-        // splice); otherwise `SlotAwaitingRecycle` tells the juror to wait
-        // until the slots ahead of theirs are recycled (or another staker
-        // pops theirs, closing the account for a fresh init).
+        // blank leaf re-claims its slot by splicing itself off the free list
+        // (accord-b5v5: any position, O(1) accounts via the doubly-linked
+        // `prev_free`/`next_free` pair).
         let on_blank_leaf = !is_new_leaf
             && old_stake == 0
             && verify_and_recompute(
@@ -223,6 +222,31 @@ impl<'info> Stake<'info> {
                     AccordError::FreeListHeadMismatch
                 );
                 // Advance head + close the freed account (rent bounty → caller).
+                // Doubly-linked maintenance (accord-b5v5): when the popped node
+                // has a successor, that successor becomes the new head and its
+                // `prev_free` (pointing at the closed node) must be cleared.
+                // The new head's JurorStake is the next remaining account
+                // ([freed_idx + 1]) — the caller discovers it off-chain.
+                if freed_next_free != u32::MAX {
+                    require!(
+                        ctx.remaining_accounts.len() > freed_idx + 1,
+                        AccordError::FreeListHeadMismatch
+                    );
+                    let new_head_info = &ctx.remaining_accounts[freed_idx + 1];
+                    let (_nh_juror, _nh_index, _nh_next, nh_prev) =
+                        read_free_list_neighbor(new_head_info, &sub.key(), freed_next_free)?;
+                    // Adjacency: the successor's prev must point at the node
+                    // being closed.
+                    require!(
+                        nh_prev == freed_tree_index,
+                        AccordError::FreeListHeadMismatch
+                    );
+                    write_free_list_pointer(
+                        new_head_info,
+                        crate::layout::JS_PREV_FREE_OFF,
+                        u32::MAX,
+                    )?;
+                }
                 sub.free_head = freed_next_free;
                 {
                     let src_lamports = **freed_info.lamports.borrow();
@@ -244,11 +268,6 @@ impl<'info> Stake<'info> {
             }
         } else if on_blank_leaf {
             require!(js.juror == juror_key, AccordError::InvalidMembershipProof);
-            // Only the head splices in O(1); a mid-list slot must wait.
-            require!(
-                sub.free_head == js.tree_index,
-                AccordError::SlotAwaitingRecycle
-            );
             // Drained-gates mirror `reclaim_slot` (defense-in-depth against a
             // stale free-list entry from a future bug).
             require!(
@@ -259,11 +278,61 @@ impl<'info> Stake<'info> {
                     && js.pending_withdrawal == 0,
                 AccordError::SlotNotDrained
             );
-            // Splice the own slot off the head. The account stays open and
-            // becomes an active leaf again (its subaccord/juror/tree_index/
-            // bump fields are already correct).
-            sub.free_head = js.next_free;
+            // Doubly-linked splice (accord-b5v5): unlink the own slot from ANY
+            // list position in O(1) accounts — the SR2-M-2 singly-linked
+            // design only let the head re-enter (`SlotAwaitingRecycle`
+            // otherwise; the error is retained as unreachable defense). The
+            // caller passes the neighbor accounts (after the optional
+            // attestation): the predecessor when `prev_free != MAX`, then the
+            // successor when `next_free != MAX` — both discovered off-chain
+            // by following the juror's own free-list pointers. Each is
+            // verified (PDA re-derivation, owner, `tree_index`, adjacency)
+            // before any pointer is rewired.
+            let prev_idx = js.prev_free;
+            let next_idx = js.next_free;
+            let mut neighbor_idx = if sub.juror_credential != Pubkey::default() {
+                1
+            } else {
+                0
+            };
+            if prev_idx != u32::MAX {
+                require!(
+                    ctx.remaining_accounts.len() > neighbor_idx,
+                    AccordError::FreeListHeadMismatch
+                );
+                let prev_info = &ctx.remaining_accounts[neighbor_idx];
+                let (_p_juror, _p_index, prev_next, _p_prev) =
+                    read_free_list_neighbor(prev_info, &sub.key(), prev_idx)?;
+                // Adjacency: the predecessor's next must point at MY slot.
+                require!(
+                    prev_next == js.tree_index,
+                    AccordError::FreeListHeadMismatch
+                );
+                write_free_list_pointer(prev_info, crate::layout::JS_NEXT_FREE_OFF, next_idx)?;
+                neighbor_idx += 1;
+            } else {
+                // I am the head: the list head moves to my successor.
+                sub.free_head = next_idx;
+            }
+            if next_idx != u32::MAX {
+                require!(
+                    ctx.remaining_accounts.len() > neighbor_idx,
+                    AccordError::FreeListHeadMismatch
+                );
+                let succ_info = &ctx.remaining_accounts[neighbor_idx];
+                let (_s_juror, _s_index, _s_next, succ_prev) =
+                    read_free_list_neighbor(succ_info, &sub.key(), next_idx)?;
+                // Adjacency: the successor's prev must point at MY slot.
+                require!(
+                    succ_prev == js.tree_index,
+                    AccordError::FreeListHeadMismatch
+                );
+                write_free_list_pointer(succ_info, crate::layout::JS_PREV_FREE_OFF, prev_idx)?;
+            }
+            // The account stays open and becomes an active leaf again (its
+            // subaccord/juror/tree_index/bump fields are already correct).
             js.next_free = u32::MAX;
+            js.prev_free = u32::MAX;
             emit!(SlotAllocated {
                 subaccord: sub.key(),
                 juror: juror_key,
@@ -327,8 +396,9 @@ impl<'info> Stake<'info> {
             js.bump = ctx.bumps.juror_stake;
             js.tree_index = index;
             js.next_free = u32::MAX; // active juror, not on the free list
-                                     // Only bump next_index on a fresh bump-allocate — a free-list pop
-                                     // recycles an existing index.
+            js.prev_free = u32::MAX;
+            // Only bump next_index on a fresh bump-allocate — a free-list pop
+            // recycles an existing index.
             if !popped_from_free_list {
                 sub.next_index = sub
                     .next_index

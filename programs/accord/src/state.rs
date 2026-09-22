@@ -214,10 +214,20 @@ pub struct JurorStake {
     /// the next free index after this one. Set by `reclaim_slot`, consumed by
     /// `stake`.
     pub next_free: u32,
+    /// Previous free index in the free-slot linked list — the list is DOUBLY
+    /// linked (accord-b5v5): `u32::MAX` = no predecessor (head of the list, or
+    /// not a free-list node). Lets `stake` splice the juror's own reclaimed
+    /// slot out of the list from ANY position in O(1) accounts — the
+    /// singly-linked design forced a mid-list juror to wait behind every slot
+    /// pushed after theirs (soft grief, SR2-M-2 residual). Maintained by
+    /// `reclaim_slot` (push) and `stake` (pop + own-slot splice). Carved out of
+    /// the former padding like `Dispute.drawn_seats`: account size and all
+    /// prior field offsets unchanged.
+    pub prev_free: u32,
     /// Reserved tail space for future field extensions. Zeroed at `init`;
     /// must stay the last field — new fields are carved out of it without
     /// moving existing offsets or resizing the account.
-    pub padding: [u8; 64],
+    pub padding: [u8; 60],
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**

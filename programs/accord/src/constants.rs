@@ -176,7 +176,7 @@ pub(crate) mod layout {
     const PUBKEY: usize = 32;
 
     // --- JurorStake (state.rs) ---
-    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned | next_free
+    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned | next_free | prev_free
     const JS_STAKED_W: usize = 8;
     const JS_ACTIVE_DRAWS_W: usize = 4;
     const JS_BUMP_W: usize = 1;
@@ -186,6 +186,8 @@ pub(crate) mod layout {
     const JS_WITHDRAW_REQUESTED_AT_W: usize = 8;
     const JS_PENDING_WITHDRAWAL_W: usize = 8;
     const JS_FEES_EARNED_W: usize = 8;
+    const JS_NEXT_FREE_W: usize = 4;
+    const JS_PREV_FREE_W: usize = 4;
 
     pub(crate) const JS_STAKED_OFF: usize = DISC + PUBKEY + PUBKEY;
     pub(crate) const JS_ACTIVE_DRAWS_OFF: usize = JS_STAKED_OFF + JS_STAKED_W;
@@ -196,6 +198,11 @@ pub(crate) mod layout {
         + JS_SLASH_RESERVE_W
         + JS_WITHDRAW_REQUESTED_AT_W
         + JS_PENDING_WITHDRAWAL_W;
+    /// Free-list pointer offsets (accord-b5v5) — targeted u32 writes into
+    /// neighbor JurorStake accounts passed via `remaining_accounts` (push/pop/
+    /// splice maintenance of the doubly-linked free list).
+    pub(crate) const JS_NEXT_FREE_OFF: usize = JS_FEES_EARNED_OFF + JS_FEES_EARNED_W;
+    pub(crate) const JS_PREV_FREE_OFF: usize = JS_NEXT_FREE_OFF + JS_NEXT_FREE_W;
 
     // --- AppealBond (state.rs) ---
     // disc | dispute | round_idx | appellant | amount | prior_result | reward | bump
@@ -213,6 +220,6 @@ pub(crate) mod layout {
     // offsets): the highest sliced field must fit inside a serialized account.
     // Catches a struct shrink; does NOT catch a wrong field — that's
     // `tests::layout_tests::offsets_match_borsh`.
-    const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
+    const _: () = assert!(JS_PREV_FREE_OFF + JS_PREV_FREE_W <= DISC + JurorStake::INIT_SPACE);
     const _: () = assert!(AB_REWARD_OFF + AB_REWARD_W <= DISC + AppealBond::INIT_SPACE);
 }

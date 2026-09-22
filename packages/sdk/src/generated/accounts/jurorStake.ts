@@ -102,6 +102,18 @@ export type JurorStake = {
    */
   nextFree: number;
   /**
+   * Previous free index in the free-slot linked list — the list is DOUBLY
+   * linked (accord-b5v5): `u32::MAX` = no predecessor (head of the list, or
+   * not a free-list node). Lets `stake` splice the juror's own reclaimed
+   * slot out of the list from ANY position in O(1) accounts — the
+   * singly-linked design forced a mid-list juror to wait behind every slot
+   * pushed after theirs (soft grief, SR2-M-2 residual). Maintained by
+   * `reclaim_slot` (push) and `stake` (pop + own-slot splice). Carved out of
+   * the former padding like `Dispute.drawn_seats`: account size and all
+   * prior field offsets unchanged.
+   */
+  prevFree: number;
+  /**
    * Reserved tail space for future field extensions. Zeroed at `init`;
    * must stay the last field — new fields are carved out of it without
    * moving existing offsets or resizing the account.
@@ -159,6 +171,18 @@ export type JurorStakeArgs = {
    */
   nextFree: number;
   /**
+   * Previous free index in the free-slot linked list — the list is DOUBLY
+   * linked (accord-b5v5): `u32::MAX` = no predecessor (head of the list, or
+   * not a free-list node). Lets `stake` splice the juror's own reclaimed
+   * slot out of the list from ANY position in O(1) accounts — the
+   * singly-linked design forced a mid-list juror to wait behind every slot
+   * pushed after theirs (soft grief, SR2-M-2 residual). Maintained by
+   * `reclaim_slot` (push) and `stake` (pop + own-slot splice). Carved out of
+   * the former padding like `Dispute.drawn_seats`: account size and all
+   * prior field offsets unchanged.
+   */
+  prevFree: number;
+  /**
    * Reserved tail space for future field extensions. Zeroed at `init`;
    * must stay the last field — new fields are carved out of it without
    * moving existing offsets or resizing the account.
@@ -183,7 +207,8 @@ export function getJurorStakeEncoder(): FixedSizeEncoder<JurorStakeArgs> {
       ["pendingWithdrawal", getU64Encoder()],
       ["feesEarned", getU64Encoder()],
       ["nextFree", getU32Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
+      ["prevFree", getU32Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 60)],
     ]),
     (value) => ({ ...value, discriminator: JUROR_STAKE_DISCRIMINATOR }),
   );
@@ -205,7 +230,8 @@ export function getJurorStakeDecoder(): FixedSizeDecoder<JurorStake> {
     ["pendingWithdrawal", getU64Decoder()],
     ["feesEarned", getU64Decoder()],
     ["nextFree", getU32Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
+    ["prevFree", getU32Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 60)],
   ]);
 }
 

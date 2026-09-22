@@ -177,6 +177,11 @@ pub enum AccordError {
     SlotAlreadyReclaimed,
     #[msg("Provided freed-slot account does not match the free-list head.")]
     FreeListHeadMismatch,
+    /// Unreachable since accord-b5v5 (doubly-linked free list): `stake`
+    /// splices the juror's own reclaimed slot out from ANY list position, so
+    /// no own-slot path waits on recycling anymore. Variant retained — error
+    /// codes are sequential and stable; removing it would renumber every
+    /// later error and break generated clients.
     #[msg(
         "Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled."
     )]

@@ -281,6 +281,49 @@ pub(crate) fn panel_size_for_round(round_idx: u32, base: u32) -> Result<u32> {
     Ok(panel.min(MAX_JURORS as u32))
 }
 
+// --- Free-list neighbor helpers (accord-b5v5, doubly-linked RECLAIM-LEAF) ----
+
+/// Read a free-list neighbor JurorStake passed as a raw `remaining_accounts`
+/// entry, with full M-2 discipline: program ownership, discriminator, PDA
+/// re-derivation from the account's own `juror` field, and
+/// `tree_index == expected_index`. Returns `(juror, tree_index, next_free,
+/// prev_free)` so the caller can check adjacency before unlinking.
+pub(crate) fn read_free_list_neighbor(
+    info: &AccountInfo,
+    sub_key: &Pubkey,
+    expected_index: u32,
+) -> Result<(Pubkey, u32, u32, u32)> {
+    require!(info.owner == &crate::ID, AccordError::FreeListHeadMismatch);
+    let data = info.try_borrow_data()?;
+    require!(
+        data.len() >= crate::layout::JS_PREV_FREE_OFF + 4,
+        AccordError::FreeListHeadMismatch
+    );
+    let js = JurorStake::try_deserialize(&mut &data[..])
+        .map_err(|_| error!(AccordError::FreeListHeadMismatch))?;
+    require!(
+        js.tree_index == expected_index,
+        AccordError::FreeListHeadMismatch
+    );
+    let expected_pda = Pubkey::find_program_address(
+        &[SEED_JUROR_STAKE, sub_key.as_ref(), js.juror.as_ref()],
+        &crate::ID,
+    )
+    .0;
+    require!(info.key == &expected_pda, AccordError::FreeListHeadMismatch);
+    Ok((js.juror, js.tree_index, js.next_free, js.prev_free))
+}
+
+/// Targeted u32 write into a raw JurorStake account at `offset` (CU-opt field
+/// write — see `constants::layout`): maintains `next_free`/`prev_free` on
+/// free-list neighbor accounts without a full re-serialize.
+pub(crate) fn write_free_list_pointer(info: &AccountInfo, offset: usize, value: u32) -> Result<()> {
+    let mut data = info.try_borrow_mut_data()?;
+    require!(data.len() >= offset + 4, AccordError::FreeListHeadMismatch);
+    data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    Ok(())
+}
+
 /// ADR-0030 Failed-path bounty strip: credit each live appeal bond's
 /// `reward` with one bounty unit and report the total credited, so the caller
 /// can drain the same amount from `dispute.bounty_pool` before the filer

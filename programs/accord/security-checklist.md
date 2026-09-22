@@ -45,7 +45,7 @@
 | L-4 | 🟢 Low | No mint validation at registration | ✅ Fixed — `Account<Mint>` in context |
 | L-5 | 🟢 Low | Legacy Token only (no Token-2022) | ⚠️ Accepted — fails closed |
 | SR2-M-1 | 🟡 Medium | Median pools accept `reveal_threshold_bps = 0` — zero-reveal rounds resolve with a fabricated `final_ruling = 0` (review SR2 2026-08-19) | ✅ Fixed — Median-only creation bound; comment corrected; LiteSVM + e2e tests |
-| SR2-M-2 | 🟡 Medium | `reclaim_slot` bricks the drained juror's re-staking until another staker recycles the slot (review SR2 2026-08-19) | ✅ Fixed — `stake` re-claims own blanked slot at the free-list head (root-based disambiguation); `SlotAwaitingRecycle` mid-list |
+| SR2-M-2 | 🟡 Medium | `reclaim_slot` bricks the drained juror's re-staking until another staker recycles the slot (review SR2 2026-08-19) | ✅ Fixed — doubly-linked free list (accord-b5v5): `stake` re-claims the own blanked slot by splicing out of ANY list position (root-based disambiguation + `prev_free`/`next_free`); `SlotAwaitingRecycle` retained but unreachable; LiteSVM + e2e splice tests |
 | SR2-L-1 | 🟢 Low | `MaxAppeals` update skips the appeal-ladder cross-field invariant (review SR2) | ✅ Fixed — `validate_update_cross_field` at propose + execute |
 | SR2-L-2 | 🟢 Low | `RedrawEligible` has no `cancel_dispute` timeout escape (review SR2) | Open — hardening |
 | SR2-L-3 | 🟢 Low | Settle credits from uncapped gross slashes; safety rests on `draw_seat`'s free-stake gate (review SR2) | ✅ Fixed — credit pool from capped debits |

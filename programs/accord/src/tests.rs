@@ -29,7 +29,8 @@ mod layout_tests {
             pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
             fees_earned: 0x3233_3435_3637_3839,
             next_free: 0x3A3B_3C3D,
-            padding: [0u8; 64],
+            prev_free: 0x3E3F_4041,
+            padding: [0u8; 60],
         };
         let mut buf = Vec::new();
         js.try_serialize(&mut buf).unwrap();
@@ -52,6 +53,14 @@ mod layout_tests {
         assert_eq!(
             &buf[layout::JS_FEES_EARNED_OFF..layout::JS_FEES_EARNED_OFF + 8],
             &js.fees_earned.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::JS_NEXT_FREE_OFF..layout::JS_NEXT_FREE_OFF + 4],
+            &js.next_free.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::JS_PREV_FREE_OFF..layout::JS_PREV_FREE_OFF + 4],
+            &js.prev_free.to_le_bytes()[..]
         );
 
         // --- AppealBond ---
