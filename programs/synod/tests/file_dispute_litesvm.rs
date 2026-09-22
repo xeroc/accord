@@ -23,10 +23,10 @@ use accord::state::{Aggregation, ShortfallPolicy, Subaccord};
 use accord::ID as ACCORD_ID;
 use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::AnchorLiteSVM;
+use solana_account::Account as SvmAccount;
 use solana_program::clock::Clock;
 use solana_program::instruction::AccountMeta;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -422,7 +422,7 @@ fn file_dispute_happy_binds_dispute_and_locks_fee() {
     assert_eq!(case.state, CaseState::Live);
     assert_eq!(
         vault_balance(&env),
-        3 * STAKE - MIN_JURY_SIZE as u64 * FEE_PER_JUROR
+        3 * STAKE - (MIN_JURY_SIZE + 1) as u64 * FEE_PER_JUROR
     );
 }
 

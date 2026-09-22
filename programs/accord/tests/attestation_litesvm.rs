@@ -23,10 +23,10 @@ use accord::state::{
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
+use solana_account::Account as SvmAccount;
 use solana_program::{instruction::AccountMeta, pubkey::Pubkey};
 use solana_sdk::{
-    account::Account as SvmAccount, native_token::LAMPORTS_PER_SOL, signature::Keypair,
-    signer::Signer, sysvar::clock::Clock,
+    native_token::LAMPORTS_PER_SOL, signature::Keypair, signer::Signer, sysvar::clock::Clock,
 };
 use spl_associated_token_account::get_associated_token_address_with_program_id;
 use spl_token::solana_program::{program_option::COption, program_pack::Pack};

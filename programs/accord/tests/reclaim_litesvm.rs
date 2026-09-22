@@ -24,10 +24,10 @@ use accord::state::{
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
+use solana_account::Account as SvmAccount;
 use solana_program::hash::hashv;
 use solana_program::instruction::AccountMeta;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -1480,7 +1480,17 @@ fn free_list_bidirectional_invariant_across_mutations() {
     // Exhaustion: head = MAX, and NO surviving node claims a list neighbor.
     let sub = read_subaccord(&env);
     assert_eq!(sub.free_head, u32::MAX);
-    for kp in &jurors {
+    // C's stake account was closed when E's stake popped free slot 2 (see
+    // stake_pops_from_free_list_and_closes_freed_account) — only live stakers
+    // A, B, E hold accounts at exhaustion.
+    assert!(
+        env.ctx
+            .svm
+            .get_account(&juror_stake_pda(&env.subaccord, &juror_c.pubkey()))
+            .is_none(),
+        "popped juror's stake account must be closed"
+    );
+    for kp in [&juror_a, &juror_b, &juror_e] {
         let js = read_juror_stake(&env, &env.subaccord, &kp.pubkey());
         assert_eq!(js.next_free, u32::MAX, "no next neighbor at exhaustion");
         assert_eq!(js.prev_free, u32::MAX, "no prev neighbor at exhaustion");

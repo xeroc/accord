@@ -38,7 +38,12 @@ accord = { path = "../accord", features = ["cpi"] }
 # LiteSVM harness (veridao-8ys4): fast in-process Rust unit/TDD per instruction.
 # Mirrors programs/accord/Cargo.toml's dev-dep block.
 [target.'cfg(not(target_os = "solana"))'.dev-dependencies]
-anchor-litesvm = "0.4"
+# xeroc's fork of anchor-litesvm carries the litesvm 0.16 (agave 4.2) bump —
+# upstream 0.4.0 pins litesvm ^0.11/agave 3.1, whose sbpf cannot load the
+# canonical sBPFv3 ELF (brimigs/anchor-litesvm#3, PR #4). Swap back to a
+# registry version the day upstream releases (bean accord-jhzr).
+solana-account = "4.3.0"
+anchor-litesvm = { git = "https://github.com/xeroc/anchor-litesvm.git", branch = "litesvm-0.16-sbpfv3" }
 anchor-lang = { workspace = true }
 anchor-spl = { workspace = true }
 solana-program = "3"
@@ -46,4 +51,5 @@ solana-sdk = "3"
 spl-associated-token-account = "8"
 spl-token = "9"
 solana-compute-budget = "3"
-litesvm = "0.11"
+# must match the vendored harness line (litesvm 0.16 / agave 4.2)
+litesvm = "0.16.0"

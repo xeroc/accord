@@ -25,9 +25,11 @@ SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-verify-sbf: ## Assert every program ELF carries sBPFv3 e_flags (0x3)
+verify-sbf: ## Assert every program ELF is canonical sBPFv3 (e_flags 0x3, e_machine BPF/247)
 	@for so in target/deploy/accord.so target/deploy/canon.so target/deploy/synod.so; do \
-		readelf -h $$so | grep -Eq 'Flags:.*0x3(,| |$$)' || { echo "FAIL: $$so is not sBPFv3"; exit 1; }; \
+		readelf -h $$so | grep -Eq 'Flags:.*0x3(,| |$$)' || { echo "FAIL: $$so is not sBPFv3 (e_flags)"; exit 1; }; \
+		readelf -h $$so | grep -Eq 'Machine:.*BPF' || { echo "FAIL: $$so e_machine is not BPF (247) — wrong target? (accord-cvxo: agave 3.1.x sbpf rejects non-247 v3 ELFs)"; exit 1; }; \
+		find programs/*/src -name '*.rs' -newer $$so -print -quit | grep -q . && { echo "FAIL: $$so is stale (program sources newer) — run 'make build' first"; exit 1; }; \
 		echo "OK: $$so -> $$(readelf -h $$so | grep Flags:)"; \
 	done
 
@@ -63,10 +65,13 @@ test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Sur
 	$(MAKE) verify-sbf
 	anchor test --skip-build
 
-test_unit: ## LiteSVM + unit tests. The no-entrypoint feature is REQUIRED per
-	## program — plain `cargo test` (or a single package's flag) compiles but
-	## silently SKIPS every other package's *_litesvm.rs
-	## (they are `#![cfg(feature = "no-entrypoint")]`-gated). AGENTS.md §Testing.
+test_unit: verify-sbf ## LiteSVM + unit tests (requires fresh canonical v3 ELFs —
+	## the 2c51f89 "green" ran against a stale pre-v3 .so; verify-sbf now
+	## fails fast on stale or non-canonical artifacts). The no-entrypoint
+	## feature is REQUIRED per program — plain `cargo test` (or a single
+	## package's flag) compiles but silently SKIPS every other package's
+	## *_litesvm.rs (they are `#![cfg(feature = "no-entrypoint")]`-gated).
+	## AGENTS.md §Testing.
 	cargo test --features accord/no-entrypoint,canon/no-entrypoint,synod/no-entrypoint
 
 lint: ## Lint every workspace that declares a lint script

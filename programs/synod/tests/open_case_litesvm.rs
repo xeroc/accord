@@ -3,7 +3,7 @@
 //!
 //! Coverage (TDD acceptance matrix from the bean + milestone §6):
 //!   - happy: SynodCase inits all fields, fee frozen at
-//!     `min_jury_size · fee_per_juror`, state Opening, parties padded
+//!     `(min_jury_size + 1) · fee_per_juror` (ADR-0030 flip-bounty unit), state Opening, parties padded
 //!   - args: 8 parties (and 1 party) -> InvalidPartyCount
 //!   - args: duplicate party -> DuplicateParty
 //!   - args: opener != parties[0] -> OpenerNotFirstParty
@@ -20,9 +20,9 @@ use accord::state::{Aggregation, ShortfallPolicy, Subaccord};
 use accord::ID as ACCORD_ID;
 use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::AnchorLiteSVM;
+use solana_account::Account as SvmAccount;
 use solana_program::clock::Clock;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -222,7 +222,7 @@ fn do_open(
     ctx.execute_instruction(ix, &[opener]).unwrap()
 }
 
-/// Happy path: all fields init, fee frozen at `min_jury_size · fee_per_juror`,
+/// Happy path: all fields init, fee frozen at `(min_jury_size + 1) · fee_per_juror`,
 /// state Opening, parties padded with `Pubkey::default()`.
 #[test]
 fn open_case_happy_inits_case_and_freezes_fee() {
@@ -246,8 +246,9 @@ fn open_case_happy_inits_case_and_freezes_fee() {
     assert_eq!(case.parties[3], Pubkey::default(), "tail padded");
     assert_eq!(case.joined, 0, "nobody joined yet");
     assert_eq!(case.stake, 1_000);
-    // Fee FROZEN at open: 3 jurors x 10 = 30 — never re-read from the Subaccord.
-    assert_eq!(case.fee, MIN_JURY_SIZE as u64 * FEE_PER_JUROR);
+    // Fee FROZEN at open (ADR-0030): juror pot + one flip-bounty unit —
+    // (3 + 1) x 10 = 40 — never re-read from the Subaccord.
+    assert_eq!(case.fee, (MIN_JURY_SIZE + 1) as u64 * FEE_PER_JUROR);
     assert_eq!(case.join_deadline, deadline);
     assert_eq!(case.evidence, [[0u8; 32]; MAX_PARTIES]);
     assert_eq!(case.dispute, Pubkey::default(), "sentinel until filed");

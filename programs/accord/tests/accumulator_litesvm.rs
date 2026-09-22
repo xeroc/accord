@@ -26,9 +26,9 @@ use accord::state::{
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AnchorSerialize, Space};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
+use solana_account::Account as SvmAccount;
 use solana_program::hash::hashv;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;

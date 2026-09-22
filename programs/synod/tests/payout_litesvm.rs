@@ -24,9 +24,9 @@ use accord::state::{Aggregation, CaseTerms, Dispute, DisputeState, ShortfallPoli
 use accord::ID as ACCORD_ID;
 use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::AnchorLiteSVM;
+use solana_account::Account as SvmAccount;
 use solana_program::clock::Clock;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -42,9 +42,12 @@ use synod::{accounts, instruction, ID as SYNOD_ID};
 
 const SPL_RENT: u64 = 1_000_000_000;
 const STAKE: u64 = 1_000;
-const FEE_PER_JUROR: u64 = 11; // 3 jurors -> fee 33 (odd vs N=2: remainder path)
+const FEE_PER_JUROR: u64 = 11; // fabricated case fee 33 (odd vs N=2: remainder path)
 const MIN_JURY_SIZE: u32 = 3;
-const FEE: u64 = MIN_JURY_SIZE as u64 * FEE_PER_JUROR;
+// ADR-0030 froze open_case fee at (min_jury_size + 1) · fee_per_juror — the
+// juror pot plus one flip-bounty unit. setup_env runs a REAL open_case, so the
+// case carries (3 + 1) · 11 = 44.
+const FEE: u64 = (MIN_JURY_SIZE + 1) as u64 * FEE_PER_JUROR;
 
 fn load_so(name: &str) -> Vec<u8> {
     let so =
@@ -586,31 +589,38 @@ fn claim_winner_pot_one_shot() {
     assert_eq!(vault_balance(&env), 0);
 }
 
-/// Final neutral with a remainder (2 parties, fee 33): per-party floor
-/// (2·S − 33)/2 = 983, last claimant takes 984; vault drains exactly.
+/// Final neutral with a remainder (3 parties, fee 44): per-party floor
+/// (3·S − 44)/3 = 985⅓, last claimant drains the 986 remainder; vault
+/// drains exactly. (N=2 can't exercise the remainder: 4·fpj is always
+/// even, so the N=2 split is exact.)
 #[test]
 fn claim_neutral_splits_with_remainder_to_last() {
-    let mut env = setup_env(2, 2);
+    let mut env = setup_env(3, 3);
     let opener = env.opener.insecure_clone();
     let party1 = env.party1.insecure_clone();
-    bind_dispute(&mut env, DisputeState::Final, 2); // == party_count -> neutral
-    consume_fee(&mut env, 2, false);
+    let party2 = env.party2.insecure_clone();
+    bind_dispute(&mut env, DisputeState::Final, 3); // == party_count -> neutral
+    consume_fee(&mut env, 3, false);
 
     let caller = Keypair::new();
     do_claim(&mut env, &caller, &opener).assert_success();
-    assert_eq!(ata_balance(&env, &env.opener.pubkey()), 983);
-    // Invariant mid-flow: vault >= outstanding claims (984).
-    assert_eq!(vault_balance(&env), 984);
+    assert_eq!(ata_balance(&env, &env.opener.pubkey()), 985);
+    // Invariant mid-flow: vault holds the two outstanding shares (985 + 986).
+    assert_eq!(vault_balance(&env), 1_971);
 
     do_claim(&mut env, &caller, &party1).assert_success();
+    assert_eq!(ata_balance(&env, &env.party1.pubkey()), 985);
+    assert_eq!(vault_balance(&env), 986);
+
+    do_claim(&mut env, &caller, &party2).assert_success();
     assert_eq!(
-        ata_balance(&env, &env.party1.pubkey()),
-        984,
+        ata_balance(&env, &env.party2.pubkey()),
+        986,
         "remainder to last"
     );
     assert_eq!(vault_balance(&env), 0, "sum(leaves) == vault");
     assert_eq!(read_case(&env).state, CaseState::Closed);
-    assert_eq!(read_case(&env).paid_out, 0b11);
+    assert_eq!(read_case(&env).paid_out, 0b111);
 }
 
 /// Failed (cancel_dispute returned the fee): each party pulls S in full.

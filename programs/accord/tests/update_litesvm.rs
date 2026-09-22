@@ -24,11 +24,9 @@ use accord::state::{
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
+use solana_account::Account as SvmAccount;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::{
-    account::Account as SvmAccount, native_token::LAMPORTS_PER_SOL, signature::Keypair,
-    signer::Signer,
-};
+use solana_sdk::{native_token::LAMPORTS_PER_SOL, signature::Keypair, signer::Signer};
 use spl_token::solana_program::{program_option::COption, program_pack::Pack};
 use spl_token::state::Mint as SplMint;
 use spl_token::ID as TOKEN_PROGRAM_ID;
