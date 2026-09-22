@@ -1,10 +1,11 @@
 ---
 # accord-5d0r
 title: Evidence daemon v2 — multifile per-file transport
-status: in-progress
+status: completed
 type: milestone
+priority: normal
 created_at: 2026-09-22T11:35:19Z
-updated_at: 2026-09-22T11:35:19Z
+updated_at: 2026-09-22T13:28:14Z
 ---
 
 Multifile evidence upload + per-file delivery for the evidence daemon (EVIDENCE-FORMAT §7.1 v2, re-scoped to loose per-file transport — archive-bundle stays rejected).
@@ -76,3 +77,13 @@ complete          = ∀ e ∈ entries: satisfied(e, listFiles(round))
 ### 7. Open Questions
 
 - Retention sweep → follow-up bean (none blocking).
+
+## Summary of Changes
+
+All 8 tasks green across 3 epics; 3 commits. Daemon: per-file store port (fs+s3),
+POST decrypt-verify + schema dispatch, PUT per-document pipeline + route,
+derived-completeness index, per-file juror delivery. SDK: parseManifest schema +
+unquoted scalars + total parser. Docs: format §7.1, SPEC, ADR-0031. Side-fix:
+accordStub ADR-0030 drift (14 resurrected wire tests). Final state: daemon 330/330,
+SDK 102/102, workspace build+lint+test green. Follow-up beans: retention sweep;
+riprap wizard (hanse repo).
