@@ -186,13 +186,33 @@ export type IngestFileHandler = (
 
 /** The full handler set the server needs to serve traffic. */
 
+/**
+ * Per-file delivery = GET /evidence/{dispute}/for/{juror}/{round}/{path} (v2
+ * multifile, accord-5d0r). Body mirrors one DeliveryPayload (base64 fields).
+ */
+export type DeliverFileResult =
+  | {
+      readonly ok: true;
+      readonly status: 200;
+      readonly body: { out: string; operator_ephem_pub: string };
+    }
+  | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
+
+export type DeliverFileHandler = (
+  dispute: string,
+  juror: string,
+  round: number,
+  path: string,
+) => Promise<DeliverFileResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
+  readonly deliver: DeliverHandler;
+  readonly deliverFile: DeliverFileHandler;
   readonly domainPut: DomainPutHandler;
   readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;
-  readonly deliver: DeliverHandler;
   readonly manifest: ManifestHandler;
   readonly synodManifest: SynodManifestHandler;
   readonly health: HealthProbe;

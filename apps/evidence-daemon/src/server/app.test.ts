@@ -42,6 +42,11 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
       status: 200,
       body: { rounds: [{ round: 0, out: "b3V0", operator_ephem_pub: "cHVi" }] },
     }),
+    deliverFile: async () => ({
+      ok: true,
+      status: 200,
+      body: { out: "b3V0", operator_ephem_pub: "cHVi" },
+    }),
     manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
     domainPut: async () => ({ ok: true, status: 201 }),
     domainGet: async () => ({
@@ -616,5 +621,46 @@ describe("PUT /evidence/:subaccord/:dispute/:round/*path", () => {
       new Request(`http://x/evidence/${ADDR}/${ADDR}/0/`, { method: "PUT" }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /evidence/:dispute/for/:juror/:round/*path (v2 per-file, accord-5d0r)", () => {
+  it("happy → 200 with body", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(`http://x/evidence/${ADDR}/for/${ADDR}/0/03-police-report.pdf`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { out: string };
+    expect(body.out).toBe("b3V0");
+  });
+
+  it("nested path reaches handler intact; reflects 404/409", async () => {
+    let seen = "";
+    const app = createApp(
+      makeDeps({
+        deliverFile: async (_d, _j, _r, p) => {
+          seen = p;
+          return { ok: true, status: 200, body: { out: "b3V0", operator_ephem_pub: "cHVi" } };
+        },
+      }),
+    );
+    expect((await app.request(`http://x/evidence/${ADDR}/for/${ADDR}/1/docs/x.pdf`)).status).toBe(
+      200,
+    );
+    expect(seen).toBe("docs/x.pdf");
+    for (const status of [404, 409] as const) {
+      const app2 = createApp(
+        makeDeps({ deliverFile: async () => ({ ok: false, status, error: `e${status}` }) }),
+      );
+      const res = await app2.request(`http://x/evidence/${ADDR}/for/${ADDR}/0/a.pdf`);
+      expect(res.status).toBe(status);
+    }
+  });
+
+  it("malformed dispute/juror/round or empty path → 400", async () => {
+    const app = createApp(makeDeps());
+    expect((await app.request(`http://x/evidence/bad!/for/${ADDR}/0/a.pdf`)).status).toBe(400);
+    expect((await app.request(`http://x/evidence/${ADDR}/for/bad!/0/a.pdf`)).status).toBe(400);
+    expect((await app.request(`http://x/evidence/${ADDR}/for/${ADDR}/x/a.pdf`)).status).toBe(400);
+    expect((await app.request(`http://x/evidence/${ADDR}/for/${ADDR}/0/`)).status).toBe(400);
   });
 });

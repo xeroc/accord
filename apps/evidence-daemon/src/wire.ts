@@ -20,7 +20,7 @@ import type { Accord } from "@useaccord/sdk";
 import { readDispute, readRound, readSubaccord, readSynodCase } from "./chain/reader";
 import { deliverToJuror, operatorDecrypt, sha256 } from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "./keys/keyring";
-import { deliver } from "./pipeline/deliver";
+import { deliver, deliverFile } from "./pipeline/deliver";
 import {
   ingest,
   ingestFile,
@@ -53,6 +53,7 @@ import type {
   SynodIngestHandler,
   SynodManifestHandler,
   IngestFileHandler,
+  DeliverFileHandler,
 } from "./server/handlers";
 import type { KeyringPublicKeys } from "./server/public-keys";
 
@@ -159,6 +160,13 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
   const deliverStore = {
     async get(sa: Uint8Array, d: Uint8Array, round: number) {
       const b = await store.get(bytesToAddr(sa), bytesToAddr(d), round);
+      return b === null ? null : fromStoreBundle(b);
+    },
+    async listFiles(sa: Uint8Array, d: Uint8Array, round: number) {
+      return store.listFiles(bytesToAddr(sa), bytesToAddr(d), round);
+    },
+    async getFile(sa: Uint8Array, d: Uint8Array, round: number, path: string) {
+      const b = await store.getFile(bytesToAddr(sa), bytesToAddr(d), round, path);
       return b === null ? null : fromStoreBundle(b);
     },
   };
@@ -485,7 +493,37 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
             round: r.round,
             out: bytesToBase64(r.out),
             operator_ephem_pub: bytesToBase64(r.operator_ephem_pub),
+            files: r.files,
+            complete: r.complete,
           })),
+        },
+      };
+    }
+    return { ok: false, status: out.status, error: out.reason };
+  };
+  const deliverFileHandler: DeliverFileHandler = async (disputeStr, jurorStr, round, path) => {
+    let d: Uint8Array;
+    let j: Uint8Array;
+    try {
+      d = b58ToBytes(disputeStr);
+      j = b58ToBytes(jurorStr);
+    } catch {
+      return { ok: false, status: 404, error: "invalid address" };
+    }
+    const out = await deliverFile(d, j, round, path, {
+      store: deliverStore,
+      chain: deliverChain,
+      keyring: deliverKeyring,
+      crypto,
+      watermark: NoOpWatermark,
+    });
+    if (out.status === 200) {
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          out: bytesToBase64(out.out),
+          operator_ephem_pub: bytesToBase64(out.operator_ephem_pub),
         },
       };
     }
@@ -598,6 +636,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     synodIngest: synodIngestHandler,
     synodManifest: synodManifestHandler,
     deliver: deliverHandler,
+    deliverFile: deliverFileHandler,
     manifest: manifestHandler,
     publicKeys: deps.publicKeys,
     health: deps.health,

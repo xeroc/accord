@@ -52,10 +52,10 @@ const MULTIFILE_SCHEMA: Record<string, true> = {
 
 /** Leaf hash: 64 lowercase hex chars. */
 const LEAF_HEX = /^[0-9a-f]{64}$/;
-/** All-zero sentinel (format §2) — entry skips leaf verification. */
-const SENTINEL_HEX = "0".repeat(64);
-/** RFC-3986-ish scheme prefix ⇒ out-of-band URL entry (not daemon-stored). */
-const URL_PATH = /^[a-z][a-z0-9+.-]*:/i;
+/** All-zero sentinel (format §2) — entry skips leaf verification. Shared with deliver.ts. */
+export const SENTINEL_HEX = "0".repeat(64);
+/** RFC-3986-ish scheme prefix ⇒ out-of-band URL entry (not daemon-stored). Shared with deliver.ts. */
+export const URL_PATH = /^[a-z][a-z0-9+.-]*:/i;
 export interface EvidenceBundle {
   subaccord: Uint8Array;
   dispute: Uint8Array;

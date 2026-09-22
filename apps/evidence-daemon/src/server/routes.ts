@@ -149,6 +149,29 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     return Response.json({ error: res.error }, { status: res.status });
   });
 
+  // v2 per-file delivery (accord-5d0r): one document per GET, juror-bound.
+  app.get("/evidence/:dispute/for/:juror/:round/*", async (c) => {
+    const dispute = c.req.param("dispute");
+    const juror = c.req.param("juror");
+    const roundStr = c.req.param("round");
+    if (!ADDRESS.test(dispute)) return badAddress("dispute");
+    if (!ADDRESS.test(juror)) return badAddress("juror");
+    if (!ROUND.test(roundStr)) {
+      return Response.json({ error: "invalid round" }, { status: 400 });
+    }
+    const prefix = `/evidence/${dispute}/for/${juror}/${roundStr}/`;
+    const path = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
+    if (path === "") {
+      return Response.json({ error: "missing entry path" }, { status: 400 });
+    }
+
+    const res = await deps.deliverFile(dispute, juror, Number(roundStr), path);
+    if (res.ok) {
+      return Response.json(res.body, { status: 200 });
+    }
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
   // Manifest — GET the raw stored ciphertext bundle (no auth, no re-encryption).
   // Registered after the deliver route so /evidence/:dispute/for/:juror (literal
   // "for") takes priority over /evidence/:subaccord/:dispute/:round.
