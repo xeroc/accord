@@ -30,6 +30,7 @@ const STUB_PUBLIC_KEYS: KeyringPublicKeys = {
 function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
   return {
     ingest: async () => ({ ok: true, status: 201, location: `/evidence/s/d` }),
+    ingestFile: async () => ({ ok: true, status: 201, idempotent: false }),
     synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/c/0" }),
     synodManifest: async () => ({
       ok: true,
@@ -534,6 +535,86 @@ describe("GET /evidence/:subaccord/:dispute[/:round] — manifest", () => {
   it("rejects a bad address with 400", async () => {
     const app = createApp(makeDeps());
     const res = await app.request(`http://x/evidence/bad!/${ADDR}`);
+    expect(res.status).toBe(400);
+  });
+});
+
+/* ------------------------------------------------------------------ PUT file (v2 multifile, accord-5d0r) -- */
+
+describe("PUT /evidence/:subaccord/:dispute/:round/*path", () => {
+  function put(
+    body: unknown,
+    path = "01-ticket.pdf",
+    sub = ADDR,
+    disp = ADDR,
+    round = "0",
+  ): Request {
+    return new Request(`http://x/evidence/${sub}/${disp}/${round}/${path}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  it("happy → 201, no body", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(put({ ct: "x" }));
+    expect(res.status).toBe(201);
+    expect(await res.text()).toBe("");
+  });
+
+  it("nested path with slashes reaches the handler intact", async () => {
+    let seen = "";
+    const app = createApp(
+      makeDeps({
+        ingestFile: async (_s, _d, _r, p) => {
+          seen = p;
+          return { ok: true, status: 201, idempotent: false };
+        },
+      }),
+    );
+    const res = await app.request(put({}, "docs/report.pdf"));
+    expect(res.status).toBe(201);
+    expect(seen).toBe("docs/report.pdf");
+  });
+
+  it("reflects handler statuses 400/404/409/413", async () => {
+    for (const status of [400, 404, 409, 413] as const) {
+      const app = createApp(
+        makeDeps({
+          ingestFile: async () => ({ ok: false, status, error: `e${status}` }),
+        }),
+      );
+      const res = await app.request(put({}));
+      expect(res.status).toBe(status);
+      expect(((await res.json()) as { error: string }).error).toBe(`e${status}`);
+    }
+  });
+
+  it("malformed subaccord / dispute / round → 400 before handler", async () => {
+    const app = createApp(makeDeps());
+    expect((await app.request(put({}, "a.pdf", "notbase58!"))).status).toBe(400);
+    expect((await app.request(put({}, "a.pdf", ADDR, "notbase58!"))).status).toBe(400);
+    expect((await app.request(put({}, "a.pdf", ADDR, ADDR, "x"))).status).toBe(400);
+  });
+
+  it("non-json body → 400", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(
+      new Request(`http://x/evidence/${ADDR}/${ADDR}/0/a.pdf`, {
+        method: "PUT",
+        body: "not-json{",
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("empty wildcard path → 400", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request(
+      new Request(`http://x/evidence/${ADDR}/${ADDR}/0/`, { method: "PUT" }),
+    );
     expect(res.status).toBe(400);
   });
 });

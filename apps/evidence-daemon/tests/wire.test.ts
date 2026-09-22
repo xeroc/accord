@@ -67,6 +67,19 @@ function memoryStore(): EvidenceStore & { size: () => number } {
     async exists(sa, d, r) {
       return objects.has(key(sa, d, r));
     },
+    async putFile(b, path) {
+      objects.set(`${key(b.subaccord, b.dispute, b.round)}::${path}`, b);
+    },
+    async getFile(sa, d, r, path) {
+      return objects.get(`${key(sa, d, r)}::${path}`) ?? null;
+    },
+    async listFiles(sa, d, r) {
+      const p = `${key(sa, d, r)}::`;
+      return [...objects.keys()]
+        .filter((k) => k.startsWith(p))
+        .map((k) => ({ path: k.slice(p.length), bytes: objects.get(k)!.ct.length }))
+        .sort((a, b) => (a.path < b.path ? -1 : 1));
+    },
   };
 }
 
@@ -119,6 +132,9 @@ async function rig() {
     accord,
     domainStore: memoryDomainStore(),
     maxDomainBytes: 1_048_576,
+    maxEntries: 64,
+    maxDocBytes: 10_485_760,
+    maxPackageBytes: 104_857_600,
     keyring,
     health: async () => ({ ok: true }),
     publicKeys,
@@ -202,6 +218,9 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
     accord,
     domainStore: memoryDomainStore(),
     maxDomainBytes: 1_048_576,
+    maxEntries: 64,
+    maxDocBytes: 10_485_760,
+    maxPackageBytes: 104_857_600,
     keyring,
     health: async () => ({ ok: true }),
     publicKeys,
@@ -257,4 +276,82 @@ test("wire: manifest before ingest (no bundle) → 404", async () => {
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
   expect(res.status).toBe(404);
+});
+
+test("wire: multifile — POST manifest with entries, PUT document (real ECIES)", async () => {
+  const enc = new TextEncoder();
+  const DOC = enc.encode("police report pdf bytes");
+  const leafHex = Array.from(await sha256(DOC))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  const manifest = enc.encode(
+    [
+      "schema: riprap-claim/v1",
+      'title: "claim"',
+      "entries:",
+      `  - { path: "03-police-report.pdf", sha256: "${leafHex}" }`,
+    ].join("\n") + "\n",
+  );
+  const manifestHash = await sha256(manifest);
+
+  const accord = await stubAccord({
+    subaccord: {
+      address: SUB,
+      data: {
+        evidenceOperator: address(bs58.encode(operatorPub)),
+        evidenceSpec: new Uint8Array(32),
+      },
+    },
+    dispute: {
+      address: DISPUTE,
+      data: {
+        subaccord: SUB,
+        evidenceHashes: [manifestHash, new Uint8Array(32), new Uint8Array(32), new Uint8Array(32)],
+        state: DisputeState.Drawn,
+        currentRound: 0,
+      },
+    },
+  });
+  const deps = createServerDeps({
+    store: memoryStore(),
+    accord,
+    domainStore: memoryDomainStore(),
+    maxDomainBytes: 1_048_576,
+    maxEntries: 64,
+    maxDocBytes: 10_485_760,
+    maxPackageBytes: 104_857_600,
+    keyring: EnvKeyring.fromEnv(bs58.encode(operatorSeed)),
+    health: async () => ({ ok: true }),
+    publicKeys,
+  });
+
+  const mBody = await claimantEncrypt(manifest, operatorPub);
+  const post = await deps.ingest(SUB, DISPUTE, 0, {
+    ct: bytesToBase64(mBody.ct),
+    claimant_ephem_pub: bytesToBase64(mBody.claimant_ephem_pub),
+    wrapped: bytesToBase64(mBody.wrapped),
+    plaintext_hash: bytesToBase64(mBody.plaintext_hash),
+  });
+  expect(post.ok).toBe(true);
+
+  const dBody = await claimantEncrypt(DOC, operatorPub);
+  const put = await deps.ingestFile(SUB, DISPUTE, 0, "03-police-report.pdf", {
+    ct: bytesToBase64(dBody.ct),
+    claimant_ephem_pub: bytesToBase64(dBody.claimant_ephem_pub),
+    wrapped: bytesToBase64(dBody.wrapped),
+    plaintext_hash: bytesToBase64(dBody.plaintext_hash),
+  });
+  expect(put.ok).toBe(true);
+  if (!put.ok) throw new Error("unreachable");
+  expect(put.idempotent).toBe(false);
+
+  // wrong-leaf document never lands
+  const wrong = await claimantEncrypt(enc.encode("forged bytes"), operatorPub);
+  const put2 = await deps.ingestFile(SUB, DISPUTE, 0, "03-police-report.pdf", {
+    ct: bytesToBase64(wrong.ct),
+    claimant_ephem_pub: bytesToBase64(wrong.claimant_ephem_pub),
+    wrapped: bytesToBase64(wrong.wrapped),
+    plaintext_hash: bytesToBase64(wrong.plaintext_hash),
+  });
+  expect(put2.ok).toBe(false);
 });

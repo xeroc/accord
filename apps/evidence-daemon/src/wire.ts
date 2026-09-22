@@ -23,6 +23,7 @@ import { EnvKeyring } from "./keys/keyring";
 import { deliver } from "./pipeline/deliver";
 import {
   ingest,
+  ingestFile,
   type EvidenceBundle,
   type IngestChainReader,
   type IngestDeps,
@@ -51,6 +52,7 @@ import type {
   ServerDeps,
   SynodIngestHandler,
   SynodManifestHandler,
+  IngestFileHandler,
 } from "./server/handlers";
 import type { KeyringPublicKeys } from "./server/public-keys";
 
@@ -112,9 +114,14 @@ export interface WireDeps {
   readonly domainStore: DomainStore;
   /** PUT /domains/{hash} body cap in bytes (default 1 MiB, config.ts). */
   readonly maxDomainBytes: number;
+  /** v2 max manifest entries per round (config.ts, default 64). */
+  readonly maxEntries: number;
+  /** v2 per-document ciphertext cap (config.ts, default 10 MiB). */
+  readonly maxDocBytes: number;
+  /** v2 per-package (round) cumulative cap (config.ts, default 100 MiB). */
+  readonly maxPackageBytes: number;
   /** Read-only RPC client (the chain reader functions close over this). */
   readonly accord: Accord;
-  /** Per-Subaccord operator keyring (v1: EnvKeyring). */
   readonly keyring: EnvKeyring;
   /** Liveness probe wired by main.ts (S3 + RPC reachability). */
   readonly health: ServerDeps["health"];
@@ -137,6 +144,16 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     },
     async put(b) {
       await store.put(toStoreBundle(b));
+    },
+    async putFile(b, path) {
+      await store.putFile(toStoreBundle(b), path);
+    },
+    async getFile(sa, d, round, path) {
+      const b = await store.getFile(bytesToAddr(sa), bytesToAddr(d), round, path);
+      return b === null ? null : fromStoreBundle(b);
+    },
+    async listFiles(sa, d, round) {
+      return store.listFiles(bytesToAddr(sa), bytesToAddr(d), round);
     },
   };
   const deliverStore = {
@@ -176,14 +193,19 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       dispute: b58ToBytes(v.dispute),
     };
   };
-  const ingestChain: IngestChainReader = { readDispute: readDisputeIngest };
+  const ingestChain: IngestChainReader = {
+    readDispute: readDisputeIngest,
+    async readSubaccord(sa: Uint8Array) {
+      const v = await readSubaccord(accord, bytesToAddr(sa));
+      return v === null ? null : { evidence_operator: b58ToBytes(v.evidenceOperator) };
+    },
+  };
   const deliverChain = {
     readDispute: readDisputeDeliver,
     readSynodCase: readSynodCaseBytes,
     async readSubaccord(sa: Uint8Array) {
       const v = await readSubaccord(accord, bytesToAddr(sa));
-      if (v === null) return null;
-      return { evidence_operator: b58ToBytes(v.evidenceOperator) };
+      return v === null ? null : { evidence_operator: b58ToBytes(v.evidenceOperator) };
     },
     async readRound(d: Uint8Array) {
       const addr = bytesToAddr(d);
@@ -261,6 +283,13 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     const out = await ingest(sa, d, round, bundle, {
       store: ingestStore,
       chain: ingestChain,
+      keyring: deliverKeyring,
+      crypto,
+      limits: {
+        maxEntries: deps.maxEntries,
+        maxDocBytes: deps.maxDocBytes,
+        maxPackageBytes: deps.maxPackageBytes,
+      },
     } satisfies IngestDeps);
     if (out.status === 201) {
       return {
@@ -268,6 +297,54 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
         status: 201,
         location: `/evidence/${subaccordStr}/${disputeStr}/${round}`,
       };
+    }
+    return { ok: false, status: out.status, error: out.reason };
+  };
+
+  // v2 per-document PUT (accord-5d0r): same body shape as POST (one ECIES
+  // bundle per object — claimantEncrypt reused per file), path from the URL.
+  const ingestFileHandler: IngestFileHandler = async (
+    subaccordStr,
+    disputeStr,
+    round,
+    path,
+    body,
+  ) => {
+    let sa: Uint8Array;
+    let d: Uint8Array;
+    try {
+      sa = b58ToBytes(subaccordStr);
+      d = b58ToBytes(disputeStr);
+    } catch {
+      return { ok: false, status: 400, error: "invalid base58 address" };
+    }
+    const parsed = parseIngestBody(body);
+    if (parsed === null) {
+      return { ok: false, status: 400, error: "malformed evidence bundle" };
+    }
+    const bundle: EvidenceBundle = {
+      subaccord: sa,
+      dispute: d,
+      round,
+      ct: parsed.ct,
+      claimant_ephem_pub: parsed.claimant_ephem_pub,
+      wrapped: parsed.wrapped,
+      plaintext_hash: parsed.plaintext_hash,
+      ingested_at: 0,
+    };
+    const out = await ingestFile(sa, d, round, path, bundle, {
+      store: ingestStore,
+      chain: ingestChain,
+      keyring: deliverKeyring,
+      crypto,
+      limits: {
+        maxEntries: deps.maxEntries,
+        maxDocBytes: deps.maxDocBytes,
+        maxPackageBytes: deps.maxPackageBytes,
+      },
+    } satisfies IngestDeps);
+    if (out.status === 201) {
+      return { ok: true, status: 201, idempotent: out.idempotent };
     }
     return { ok: false, status: out.status, error: out.reason };
   };
@@ -515,6 +592,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
 
   return {
     ingest: ingestHandler,
+    ingestFile: ingestFileHandler,
     domainPut: domainPutHandler,
     domainGet: domainGetHandler,
     synodIngest: synodIngestHandler,

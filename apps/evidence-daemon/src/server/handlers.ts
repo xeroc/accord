@@ -167,10 +167,28 @@ export type HealthProbe = () => Promise<
   { readonly ok: true } | { readonly ok: false; readonly detail: string }
 >;
 
+/**
+ * PUT /evidence/{subaccord}/{dispute}/{round}/{path} (v2 multifile,
+ * milestone accord-5d0r): one document per call, gated against the stored
+ * manifest's entry leaf. No Location header — file objects have no public GET.
+ */
+export type IngestFileResult =
+  | { readonly ok: true; readonly status: 201; readonly idempotent: boolean }
+  | { readonly ok: false; readonly status: 400 | 404 | 409 | 413; readonly error: string };
+
+export type IngestFileHandler = (
+  subaccord: string,
+  dispute: string,
+  round: number,
+  path: string,
+  body: unknown,
+) => Promise<IngestFileResult>;
+
 /** The full handler set the server needs to serve traffic. */
 
 export interface ServerDeps {
   readonly ingest: IngestHandler;
+  readonly ingestFile: IngestFileHandler;
   readonly domainPut: DomainPutHandler;
   readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;

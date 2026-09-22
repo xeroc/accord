@@ -26,6 +26,7 @@ import {
   jurorDecrypt,
   newX25519KeyPair,
   operatorDecrypt,
+  parseManifest,
   sha256,
   verifyIntegrity,
   x25519SharedSecret,
@@ -267,4 +268,51 @@ test("integrity gate accepts the correct hash and rejects tampering", async () =
   const tampered = enc.encode("tampered evidence");
   await assert.rejects(() => verifyIntegrity(tampered, hash));
   await assert.rejects(() => verifyIntegrity(pt, rnd32()));
+});
+
+// ---------------------------------------------------------------------------
+// Manifest parser — schema extraction + v2 multifile dispatch inputs
+// (milestone accord-5d0r: the daemon dispatches on `schema` + `entries`)
+// ---------------------------------------------------------------------------
+
+test("parseManifest extracts the top-level schema field", () => {
+  const yaml = [
+    "schema: riprap-claim/v1",
+    "title: \"x\"",
+    "filed_at: 2026-09-22T00:00:00Z",
+    "filer: F",
+    "subaccord: S",
+    "dispute: D",
+    "option_salt: 00",
+    "options:",
+    "entries:",
+    "  - { path: \"a.pdf\", sha256: \"ab\" }",
+  ].join("\n");
+  const m = parseManifest(yaml);
+  assert.equal(m.schema, "riprap-claim/v1");
+  assert.deepEqual(m.entries, [{ path: "a.pdf", sha256: "ab" }]);
+});
+
+test("parseManifest returns schema \"\" when the field is absent (pre-schema bytes)", () => {
+  const m = parseManifest("title: \"x\"\nentries:\n");
+  assert.equal(m.schema, "");
+});
+
+test("parseManifest tolerates UNQUOTED flow-map scalars in entry rows", () => {
+  const yaml = [
+    "schema: riprap-claim/v1",
+    "entries:",
+    "  - { path: 01-ticket.pdf, sha256: \"9a3f\" }",
+    "  - { path: docs/report.pdf, sha256: c1b2 }",
+  ].join("\n");
+  const m = parseManifest(yaml);
+  assert.deepEqual(m.entries, [
+    { path: "01-ticket.pdf", sha256: "9a3f" },
+    { path: "docs/report.pdf", sha256: "c1b2" },
+  ]);
+});
+
+test("parseManifest is total: malformed description does not throw", () => {
+  const m = parseManifest("description: \"broken \\u escape\nentries:\n");
+  assert.ok(typeof m.description === "string");
 });

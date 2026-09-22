@@ -19,6 +19,7 @@ import {
   type IngestDeps,
   type IngestStore,
 } from "../src/pipeline/ingest.ts";
+import { sha256 } from "@useaccord/sdk/evidence";
 import {
   deliver,
   type DeliverChainReader,
@@ -37,15 +38,19 @@ function hex(b: Uint8Array): string {
 // ================================================================== INGEST ===
 const I_SUB = new Uint8Array(32).fill(0x01);
 const I_DISPUTE = new Uint8Array(32).fill(0x02);
-const I_HASH = new Uint8Array(32).fill(0xaa);
+// v2: the decrypt-verify gate requires sha256(ct) == plaintext_hash, so the
+// canonical hash is derived from the canonical ct (fake unwrap: ct IS plaintext).
+const I_CT = new Uint8Array([1, 2, 3, 4]);
+const I_HASH = await sha256(I_CT);
 const I_OTHER_HASH = new Uint8Array(32).fill(0xbb);
+const I_OPERATOR = new Uint8Array(32).fill(0x03);
 
 function iBundle(overrides: Partial<EvidenceBundle> = {}): EvidenceBundle {
   return {
     subaccord: I_SUB,
     dispute: I_DISPUTE,
     round: 0,
-    ct: new Uint8Array([1, 2, 3, 4]),
+    ct: I_CT,
     claimant_ephem_pub: new Uint8Array(32).fill(0xcc),
     wrapped: new Uint8Array([9, 9, 9]),
     plaintext_hash: I_HASH,
@@ -70,6 +75,19 @@ function iMemoryStore(): IngestStore & {
     async put(b) {
       objects.set(key(b.subaccord, b.dispute, b.round), b);
     },
+    async putFile(b, path) {
+      objects.set(`${key(b.subaccord, b.dispute, b.round)}:${path}`, b);
+    },
+    async getFile(s, d, r, path) {
+      return objects.get(`${key(s, d, r)}:${path}`) ?? null;
+    },
+    async listFiles(s, d, r) {
+      const p = `${key(s, d, r)}:`;
+      return [...objects.keys()]
+        .filter((k) => k.startsWith(p))
+        .map((k) => k.slice(p.length))
+        .sort();
+    },
   };
 }
 
@@ -82,11 +100,29 @@ function iChain(
       if (hex(d) !== hex(dispute)) return null;
       return view;
     },
+    async readSubaccord() {
+      return { evidence_operator: I_OPERATOR };
+    },
   };
 }
 
 function iDeps(store: IngestStore, chain: IngestChainReader): IngestDeps {
-  return { store, chain };
+  return {
+    store,
+    chain,
+    keyring: {
+      async forOperator(pub) {
+        return hex(pub) === hex(I_OPERATOR) ? new Uint8Array(32).fill(0xee) : null;
+      },
+    },
+    crypto: {
+      sha256,
+      async unwrap(bundle) {
+        return { plaintext: bundle.ct };
+      },
+    },
+    limits: { maxEntries: 64, maxDocBytes: 10_000_000, maxPackageBytes: 100_000_000 },
+  };
 }
 
 test("ingest: happy → 201, idempotent:false, stored with server-stamped ingested_at", async () => {
@@ -649,8 +685,9 @@ test("deliver: bounded by current_round — round-1 juror does not receive round
 // [0u8;32] sentinel means "no new evidence this round" — a claimant cannot
 // ingest against a sentinel slot (the hash can never match).
 
-const APPEAL_HASH = new Uint8Array(32).fill(0x5a);
-const ZERO_HASH = new Uint8Array(32); // ADR-0023 sentinel
+const APPEAL_CT = new Uint8Array([7, 7, 7, 7, 7]);
+const APPEAL_HASH = await sha256(APPEAL_CT); // v2: decrypt-verify needs sha256(ct)==hash
+const ZERO_HASH = new Uint8Array(); // ADR-0023 sentinel
 
 /** evidence_hashes fixture: round 0 = I_HASH, round k = given, else zero. */
 function iHashes(
@@ -668,7 +705,7 @@ test("ingest: round 1 appeal evidence stored at its own key, gated against evide
     I_SUB,
     I_DISPUTE,
     1,
-    iBundle({ round: 1, plaintext_hash: APPEAL_HASH }),
+    iBundle({ round: 1, ct: APPEAL_CT, plaintext_hash: APPEAL_HASH }),
     iDeps(store, iChain(I_DISPUTE, iHashes(1, APPEAL_HASH))),
   );
   assert.equal(out.status, 201);
@@ -685,7 +722,7 @@ test("ingest: round>0 + round 0 coexist as distinct keys", async () => {
     I_SUB,
     I_DISPUTE,
     1,
-    iBundle({ round: 1, plaintext_hash: APPEAL_HASH }),
+    iBundle({ round: 1, ct: APPEAL_CT, plaintext_hash: APPEAL_HASH }),
     iDeps(store, chain),
   );
   assert.equal(store.objects.size, 2, "round 0 and round 1 stored independently");

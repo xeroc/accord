@@ -89,6 +89,7 @@ function makeApp(opts: MakeAppOpts = {}) {
   const anchor = opts.anchor ?? mapAnchor;
   const deps: ServerDeps = {
     ingest: async () => ({ ok: true, status: 201, location: "/evidence/s/d" }),
+    ingestFile: async () => ({ ok: true, status: 201, idempotent: false }),
     synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/c/0" }),
     synodManifest: async () => ({
       ok: true,

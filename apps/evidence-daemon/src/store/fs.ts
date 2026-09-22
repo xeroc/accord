@@ -21,15 +21,18 @@
  * Authority: apps/evidence-daemon/SPEC.md §"Storage trait (pluggable)".
  */
 
+import type { Dirent } from "node:fs";
 import type { Address } from "@solana/kit";
-import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   deserializeBundle,
   type EvidenceBundle,
   EvidenceConflictError,
   hashEquals,
+  isSafeEntryPath,
   type EvidenceStore,
+  type FileStat,
   serializeBundle,
 } from "./store.js";
 
@@ -59,13 +62,21 @@ export class FsStore implements EvidenceStore {
   }
 
   async put(b: EvidenceBundle): Promise<void> {
-    const path = this.pathFor(b.subaccord, b.dispute, b.round);
+    await this.writeIdempotent(this.pathFor(b.subaccord, b.dispute, b.round), b);
+  }
 
-    // Idempotency: read the existing file first.
-    //  - same hash already stored ⇒ no-op;
-    //  - different hash already stored ⇒ EvidenceConflictError;
-    //  - file present but not one of our bundles (foreign/tamper) ⇒ conflict;
-    //  - absent ⇒ write.
+  /**
+   * Read-then-write with plaintextHash idempotency:
+   *  - same hash already stored ⇒ no-op;
+   *  - different hash already stored ⇒ EvidenceConflictError;
+   *  - object present but not one of our bundles (foreign/tamper) ⇒ conflict;
+   *  - absent ⇒ write.
+   */
+  private async writeIdempotent(
+    path: string,
+    b: EvidenceBundle,
+    entryPath?: string,
+  ): Promise<void> {
     try {
       const text = await readFile(path, "utf-8");
       try {
@@ -76,6 +87,7 @@ export class FsStore implements EvidenceStore {
             dispute: b.dispute,
             round: b.round,
             existingHash: existing.plaintextHash,
+            ...(entryPath === undefined ? {} : { path: entryPath }),
           });
         }
         return; // idempotent no-op — same hash already stored
@@ -89,6 +101,7 @@ export class FsStore implements EvidenceStore {
           dispute: b.dispute,
           round: b.round,
           existingHash: new Uint8Array(),
+          ...(entryPath === undefined ? {} : { path: entryPath }),
         });
       }
     } catch (e) {
@@ -101,6 +114,54 @@ export class FsStore implements EvidenceStore {
     await writeFile(path, serializeBundle(b), "utf-8");
   }
 
+  /** v2 multifile: per-document objects live under `{round}.files/{path}`. */
+  private filePathFor(subaccord: Address, dispute: Address, round: number, path: string): string {
+    return join(this.rootDir, subaccord, dispute, `${round}.files`, path);
+  }
+
+  async putFile(b: EvidenceBundle, path: string): Promise<void> {
+    if (!isSafeEntryPath(path)) {
+      throw new Error(`unsafe entry path: ${JSON.stringify(path)}`);
+    }
+    await this.writeIdempotent(this.filePathFor(b.subaccord, b.dispute, b.round, path), b, path);
+  }
+
+  async getFile(
+    subaccord: Address,
+    dispute: Address,
+    round: number,
+    path: string,
+  ): Promise<EvidenceBundle | null> {
+    if (!isSafeEntryPath(path)) return null;
+    try {
+      const text = await readFile(this.filePathFor(subaccord, dispute, round, path), "utf-8");
+      return deserializeBundle(text);
+    } catch (e) {
+      if (isNotFound(e)) return null;
+      throw e;
+    }
+  }
+
+  async listFiles(subaccord: Address, dispute: Address, round: number): Promise<FileStat[]> {
+    const base = join(this.rootDir, subaccord, dispute, `${round}.files`);
+    const out: FileStat[] = [];
+    const walk = async (rel: string): Promise<void> => {
+      let entries: Dirent[];
+      try {
+        entries = await readdir(join(base, rel), { withFileTypes: true });
+      } catch (e) {
+        if (isNotFound(e)) return; // no files for this round — reads as empty
+        throw e;
+      }
+      for (const ent of entries) {
+        const child = rel === "" ? ent.name : `${rel}/${ent.name}`;
+        if (ent.isDirectory()) await walk(child);
+        else out.push({ path: child, bytes: (await stat(join(base, child))).size });
+      }
+    };
+    await walk("");
+    return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  }
   async get(subaccord: Address, dispute: Address, round: number): Promise<EvidenceBundle | null> {
     try {
       const text = await readFile(this.pathFor(subaccord, dispute, round), "utf-8");
