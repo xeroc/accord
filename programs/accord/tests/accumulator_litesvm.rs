@@ -783,7 +783,7 @@ fn commit_vrf_callback_freezes_live_root() {
 
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * TEST_FPJ; // initial_num_jurors * fee_per_juror
+    let fee = 4 * TEST_FPJ; // (min_jury_size + 1) * fee_per_juror — ADR-0030 flip-bounty unit included
 
     let ix = env
         .ctx
@@ -871,7 +871,7 @@ fn draw_seat_fills_round_against_frozen_root() {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * TEST_FPJ;
+    let fee = 4 * TEST_FPJ; // ADR-0030: (J+1)·fpj tender
 
     let ix = env
         .ctx
@@ -1096,7 +1096,7 @@ fn out_of_order_seat_rejected() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -1215,7 +1215,7 @@ fn draw_seat_collision_re_roll_resolves_without_caller_choice() {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * TEST_FPJ;
+    let fee = 4 * TEST_FPJ; // ADR-0030: (J+1)·fpj tender
     let ix = env
         .ctx
         .program()
@@ -1564,7 +1564,7 @@ fn create_dispute_under_a(env: &mut AccEnv) -> (Pubkey, Keypair) {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * TEST_FPJ;
+    let fee = 4 * TEST_FPJ; // ADR-0030: (J+1)·fpj tender
     let ix = env
         .ctx
         .program()
@@ -1851,7 +1851,8 @@ fn fabricate_appeal_bond(
         amount,
         prior_result: 0,
         bump,
-        padding: [0; 64],
+        reward: 0,
+        padding: [0; 56],
     };
     let mut data = disc[..8].to_vec();
     AnchorSerialize::serialize(&bond_acc, &mut data).unwrap();
@@ -1990,13 +1991,17 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
         program_id: ix.program_id,
         accounts: {
             let mut accts = ix.accounts;
-            for key in &[round_0, bond_pda] {
-                accts.push(solana_program::instruction::AccountMeta {
-                    pubkey: *key,
-                    is_signer: false,
-                    is_writable: false,
-                });
-            }
+            // Round stays read-only; the BOND is written (ADR-0030 strip).
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: round_0,
+                is_signer: false,
+                is_writable: false,
+            });
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: bond_pda,
+                is_signer: false,
+                is_writable: true,
+            });
             accts
         },
         data: ix.data,
@@ -2055,12 +2060,14 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
     let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
     r.assert_success();
 
-    // Appellant received only the bond.
+    // Appellant received the bond + their +1 bounty unit (ADR-0030: cancel
+    // strips the unit onto the bond's `reward`).
     let appellant_after = env.ctx.svm.get_account(&appellant_ata).unwrap();
     let appellant_balance = u64::from_le_bytes(appellant_after.data[64..72].try_into().unwrap());
     assert_eq!(
-        appellant_balance, bond,
-        "appellant recovers only the bond on cancel (not the appeal fee)"
+        appellant_balance,
+        bond + TEST_FPJ,
+        "appellant recovers bond + bounty unit on cancel (not the appeal fee)"
     );
 
     // Vault retains juror stake collateral + the trapped appeal fee (the round
@@ -2069,8 +2076,8 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
     let vault_final_balance = u64::from_le_bytes(vault_final.data[64..72].try_into().unwrap());
     assert_eq!(
         vault_final_balance,
-        stake_collateral + appeal_fee,
-        "vault retains stake collateral + trapped appeal fee after both refunds"
+        stake_collateral + appeal_fee - TEST_FPJ,
+        "vault retains stake collateral + trapped appeal fee − the stripped bounty unit"
     );
 }
 
@@ -2140,13 +2147,16 @@ fn cancel_after_real_appeal_no_double_refund() {
         program_id: cancel_ix.program_id,
         accounts: {
             let mut accts = cancel_ix.accounts;
-            for key in &[round_0, bond_pda] {
-                accts.push(solana_program::instruction::AccountMeta {
-                    pubkey: *key,
-                    is_signer: false,
-                    is_writable: false,
-                });
-            }
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: round_0,
+                is_signer: false,
+                is_writable: false,
+            });
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: bond_pda,
+                is_signer: false,
+                is_writable: true, // ADR-0030 strip writes bond.reward
+            });
             accts
         },
         data: cancel_ix.data,
@@ -2189,14 +2199,20 @@ fn cancel_after_real_appeal_no_double_refund() {
         appellant_refund,
         round_0_fee + appeal_deposit,
     );
-    // Filer recovers only the round-0 filing fee (the appeal fee is not theirs).
+    // Filer recovers the round-0 filing fee + their bounty unit (ADR-0030;
+    // the appeal fee is not theirs).
     assert_eq!(
-        filer_refund, round_0_fee,
-        "filer refund = round-0 filing fee only"
+        filer_refund,
+        round_0_fee + fee_per_juror,
+        "filer refund = round-0 filing fee + bounty unit"
     );
-    // Appellant recovers only the bond (the appeal fee is consumed by the round,
-    // or trapped if the round never resolved).
-    assert_eq!(appellant_refund, bond, "appellant refund = bond only");
+    // Appellant recovers the bond + their stripped +1 unit (ADR-0030; the
+    // appeal fee is consumed by the round, or trapped if never resolved).
+    assert_eq!(
+        appellant_refund,
+        bond + fee_per_juror,
+        "appellant refund = bond + bounty unit"
+    );
 }
 
 // ─── C-1 regression: shared fee_vault drain ─────────────────────────────────
@@ -2212,7 +2228,8 @@ fn cancel_dispute_does_not_drain_shared_vault() {
 
     // File dispute A (stakes 3 jurors + deposits 3 × fee_per_juror).
     let (dispute_a, _filer_a) = create_dispute_under_a(&mut env);
-    let fee_per_dispute = 3 * TEST_FPJ;
+    let fee_per_dispute = 3 * TEST_FPJ; // fee_paid per dispute (J·fpj)
+    let tender_per_dispute = 4 * TEST_FPJ; // ADR-0030 tender (J+1)·fpj
 
     // File dispute B under the same Subaccord (different filer, same vault).
     let filer_b = Keypair::new();
@@ -2249,7 +2266,7 @@ fn cancel_dispute_does_not_drain_shared_vault() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: fee_per_dispute,
+            fee: tender_per_dispute,
         })
         .instruction()
         .unwrap();
@@ -2264,7 +2281,7 @@ fn cancel_dispute_does_not_drain_shared_vault() {
             .try_into()
             .unwrap(),
     );
-    // vault_before = juror_collateral (15_000) + 2 disputes × fee_per_dispute.
+    // vault_before = juror_collateral (15_000) + 2 disputes × tender.
 
     // Warp past the pre-draw cancel timeout.
     warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 1);
@@ -2301,8 +2318,8 @@ fn cancel_dispute_does_not_drain_shared_vault() {
     );
     assert_eq!(
         filer_b_after - filer_b_before,
-        fee_per_dispute,
-        "filer B gets only their own fee_paid — not the shared vault"
+        tender_per_dispute,
+        "filer B gets only their own fee_paid + bounty unit — not the shared vault"
     );
 
     // Vault retains dispute A's fees + juror collateral (was: fully drained).
@@ -2313,7 +2330,7 @@ fn cancel_dispute_does_not_drain_shared_vault() {
     );
     assert_eq!(
         vault_after,
-        vault_before - fee_per_dispute,
+        vault_before - tender_per_dispute,
         "vault retains dispute A's fees + juror collateral after canceling B"
     );
 
@@ -2356,7 +2373,7 @@ fn cancel_releases_partially_drawn_panel() {
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * TEST_FPJ;
+    let fee = 4 * TEST_FPJ; // ADR-0030: (J+1)·fpj tender
     let ix = env
         .ctx
         .program()
@@ -2831,7 +2848,7 @@ fn commit_reveal_finalize_settle_single_round() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -3140,7 +3157,7 @@ fn drawn_panel_with(mut env: AccEnv, options: Vec<[u8; 32]>) -> DrawnPanel {
             options,
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -3505,7 +3522,7 @@ fn pause_blocks_stake_and_create_dispute() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -3619,7 +3636,7 @@ fn settle_round_releases_active_draws_and_slash_reserve() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -3861,7 +3878,7 @@ fn setup_prior_round_settlement() -> PriorRoundSetup {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -4152,7 +4169,7 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce: 1,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -4417,7 +4434,7 @@ fn setup_and_finalize_cfg(
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let filer_fee = (panel_size as u64) * TEST_FPJ;
+    let filer_fee = (panel_size as u64 + 1) * TEST_FPJ; // ADR-0030: (J+1)·fpj
     let ix = env
         .ctx
         .program()
@@ -4787,7 +4804,11 @@ fn redraw_exhaustion_fails_and_refunds_filer() {
                 .amount
         })
         .unwrap_or(0);
-    assert_eq!(after - before, 3 * TEST_FPJ, "filer refunded fee_paid");
+    assert_eq!(
+        after - before,
+        4 * TEST_FPJ,
+        "filer refunded fee_paid + their bounty unit (ADR-0030)"
+    );
     let d =
         Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
             .unwrap();
@@ -5015,7 +5036,7 @@ fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
             options: vec![[0u8; 32], [1u8; 32]],
             evidence_hash: [0u8; 32],
             nonce,
-            fee: 3 * TEST_FPJ,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
         })
         .instruction()
         .unwrap();
@@ -5675,9 +5696,9 @@ fn vault_invariant_exact_after_stake_and_dispute() {
     let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
     assert_vault_invariant(&env);
 
-    // The vault now holds 15_000 stake + 150 fees = 15_150.
+    // The vault now holds 15_000 stake + 200 tender (4·fpj) = 15_200.
     let vault = vault_ata(&env.subaccord, &env.mint);
-    assert_eq!(spl_balance(&env, &vault), 3 * 5_000 + 3 * TEST_FPJ);
+    assert_eq!(spl_balance(&env, &vault), 3 * 5_000 + 4 * TEST_FPJ);
 
     let _ = (dispute, jurors);
 }
@@ -5719,8 +5740,8 @@ fn withdraw_fees_cannot_drain_stake_same_mint() {
     let vault = vault_ata(&env.subaccord, &env.mint);
     assert_eq!(
         spl_balance(&env, &vault),
-        total_stake,
-        "vault retains all stake collateral after fee withdrawal"
+        total_stake + fee_per_juror,
+        "vault retains all stake collateral + the filer's unclaimed bounty unit (ADR-0030)"
     );
 
     // The exact invariant still holds: fee_net (now 0) + stake_net (15_000).
@@ -5768,9 +5789,10 @@ fn multi_claimant_withdraw_order_does_not_starve() {
     );
     assert_vault_invariant(&env);
 
-    // Vault retains only stake collateral — all fees withdrawn.
+    // Vault retains only stake collateral + the filer's unclaimed bounty
+    // unit (ADR-0030) — all fees withdrawn.
     let vault = vault_ata(&env.subaccord, &env.mint);
-    assert_eq!(spl_balance(&env, &vault), 3 * 5_000u64);
+    assert_eq!(spl_balance(&env, &vault), 3 * 5_000u64 + TEST_FPJ);
 }
 
 // ─── per-round evidence hashes (milestone accord-qp7c / bean accord-azyd) ────
@@ -5809,7 +5831,7 @@ fn create_dispute_with_evidence(env: &mut AccEnv, evidence_hash: [u8; 32]) -> (P
     create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
     let nonce = 1u64;
     let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let fee = 3 * TEST_FPJ;
+    let fee = 4 * TEST_FPJ; // ADR-0030: (J+1)·fpj tender
     let ix = env
         .ctx
         .program()
@@ -6754,8 +6776,8 @@ fn cancel_after_resolved_round_pays_participation_then_refunds_remainder() {
     // Filer refund = remaining fee_paid = 3·fee − 2·fee.
     assert_eq!(
         spl_balance(&dd.env, &fata) - before,
-        3 * TEST_FPJ - 2 * TEST_FPJ,
-        "filer refunded exactly the unconsumed remainder"
+        4 * TEST_FPJ - 2 * TEST_FPJ,
+        "filer refunded the unconsumed remainder + their bounty unit (ADR-0030)"
     );
 }
 
@@ -6876,7 +6898,7 @@ fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
     accts.push(solana_program::instruction::AccountMeta {
         pubkey: bond_pda,
         is_signer: false,
-        is_writable: false,
+        is_writable: true, // ADR-0030 strip writes bond.reward
     });
     let ix = solana_program::instruction::Instruction {
         program_id: ix.program_id,
@@ -6929,8 +6951,8 @@ fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
     // Filer refund = fee_paid minus round-0 participation = 150 − 100.
     assert_eq!(
         spl_balance(&env, &fata) - before,
-        3 * TEST_FPJ - 2 * TEST_FPJ,
-        "filer refunded the unconsumed round-0 remainder"
+        4 * TEST_FPJ - 2 * TEST_FPJ,
+        "filer refunded the unconsumed round-0 remainder + bounty unit (ADR-0030)"
     );
 
     // The bond stays claimable — bond portion only (the fee portion funded
@@ -6959,7 +6981,674 @@ fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
         .assert_success();
     assert_eq!(
         spl_balance(&env, &appellant_ata) - appellant_before_claim,
-        bond,
-        "appellant recovers only the bond; the appeal fee is not theirs"
+        bond + TEST_FPJ,
+        "appellant recovers bond + their stripped bounty unit (ADR-0030)"
     );
+}
+
+// ─── ADR-0030 flip-bounty: funding, disposition, Failed-path refunds ─────────
+
+/// `finalize_dispute` + the panel's JurorStake PDAs + this dispute's
+/// AppealBond PDAs (writable — the forfeit/reward writes need them).
+fn run_finalize_dispute_with_bonds(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    drawn: &[(u32, usize)],
+    jurors: &[Keypair],
+    bond_count: usize,
+) {
+    let mut ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeDispute {})
+        .instruction()
+        .unwrap();
+    for &(.., leaf_idx) in drawn {
+        let js = juror_stake_pda(&env.subaccord, &jurors[leaf_idx].pubkey());
+        ix.accounts.push(solana_program::instruction::AccountMeta {
+            pubkey: js,
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    for i in 0..bond_count {
+        let bond = Pubkey::find_program_address(
+            &[
+                SEED_APPEAL_BOND,
+                dispute.as_ref(),
+                &(i as u32).to_le_bytes(),
+            ],
+            &ID,
+        )
+        .0;
+        ix.accounts.push(solana_program::instruction::AccountMeta {
+            pubkey: bond,
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+}
+
+fn bond_pda_for(dispute: &Pubkey, seed: u32) -> Pubkey {
+    Pubkey::find_program_address(
+        &[SEED_APPEAL_BOND, dispute.as_ref(), &seed.to_le_bytes()],
+        &ID,
+    )
+    .0
+}
+
+fn read_appeal_bond(env: &AccEnv, dispute: &Pubkey, seed: u32) -> accord::state::AppealBond {
+    let pda = bond_pda_for(dispute, seed);
+    let acc = env.ctx.svm.get_account(&pda).expect("bond exists");
+    accord::state::AppealBond::try_deserialize(&mut &acc.data[..]).unwrap()
+}
+
+/// Execute `claim_appeal_refund(round_idx = seed)` for the bond's appellant.
+fn do_claim_appeal_refund(env: &mut AccEnv, dispute: Pubkey, seed: u32) -> TransactionResult {
+    let bond = bond_pda_for(&dispute, seed);
+    let bond_acc = read_appeal_bond(env, &dispute, seed);
+    let claimant_ata = juror_ata(&bond_acc.appellant, &env.mint);
+    if env.ctx.svm.get_account(&claimant_ata).is_none() {
+        create_token_account(
+            &mut env.ctx,
+            &claimant_ata,
+            &env.mint,
+            &bond_acc.appellant,
+            0,
+        );
+    }
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ClaimAppealRefund {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            appeal_bond: bond,
+            fee_token: env.mint,
+            claimant_token_account: claimant_ata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::ClaimAppealRefund { round_idx: seed })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[&env.creator]).unwrap()
+}
+
+/// Execute `claim_filing_bounty` (ADR-0030) for the dispute's filer.
+fn do_claim_filing_bounty(env: &mut AccEnv, dispute: Pubkey) -> TransactionResult {
+    let d = read_dispute(env, &dispute);
+    let fata = juror_ata(&d.filer, &env.mint);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ClaimFilingBounty {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::ClaimFilingBounty {})
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[&env.creator]).unwrap()
+}
+
+/// L1: `create_dispute` tenders `(J+1)·fpj`; the +1 banks into `bounty_pool`
+/// while `fee_paid` keeps the round-0 juror pot `J·fpj`. The old `J·fpj`
+/// tender now fails `FeeMismatch`.
+#[test]
+fn bounty_funding_create_dispute_banks_plus_one() {
+    let mut env = setup_accumulator();
+    arm_n_stakers(&mut env, 3);
+
+    // Wrong tender (old J·fpj) → FeeMismatch.
+    let filer = fund_appellant(&mut env, 100_000_000); // any funded wallet works as filer
+    let nonce = 9u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
+            subaccord: env.subaccord,
+            accord_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee: 3 * TEST_FPJ,
+        })
+        .instruction()
+        .unwrap();
+    let r = env.ctx.execute_instruction(ix, &[&filer]).unwrap();
+    assert!(
+        !r.is_success(),
+        "J·fpj tender must fail FeeMismatch under ADR-0030; logs={:?}",
+        r.logs()
+    );
+
+    // Correct tender (J+1)·fpj → bounty_pool = fpj, fee_paid = J·fpj.
+    let (dispute2, _filer2) = create_dispute_with_evidence(&mut env, [0u8; 32]);
+    let d = read_dispute(&env, &dispute2);
+    assert_eq!(d.bounty_pool, TEST_FPJ, "filer's +1 banks into bounty_pool");
+    assert_eq!(
+        d.fee_paid,
+        3 * TEST_FPJ,
+        "fee_paid keeps the round-0 juror pot only"
+    );
+}
+
+/// L1: `appeal` tenders `(2N+1)·fpj`; the +1 joins `bounty_pool` while
+/// `AppealBond.amount` keeps the ADR-0004 semantics (`fee + bond` at N·fpj
+/// each — `claim_appeal_refund`'s `amount − panel·fpj` math is untouched).
+#[test]
+fn bounty_funding_appeal_grows_pool_and_keeps_bond_semantics() {
+    let mut env = setup_accumulator();
+    arm_n_stakers(&mut env, 7);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+
+    force_round_resolved(&mut env, &dispute, 0);
+    fabricate_resolved_round(&mut env, &dispute, 0, 0);
+
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
+    let vault = vault_ata(&env.subaccord, &env.mint);
+    let appellant_before = spl_balance(&env, &appellant_ata);
+    let vault_before = spl_balance(&env, &vault);
+    do_appeal(&mut env, &dispute, &appellant, [0xBB; 32]).assert_success();
+
+    // (2N+1)·fpj = 750 at panel 7 — not the old 700.
+    assert_eq!(
+        appellant_before - spl_balance(&env, &appellant_ata),
+        15 * TEST_FPJ,
+        "appellant tenders fee + bond + one bounty unit"
+    );
+    assert_eq!(
+        spl_balance(&env, &vault) - vault_before,
+        15 * TEST_FPJ,
+        "vault takes the full (2N+1)·fpj tender"
+    );
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(
+        d.bounty_pool,
+        2 * TEST_FPJ,
+        "filer's +1 + appellant's +1 in the pool"
+    );
+    let bond = read_appeal_bond(&env, &dispute, 0);
+    assert_eq!(
+        bond.amount,
+        14 * TEST_FPJ,
+        "bond.amount keeps fee+bond semantics (2N·fpj, bounty excluded)"
+    );
+    assert_eq!(bond.reward, 0, "reward zero-init at appeal");
+}
+
+/// L2: Final with no appeal ever — the pool stays on the dispute and
+/// `claim_filing_bounty` refunds the filer's +1 exactly once.
+#[test]
+fn filing_bounty_refund_final_no_appeal() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        reveal_end,
+        ..
+    } = setup_drawn_panel_3();
+
+    // All three vote option 0 → decisive. Re-derive the seat triples from
+    // the drawn (seat, leaf) pairs (commit_reveal_votes wants the triples).
+    let seats: Vec<(u32, usize, u32)> = drawn.iter().map(|&(s, l)| (s, l, 0)).collect();
+    let votes: Vec<Option<u64>> = drawn.iter().map(|_| Some(0)).collect();
+    commit_reveal_votes(&mut env, dispute, rnd, &jurors, &seats, &votes);
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, reveal_end - now + 1);
+    run_finalize_round(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute(&mut env, dispute, rnd, &drawn, &jurors);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.state, DisputeState::Final);
+    assert_eq!(d.bounty_pool, TEST_FPJ, "no appeal — pool intact at Final");
+
+    let fata = juror_ata(&d.filer, &env.mint);
+    let before = spl_balance(&env, &fata);
+    do_claim_filing_bounty(&mut env, dispute).assert_success();
+    assert_eq!(
+        spl_balance(&env, &fata) - before,
+        TEST_FPJ,
+        "filer recovers their +1 unit"
+    );
+    assert_eq!(read_dispute(&env, &dispute).bounty_pool, 0, "zero-on-claim");
+
+    // Idempotent: second claim reverts (InvalidAmount — pool is zero).
+    let r = do_claim_filing_bounty(&mut env, dispute);
+    assert!(
+        !r.is_success(),
+        "second filing-bounty claim must revert; logs={:?}",
+        r.logs()
+    );
+}
+
+/// Drive one full round: draw `panel` seats for `round_idx` over the frozen
+/// root, vote `votes`, resolve. Returns (round PDA, drawn seats).
+fn draw_vote_resolve_round(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    vrf: &[u8; 32],
+    round_idx: u32,
+    panel: u32,
+    leaves: &[(Pubkey, u64)],
+    jurors: &[Keypair],
+    votes: &[Option<u64>],
+) -> (Pubkey, Vec<(u32, usize)>) {
+    let rnd = round_pda(&dispute, round_idx);
+    let seats = submit_draw_panel(env, dispute, rnd, vrf, round_idx, 0, panel, leaves);
+    let drawn: Vec<(u32, usize)> = seats.iter().map(|&(s, l, _)| (s, l)).collect();
+    commit_reveal_votes(env, dispute, rnd, jurors, &seats, votes);
+    finalize_round_for(env, dispute, rnd, &drawn, jurors);
+    (rnd, drawn)
+}
+
+/// L3(a): lone flip — the aligned appellant's bond carries the ENTIRE pool
+/// (filer +1 + own +1); claim pays bond + reward, idempotently.
+#[test]
+fn lone_flip_aligned_bond_earns_full_pool() {
+    let mut env = setup_accumulator();
+    let jurors = arm_n_stakers(&mut env, 7);
+    let leaves: Vec<(Pubkey, u64)> = jurors.iter().map(|j| (j.pubkey(), 5_000u64)).collect();
+    let sub = read_subaccord(&env);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+    let vrf = {
+        let mut c = [0u8; 32];
+        c.copy_from_slice(&dispute.to_bytes());
+        c
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    // Round 0: 3 seats, all vote 0 → result 0 (A).
+    let votes0: Vec<Option<u64>> = vec![Some(0), Some(0), Some(0)];
+    let (_rnd0, _drawn0) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 0, 3, &leaves, &jurors, &votes0);
+
+    // Appeal → round 1 (panel 7).
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant, [0u8; 32]).assert_success();
+
+    // Round 1: 7 seats, majority vote 1 → result 1 (B) — the flip.
+    let votes1: Vec<Option<u64>> = (0..7).map(|i| Some(if i < 5 { 1 } else { 0 })).collect();
+    let (rnd1, drawn1) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 1, 7, &leaves, &jurors, &votes1);
+
+    // Finalize: final ruling = 1.
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute_with_bonds(&mut env, dispute, rnd1, &drawn1, &jurors, 1);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.state, DisputeState::Final);
+    assert_eq!(d.final_ruling, 1);
+    assert_eq!(d.bounty_pool, 0, "pool disposed at finalize");
+
+    let bond = read_appeal_bond(&env, &dispute, 0);
+    assert_eq!(
+        bond.reward,
+        2 * TEST_FPJ,
+        "lone aligned flipper takes the whole pool (filer +1 + own +1)"
+    );
+    assert_eq!(
+        bond.amount,
+        14 * TEST_FPJ,
+        "deposit untouched by the reward"
+    );
+
+    // Claim: bond (7·fpj) + reward (2·fpj) = 9·fpj.
+    let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
+    let before = spl_balance(&env, &appellant_ata);
+    do_claim_appeal_refund(&mut env, dispute, 0).assert_success();
+    assert_eq!(
+        spl_balance(&env, &appellant_ata) - before,
+        9 * TEST_FPJ,
+        "claim pays bond + bounty share"
+    );
+
+    // Idempotent: the zeroed bond reverts on re-claim.
+    let r = do_claim_appeal_refund(&mut env, dispute, 0);
+    assert!(!r.is_success(), "re-claim must revert; logs={:?}", r.logs());
+}
+
+/// L3(b): A→B→A whipsaw — only the FINAL-aligned appellant is rewarded (with
+/// ALL three +1 units); the first flipper attacked a result the final ruling
+/// agrees with, so their bond forfeits under the UNCHANGED ADR-0004 rule and
+/// their +1 stays in the pool (ADR-0030 D3).
+#[test]
+fn whipsaw_pays_only_final_aligned_flipper() {
+    let mut env = setup_accumulator();
+    let jurors = arm_n_stakers(&mut env, 15);
+    let leaves: Vec<(Pubkey, u64)> = jurors.iter().map(|j| (j.pubkey(), 5_000u64)).collect();
+    let sub = read_subaccord(&env);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+    let vrf = {
+        let mut c = [0u8; 32];
+        c.copy_from_slice(&dispute.to_bytes());
+        c
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    // Round 0: result 0 (A).
+    let votes0: Vec<Option<u64>> = vec![Some(0), Some(0), Some(0)];
+    let (_rnd0, _d0) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 0, 3, &leaves, &jurors, &votes0);
+
+    // Appeal 1 → round 1 (panel 7).
+    let appellant1 = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant1, [0u8; 32]).assert_success();
+
+    // Round 1: result 1 (B) — first flip.
+    let votes1: Vec<Option<u64>> = (0..7).map(|i| Some(if i < 5 { 1 } else { 0 })).collect();
+    let (_rnd1, _d1) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 1, 7, &leaves, &jurors, &votes1);
+
+    // Appeal 2 → round 2 (panel 15).
+    let appellant2 = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant2, [0u8; 32]).assert_success();
+
+    // Round 2: result 0 (A) — whipsaw back.
+    let votes2: Vec<Option<u64>> = (0..15).map(|i| Some(if i < 10 { 0 } else { 1 })).collect();
+    let (rnd2, drawn2) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 2, 15, &leaves, &jurors, &votes2);
+
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute_with_bonds(&mut env, dispute, rnd2, &drawn2, &jurors, 2);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.final_ruling, 0);
+    assert_eq!(d.bounty_pool, 0);
+
+    // Bond 1 (attacked B, round-2 result == final A) is THE aligned flipper:
+    // reward = entire pool = 3 units (filer + appellant1 + appellant2).
+    let bond1 = read_appeal_bond(&env, &dispute, 1);
+    assert_eq!(
+        bond1.reward,
+        3 * TEST_FPJ,
+        "final-aligned flipper takes all three +1 units"
+    );
+    // Bond 0 (attacked A == final A): no-flip under the unchanged rule —
+    // deposit forfeited into the coherent pool, no reward.
+    let bond0 = read_appeal_bond(&env, &dispute, 0);
+    assert_eq!(bond0.amount, 0, "overturned flipper's bond forfeits");
+    assert_eq!(bond0.reward, 0, "overturned flipper earns no bounty");
+
+    // Claims: appellant2 gets bond + 3·fpj; appellant1's claim reverts.
+    let appellant2_ata = juror_ata(&appellant2.pubkey(), &env.mint);
+    let before2 = spl_balance(&env, &appellant2_ata);
+    do_claim_appeal_refund(&mut env, dispute, 1).assert_success();
+    assert_eq!(
+        spl_balance(&env, &appellant2_ata) - before2,
+        15 * TEST_FPJ + 3 * TEST_FPJ,
+        "final-aligned appellant: bond (15·fpj) + full pool (3·fpj)"
+    );
+    let r = do_claim_appeal_refund(&mut env, dispute, 0);
+    assert!(
+        !r.is_success(),
+        "forfeited bond claim must revert; logs={:?}",
+        r.logs()
+    );
+}
+
+/// L3(c): flip + later FAILED appeal — the aligned share includes the failed
+/// appeal's +1; the failed appeal's bond forfeits into `pool_extra` as today.
+#[test]
+fn flip_then_failed_appeal_includes_its_unit() {
+    let mut env = setup_accumulator();
+    let jurors = arm_n_stakers(&mut env, 15);
+    let leaves: Vec<(Pubkey, u64)> = jurors.iter().map(|j| (j.pubkey(), 5_000u64)).collect();
+    let sub = read_subaccord(&env);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+    let vrf = {
+        let mut c = [0u8; 32];
+        c.copy_from_slice(&dispute.to_bytes());
+        c
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    // Round 0: result 0 (A).
+    let votes0: Vec<Option<u64>> = vec![Some(0), Some(0), Some(0)];
+    let (_rnd0, _d0) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 0, 3, &leaves, &jurors, &votes0);
+
+    // Appeal 1 → round 1 (panel 7).
+    let appellant1 = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant1, [0u8; 32]).assert_success();
+
+    // Round 1: result 1 (B) — the flip.
+    let votes1: Vec<Option<u64>> = (0..7).map(|i| Some(if i < 5 { 1 } else { 0 })).collect();
+    let (_rnd1, _d1) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 1, 7, &leaves, &jurors, &votes1);
+
+    // Appeal 2 attacks B → round 2 (panel 15) but FAILS to flip.
+    let appellant2 = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant2, [0u8; 32]).assert_success();
+
+    // Round 2: result 1 (B) — appeal 2 failed (prior B == final B).
+    let votes2: Vec<Option<u64>> = (0..15).map(|i| Some(if i < 10 { 1 } else { 0 })).collect();
+    let (rnd2, drawn2) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 2, 15, &leaves, &jurors, &votes2);
+
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute_with_bonds(&mut env, dispute, rnd2, &drawn2, &jurors, 2);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.final_ruling, 1);
+
+    // Bond 0 (attacked A ≠ final B; round-1 result B == final) is aligned and
+    // takes the WHOLE pool — including appeal 2's forfeited +1.
+    let bond0 = read_appeal_bond(&env, &dispute, 0);
+    assert_eq!(
+        bond0.reward,
+        3 * TEST_FPJ,
+        "aligned share includes the failed appeal's +1"
+    );
+    // Bond 1 (attacked B == final B): forfeited, no reward.
+    let bond1 = read_appeal_bond(&env, &dispute, 1);
+    assert_eq!(bond1.amount, 0);
+    assert_eq!(bond1.reward, 0);
+
+    let appellant1_ata = juror_ata(&appellant1.pubkey(), &env.mint);
+    let before1 = spl_balance(&env, &appellant1_ata);
+    do_claim_appeal_refund(&mut env, dispute, 0).assert_success();
+    assert_eq!(
+        spl_balance(&env, &appellant1_ata) - before1,
+        7 * TEST_FPJ + 3 * TEST_FPJ,
+        "aligned flipper: bond (7·fpj) + pool incl. failed appeal's unit"
+    );
+}
+
+/// L4: appeals happened but no flip — the pool rolls into the final round's
+/// coherent-juror `pool_extra` (joining the forfeited bond); the appellant's
+/// claim reverts and `claim_filing_bounty` is InvalidState on Final-with
+/// -appeals.
+#[test]
+fn no_flip_bounty_joins_coherent_pool() {
+    let mut env = setup_accumulator();
+    let jurors = arm_n_stakers(&mut env, 7);
+    let leaves: Vec<(Pubkey, u64)> = jurors.iter().map(|j| (j.pubkey(), 5_000u64)).collect();
+    let sub = read_subaccord(&env);
+    let (dispute, _filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+    let vrf = {
+        let mut c = [0u8; 32];
+        c.copy_from_slice(&dispute.to_bytes());
+        c
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    // Round 0: result 0.
+    let votes0: Vec<Option<u64>> = vec![Some(0), Some(0), Some(0)];
+    let (_rnd0, _d0) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 0, 3, &leaves, &jurors, &votes0);
+
+    // Appeal → round 1 (panel 7).
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant, [0u8; 32]).assert_success();
+
+    // Round 1: result 0 again — appeal failed to flip.
+    let votes1: Vec<Option<u64>> = (0..7).map(|_| Some(0)).collect();
+    let (rnd1, drawn1) =
+        draw_vote_resolve_round(&mut env, dispute, &vrf, 1, 7, &leaves, &jurors, &votes1);
+
+    let d = read_dispute(&env, &dispute);
+    warp_seconds(&mut env, d.terms.appeal_window as i64 + 1);
+    run_finalize_dispute_with_bonds(&mut env, dispute, rnd1, &drawn1, &jurors, 1);
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.final_ruling, 0);
+    assert_eq!(d.bounty_pool, 0, "no-flip pool consumed at finalize");
+
+    // Final-round pot: 7·fpj base + forfeited bond 7·fpj + bounty 2·fpj = 16·fpj,
+    // split over 7 coherent jurors → 16·fpj/7 each (integer div, remainder trapped).
+    let share = 16 * TEST_FPJ / 7;
+    for &(_seat, leaf_idx) in &drawn1 {
+        let js = read_juror_stake(&env, &env.subaccord, &jurors[leaf_idx].pubkey());
+        assert_eq!(
+            js.fees_earned, share,
+            "coherent juror's share includes the rolled-up bounty pool"
+        );
+    }
+
+    // Appellant: bond forfeited → claim reverts.
+    let r = do_claim_appeal_refund(&mut env, dispute, 0);
+    assert!(
+        !r.is_success(),
+        "no-flip bond forfeited; claim must revert; logs={:?}",
+        r.logs()
+    );
+
+    // Filing-bounty claim is InvalidState on Final-with-appeals.
+    let r = do_claim_filing_bounty(&mut env, dispute);
+    assert!(
+        !r.is_success(),
+        "claim_filing_bounty must reject Final-with-appeals; logs={:?}",
+        r.logs()
+    );
+}
+
+/// L5: cancel (Failed) — filer refund = fee_paid + their +1; each appellant's
+/// +1 rides their bond (`reward`), claimed as bond + unit; idempotent.
+#[test]
+fn cancel_refunds_filer_bounty_and_strips_appellant_units() {
+    let mut env = setup_accumulator();
+    arm_n_stakers(&mut env, 7);
+    let (dispute, filer) = create_dispute_with_evidence(&mut env, [0xAA; 32]);
+
+    force_round_resolved(&mut env, &dispute, 0);
+    fabricate_resolved_round(&mut env, &dispute, 0, 0);
+
+    let appellant = fund_appellant(&mut env, 100_000_000);
+    do_appeal(&mut env, &dispute, &appellant, [0xBB; 32]).assert_success();
+
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    let filer_before = spl_balance(&env, &fata);
+    let round_0 = round_pda(&dispute, 0);
+    let bond = bond_pda_for(&dispute, 0);
+    warp_seconds(&mut env, PRE_DRAW_CANCEL_TIMEOUT_SECS + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CancelDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+        })
+        .args(instruction::CancelDispute {})
+        .instruction()
+        .unwrap();
+    let ix = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: {
+            let mut accts = ix.accounts;
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: round_0,
+                is_signer: false,
+                is_writable: false,
+            });
+            accts.push(solana_program::instruction::AccountMeta {
+                pubkey: bond,
+                is_signer: false,
+                is_writable: true, // ADR-0030 strip writes bond.reward
+            });
+            accts
+        },
+        data: ix.data,
+    };
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    let d = read_dispute(&env, &dispute);
+    assert_eq!(d.state, DisputeState::Failed);
+    assert_eq!(d.bounty_pool, 0, "Failed path consumes the pool");
+    // Filer: fee_paid (3·fpj, nothing consumed — round 0 never resolved here)
+    // + their own +1 unit.
+    assert_eq!(
+        spl_balance(&env, &fata) - filer_before,
+        4 * TEST_FPJ,
+        "filer refund = fee_paid + bounty unit"
+    );
+
+    // The appellant's +1 was stripped onto the bond at cancel.
+    let bond_acc = read_appeal_bond(&env, &dispute, 0);
+    assert_eq!(
+        bond_acc.reward, TEST_FPJ,
+        "cancel credits the appellant's +1"
+    );
+
+    // Claim: bond (7·fpj) + unit — NOT the appeal fee.
+    let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
+    let before = spl_balance(&env, &appellant_ata);
+    do_claim_appeal_refund(&mut env, dispute, 0).assert_success();
+    assert_eq!(
+        spl_balance(&env, &appellant_ata) - before,
+        8 * TEST_FPJ,
+        "appellant recovers bond + their +1 unit"
+    );
+
+    // Idempotent.
+    let r = do_claim_appeal_refund(&mut env, dispute, 0);
+    assert!(!r.is_success(), "re-claim must revert; logs={:?}", r.logs());
 }

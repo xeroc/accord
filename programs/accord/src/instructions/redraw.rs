@@ -156,18 +156,41 @@ impl<'info> Redraw<'info> {
             )?;
             // Strict accounting: prior rounds + this dispute's AppealBond PDAs
             // must fill the rest (same layout as `cancel_dispute`). Bonds are
-            // NOT refunded here — they stay claimable via `claim_appeal_refund`.
+            // NOT refunded here — they stay claimable via `claim_appeal_refund`
+            // (bond + their credited +1, ADR-0030).
             let appeal_n = round_idx as usize;
             require!(
                 rounds_end + appeal_n == ctx.remaining_accounts.len(),
                 AccordError::InvalidPanelSize
             );
 
-            // ADR-0021: refund the filer's remaining fee pool (per-dispute
-            // `fee_paid` — vault-safe for the shared Subaccord fee_vault; the
-            // ADR-0020 invariant guarantees `fee_vault.balance ≥ fee_paid`).
-            let refund = dispute.fee_paid;
+            // ADR-0030 Failed-path strip: each appellant's +1 bounty unit
+            // moves onto their bond (`reward`), out of the shared pool (also
+            // PDA-validates the bonds — previously unvalidated on this path).
+            let credited = credit_bond_bounty_units(
+                ctx.remaining_accounts,
+                &dispute_key,
+                rounds_end,
+                appeal_n,
+                terms.fee_per_juror,
+            )?;
+            dispute.bounty_pool = dispute
+                .bounty_pool
+                .checked_sub(credited)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+
+            // ADR-0021: refund the filer's remaining fee pool + their bounty
+            // unit (ADR-0030; per-dispute `fee_paid`/`bounty_pool` —
+            // vault-safe for the shared Subaccord fee_vault; the ADR-0020
+            // invariant guarantees `fee_vault.balance ≥ fee_paid +
+            // bounty_pool`). Post-strip, `bounty_pool` holds exactly the
+            // filer's own +1 unit.
+            let refund = dispute
+                .fee_paid
+                .checked_add(dispute.bounty_pool)
+                .ok_or(AccordError::ArithmeticOverflow)?;
             dispute.fee_paid = 0;
+            dispute.bounty_pool = 0;
             let sub = &mut ctx.accounts.subaccord;
             let bump = [sub.bump];
             let signer_seeds = &[

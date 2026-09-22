@@ -58,6 +58,7 @@ import { getFinalizeDisputeInstruction } from "./generated/instructions/finalize
 import { getRedrawInstruction } from "./generated/instructions/redraw.js";
 import { getAppealInstruction } from "./generated/instructions/appeal.js";
 import { getClaimAppealRefundInstruction } from "./generated/instructions/claimAppealRefund.js";
+import { getClaimFilingBountyInstruction } from "./generated/instructions/claimFilingBounty.js";
 import { getPruneJurorInstruction } from "./generated/instructions/pruneJuror.js";
 
 import type {
@@ -504,6 +505,19 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
           claimantTokenAccount: input.accounts.claimantTokenAccount,
           feeVault: input.accounts.feeVault,
           roundIdx: input.roundIdx,
+        },
+        { programAddress: input.programId },
+      );
+    },
+    buildClaimFilingBounty(input) {
+      return getClaimFilingBountyInstruction(
+        {
+          caller: accord.signer,
+          subaccord: input.accounts.subaccord,
+          dispute: input.accounts.dispute,
+          feeToken: input.accounts.feeToken,
+          filerTokenAccount: input.accounts.filerTokenAccount,
+          feeVault: input.accounts.feeVault,
         },
         { programAddress: input.programId },
       );

@@ -460,6 +460,17 @@ pub mod accord {
     pub fn claim_appeal_refund(ctx: Context<ClaimAppealRefund>, round_idx: u32) -> Result<()> {
         ClaimAppealRefund::handler_claim_appeal_refund(ctx, round_idx)
     }
+
+    /// Flip-bounty filer refund (ADR-0030). A dispute that finalized WITHOUT
+    /// ever being appealed never consumed its bounty pool — the filer's
+    /// filing-time `+1 · fee_per_juror` unit sits on `Dispute.bounty_pool`.
+    /// This permissionless crank sweeps it vault → filer ATA and zeroes the
+    /// pool (idempotent). Every other terminal shape disposes of the pool
+    /// elsewhere: `finalize_dispute` (aligned-flipper shares / `pool_extra`)
+    /// and the Failed transitions (per-source refunds).
+    pub fn claim_filing_bounty(ctx: Context<ClaimFilingBounty>) -> Result<()> {
+        ClaimFilingBounty::handler_claim_filing_bounty(ctx)
+    }
     /// dispute has stalled past its per-stage timeout, any cranker may cancel
     /// it: the filer's round-1 fee is refunded from the vault, the current
     /// round's drawn jurors have their `active_draws` released (post-draw

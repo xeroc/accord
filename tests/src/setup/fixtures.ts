@@ -14,6 +14,7 @@ import {
   Aggregation,
   DEFAULT_APPEAL_WINDOW_SECS,
   ShortfallPolicy,
+  requiredFee,
   type CreateSubaccordArgs,
 } from "@useaccord/sdk";
 import { SYNOD_PROGRAM_ID, findCasePda } from "@useaccord/synod";
@@ -150,7 +151,12 @@ export function synodEconomics(params: {
   minJurySize: number | bigint;
 }): SynodEconomics {
   const n = BigInt(params.partyCount);
-  const frozenFee = BigInt(params.minJurySize) * params.feePerJuror;
+  // ADR-0030: the frozen fee is Accord's full filing tender ((J+1)·fpj —
+  // the juror pot + one flip-bounty unit). Single source: SDK `requiredFee`.
+  const frozenFee = requiredFee(
+    params.feePerJuror,
+    Number(params.minJurySize),
+  )!;
   const pot = n * params.stake - frozenFee;
   const neutralShare = pot / n;
   const lastNeutralShare = pot - (n - 1n) * neutralShare;

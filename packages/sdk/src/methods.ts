@@ -45,7 +45,9 @@ import {
 import {
   settleRound as pureSettleRound,
   cancelDispute as pureCancelDispute,
+  claimFilingBounty as pureClaimFilingBounty,
   type CancelDisputeAccounts,
+  type ClaimFilingBountyAccounts,
   type SettleRoundAccounts,
 } from "./methods/settlement.js";
 import {
@@ -130,7 +132,7 @@ export interface AccordMethods {
     attestation: Address,
   ): Instruction;
 
-  // settlement (per-round crank + dispute cancellation)
+  // settlement (per-round crank + dispute cancellation + filing bounty)
   settleRound(
     accounts: SettleRoundAccounts,
     roundIdx: number,
@@ -140,6 +142,7 @@ export interface AccordMethods {
     accounts: CancelDisputeAccounts,
     remainingAccounts: Address[],
   ): Instruction;
+  claimFilingBounty(accounts: ClaimFilingBountyAccounts): Instruction;
 
   // vrf + per-seat draw (ADR-0009/0012)
   requestVrf(accounts: VrfDrawAccounts, extras: RequestVrfExtras): Instruction;
@@ -250,6 +253,8 @@ export function createAccordMethods(
       ),
     cancelDispute: (accounts, remainingAccounts) =>
       pureCancelDispute(adapter, programId, accounts, remainingAccounts),
+    claimFilingBounty: (accounts) =>
+      pureClaimFilingBounty(adapter, programId, accounts),
 
     // vrf + per-seat draw
     requestVrf: (accounts, extras) =>

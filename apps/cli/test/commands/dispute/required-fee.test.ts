@@ -25,18 +25,18 @@ describe("useaccord dispute:required-fee", () => {
     const { stdout, exitCode } = await run(["dispute:required-fee", "--help"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("--fee-per-juror");
-    expect(stdout).toContain("3 × fee-per-juror");
+    expect(stdout).toContain("(J+1) × fee-per-juror");
   });
 
-  it("prints 3 × fee-per-juror (human default) — pure, no chain", async () => {
+  it("prints 4 × fee-per-juror (human default) — pure, no chain", async () => {
     const { stdout, exitCode } = await run([
       "dispute:required-fee",
       "--fee-per-juror",
       "1_000_000",
     ]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("3_000_000");
-    expect(stdout).toMatch(/fee\s*:\s*3_000_000/i);
+    expect(stdout).toContain("4_000_000");
+    expect(stdout).toMatch(/fee\s*:\s*4_000_000/i);
   });
 
   it("--json emits { feePerJuror, fee }", async () => {
@@ -48,7 +48,7 @@ describe("useaccord dispute:required-fee", () => {
     ]);
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
-    expect(parsed).toEqual({ feePerJuror: "5000000", fee: "15000000" });
+    expect(parsed).toEqual({ feePerJuror: "5000000", fee: "20000000" });
   });
 
   it("--quiet prints only the fee", async () => {
@@ -59,7 +59,7 @@ describe("useaccord dispute:required-fee", () => {
       "--quiet",
     ]);
     expect(exitCode).toBe(0);
-    expect(stdout.trim()).toBe("21");
+    expect(stdout.trim()).toBe("28");
   });
 
   it("rejects a negative fee-per-juror", async () => {

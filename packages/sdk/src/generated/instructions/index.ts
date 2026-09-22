@@ -9,6 +9,7 @@
 export * from "./appeal";
 export * from "./cancelDispute";
 export * from "./claimAppealRefund";
+export * from "./claimFilingBounty";
 export * from "./commit";
 export * from "./commitVrfCallback";
 export * from "./createDispute";

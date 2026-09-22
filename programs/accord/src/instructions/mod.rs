@@ -4,6 +4,7 @@
 pub mod appeal;
 pub mod cancel_dispute;
 pub mod claim_appeal_refund;
+pub mod claim_filing_bounty;
 pub mod commit;
 pub mod commit_vrf_callback;
 pub mod create_dispute;
@@ -34,6 +35,7 @@ pub mod withdraw_fees;
 pub use appeal::*;
 pub use cancel_dispute::*;
 pub use claim_appeal_refund::*;
+pub use claim_filing_bounty::*;
 pub use commit::*;
 pub use commit_vrf_callback::*;
 pub use create_dispute::*;

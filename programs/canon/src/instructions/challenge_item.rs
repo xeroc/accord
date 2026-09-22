@@ -115,6 +115,8 @@ pub fn handler<'a>(ctx: Context<'a, ChallengeItem<'a>>, evidence: [u8; 32]) -> R
 
     // The fee Accord expects — `Subaccord::filing_fee` is the single source
     // (`Account<Subaccord>` deserialises at entry, no manual borrow/parse).
+    // ADR-0030: the tender is (min_jury_size + 1) · fee_per_juror — the
+    // round-1 juror pot plus one flip-bounty unit.
     let accord_fee = ctx.accounts.subaccord.filing_fee()?;
 
     let total = challenge_stake

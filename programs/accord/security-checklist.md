@@ -53,6 +53,9 @@
 | SR2-L-5 | 🟢 Low | `propose_unpause` repeatable — pushes unpause ETA forward (review SR2) | ✅ Fixed — arms once |
 | SR2-L-6 | 🟢 Low | `attestation_horizon` u64→i64 wrapping cast (review SR2) | Open — checked cast |
 | SR2-I-1..5 | ⚪ Info | AppealBond seed doc mismatch; Token-2022 migration prerequisite (gross-vs-net fees); `Unstaked` event overload; unreachable `Closed` state; VRF window tradeoff (review SR2) | Notes — see `reports/accord/2026-08-19-accord-security-review.md` |
+| 0030-1 | 🟡 Medium | Flip-bounty double-pay: the Failed path strips each appellant's +1 onto their bond while the filer refund also pays the pool — an accounting slip would mint tokens from the shared vault (ADR-0030) | ✅ Fixed — `credit_bond_bounty_units` moves `unit` onto `bond.reward` AND subtracts the same total from `bounty_pool` BEFORE the filer refund (`fee_paid + bounty_pool` post-strip); `claim_appeal_refund` = `amount − fee + reward`, zero-on-claim for BOTH columns; LiteSVM `cancel_refunds_filer_bounty_and_strips_appellant_units` + `redraw_exhaustion_after_appeal…` |
+| 0030-2 | 🟡 Medium | Aligned-flipper misclassification pays the pool to a wrong appellant (ADR-0030) | ✅ Fixed — alignment reads only the bond chain (`prior_result ≠ final_ruling` ∧ next bond's `prior_result == final_ruling`), with the pinned `round_idx == i+1` invariant; non-aligned keep bond-only, no-flip forfeits per the UNCHANGED ADR-0004 rule; LiteSVM whipsaw + failed-appeal tests |
+| 0030-3 | 🟢 Low | `claim_filing_bounty` on a Final-with-appeals dispute would double-pay the pool | ✅ Fixed — requires `Final ∧ current_round == 0 ∧ bounty_pool > 0`; every other terminal shape zeroes or refunds the pool first; e2e `appeal.spec.ts` |
 
 ---
 

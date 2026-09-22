@@ -14,6 +14,7 @@ the escape hatch or for inspection.
 | `appeal:open`         | `appeal` (`appeal.ts`)               | `appeal`                |         |
 | `appeal:cost`         | `appealCost` (`appeal.ts`)           | — (pure, mirrors math)  |         |
 | `appeal:claim-refund` | `claimAppealRefund` (`appeal.ts`)    | `claim_appeal_refund`   |   yes   |
+| `dispute:claim-filing-bounty` | `claimFilingBounty` (`settlement.ts`) | `claim_filing_bounty` | yes |
 
 ## Settlement economics (`settle_round_accounts`, lib.rs:2651)
 
@@ -28,7 +29,9 @@ coherent        = reveals[i] != u64::MAX && match aggregation (ADR-0025):
                     Median:    |reveals[i] − final_ruling| · 10_000
                                ≤ final_ruling · coherence_tol_bps
 stake_pool      = Σ slashes       (stake_token)
-fee_pool        = panel · fee_per_juror + forfeited_bonds  (fee_token, ADR-0029)
+fee_pool        = panel · fee_per_juror + forfeited_bonds
+                 + bounty_remainder  (fee_token, ADR-0029 + ADR-0030:
+                 final round only — no-flip/disputed bounty units roll up)
 ```
 
 - **Incoherent / non-revealer:** `stake_delta -= min(slash_per_juror, staked)`,
@@ -84,14 +87,16 @@ reruns for the larger panel.
 - Gates: state `RoundResolved`, `now < reveal_end + appeal_window`,
   `current_round < max_appeals`, `staker_count >= panel_new`.
 - Cost is exponential: `fee_new = panel_new · fee_per_juror`, `bond = fee_new`,
-  **total = 2 × fee_new**.
+  plus ONE flip-bounty unit `fee_per_juror` (ADR-0030) —
+  **total = 2 × fee_new + fee_per_juror**.
 - Reverts: `InvalidState`, `AppealWindowClosed`, `MaxAppealsReached`,
   `InsufficientJurors`.
 
 ## `appeal:cost` — pure pre-check (no send)
 
 ```bash
-# Quote round 1 before paying: panel 7, fee 7000, bond 7000, total 14000
+# Quote round 1 before paying: panel 7, fee 7000, bond 7000, bounty 1000,
+# total 15000 (ADR-0030: fee + bond + one flip-bounty unit)
 useaccord appeal:cost --current-round 0 --fee-per-juror 1000 --json
 # {"newRound":1,"panel":7,"fee":7000,"bond":7000,"total":14000}
 ```
@@ -109,10 +114,28 @@ useaccord appeal:claim-refund \
 ```
 
 Returns a **flipped** bond after finalization. On `Final`, refunds the bond
-portion (`deposit − fee_new`); on `Failed` (cancel), refunds the full deposit.
-The claimant ATA's owner must equal the recorded appellant. Idempotent — the
+portion (`deposit − fee_new`) **+ any flip-bounty share** (`reward`, ADR-0030 —
+the aligned-flipper split of the dispute's bounty pool); on `Failed` (cancel /
+redraw exhaustion), refunds the bond + the appellant's own +1 unit. The
+claimant ATA's owner must equal the recorded appellant. Idempotent — the
 bond is zeroed on payout. No-flip bonds are forfeited into the coherent fee
 pool at `finalize_dispute` and are **not** claimable.
+
+## `dispute:claim-filing-bounty` — refund the filer's +1 (ADR-0030)
+
+```bash
+# Dispute finalized without ANY appeal — sweep the filer's bounty unit back
+useaccord dispute:claim-filing-bounty --dispute <addr>
+# → { signature, dispute: "<addr>", filer: "<addr>" }
+```
+
+Every filing tenders `(min_jury_size + 1) · fee_per_juror`; the +1 unit banks
+into `dispute.bounty_pool`. When the dispute finalizes WITHOUT ever being
+appealed, this permissionless crank sweeps it fee-vault → filer ATA. Rejected
+(`InvalidState`) when any appeal happened — the pool was disposed at
+`finalize_dispute` (aligned-flipper shares, or rolled into the final round's
+coherent pool on no-flip) — and on the Failed path (the unit rode the filer's
+cancel/redraw refund). Idempotent: the pool is zeroed on payout.
 
 ## Appeal ladder & worked cost example
 

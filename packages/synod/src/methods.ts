@@ -34,7 +34,7 @@ import {
 export interface OpenCaseAccounts {
   /** Case opener — becomes `parties[0]`; signs + pays the case PDA rent. */
   opener: TransactionSigner;
-  /** The hosting Accord court (fee source snapshot: min_jury_size · fee_per_juror frozen at open). */
+  /** The hosting Accord court (fee source snapshot: (min_jury_size + 1) · fee_per_juror — ADR-0030 bounty unit included — frozen at open). */
   subaccord: Address;
 }
 

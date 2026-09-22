@@ -51,8 +51,12 @@ Voting against the Ruling majority. Incoherent Jurors lose a fraction of their s
 _Avoid_: wrong vote, losing vote
 
 **Appeal**:
-Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond (in `fee_token`). An appeal may introduce new evidence: the appellant passes a `new_evidence_hash` written to the new round's slot of `evidence_hashes` (`[0u8;32]` = appeal on the existing evidence; ADR-0023). Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
+Escalation of a Dispute to a larger Juror panel (2N+1). Permissionless — anyone may Appeal by posting an Appeal Bond (in `fee_token`) plus one Flip Bounty unit (ADR-0030). An appeal may introduce new evidence: the appellant passes a `new_evidence_hash` written to the new round's slot of `evidence_hashes` (`[0u8;32]` = appeal on the existing evidence; ADR-0023). Exponentially rising cost makes bribery prohibitively expensive; the bond is forfeited to Coherent Jurors if the new panel does not overturn the prior Ruling. The **appeal window** (the gap between a round resolving and the dispute going final) is per-Subaccord (`terms.appeal_window`, frozen at filing, ADR-0022; default 3 days), not program-global.
 _Avoid_: retrial, reconsideration
+
+**Flip Bounty**:
+The reward pool that pays an Appellant for correctly flipping a wrong Ruling (ADR-0030). One `fee_per_juror` unit banks into `dispute.bounty_pool` at Filing and one at every Appeal — so a lone successful flip recovers the bond plus both units. Disposition is finality-settled: aligned flippers (the appeal attacked a result the final Ruling rejected AND its own round's verdict IS the final Ruling) split the pool equally; appeals that happened but never flipped roll it to the final round's Coherent Jurors; a never-appealed Dispute refunds the Filer's unit. Inherently consistent — no reliance on the Arbitrable layer for appeal incentives.
+_Avoid_: prize, jackpot (that's the juror-side pool)
 
 **Arbitrable**:
 Any Solana program that files Disputes with the Accord. The interface: `create_dispute(subaccord, options, evidence_hash, fee) → dispute_id` and `get_ruling(dispute_id) → winning_option`.

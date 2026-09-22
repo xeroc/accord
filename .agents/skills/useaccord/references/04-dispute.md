@@ -51,14 +51,16 @@ Flags (mirror `CreateDisputeArgs`, dispute.ts):
 
 ### `dispute:required-fee` — pure pre-check
 
-Compute the round-1 filing fee with no chain access. The panel is the
-Subaccord's `min_jury_size` (default 3, accord-9q3e), so the fee is
-`min_jury_size · fee_per_juror`. Matches
+Compute the round-1 filing tender with no chain access. The panel is the
+Subaccord's `min_jury_size` (default 3, accord-9q3e), so the tender is
+`(min_jury_size + 1) · fee_per_juror` — the round-1 juror pot plus ONE
+flip-bounty unit (ADR-0030; refundable via `dispute:claim-filing-bounty` if
+the dispute is never appealed). Matches
 `dispute:create --fee auto`; use it to budget before filing.
 
 ```bash
 useaccord dispute:required-fee --fee-per-juror 100_000
-# → { fee: 300000 }   # 3 × 100_000 (default min-jury-size=3)
+# → { fee: 400000 }   # 4 × 100_000 (default min-jury-size=3, +1 bounty unit)
 
 useaccord dispute:required-fee --fee-per-juror 100_000 --min-jury-size 1
 # → { fee: 100000 }   # N=1 pool (Arena/Inveigo config)

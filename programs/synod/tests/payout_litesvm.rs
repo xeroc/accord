@@ -378,7 +378,8 @@ fn bind_dispute(env: &mut TestEnv, state: DisputeState, ruling: u64) {
         filed_at: 0,
         bump: 254,
         drawn_seats: 0,
-        padding: [0; 60],
+        bounty_pool: 0,
+        padding: [0; 52],
     };
     let mut buf = Vec::new();
     d.try_serialize(&mut buf).unwrap();

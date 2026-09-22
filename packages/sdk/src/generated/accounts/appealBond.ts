@@ -60,6 +60,14 @@ export type AppealBond = {
    * Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
    */
   priorResult: bigint;
+  /**
+   * Flip-bounty share credited by `finalize_dispute` when this appeal is
+   * an aligned flipper (ADR-0030: `prior_result ≠ final_ruling` ∧ its own
+   * round's result == final ruling), or one `fee_per_juror` unit on the
+   * Failed path. Claimed as a top-up in `claim_appeal_refund`
+   * (zero-on-claim, same idempotency as `amount`).
+   */
+  reward: bigint;
   bump: number;
   /**
    * Reserved tail space for future field extensions. Zeroed at `init`;
@@ -79,6 +87,14 @@ export type AppealBondArgs = {
    * Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
    */
   priorResult: number | bigint;
+  /**
+   * Flip-bounty share credited by `finalize_dispute` when this appeal is
+   * an aligned flipper (ADR-0030: `prior_result ≠ final_ruling` ∧ its own
+   * round's result == final ruling), or one `fee_per_juror` unit on the
+   * Failed path. Claimed as a top-up in `claim_appeal_refund`
+   * (zero-on-claim, same idempotency as `amount`).
+   */
+  reward: number | bigint;
   bump: number;
   /**
    * Reserved tail space for future field extensions. Zeroed at `init`;
@@ -98,8 +114,9 @@ export function getAppealBondEncoder(): FixedSizeEncoder<AppealBondArgs> {
       ["appellant", getAddressEncoder()],
       ["amount", getU64Encoder()],
       ["priorResult", getU64Encoder()],
+      ["reward", getU64Encoder()],
       ["bump", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 64)],
+      ["padding", fixEncoderSize(getBytesEncoder(), 56)],
     ]),
     (value) => ({ ...value, discriminator: APPEAL_BOND_DISCRIMINATOR }),
   );
@@ -114,8 +131,9 @@ export function getAppealBondDecoder(): FixedSizeDecoder<AppealBond> {
     ["appellant", getAddressDecoder()],
     ["amount", getU64Decoder()],
     ["priorResult", getU64Decoder()],
+    ["reward", getU64Decoder()],
     ["bump", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 64)],
+    ["padding", fixDecoderSize(getBytesDecoder(), 56)],
   ]);
 }
 

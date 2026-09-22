@@ -353,7 +353,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
 
     // Now we have 3 active stakers (B, C, D). Create a dispute.
     const filerAta = await ata(mint, env.payer.address);
-    await setTokenBalance(env, env.payer.address, mint, FEE_PER_JUROR * 3n);
+    await setTokenBalance(env, env.payer.address, mint, FEE_PER_JUROR * 4n); // ADR-0030: (J+1)·fpj tender
 
     const feeVault = await ata(mint, subaccord);
     const nonce = crypto.getRandomValues(new BigUint64Array(1))[0]!;
@@ -375,7 +375,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
         ],
         evidenceHash: randomBytes32(),
         nonce,
-        fee: FEE_PER_JUROR * 3n,
+        fee: FEE_PER_JUROR * 4n, // ADR-0030: (J+1)·fpj tender
       },
       env.programId,
     );

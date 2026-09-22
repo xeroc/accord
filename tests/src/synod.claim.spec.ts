@@ -106,8 +106,9 @@ describe("e2e: synod claim (requires Surfpool)", () => {
       feePerJuror: 5n,
       minJurySize: 3,
     });
-    expect(eco.neutralShare).toBe(992n);
-    expect(eco.lastNeutralShare).toBe(993n);
+    // ADR-0030: fee = (3+1)·5 = 20 → pot 1980, exactly divisible at N=2.
+    expect(eco.neutralShare).toBe(990n);
+    expect(eco.lastNeutralShare).toBe(990n);
 
     const vault = await ataOf(arm.mint, fx.casePda);
     const [aAta, bAta] = await Promise.all([

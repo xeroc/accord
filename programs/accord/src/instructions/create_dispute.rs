@@ -137,7 +137,15 @@ impl<'info> CreateDispute<'info> {
         d.drawn_seats = 0; // explicit for the field-per-field init style (H-2)
         d.final_ruling = u64::MAX;
         d.finalized_at = 0;
-        d.fee_paid = fee;
+        // ADR-0030: `fee` is the FULL tender `(J+1)·fpj` (FeeMismatch above);
+        // the round-0 juror pot `J·fpj` is the filer's refundable pool, the
+        // extra `fpj` unit banks into the flip-bounty pool. Splitting here
+        // keeps ADR-0029 settlement / Failed-refund math untouched by the
+        // bounty.
+        d.fee_paid = fee
+            .checked_sub(sub.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        d.bounty_pool = sub.fee_per_juror;
         // Ugly 4: record the filing timestamp so cancel_dispute has a pre-draw
         // anchor (snapshot/VRF liveness backstop).
         d.filed_at = Clock::get()?.unix_timestamp;

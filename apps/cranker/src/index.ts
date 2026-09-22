@@ -36,6 +36,7 @@ import { ProgramAccountListener } from "./listener.js";
 import { reconcileOnce, startReconciler, type ReconcilerConfig } from "./reconciler.js";
 import { register as registerAccordCancelDispute } from "./cranks/accord/cancel-dispute.js";
 import { register as registerAccordClaimRefund } from "./cranks/accord/claim-refund.js";
+import { register as registerAccordClaimFilingBounty } from "./cranks/accord/claim-filing-bounty.js";
 import { registerDrawSeatCrank as registerAccordDrawSeat } from "./cranks/accord/draw-seat.js";
 import { register as registerAccordExecuteUnpause } from "./cranks/accord/execute-unpause.js";
 import { register as registerAccordExecuteUpdate } from "./cranks/accord/execute-update.js";
@@ -70,6 +71,7 @@ function fullDispatch() {
   registerAccordExecuteUnpause(d);
   registerAccordReclaimSlot(d);
   registerAccordClaimRefund(d);
+  registerAccordClaimFilingBounty(d);
   // Canon — the Arbitrable guest program (curated-item lifecycle + GC).
   registerCanonAdvancePending(d);
   registerCanonSettleItem(d);

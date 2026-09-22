@@ -143,11 +143,12 @@ export interface AccordDisputeClient {
 }
 
 /**
- * Compute the required `create_dispute` round-1 fee. The panel is the
- * Subaccord's `min_jury_size` (accord-9q3e; default 3), so the fee is
- * `min_jury_size · fee_per_juror`. Mirrors lib.rs
- * (`(sub.min_jury_size as u64).checked_mul(sub.fee_per_juror)`). Returns `null`
- * on u64 overflow rather than throwing — callers surface a typed error.
+ * Compute the required `create_dispute` tender (ADR-0030). The panel is the
+ * Subaccord's `min_jury_size` (accord-9q3e; default 3), so the filer tenders
+ * `(min_jury_size + 1) · fee_per_juror` — the round-1 juror pot plus ONE
+ * flip-bounty unit (`fee_per_juror`, refundable if never appealed). Mirrors
+ * lib.rs (`Subaccord::filing_fee`). Returns `null` on u64 overflow rather
+ * than throwing — callers surface a typed error.
  */
 export function requiredFee(
   feePerJuror: bigint,
@@ -156,7 +157,7 @@ export function requiredFee(
   if (feePerJuror < 0n || !Number.isInteger(minJurySize) || minJurySize < 1) {
     return null;
   }
-  const product = BigInt(minJurySize) * feePerJuror;
+  const product = BigInt(minJurySize + 1) * feePerJuror;
   if (product < 0n || product > U64_MAX) return null;
   return product;
 }

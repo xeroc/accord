@@ -1,14 +1,14 @@
 ---
 # accord-82yf
 title: Flip-bounty — finality-settled reward for verdict-flipping appellants (ADR-0030)
-status: todo
+status: completed
 type: feature
 priority: high
 tags:
     - program
     - economics
 created_at: 2026-08-31T17:56:09Z
-updated_at: 2026-08-31T17:56:09Z
+updated_at: 2026-09-22T11:05:00Z
 blocked_by:
     - accord-3j58
 ---
@@ -77,3 +77,69 @@ An appeal is an aligned flipper iff `bond.prior_result ≠ dispute.final_ruling`
 - Kleros-style two-sided crowdfunding (deferred; builds on this pool).
 - Retuning `MIN_SLASH_FEE_RATIO` (ADR-0029 territory).
 - Per-Subaccord bounty opt-out (rejected in ADR-0030 Considered Options).
+
+## Summary of Changes
+
+Implemented ADR-0030 end-to-end on top of ADR-0029 (accord-3j58, landed as
+1e64a06). All leaf tasks L1–L9 done.
+
+**Program** (`programs/accord`):
+
+- `Dispute.bounty_pool: u64` + `AppealBond.reward: u64`, both carved from the
+  existing padding — account sizes and all prior offsets unchanged; new
+  `layout::AB_REWARD_OFF` + extended `offsets_match_borsh` pin.
+- `Subaccord::filing_fee()` → `(min_jury_size + 1) · fee_per_juror` (single
+  source: FeeMismatch, Canon challenge tender, Synod frozen fee).
+- `create_dispute` tenders (J+1)·fpj: `fee_paid = J·fpj` (untouched ADR-0029
+  settlement math), `bounty_pool = fpj`. `appeal` tenders (2N+1)·fpj:
+  `AppealBond.amount` keeps fee+bond semantics (2N·fpj), +1 joins the pool.
+- `finalize_dispute` bond pass extended with the **aligned-flipper rule**
+  (L3): `prior_result ≠ final_ruling` ∧ own-round result == final ruling.
+  Round results are derived from the BOND CHAIN (`bond[j+1].prior_result`,
+  pinned by `round_idx == j+1`) — **zero extra accounts**, so the L6
+  account-budget fallback (`Round.flipped_to` crank) was not needed;
+  remaining-account shape stays `panel + appeal_n`. Equal shares
+  `bounty_pool / aligned_count` → `AppealBond.reward`; remainder + the whole
+  no-flip pool (L4) join `pool_extra`; `bounty_pool → 0` whenever appealed.
+- Failed paths (L5): new `credit_bond_bounty_units` strips each live bond's
+  +1 onto `reward` (also PDA-validates bonds on redraw exhaustion, previously
+  unvalidated) BEFORE the filer refund; filer refund = `fee_paid +
+  bounty_pool` post-strip. `claim_appeal_refund` = `amount − fee + reward`,
+  zero-on-claim for both columns.
+- New `claim_filing_bounty` instruction (L2) + `FilingBountyClaimed` event:
+  Final ∧ current_round == 0 ∧ pool > 0 → vault → filer ATA, idempotent.
+
+**Reconciliation note (L3b)**: the leaf text "first flipper claim returns
+bond only" conflicts with ADR-0030's own "the bond forfeit rule itself is
+unchanged" — in A→B→A the first flipper's `prior_result` EQUALS the final
+ruling, so their bond forfeits under the pre-existing ADR-0004 rule (claim
+reverts); only their +1 stays in the split pool. Implemented per ADR + code;
+whipsaw test pins bond0 forfeit + bond1 taking all three units.
+
+**Coupling (L7)**: codegen regenerated; SDK `requiredFee`/`appealCost`
+(+bounty field)/`claimFilingBounty` + adapter + methods exports; cranker
+gains the `claim_filing_bounty` crank (with Final/no-appeal/no-pool skip
+gates) and fixes a PRE-EXISTING off-by-one in cancel's bond PDA loop (was
+seeds 1..=currentRound; bonds are seeded 0..currentRound−1 by the round being
+appealed); CLI `dispute:claim-filing-bounty` + cost/required-fee displays;
+skill docs (routing row + fee amounts + claim sections); Canon/Synod derive
+the new tender via `filing_fee()` (doc comments updated).
+
+**Docs (L9)**: SPEC (account fields, 9a/9b/12b rows incl. the previously
+missing claim/cancel rows, economics + D4 column invariant), CONTEXT.md Flip
+Bounty term, ADR-0030 → Implemented (+ bond-chain note), ADR-0004 consequence
+amendment, ADR-0020 invariant extension, MkDocs site + README economics,
+security-checklist findings 0030-1..3, `accord.qedspec` bounty handlers +
+`bounty_pool_conservation` property (`qedgen check`: 0 errors).
+`formal_verification/` untouched — it is an unfilled scaffold (3j58
+precedent; the qedspec is the source of truth).
+
+**Verification**: 143 Rust unit+LiteSVM tests green against a v2-arch build
+(litesvm cannot load sBPFv3 locally — pre-existing; incl. 7 new ADR-0030
+tests: funding, Final-no-appeal claim, lone flip, whipsaw, flip+failed
+appeal, no-flip roll-up, cancel strip); jest 26 suites / 115 tests green on
+Surfpool (v3 .so, runbook deploy; incl. new `claim_filing_bounty` e2e +
+updated appeal/dispute/synod/reclaim/canon economics); workspace build+lint
+green; CLI 140/140; SDK 98/98. The 2 packages/ui mechanism-additions failures
+pre-exist on the clean baseline (verified via stash; no packages/ui files in
+this change).

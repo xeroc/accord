@@ -61,8 +61,9 @@ mod layout_tests {
             appellant: Pubkey::new_from_array([0xB1; 32]),
             amount: 0x0506_0708_090A_0B0C,
             prior_result: 0x0D0E_0F10_1112_1314,
+            reward: 0x1516_1718_191A_1B1C,
             bump: 0x0E,
-            padding: [0u8; 64],
+            padding: [0u8; 56],
         };
         let mut buf = Vec::new();
         ab.try_serialize(&mut buf).unwrap();
@@ -77,6 +78,10 @@ mod layout_tests {
         assert_eq!(
             &buf[layout::AB_PRIOR_OFF..layout::AB_PRIOR_OFF + 8],
             &ab.prior_result.to_le_bytes()[..]
+        );
+        assert_eq!(
+            &buf[layout::AB_REWARD_OFF..layout::AB_REWARD_OFF + 8],
+            &ab.reward.to_le_bytes()[..]
         );
     }
 }

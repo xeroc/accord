@@ -66,15 +66,19 @@ export interface AppealCost {
   fee: bigint;
   /** Bond == new-round fee (forfeited if no flip, returned if flipped). */
   bond: bigint;
-  /** Appellant pays fee + bond up front. */
+  /** Flip-bounty unit = fee_per_juror (ADR-0030) — joins the dispute pool. */
+  bounty: bigint;
+  /** Appellant pays fee + bond + bounty unit up front. */
   total: bigint;
 }
 
 /**
- * Quote the panel + fee + bond for an appeal from `currentRound`. Mirrors
- * lib.rs:1688-1695 (`panel_new = panel_size_for_round(J, current+1)`,
- * `fee_new = panel_new · fee_per_juror`, `bond = fee_new`,
- * `total = fee_new + bond`). Returns `null` if the panel math overflows.
+ * Quote the panel + fee + bond + bounty unit for an appeal from
+ * `currentRound`. Mirrors lib.rs:1688-1695 (`panel_new =
+ * panel_size_for_round(J, current+1)`, `fee_new = panel_new · fee_per_juror`,
+ * `bond = fee_new`, `bounty = fee_per_juror` (ADR-0030),
+ * `total = fee_new + bond + bounty`). Returns `null` if the panel math
+ * overflows.
  */
 export function appealCost(
   currentRound: number,
@@ -86,7 +90,8 @@ export function appealCost(
   if (panel === null) return null;
   const fee = BigInt(panel) * feePerJuror;
   const bond = fee;
-  return { newRound, panel, fee, bond, total: fee + bond };
+  const bounty = feePerJuror;
+  return { newRound, panel, fee, bond, bounty, total: fee + bond + bounty };
 }
 
 /** Gate: a fresh appeal requires `currentRound < maxAppeals` (lib.rs:1660). */

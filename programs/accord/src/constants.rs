@@ -198,19 +198,21 @@ pub(crate) mod layout {
         + JS_PENDING_WITHDRAWAL_W;
 
     // --- AppealBond (state.rs) ---
-    // disc | dispute | round_idx | appellant | amount | prior_result | bump
+    // disc | dispute | round_idx | appellant | amount | prior_result | reward | bump
     const AB_ROUND_IDX_W: usize = 4;
     const AB_AMOUNT_W: usize = 8;
     const AB_PRIOR_W: usize = 8; // u64 since scalar voting (ADR-0025)
+    const AB_REWARD_W: usize = 8; // flip-bounty share (ADR-0030)
 
     pub(crate) const AB_ROUND_IDX_OFF: usize = DISC + PUBKEY;
     pub(crate) const AB_AMOUNT_OFF: usize = AB_ROUND_IDX_OFF + AB_ROUND_IDX_W + PUBKEY;
     pub(crate) const AB_PRIOR_OFF: usize = AB_AMOUNT_OFF + AB_AMOUNT_W;
+    pub(crate) const AB_REWARD_OFF: usize = AB_PRIOR_OFF + AB_PRIOR_W;
 
     // Compile-time bounds check (strongest const check available for Borsh
     // offsets): the highest sliced field must fit inside a serialized account.
     // Catches a struct shrink; does NOT catch a wrong field — that's
     // `tests::layout_tests::offsets_match_borsh`.
     const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
-    const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
+    const _: () = assert!(AB_REWARD_OFF + AB_REWARD_W <= DISC + AppealBond::INIT_SPACE);
 }

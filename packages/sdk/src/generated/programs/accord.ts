@@ -60,6 +60,7 @@ import {
   getAppealInstructionAsync,
   getCancelDisputeInstructionAsync,
   getClaimAppealRefundInstructionAsync,
+  getClaimFilingBountyInstructionAsync,
   getCommitInstruction,
   getCommitVrfCallbackInstruction,
   getCreateDisputeInstructionAsync,
@@ -89,6 +90,7 @@ import {
   parseAppealInstruction,
   parseCancelDisputeInstruction,
   parseClaimAppealRefundInstruction,
+  parseClaimFilingBountyInstruction,
   parseCommitInstruction,
   parseCommitVrfCallbackInstruction,
   parseCreateDisputeInstruction,
@@ -118,6 +120,7 @@ import {
   type AppealAsyncInput,
   type CancelDisputeAsyncInput,
   type ClaimAppealRefundAsyncInput,
+  type ClaimFilingBountyAsyncInput,
   type CommitInput,
   type CommitVrfCallbackInput,
   type CreateDisputeAsyncInput,
@@ -133,6 +136,7 @@ import {
   type ParsedAppealInstruction,
   type ParsedCancelDisputeInstruction,
   type ParsedClaimAppealRefundInstruction,
+  type ParsedClaimFilingBountyInstruction,
   type ParsedCommitInstruction,
   type ParsedCommitVrfCallbackInstruction,
   type ParsedCreateDisputeInstruction,
@@ -289,6 +293,7 @@ export enum AccordInstruction {
   Appeal,
   CancelDispute,
   ClaimAppealRefund,
+  ClaimFilingBounty,
   Commit,
   CommitVrfCallback,
   CreateDispute,
@@ -353,6 +358,17 @@ export function identifyAccordInstruction(
     )
   ) {
     return AccordInstruction.ClaimAppealRefund;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([0, 179, 28, 122, 171, 246, 12, 132]),
+      ),
+      0,
+    )
+  ) {
+    return AccordInstruction.ClaimFilingBounty;
   }
   if (
     containsBytes(
@@ -659,6 +675,9 @@ export type ParsedAccordInstruction<
       instructionType: AccordInstruction.ClaimAppealRefund;
     } & ParsedClaimAppealRefundInstruction<TProgram>)
   | ({
+      instructionType: AccordInstruction.ClaimFilingBounty;
+    } & ParsedClaimFilingBountyInstruction<TProgram>)
+  | ({
       instructionType: AccordInstruction.Commit;
     } & ParsedCommitInstruction<TProgram>)
   | ({
@@ -761,6 +780,13 @@ export function parseAccordInstruction<TProgram extends string>(
       return {
         instructionType: AccordInstruction.ClaimAppealRefund,
         ...parseClaimAppealRefundInstruction(instruction),
+      };
+    }
+    case AccordInstruction.ClaimFilingBounty: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: AccordInstruction.ClaimFilingBounty,
+        ...parseClaimFilingBountyInstruction(instruction),
       };
     }
     case AccordInstruction.Commit: {
@@ -991,6 +1017,10 @@ export type AccordPluginInstructions = {
     input: ClaimAppealRefundAsyncInput,
   ) => ReturnType<typeof getClaimAppealRefundInstructionAsync> &
     SelfPlanAndSendFunctions;
+  claimFilingBounty: (
+    input: ClaimFilingBountyAsyncInput,
+  ) => ReturnType<typeof getClaimFilingBountyInstructionAsync> &
+    SelfPlanAndSendFunctions;
   commit: (
     input: CommitInput,
   ) => ReturnType<typeof getCommitInstruction> & SelfPlanAndSendFunctions;
@@ -1135,6 +1165,11 @@ export function accordProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getClaimAppealRefundInstructionAsync(input),
+            ),
+          claimFilingBounty: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getClaimFilingBountyInstructionAsync(input),
             ),
           commit: (input) =>
             addSelfPlanAndSendFunctions(client, getCommitInstruction(input)),

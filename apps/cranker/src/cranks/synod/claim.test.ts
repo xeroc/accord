@@ -104,6 +104,7 @@ function disputeArgs(over: Partial<Dispute> = {}): Dispute {
     finalRuling: NO_RULING,
     finalizedAt: 0n,
     feePaid: 0n,
+    bountyPool: 0n,
     committedVrf: { __option: "None" },
     frozenRoot: Z32,
     frozenTotalStake: 0n,

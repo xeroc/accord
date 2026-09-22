@@ -1,10 +1,12 @@
 // Accord — formal specification (v1 hardening pass).
 //
-// Scope: the four economic invariants the hardening bean (veridao-nhbj)
+// Scope: the economic invariants — the four the hardening bean (veridao-nhbj)
+// named, plus fee conservation (ADR-0029) and bounty-pool conservation
+// (ADR-0030) —
 // acceptance names — slash math, distinct draw, bond conservation, and the
 // active_draws balance. This is a *focused* spec over the state the program
 // touches in the draw → vote → finalize lifecycle, not a full handler-by-
-// handler model of all 15 instructions. The accompanying security checklist
+// handler model of the settlement instructions. The accompanying security checklist
 // (security-checklist.md) is the audit authority; this .qedspec is the
 // regression-guard authority for the invariants the audit marks satisfied.
 //
@@ -25,7 +27,7 @@
 //     and the Median aggregation do not touch these models — `coherent_flag`
 //     abstracts over how coherence is judged (exact match vs bps band).
 //
-// Verification status: the four properties are DECLARED and handler-scoped
+// Verification status: the properties are DECLARED and handler-scoped
 // (parsing + lint clean). qedgen v2.47 emits a non-vacuous harness for the
 // single-binder binary properties; the pairwise `distinct_panel` (nested
 // quantifier) and some `old()`-over-Map bodies currently lower to a `true`
@@ -82,6 +84,18 @@ type State = {
   custodyed_snapshot_bond : U64,
   custodyed_appeal_bonds  : U64,
   vault_liability         : U64,
+
+  // Flip-bounty pool (ADR-0030). One fee_per_juror unit banks at create and
+  // one at every appeal (`bank_bounty_unit`). Disposition is terminal-only:
+  // aligned-flipper shares onto bond rewards (`credit_aligned_reward`), the
+  // no-flip / zero-aligned roll-up into the round fee pot
+  // (`roll_bounty_into_fee_pot`), the filer refund on a never-appealed Final
+  // (`claim_filing_bounty`), and per-source Failed refunds (out of the
+  // modelled scope, same shape as the filer fee refund).
+  bounty_pool        : U64,
+  bounty_deposited   : U64,   // Σ banked units (funding-side accumulator)
+  bounty_distributed : U64,   // Σ aligned rewards credited to bonds
+  bounty_remainder   : U64,   // integer-div surplus → protocol surplus (trapped)
 }
 
 type Error
@@ -175,8 +189,11 @@ handler finalize_incoherent_slot (i : Slot) : State -> State {
 }
 
 // `claim_appeal_refund` is the bond-outflow path (lib.rs:1293-1335): returns
-// a flipped appeal bond to its appellant after finalization. The vault
-// liability must drop by exactly the refund (bond_conservation).
+// a flipped appeal bond to its appellant after finalization — plus any
+// ADR-0030 flip-bounty share credited to the bond's `reward` (the aligned
+// split at finalize, or the appellant's own +1 on the Failed path); both
+// zero on claim. The vault liability must drop by exactly the refund
+// (bond_conservation).
 handler claim_appeal_refund (refund_amount : U64) : State -> State {
   permissionless
   requires refund_amount <= state.custodyed_appeal_bonds else ArithmeticOverflow
@@ -184,6 +201,73 @@ handler claim_appeal_refund (refund_amount : U64) : State -> State {
   effect {
     custodyed_appeal_bonds -= refund_amount
     vault_liability := custodyed_snapshot_bond + custodyed_appeal_bonds
+  }
+}
+
+// --- ADR-0030 flip-bounty handlers ----------------------------------------
+//
+// `bank_bounty_unit` models the funding side (create_dispute + appeal): one
+// fee_per_juror unit joins the pool; the deposit accumulator grows in lockstep
+// (bounty_pool_conservation's funding pair).
+handler bank_bounty_unit : State -> State {
+  permissionless
+  effect {
+    bounty_pool +=! fee_per_juror
+    bounty_deposited +=! fee_per_juror
+  }
+}
+
+// `credit_aligned_reward` models finalize_dispute's aligned-flipper split:
+// `reward_each = bounty_pool / aligned_count` moves onto the bond's
+// `AppealBond.reward` (paid out by claim_appeal_refund alongside the bond);
+// whatever the integer division leaves below is trapped by
+// `trap_bounty_remainder` (finalized disputes hold bounty_pool == 0).
+handler credit_aligned_reward (reward_each : U64) (aligned_count : U64) : State -> State {
+  permissionless
+  requires reward_each * aligned_count <= state.bounty_pool else ArithmeticOverflow
+
+  effect {
+    bounty_pool -=! reward_each * aligned_count
+    bounty_distributed +=! reward_each * aligned_count
+  }
+}
+
+// `trap_bounty_remainder` closes a finalized pool: the integer-div surplus
+// (and the whole pool on the zero-aligned defensive fallback) becomes
+// protocol surplus — out of every claimable column, still counted on the
+// deposits side of bounty_pool_conservation.
+handler trap_bounty_remainder (amount : U64) : State -> State {
+  permissionless
+  requires amount <= state.bounty_pool else ArithmeticOverflow
+
+  effect {
+    bounty_pool -=! amount
+    bounty_remainder +=! amount
+  }
+}
+
+// `roll_bounty_into_fee_pot` models the no-flip / zero-aligned disposition:
+// the whole pool joins the final round's coherent fee pot (pool_extra) — a
+// cross-column transfer, never a mint (see bounty_pool_conservation).
+handler roll_bounty_into_fee_pot (amount : U64) : State -> State {
+  permissionless
+  requires amount <= state.bounty_pool else ArithmeticOverflow
+
+  effect {
+    bounty_pool -=! amount
+    fee_pot +=! amount
+  }
+}
+
+// `claim_filing_bounty` is the filer-outflow path (ADR-0030): a Final
+// dispute that was never appealed refunds the filer's +1 unit out of the
+// pool; zero-on-claim (idempotent).
+handler claim_filing_bounty (amount : U64) : State -> State {
+  permissionless
+  requires amount <= state.bounty_pool else ArithmeticOverflow
+
+  effect {
+    bounty_pool -= amount
   }
 }
 
@@ -266,7 +350,20 @@ property active_draws_untouched_by_claim :
 /// (trapped remainders are vault surplus).
 property fee_conservation :
   state.fee_pot_distributed + state.fee_pot_remainder == state.fee_pot
-  preserved_by [draw_slot, settle_slot, finalize_coherent_slot, finalize_incoherent_slot, claim_appeal_refund, consume_round0_pot]
+  preserved_by [draw_slot, settle_slot, finalize_coherent_slot, finalize_incoherent_slot, claim_appeal_refund, consume_round0_pot, roll_bounty_into_fee_pot]
+
+/// (6) BOUNTY POOL CONSERVATION (ADR-0030) — every banked unit is accounted
+/// for exactly once: aligned rewards distributed + trapped remainder +
+/// what rolled into the round fee pot + what the filer reclaimed + the
+/// still-live pool == total deposits. No payout precedes the terminal
+/// disposition, and no disposition mints or destroys units (the roll-up is
+/// a cross-column transfer the fee-side invariant inherits via
+/// fee_conservation's preserved_by). This is the ledger mirror of the vault
+/// invariant's `Σ dispute.bounty_pool` column (ADR-0020/0030).
+property bounty_pool_conservation :
+  state.bounty_distributed + state.bounty_remainder
+    + state.bounty_pool == state.bounty_deposited
+  preserved_by [bank_bounty_unit, credit_aligned_reward, trap_bounty_remainder, claim_filing_bounty, roll_bounty_into_fee_pot]
 
 
 // Lifecycle-level balance (draw opens, finalize closes → net zero): the

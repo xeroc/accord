@@ -281,20 +281,26 @@ pub(crate) fn panel_size_for_round(round_idx: u32, base: u32) -> Result<u32> {
     Ok(panel.min(MAX_JURORS as u32))
 }
 
-/// Read and sum AppealBond `amount` fields from `accounts[start..start+n]`.
-/// Verifies each PDA against `["bond", dispute_key, i]`. Used by
-/// `cancel_dispute` to compute the vault reserve for appeal refunds.
-pub(crate) fn read_bond_amounts<'info>(
+/// ADR-0030 Failed-path bounty strip: credit each live appeal bond's
+/// `reward` with one bounty unit and report the total credited, so the caller
+/// can drain the same amount from `dispute.bounty_pool` before the filer
+/// refund (per-source refunds — the filer's +1 rides the filer transfer,
+/// each appellant's +1 rides their `claim_appeal_refund`). Verifies each PDA
+/// against `["bond", dispute_key, i]`. On the Failed path no bond was ever
+/// settled by `finalize_dispute`, so every bond of the dispute is live.
+pub(crate) fn credit_bond_bounty_units<'info>(
     accounts: &'info [AccountInfo<'info>],
     dispute_key: &Pubkey,
     start: usize,
     n: usize,
+    unit: u64,
 ) -> Result<u64> {
     if n == 0 {
         return Ok(0);
     }
-    const BOND_AMOUNT_OFFSET: usize = crate::layout::AB_AMOUNT_OFF; // CU-opt — see crate::layout
-    let mut total: u64 = 0;
+    // CU-opt field access — see `crate::layout`.
+    const BOND_REWARD_OFFSET: usize = crate::layout::AB_REWARD_OFF;
+    let mut credited: u64 = 0;
     for i in 0..n {
         let expected_pda = Pubkey::find_program_address(
             &[
@@ -314,17 +320,25 @@ pub(crate) fn read_bond_amounts<'info>(
             bond_info.owner == &crate::ID,
             AccordError::InvalidMembershipProof
         );
-        let d = bond_info.try_borrow_data()?;
-        let amt = u64::from_le_bytes(
-            d[BOND_AMOUNT_OFFSET..BOND_AMOUNT_OFFSET + 8]
+        let mut d = bond_info.try_borrow_mut_data()?;
+        require!(
+            d.len() >= BOND_REWARD_OFFSET + 8,
+            AccordError::InvalidMembershipProof
+        );
+        let reward = u64::from_le_bytes(
+            d[BOND_REWARD_OFFSET..BOND_REWARD_OFFSET + 8]
                 .try_into()
                 .unwrap(),
         );
-        total = total
-            .checked_add(amt)
+        let new_reward = reward
+            .checked_add(unit)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        d[BOND_REWARD_OFFSET..BOND_REWARD_OFFSET + 8].copy_from_slice(&new_reward.to_le_bytes());
+        credited = credited
+            .checked_add(unit)
             .ok_or(AccordError::ArithmeticOverflow)?;
     }
-    Ok(total)
+    Ok(credited)
 }
 
 /// Release `active_draws` for every juror in every prior round

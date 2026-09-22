@@ -72,11 +72,17 @@ impl<'info> ClaimAppealRefund<'info> {
         // trapped in the vault if it never resolved; it is never the
         // appellant's to reclaim. On Final a no-flip bond was already zeroed
         // by finalize_dispute, so this yields 0 → InvalidAmount (idempotent
-        // guard against claiming a forfeited bond).
+        // guard against claiming a forfeited bond). ADR-0030: any flip-bounty
+        // share credited to `reward` (aligned flipper at Final, or the
+        // appellant's own +1 unit on the Failed path) rides this same claim.
         let fee = (panel_size_for_round(bond_acc.round_idx, dispute.terms.min_jury_size)? as u64)
             .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
-        let refund = bond_acc.amount.saturating_sub(fee);
+        let refund = bond_acc
+            .amount
+            .saturating_sub(fee)
+            .checked_add(bond_acc.reward)
+            .ok_or(AccordError::ArithmeticOverflow)?;
         require!(refund > 0, AccordError::InvalidAmount);
 
         let sub = &mut ctx.accounts.subaccord;
@@ -108,8 +114,10 @@ impl<'info> ClaimAppealRefund<'info> {
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Mark claimed (idempotent): no double-refund on re-invocation.
+        // `reward` zeroes with the deposit — the bounty share claims exactly
+        // once, same pattern as the bond (ADR-0030).
         ctx.accounts.appeal_bond.amount = 0;
-
+        ctx.accounts.appeal_bond.reward = 0;
         Ok(())
     }
 }

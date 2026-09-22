@@ -194,6 +194,16 @@ pub struct DisputeFailedShortfall {
     pub refund: u64,
 }
 
+/// Emitted when the filer claims back their flip-bounty unit (ADR-0030) — a
+/// dispute that finalized without ever being appealed. `amount` is the
+/// dispute's terminal `bounty_pool` (the filer's +1 `fee_per_juror` unit).
+#[event]
+pub struct FilingBountyClaimed {
+    pub dispute: Pubkey,
+    pub filer: Pubkey,
+    pub amount: u64,
+}
+
 /// Emitted when a drained JurorStake's tree slot is pushed onto the free list
 /// (RECLAIM-LEAF). The slot's leaf identity is blanked to `(default, 0)` and
 /// `tree_index` is linked onto the `Subaccord.free_head` free list.

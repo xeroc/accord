@@ -24,6 +24,7 @@ commit-reveal votes, and emits a Ruling.
 | Commit / reveal votes              | `useaccord vote:commit` + `vote:reveal`              | [06-voting.md](references/06-voting.md)           |
 | Appeal a ruling                    | `useaccord appeal:open`                              | [07-appeal.md](references/07-appeal.md)           |
 | Finalize / settle                  | **Cranker automates** (or manual CLI)                | [08-settlement.md](references/08-settlement.md)   |
+| Refund the filer's flip-bounty +1  | `useaccord dispute:claim-filing-bounty`             | [08-settlement.md](references/08-settlement.md)   |
 | Read account state                 | `useaccord read:*`                                   | [09-reads.md](references/09-reads.md)             |
 | Build MST proofs offline           | `useaccord accumulator:*`                            | [03-accumulator.md](references/03-accumulator.md) |
 | Publish / fetch a domain rules doc | `useaccord domain:put` / `domain:get`                | [10-domains.md](references/10-domains.md)         |

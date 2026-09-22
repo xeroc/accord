@@ -26,7 +26,8 @@ Four decisions, resolved in the 2026-08-07 grilling:
    disputes into a single withdrawal.
 3. **Per-Subaccord `fee_vault` (not per-dispute).** Every fee movement is a balanced ledger entry,
    so the invariant `fee_vault.balance == Σ dispute.fee_paid + Σ JurorStake.fees_earned +
-   Σ AppealBond.amount` holds by construction. A juror only ever withdraws what was credited to
+   Σ AppealBond.amount + Σ dispute.bounty_pool` (the last term added by ADR-0030's
+   flip-bounty pool) holds by construction. A juror only ever withdraws what was credited to
    them, from a specific dispute's pool; no dispute can overdraw. This eliminates per-dispute ATAs
    while keeping each dispute's fee accounting isolated in the ledger.
 4. **Slash proceeds redistribute as stake (Option A).** Slashing is pure ledger: subtract from the
@@ -105,7 +106,7 @@ redraw ladder.
 - **Fund invariant, enforced by `assert_fund_invariants()`** at every fee/stake mutation site in
   the test harness (and a debug read path):
   `stake_vault.balance == Σ JurorStake.staked` (± pending `stake_delta`);
-  `fee_vault.balance == Σ dispute.fee_paid + Σ JurorStake.fees_earned + Σ AppealBond.amount`.
+  `fee_vault.balance == Σ dispute.fee_paid + Σ JurorStake.fees_earned + Σ AppealBond.amount + Σ dispute.bounty_pool` (ADR-0030).
 - The Schelling point is stake-asset-agnostic (0002 stands); the split changes only the
   denomination of each economic role, not the coherence incentive. No Accord token is introduced
   in v1 (0002 stands).
