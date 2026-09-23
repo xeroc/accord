@@ -5,6 +5,7 @@
 
 SOLANA_VERSION ?= 3.1.10
 ANCHOR_VERSION ?= 1.2.0
+ANCHOR_COMMAND ?= anchor-$(ANCHOR_VERSION)
 ACCORD_PROGRAM_ID ?= cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed
 
 # sBPFv3 bytecode (SIMD-0178/0189/0377; static syscalls). SIMD-0500 will reject
@@ -41,7 +42,7 @@ prep: ## Install Solana + Anchor toolchains, then workspace deps
 	cd apps/docs && poetry install --no-root
 
 build: ## Build programs (sBPFv3) + packages + docs
-	anchor build $(ANCHOR_BUILD_FLAGS)
+	$(ANCHOR_COMMAND) build $(ANCHOR_BUILD_FLAGS)
 	$(MAKE) verify-sbf
 	pnpm -r run build
 	$(MAKE) -C apps/docs build
@@ -61,9 +62,9 @@ docs-serve: ## Live-reload MkDocs dev server
 	$(MAKE) -C apps/docs serve
 
 test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Surfpool)
-	anchor build $(ANCHOR_BUILD_FLAGS)
+	$(ANCHOR_COMMAND) build $(ANCHOR_BUILD_FLAGS)
 	$(MAKE) verify-sbf
-	anchor test --skip-build
+	$(ANCHOR_COMMAND) test --skip-build
 
 test_unit: verify-sbf ## LiteSVM + unit tests (requires fresh canonical v3 ELFs —
 	## the 2c51f89 "green" ran against a stale pre-v3 .so; verify-sbf now
@@ -78,9 +79,9 @@ lint: ## Lint every workspace that declares a lint script
 	pnpm -r run lint
 
 clean: ## Remove build artifacts and node_modules
-	anchor clean
+	$(ANCHOR_COMMAND) clean
 	rm -rf node_modules
 
 devnet_deploy:
-	anchor program deploy --provider.cluster $(SOLANA_API)
+	$(ANCHOR_COMMAND) program deploy --provider.cluster $(SOLANA_API)
 	# solana program write-buffer --keypair $(DEPLOY_KEY_PATH) --ws $(SOLANA_WS) ./target/deploy/accord.so
