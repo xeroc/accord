@@ -68,6 +68,7 @@ impl<'info> RequestWithdraw<'info> {
             &juror_key,
             new_stake,
             index,
+            sub.depth,
             &path,
             &sub.root_hash,
             sub.total_stake,

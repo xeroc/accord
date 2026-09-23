@@ -56,6 +56,11 @@
 | 0030-1 | 🟡 Medium | Flip-bounty double-pay: the Failed path strips each appellant's +1 onto their bond while the filer refund also pays the pool — an accounting slip would mint tokens from the shared vault (ADR-0030) | ✅ Fixed — `credit_bond_bounty_units` moves `unit` onto `bond.reward` AND subtracts the same total from `bounty_pool` BEFORE the filer refund (`fee_paid + bounty_pool` post-strip); `claim_appeal_refund` = `amount − fee + reward`, zero-on-claim for BOTH columns; LiteSVM `cancel_refunds_filer_bounty_and_strips_appellant_units` + `redraw_exhaustion_after_appeal…` |
 | 0030-2 | 🟡 Medium | Aligned-flipper misclassification pays the pool to a wrong appellant (ADR-0030) | ✅ Fixed — alignment reads only the bond chain (`prior_result ≠ final_ruling` ∧ next bond's `prior_result == final_ruling`), with the pinned `round_idx == i+1` invariant; non-aligned keep bond-only, no-flip forfeits per the UNCHANGED ADR-0004 rule; LiteSVM whipsaw + failed-appeal tests |
 | 0030-3 | 🟢 Low | `claim_filing_bounty` on a Final-with-appeals dispute would double-pay the pool | ✅ Fixed — requires `Final ∧ current_round == 0 ∧ bounty_pool > 0`; every other terminal shape zeroes or refunds the pool first; e2e `appeal.spec.ts` |
+| SR3-H-1 | 🟠 High | Undrawable stake weight (post-freeze withdrawal / sub-min dust leaves / expired credentials) is a sortition dead zone: `draw_seat` cannot skip it, the seat deadlocks, and the dispute exits only via the 3-day pre-draw cancel. A majority staker cycling withdraw-after-freeze bricks pool resolution at ~zero cost (review 2026-09-23) | 🟥 Open — needs a proof-of-undrawable skip in `draw_seat` + a `request_withdraw`/re-stake minimum gate |
+| SR3-M-2 | 🟡 Medium | Fee-on-transfer `fee_token`: dispute liabilities (`fee_paid`, `bounty_pool`, `AppealBond.amount`) are booked at the nominal fee while the vault receives the actual delta — every refund pays nominal from the SHARED vault, draining other depositors by the transfer-fee delta per file→cancel cycle (review 2026-09-23) | 🟥 Open — book liabilities off the measured delta or reject fee-on-transfer mints |
+| SR3-L-3 | 🔵 Low | `commit_vrf_callback` gated only on `!= Failed` — leaned on "every post-`Created` state implies `committed_vrf.is_some()`" instead of pinning the precondition (review 2026-09-23) | ✅ Fixed — requires `state == Created`. Untestable in LiteSVM/Surfpool (the scoped VRF identity PDA cannot sign in either harness — same limitation as the existing freeze tests); pinned by the SPEC row + code comment |
+| SR3-L-4 | 🔵 Low | MST verifiers did not pin `path.len() == depth` or `index < 2^depth` — the walk reads only the low `path.len()` bits of `index`, so an aliased index verified identically (review 2026-09-23) | ✅ Fixed — both verifiers take `depth` and reject malformed proofs up front; RED-then-GREEN host test `aliased_index_beyond_tree_depth_is_rejected` (the aliased index genuinely verified pre-fix) + `path_length_must_equal_tree_depth` pin |
+| SR3-L-5 | 🔵 Low | `MAX_SORTITION_RETRIES = 1024` was unreachable inside the 1.4M CU per-instruction cap, and its comment promised crankers could raise the limit (they cannot) — degenerate chains died on CU exhaustion, never reaching `MaxRetriesExceeded` (review 2026-09-23) | ✅ Fixed — cap lowered to 128 with a truthful comment; RED-then-GREEN LiteSVM test `draw_seat_rejects_retries_above_cu_bounded_cap` (a genuine 483-retry chain succeeded pre-fix, 106k CU measured); SDK `MAX_SORTITION_RETRIES` mirror + CLI/cranker/e2e call sites migrated |
 
 ---
 
@@ -140,13 +145,13 @@ Distinct `associated_token::authority` constraints make all token-account
 pairs structurally distinct. PDA derivation enforces distinctness for
 `remaining_accounts`.
 
----
-
 ## 5. CPI safety — ✅
 
 Program IDs hardcoded via `Program<T>`. `reload()` after every custodying
-transfer. Fee-on-transfer delta accounting on stake/create_dispute/appeal.
-PDA-signed sweeps extend signer privilege only to the Subaccord PDA.
+transfer. Fee-on-transfer delta accounting on the vault ledger
+(stake/create_dispute/appeal); dispute-side liabilities are still booked at
+the nominal fee — see SR3-M-2 (open). PDA-signed sweeps extend signer
+privilege only to the Subaccord PDA.
 
 ---
 

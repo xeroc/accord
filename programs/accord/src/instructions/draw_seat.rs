@@ -68,6 +68,7 @@ impl<'info> DrawSeat<'info> {
         let prefix = verify_membership_and_prefix(
             leaf,
             membership.index,
+            ctx.accounts.subaccord.depth,
             &membership.proof,
             &dispute.frozen_root,
             dispute.frozen_total_stake,

@@ -5095,6 +5095,146 @@ fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
     );
 }
 
+/// L-5 (security review 2026-09-23): `MAX_SORTITION_RETRIES` must be a bound a
+/// single `draw_seat` instruction can actually reach — the old 1024 was not
+/// (chains that long die on CU exhaustion, not `MaxRetriesExceeded`). Whale
+/// pool: seat 0 draws the whale; seat 1's deterministic chain collides with
+/// the whale more than `MAX_SORTITION_RETRIES` times before landing on a dust
+/// juror. That submission is fully genuine (every retry verified on-chain),
+/// so it SUCCEEDS today — the test pins its rejection at the cap.
+#[test]
+fn draw_seat_rejects_retries_above_cu_bounded_cap() {
+    // The CU-bounded cap this test pins. Must equal
+    // `accord::constants::MAX_SORTITION_RETRIES` — asserted below so a future
+    // bump forces this test to be re-grounded.
+    const CU_BOUNDED_RETRIES: u32 = 128;
+    let mut env = setup_accumulator(); // panel 3, min_stake 1_000, alpha 10%
+
+    // Whale + two dust jurors at the draw floor (min_stake + slash = 1_100).
+    let stakes = [1_000_000u64, 1_100, 1_100];
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, stake);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+    }
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::new();
+        let mut a = 0u64;
+        for (_, s) in &leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+
+    // Filer + dispute (round-0 panel of 3).
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let fee = 4 * TEST_FPJ;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
+            subaccord: env.subaccord,
+            accord_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    // Grind a VRF whose seat-1 chain is longer than the cap (and short enough
+    // for today's 1024 check to still admit it). The whale holds ~99.8% of
+    // stake, so a chain of 129+ collisions is the common case.
+    let mut vrf = [0u8; 32];
+    let mut chosen: Option<(u32, usize)> = None; // (retries, terminal leaf)
+    for c in 0..100_000u64 {
+        vrf[0..8].copy_from_slice(&c.to_le_bytes());
+        let seed = vrf_seed(&vrf, &dispute, 0, 0);
+        // Seat 0 has no drawn seats to collide with → its retries must be 0,
+        // and retry 0 must select the whale for the collision story to hold.
+        if seat_leaf(&seed, 0, 0, total, &prefixes, &leaves) != 0 {
+            continue;
+        }
+        let mut chain = 0u32;
+        let terminal = loop {
+            let leaf = seat_leaf(&seed, 1, chain, total, &prefixes, &leaves);
+            if leaf != 0 {
+                break leaf;
+            }
+            chain += 1;
+            if chain > 1024 {
+                break usize::MAX;
+            }
+        };
+        if terminal != usize::MAX
+            && chain > CU_BOUNDED_RETRIES
+            && chain <= 1024
+        {
+            chosen = Some((chain, terminal));
+            break;
+        }
+    }
+    let (retries, terminal_leaf) =
+        chosen.expect("a whale-dominant pool admits a >cap collision chain quickly");
+
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+    let round = round_pda(&dispute, 0);
+
+    // Seat 0 = whale at retry 0 (genuine, no collisions to prove).
+    submit_draw_seat(&mut env, dispute, round, 0, 0, 0, &leaves).assert_success();
+
+    // Seat 1 = the ground chain: every retry 0..retries genuinely collides
+    // with the drawn whale, terminal retry selects the dust juror. Genuine
+    // today (cap 1024) → succeeds; must be rejected at the CU-bounded cap.
+    let r = submit_draw_seat(&mut env, dispute, round, 1, retries, terminal_leaf, &leaves);
+    assert!(
+        !r.is_success(),
+        "retries={retries} > MAX_SORTITION_RETRIES must be rejected; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.logs().iter().any(|l| l.contains("MaxRetriesExceeded")),
+        "expected MaxRetriesExceeded; logs={:?}",
+        r.logs()
+    );
+    // Drift guard: the ground chain window above assumes this cap.
+    assert_eq!(
+        accord::constants::MAX_SORTITION_RETRIES,
+        CU_BOUNDED_RETRIES,
+        "MAX_SORTITION_RETRIES drifted — re-ground this test's chain window"
+    );
+}
+
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
 // ─── helpers: inject VRF + frozen root (bypasses VRF program identity) ───────
 

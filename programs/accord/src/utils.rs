@@ -178,12 +178,29 @@ pub(crate) fn verify_and_recompute(
     new_juror: &Pubkey,
     new_stake: u64,
     index: u32,
+    depth: u8,
     path: &[MSTNode],
     stored_root: &[u8; 32],
     stored_sum: u64,
 ) -> Result<([u8; 32], u64)> {
+    // L-4 (security review 2026-09-23): the walk below consumes only the low
+    // `path.len()` bits of `index`, so `index` and `index + 2^path.len()`
+    // would authenticate identically. Pin the proof shape up front — a path
+    // whose length ≠ the tree's depth, or an index outside `2^depth`, is a
+    // malformed proof regardless of what the root comparison would say.
+    let max_index = 1u64
+        .checked_shl(u32::from(depth))
+        .ok_or(AccordError::InvalidMerklePath)?;
+    require!(
+        (index as u64) < max_index,
+        AccordError::InvalidMerklePath
+    );
+    require!(
+        path.len() == depth as usize,
+        AccordError::InvalidMerklePath
+    );
     // ponytail: 8 args are intrinsic to verify-then-recompute (old/new juror+stake,
-    // position, path, stored root+sum). A params struct is ceremony for one caller.
+    // position, depth, path, stored root+sum). A params struct is ceremony for one caller.
     // --- Verify: walk the supplied path from the old leaf to the root. ---
     let mut acc_hash = mst_leaf_hash(old_juror, old_stake);
     let mut acc_sum = old_stake;
@@ -224,13 +241,30 @@ pub(crate) fn verify_and_recompute(
 /// return the cumulative-from-left prefix (total stake of all leaves to the
 /// left of `index`), reconstructed from the authenticated sibling sums. The
 /// leaf's sortition range is `[prefix, prefix + stake)`. Used by `draw_seat`.
+/// `depth` is the tree's fixed depth: the proof length and the index bound are
+/// pinned against it up front (L-4, security review 2026-09-23).
 pub(crate) fn verify_membership_and_prefix(
     leaf: &LeafClaim,
     index: u32,
+    depth: u8,
     path: &[MSTNode],
     root_hash: &[u8; 32],
     root_sum: u64,
 ) -> Result<u64> {
+    // L-4 (security review 2026-09-23): same proof-shape pin as
+    // `verify_and_recompute` — index aliased beyond 2^depth would verify
+    // identically to its low bits, so reject it up front.
+    let max_index = 1u64
+        .checked_shl(u32::from(depth))
+        .ok_or(AccordError::InvalidMembershipProof)?;
+    require!(
+        (index as u64) < max_index,
+        AccordError::InvalidMembershipProof
+    );
+    require!(
+        path.len() == depth as usize,
+        AccordError::InvalidMembershipProof
+    );
     let mut acc_hash = mst_leaf_hash(&leaf.juror, leaf.stake);
     let mut acc_sum = leaf.stake;
     let mut prefix: u64 = 0;

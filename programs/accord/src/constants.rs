@@ -133,10 +133,19 @@ pub const MIN_SLASH_FEE_RATIO: u64 = 2;
 
 /// Maximum sortition retries per seat in `draw_seat` (bean accord-tzo0). The
 /// deterministic collision re-roll increments this counter until the selected
-/// leaf is not an already-drawn juror. 1024 is generous: with ≥ N eligible
-/// jurors the expected retries per seat is < 1; even a 99 %-whale pool rarely
-/// exceeds a few hundred. Crankers raise the CU limit for degenerate cases.
-pub const MAX_SORTITION_RETRIES: u32 = 1024;
+/// leaf is not an already-drawn juror.
+///
+/// L-5 (security review 2026-09-23): this must be a bound one `draw_seat`
+/// instruction can actually reach inside the 1.4M CU per-instruction cap —
+/// each retry is one sha256 syscall plus a collision scan, so the old 1024
+/// was unreachable (chains that long died on CU exhaustion, never reaching
+/// the `MaxRetriesExceeded` error). 128 keeps the worst-case loop comfortably
+/// under the cap on mainnet metering (LiteSVM measures ~220 CU/retry;
+/// mainnet's sha256 syscall fee is an order of magnitude higher — either way
+/// 128 fits) and still admits ~99.8 %-whale pools, where the expected chain
+/// is ~450. Beyond it the dispute exits via the pre-draw `cancel_dispute`
+/// timeout — crankers CANNOT raise the CU cap past 1.4M, so don't promise it.
+pub const MAX_SORTITION_RETRIES: u32 = 128;
 
 // ===========================================================================
 // Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.

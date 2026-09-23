@@ -22,6 +22,7 @@ import {
   getDisputeDecoder,
   getRoundDecoder,
   getJurorStakeDecoder,
+  MAX_SORTITION_RETRIES,
   type SeatMembership,
 } from "@useaccord/sdk";
 
@@ -70,7 +71,7 @@ async function resolvePanelAttempt(
       seat,
       fx.tree.tree,
       drawn,
-      1024, // maxRetries
+      MAX_SORTITION_RETRIES, // on-chain bound — draw_seat rejects beyond it
       drawAttempt,
     );
     const pda = fx.jurorPdaByHex.get(toHex(r.leaf.juror));

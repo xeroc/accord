@@ -14,6 +14,13 @@ export const MAX_JURORS = 31;
 export const MAX_APPEALS = 3;
 export const MAX_OPTIONS = 8;
 
+/**
+ * Maximum sortition retries per seat accepted by on-chain `draw_seat`
+ * (constants.rs, L-5 review 2026-09-23). Bounded so one instruction fits the
+ * 1.4M CU cap; chains beyond it are rejected with `MaxRetriesExceeded`.
+ */
+export const MAX_SORTITION_RETRIES = 128;
+
 // --- Timelocks (constants.rs, in slots @ ~400ms mainnet) ---
 
 export const UPDATE_TIMELOCK_SLOTS = 432_000n; // 48h

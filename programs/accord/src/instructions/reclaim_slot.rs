@@ -56,6 +56,7 @@ impl<'info> ReclaimSlot<'info> {
             &Pubkey::default(),
             0,
             index,
+            sub.depth,
             &path,
             &sub.root_hash,
             sub.total_stake,

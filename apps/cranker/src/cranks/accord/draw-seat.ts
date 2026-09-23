@@ -29,6 +29,7 @@ import {
   findRoundPda,
   panelSizeForRound,
   resolveSeat,
+  MAX_SORTITION_RETRIES,
   type Dispute,
   type LeafClaim,
   type MerkleAccumulator,
@@ -89,7 +90,7 @@ export async function resolvePanel(opts: {
       seat,
       tree,
       drawn,
-      1024,
+      MAX_SORTITION_RETRIES,
       drawAttempt,
     );
     result.push({
@@ -181,7 +182,7 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
       seat,
       tree,
       drawn,
-      1024,
+      MAX_SORTITION_RETRIES,
       drawAttempt,
     );
     const jurorAddr = addressFromBytes(r.leaf.juror);

@@ -212,8 +212,8 @@ mod accumulator_tests {
                 juror: pk((i + 1) as u8),
                 stake: *stake,
             };
-            let prefix =
-                verify_membership_and_prefix(&leaf, i as u32, &path, &root, total).unwrap();
+            let prefix = verify_membership_and_prefix(&leaf, i as u32, depth, &path, &root, total)
+                .unwrap();
             assert_eq!(prefix, running, "prefix for leaf {i}");
             running += stake;
         }
@@ -225,7 +225,9 @@ mod accumulator_tests {
             stake: 1_000,
         };
         let (_, _, path0) = build_root_and_path(&leaves, depth, 0);
-        assert!(verify_membership_and_prefix(&leaf0, 0, &path0, &bad, total).is_err());
+        assert!(
+            verify_membership_and_prefix(&leaf0, 0, depth, &path0, &bad, total).is_err()
+        );
 
         // A tampered stake (overstates) does not authenticate — the root binds sums.
         let inflated = LeafClaim {
@@ -233,7 +235,9 @@ mod accumulator_tests {
             stake: 9_999,
         };
         let (_, _, path1) = build_root_and_path(&leaves, depth, 1);
-        assert!(verify_membership_and_prefix(&inflated, 1, &path1, &root, total).is_err());
+        assert!(
+            verify_membership_and_prefix(&inflated, 1, depth, &path1, &root, total).is_err()
+        );
     }
 
     #[test]
@@ -248,10 +252,9 @@ mod accumulator_tests {
         let new_stake = 1_500u64;
         let juror = pk(3);
         let (_, _, path) = build_root_and_path(&leaves, depth, target);
-        let (new_root, new_total) = verify_and_recompute(
-            &juror, old_stake, &juror, new_stake, target, &path, &root, total,
-        )
-        .expect("valid path authenticates + recomputes");
+        let (new_root, new_total) =
+            verify_and_recompute(&juror, old_stake, &juror, new_stake, target, depth, &path, &root, total)
+                .expect("valid path authenticates + recomputes");
         assert_eq!(new_total, total - old_stake + new_stake);
 
         // Rebuild from scratch with the new stake: roots must match exactly.
@@ -269,6 +272,7 @@ mod accumulator_tests {
             &juror,
             new_stake,
             target,
+            depth,
             &wrong_path,
             &root,
             total
@@ -294,6 +298,7 @@ mod accumulator_tests {
             &juror,
             stake,
             target,
+            depth,
             &path,
             &root0,
             total0,
@@ -343,8 +348,8 @@ mod accumulator_tests {
                         juror: pk((i + 1) as u8),
                         stake: *stake,
                     };
-                    let got =
-                        verify_membership_and_prefix(&leaf, i as u32, &path, &root, total).unwrap();
+                    let got = verify_membership_and_prefix(&leaf, i as u32, depth, &path, &root, total)
+                        .unwrap();
                     assert_eq!(got, prefix);
                     assert!(!found, "r_i matched more than one leaf");
                     found = true;
@@ -353,5 +358,42 @@ mod accumulator_tests {
             }
             assert!(found, "seat {seat}: r_i={r_i} matched no leaf range");
         }
+    }
+
+    /// L-4 (security review 2026-09-23): the path walk consumes only the low
+    /// `depth` bits of `index`, so `index` and `index + 2^depth` authenticate
+    /// identically against the same path and root — pre-fix the aliased index
+    /// VERIFIED. Pin the rejection: the verifiers bound `index < 2^depth` up
+    /// front instead of trusting root inequality.
+    #[test]
+    fn aliased_index_beyond_tree_depth_is_rejected() {
+        let leaves = vec![(pk(1), 100u64)];
+        let (root, sum, path) = build_root_and_path(&leaves, 3, 0);
+        // index 8 = 2^3: low 3 bits are 0, identical walk to index 0.
+        assert!(
+            verify_and_recompute(&pk(1), 100, &pk(1), 50, 8, 3, &path, &root, sum).is_err(),
+            "verify_and_recompute: index >= 2^depth aliases (index & mask) and must be rejected"
+        );
+        let leaf = LeafClaim {
+            juror: pk(1),
+            stake: 100,
+        };
+        assert!(
+            verify_membership_and_prefix(&leaf, 8, 3, &path, &root, sum).is_err(),
+            "verify_membership_and_prefix: index >= 2^depth must be rejected"
+        );
+    }
+
+    /// L-4 companion: the proof length must equal the tree depth — a short or
+    /// long path is a malformed proof even before root comparison.
+    #[test]
+    fn path_length_must_equal_tree_depth() {
+        let leaves = vec![(pk(1), 100u64), (pk(2), 200u64)];
+        let (root, sum, path) = build_root_and_path(&leaves, 3, 0);
+        let short: Vec<MSTNode> = path[..2].to_vec();
+        assert!(
+            verify_and_recompute(&pk(1), 100, &pk(1), 50, 0, 3, &short, &root, sum).is_err(),
+            "a 2-level path against a depth-3 root must be rejected as malformed"
+        );
     }
 }
