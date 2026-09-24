@@ -7299,6 +7299,16 @@ fn bounty_funding_create_dispute_banks_plus_one() {
         3 * TEST_FPJ,
         "fee_paid keeps the round-0 juror pot only"
     );
+    // SR3-M-2: custody is exact — the vault ledger books the FULL nominal
+    // tender ((J+1)·fpj), so the nominal liabilities (fee_paid + bounty_pool)
+    // are always deposit-backed. On-chain a short delivery now reverts
+    // `FeeMismatch` (classic Token can't produce one); this pin guards the
+    // ledger side against a regression to delta-booking.
+    assert_eq!(
+        read_subaccord(&env).fee_vault_deposited,
+        4 * TEST_FPJ,
+        "fee_vault_deposited must equal the full (J+1)·fpj tender exactly"
+    );
 }
 
 /// L1: `appeal` tenders `(2N+1)·fpj`; the +1 joins `bounty_pool` while
@@ -7330,6 +7340,13 @@ fn bounty_funding_appeal_grows_pool_and_keeps_bond_semantics() {
         spl_balance(&env, &vault) - vault_before,
         15 * TEST_FPJ,
         "vault takes the full (2N+1)·fpj tender"
+    );
+    // SR3-M-2 (appeal side): the fee ledger books the full nominal tender —
+    // filing (J+1)·fpj + appeal fee+bond+bounty 15·fpj = 19 units at fpj.
+    assert_eq!(
+        read_subaccord(&env).fee_vault_deposited,
+        19 * TEST_FPJ,
+        "fee_vault_deposited = filing + appeal tenders, exactly nominal"
     );
     let d = read_dispute(&env, &dispute);
     assert_eq!(

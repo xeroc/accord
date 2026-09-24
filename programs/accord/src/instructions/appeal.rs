@@ -141,6 +141,14 @@ impl<'info> Appeal<'info> {
         let delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
+        // SR3-M-2 (security review 2026-09-23): fail-closed custody — the
+        // measured delta must equal the nominal tender
+        // (`fee_new + bond + bounty_unit`), else `AppealBond.amount` (booked
+        // nominal) would exceed the deposit on a fee-on-transfer mint and the
+        // refund path would draw the difference from the SHARED fee_vault.
+        // Unreachable on classic Token (exact transfers; Token-2022 rejected
+        // at the Mint constraint) — see create_dispute for the full note.
+        require!(delta == total, AccordError::FeeMismatch);
         sub.fee_vault_deposited = sub
             .fee_vault_deposited
             .checked_add(delta)

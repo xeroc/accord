@@ -114,6 +114,17 @@ impl<'info> CreateDispute<'info> {
         let delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
+        // SR3-M-2 (security review 2026-09-23): fail-closed custody. The
+        // liabilities below are booked at the NOMINAL fee (`fee_paid` =
+        // fee − fpj, `bounty_pool` = fpj); a fee-on-transfer mint would
+        // deliver `delta < fee` while every downstream refund still pays
+        // nominal out of the SHARED fee_vault — draining other depositors by
+        // (fee − delta) per file→cancel cycle. Classic Token cannot
+        // under-deliver and Token-2022 mints are rejected at the `Mint`
+        // constraint (L-4/L-5), so the guard is unreachable today; it is the
+        // discharge condition any Token-2022 migration must keep. Untestable
+        // in LiteSVM/Surfpool for the same reason (SR3-L-3 precedent).
+        require!(delta == fee, AccordError::FeeMismatch);
         sub.fee_vault_deposited = sub
             .fee_vault_deposited
             .checked_add(delta)
