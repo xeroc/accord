@@ -1,99 +1,6 @@
 //! Host unit tests. The LiteSVM instruction suite lives in
-//! `tests/` (bean accord-btel); this file pins the manual layout offsets,
-//! the scoped VRF identity, and the MST accumulator math.
-
-#[cfg(test)]
-mod layout_tests {
-    use crate::constants::layout; // manual-offset pin — see `constants::layout`
-    use crate::state::{AppealBond, JurorStake};
-    use anchor_lang::prelude::*;
-    use anchor_lang::AccountSerialize;
-
-    /// The manual offset consts in `layout` must land exactly on the
-    /// Borsh-serialized field bytes. This is the only TRUE layout pin (compile-
-    /// time asserts can't verify Borsh field positions — see `layout`). A field
-    /// reorder/resize that drifts the consts fails here.
-    #[test]
-    fn offsets_match_borsh() {
-        // --- JurorStake: distinctive values at every offset we slice ---
-        let js = JurorStake {
-            subaccord: Pubkey::new_from_array([0xA0; 32]),
-            juror: Pubkey::new_from_array([0xA1; 32]),
-            staked: 0x0102_0304_0506_0708,
-            active_draws: 0x090A_0B0C,
-            bump: 0x0D,
-            tree_index: 0x0E0F_1011,
-            stake_delta: 0x1213_1415_1617_1819,
-            slash_reserve: 0x1A1B_1C1D_1E1F_2021,
-            withdraw_requested_at: 0x2223_2425_2627_2829,
-            pending_withdrawal: 0x2A2B_2C2D_2E2F_3031,
-            fees_earned: 0x3233_3435_3637_3839,
-            next_free: 0x3A3B_3C3D,
-            prev_free: 0x3E3F_4041,
-            padding: [0u8; 60],
-        };
-        let mut buf = Vec::new();
-        js.try_serialize(&mut buf).unwrap();
-        assert_eq!(
-            &buf[layout::JS_STAKED_OFF..layout::JS_STAKED_OFF + 8],
-            &js.staked.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::JS_ACTIVE_DRAWS_OFF..layout::JS_ACTIVE_DRAWS_OFF + 4],
-            &js.active_draws.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::JS_STAKE_DELTA_OFF..layout::JS_STAKE_DELTA_OFF + 8],
-            &js.stake_delta.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::JS_SLASH_RESERVE_OFF..layout::JS_SLASH_RESERVE_OFF + 8],
-            &js.slash_reserve.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::JS_FEES_EARNED_OFF..layout::JS_FEES_EARNED_OFF + 8],
-            &js.fees_earned.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::JS_NEXT_FREE_OFF..layout::JS_NEXT_FREE_OFF + 4],
-            &js.next_free.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::JS_PREV_FREE_OFF..layout::JS_PREV_FREE_OFF + 4],
-            &js.prev_free.to_le_bytes()[..]
-        );
-
-        // --- AppealBond ---
-        let ab = AppealBond {
-            dispute: Pubkey::new_from_array([0xB0; 32]),
-            round_idx: 0x0102_0304,
-            appellant: Pubkey::new_from_array([0xB1; 32]),
-            amount: 0x0506_0708_090A_0B0C,
-            prior_result: 0x0D0E_0F10_1112_1314,
-            reward: 0x1516_1718_191A_1B1C,
-            bump: 0x0E,
-            padding: [0u8; 56],
-        };
-        let mut buf = Vec::new();
-        ab.try_serialize(&mut buf).unwrap();
-        assert_eq!(
-            &buf[layout::AB_ROUND_IDX_OFF..layout::AB_ROUND_IDX_OFF + 4],
-            &ab.round_idx.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::AB_AMOUNT_OFF..layout::AB_AMOUNT_OFF + 8],
-            &ab.amount.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::AB_PRIOR_OFF..layout::AB_PRIOR_OFF + 8],
-            &ab.prior_result.to_le_bytes()[..]
-        );
-        assert_eq!(
-            &buf[layout::AB_REWARD_OFF..layout::AB_REWARD_OFF + 8],
-            &ab.reward.to_le_bytes()[..]
-        );
-    }
-}
+//! `tests/` (bean accord-btel); this file pins the scoped VRF identity
+//! and the MST accumulator math.
 
 #[cfg(test)]
 mod vrf_identity_tests {
@@ -212,8 +119,8 @@ mod accumulator_tests {
                 juror: pk((i + 1) as u8),
                 stake: *stake,
             };
-            let prefix = verify_membership_and_prefix(&leaf, i as u32, depth, &path, &root, total)
-                .unwrap();
+            let prefix =
+                verify_membership_and_prefix(&leaf, i as u32, depth, &path, &root, total).unwrap();
             assert_eq!(prefix, running, "prefix for leaf {i}");
             running += stake;
         }
@@ -225,9 +132,7 @@ mod accumulator_tests {
             stake: 1_000,
         };
         let (_, _, path0) = build_root_and_path(&leaves, depth, 0);
-        assert!(
-            verify_membership_and_prefix(&leaf0, 0, depth, &path0, &bad, total).is_err()
-        );
+        assert!(verify_membership_and_prefix(&leaf0, 0, depth, &path0, &bad, total).is_err());
 
         // A tampered stake (overstates) does not authenticate — the root binds sums.
         let inflated = LeafClaim {
@@ -235,9 +140,7 @@ mod accumulator_tests {
             stake: 9_999,
         };
         let (_, _, path1) = build_root_and_path(&leaves, depth, 1);
-        assert!(
-            verify_membership_and_prefix(&inflated, 1, depth, &path1, &root, total).is_err()
-        );
+        assert!(verify_membership_and_prefix(&inflated, 1, depth, &path1, &root, total).is_err());
     }
 
     #[test]
@@ -252,9 +155,10 @@ mod accumulator_tests {
         let new_stake = 1_500u64;
         let juror = pk(3);
         let (_, _, path) = build_root_and_path(&leaves, depth, target);
-        let (new_root, new_total) =
-            verify_and_recompute(&juror, old_stake, &juror, new_stake, target, depth, &path, &root, total)
-                .expect("valid path authenticates + recomputes");
+        let (new_root, new_total) = verify_and_recompute(
+            &juror, old_stake, &juror, new_stake, target, depth, &path, &root, total,
+        )
+        .expect("valid path authenticates + recomputes");
         assert_eq!(new_total, total - old_stake + new_stake);
 
         // Rebuild from scratch with the new stake: roots must match exactly.
@@ -348,8 +252,9 @@ mod accumulator_tests {
                         juror: pk((i + 1) as u8),
                         stake: *stake,
                     };
-                    let got = verify_membership_and_prefix(&leaf, i as u32, depth, &path, &root, total)
-                        .unwrap();
+                    let got =
+                        verify_membership_and_prefix(&leaf, i as u32, depth, &path, &root, total)
+                            .unwrap();
                     assert_eq!(got, prefix);
                     assert!(!found, "r_i matched more than one leaf");
                     found = true;

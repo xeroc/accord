@@ -115,8 +115,9 @@ pub(crate) mod sas_layout {
         use super::*;
 
         /// `expiry` lives at a dynamic offset (after variable `data`); the
-        /// parse must locate it correctly across `data_len` values. Mirrors
-        /// `tests::layout_tests::offsets_match_borsh` — this is the SAS analog.
+        /// parse must locate it correctly across `data_len` values. (SAS is a
+        /// foreign program — no Anchor types exist, so this manual parser and
+        /// its offset pin remain; see ADR-0032 for the in-program contrast.)
         #[test]
         fn sas_expiry_offset_is_dynamic() {
             for &data_len in &[32u32, 48, 100, 256] {

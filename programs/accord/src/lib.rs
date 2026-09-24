@@ -46,10 +46,6 @@ pub use instructions::*;
 pub use pda::*;
 pub use state::*;
 
-// `crate::layout` alias: bodies and utils slice raw accounts via full
-// `crate::layout::<FIELD>` paths (CU-opt field writes).
-pub(crate) use constants::layout;
-
 // Program id for the Accord. (`anchor build` normally provisions this; it is
 // blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
 // so the keypair was generated with `solana-keygen` into target/deploy/.)

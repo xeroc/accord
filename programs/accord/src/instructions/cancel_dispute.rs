@@ -110,8 +110,6 @@ impl<'info> CancelDispute<'info> {
             // the base participation fee (no final ruling on the Failed path —
             // no coherence judgment possible). Earlier states (Drawn/Commit/
             // Reveal) pay nothing for the current round.
-            const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF; // CU-opt — see crate::layout
-            const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
             let fee_per_juror = dispute.terms.fee_per_juror;
             let mut cur_round0_earned = 0u64;
             require!(
@@ -132,48 +130,27 @@ impl<'info> CancelDispute<'info> {
                     acct_info.owner == &crate::ID,
                     AccordError::InvalidMembershipProof
                 );
-                let mut data = acct_info.try_borrow_mut_data()?;
-                // Participation pay (ADR-0029): current round is resolved.
-                if fee_per_juror > 0
-                    && state == DisputeState::RoundResolved
-                    && reveals[i] != u64::MAX
-                {
-                    let fees = u64::from_le_bytes(
-                        data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                            .try_into()
-                            .unwrap(),
-                    );
-                    let new_fees = fees
-                        .checked_add(fee_per_juror)
-                        .ok_or(AccordError::ArithmeticOverflow)?;
-                    data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                        .copy_from_slice(&new_fees.to_le_bytes());
-                    if current_round == 0 {
-                        cur_round0_earned = cur_round0_earned
+                mutate_account::<JurorStake, _>(acct_info, |js| {
+                    // Participation pay (ADR-0029): current round is resolved.
+                    if fee_per_juror > 0
+                        && state == DisputeState::RoundResolved
+                        && reveals[i] != u64::MAX
+                    {
+                        js.fees_earned = js
+                            .fees_earned
                             .checked_add(fee_per_juror)
                             .ok_or(AccordError::ArithmeticOverflow)?;
+                        if current_round == 0 {
+                            cur_round0_earned = cur_round0_earned
+                                .checked_add(fee_per_juror)
+                                .ok_or(AccordError::ArithmeticOverflow)?;
+                        }
                     }
-                }
-                let draws = u32::from_le_bytes(
-                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                        .try_into()
-                        .unwrap(),
-                );
-                let new_draws = draws.saturating_sub(1);
-                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                    .copy_from_slice(&new_draws.to_le_bytes());
-                // Release slash reserve for this dispute.
-                const SLASH_RESERVE_OFF: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-                if data.len() >= SLASH_RESERVE_OFF + 8 {
-                    let reserve = u64::from_le_bytes(
-                        data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                            .try_into()
-                            .unwrap(),
-                    );
-                    let new_reserve = reserve.saturating_sub(slash_per_juror);
-                    data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                        .copy_from_slice(&new_reserve.to_le_bytes());
-                }
+                    js.active_draws = js.active_draws.saturating_sub(1);
+                    // Release slash reserve for this dispute.
+                    js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+                    Ok(())
+                })?;
             }
             // Round-0 participation leaves the filer's refundable pool.
             if cur_round0_earned > 0 {
@@ -259,7 +236,6 @@ impl<'info> CancelDispute<'info> {
                     ctx.remaining_accounts[0].key == &current_round_pda,
                     AccordError::InvalidMembershipProof
                 );
-                const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
                 let (juror_count, jurors) = {
                     let loader = AccountLoader::<Round>::try_from(&ctx.remaining_accounts[0])?;
                     let round = loader.load()?;
@@ -285,26 +261,12 @@ impl<'info> CancelDispute<'info> {
                         acct_info.owner == &crate::ID,
                         AccordError::InvalidMembershipProof
                     );
-                    let mut data = acct_info.try_borrow_mut_data()?;
-                    let draws = u32::from_le_bytes(
-                        data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                            .try_into()
-                            .unwrap(),
-                    );
-                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                        .copy_from_slice(&draws.saturating_sub(1).to_le_bytes());
-                    // Release slash reserve for this dispute.
-                    const SLASH_RESERVE_OFF: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-                    if data.len() >= SLASH_RESERVE_OFF + 8 {
-                        let reserve = u64::from_le_bytes(
-                            data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        let new_reserve = reserve.saturating_sub(slash_per_juror);
-                        data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                            .copy_from_slice(&new_reserve.to_le_bytes());
-                    }
+                    mutate_account::<JurorStake, _>(acct_info, |js| {
+                        js.active_draws = js.active_draws.saturating_sub(1);
+                        // Release slash reserve for this dispute.
+                        js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+                        Ok(())
+                    })?;
                 }
                 idx = 1 + juror_count;
             }

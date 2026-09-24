@@ -5196,10 +5196,7 @@ fn draw_seat_rejects_retries_above_cu_bounded_cap() {
                 break usize::MAX;
             }
         };
-        if terminal != usize::MAX
-            && chain > CU_BOUNDED_RETRIES
-            && chain <= 1024
-        {
+        if terminal != usize::MAX && chain > CU_BOUNDED_RETRIES && chain <= 1024 {
             chosen = Some((chain, terminal));
             break;
         }

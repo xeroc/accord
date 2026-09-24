@@ -242,11 +242,7 @@ impl<'info> Stake<'info> {
                         nh_prev == freed_tree_index,
                         AccordError::FreeListHeadMismatch
                     );
-                    write_free_list_pointer(
-                        new_head_info,
-                        crate::layout::JS_PREV_FREE_OFF,
-                        u32::MAX,
-                    )?;
+                    mutate_free_list_neighbor(new_head_info, |head| head.prev_free = u32::MAX)?;
                 }
                 sub.free_head = freed_next_free;
                 {
@@ -309,7 +305,7 @@ impl<'info> Stake<'info> {
                     prev_next == js.tree_index,
                     AccordError::FreeListHeadMismatch
                 );
-                write_free_list_pointer(prev_info, crate::layout::JS_NEXT_FREE_OFF, next_idx)?;
+                mutate_free_list_neighbor(prev_info, |prev| prev.next_free = next_idx)?;
                 neighbor_idx += 1;
             } else {
                 // I am the head: the list head moves to my successor.
@@ -328,7 +324,7 @@ impl<'info> Stake<'info> {
                     succ_prev == js.tree_index,
                     AccordError::FreeListHeadMismatch
                 );
-                write_free_list_pointer(succ_info, crate::layout::JS_PREV_FREE_OFF, prev_idx)?;
+                mutate_free_list_neighbor(succ_info, |succ| succ.prev_free = prev_idx)?;
             }
             // The account stays open and becomes an active leaf again (its
             // subaccord/juror/tree_index/bump fields are already correct).

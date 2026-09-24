@@ -1,10 +1,11 @@
 //! Shared handler helpers: `UpdatePayload` domain validation, the MST
 //! accumulator math (ADR-0012), panel sizing, and the raw-account
-//! settlement / cancel / release utilities (CU-opt field writes — see
-//! `constants::layout`).
+//! settlement / cancel / release utilities (full Anchor (de)serialization —
+//! ADR-0032).
 
 use crate::{constants::*, errors::AccordError, state::*};
 use anchor_lang::prelude::*;
+use anchor_lang::{AccountDeserialize, AccountSerialize};
 
 /// Validate a single `UpdatePayload` variant against the same domain bounds
 /// enforced at `create_subaccord` (H-1 / shared-base §29.3: validate in every
@@ -191,14 +192,8 @@ pub(crate) fn verify_and_recompute(
     let max_index = 1u64
         .checked_shl(u32::from(depth))
         .ok_or(AccordError::InvalidMerklePath)?;
-    require!(
-        (index as u64) < max_index,
-        AccordError::InvalidMerklePath
-    );
-    require!(
-        path.len() == depth as usize,
-        AccordError::InvalidMerklePath
-    );
+    require!((index as u64) < max_index, AccordError::InvalidMerklePath);
+    require!(path.len() == depth as usize, AccordError::InvalidMerklePath);
     // ponytail: 8 args are intrinsic to verify-then-recompute (old/new juror+stake,
     // position, depth, path, stored root+sum). A params struct is ceremony for one caller.
     // --- Verify: walk the supplied path from the old leaf to the root. ---
@@ -315,6 +310,36 @@ pub(crate) fn panel_size_for_round(round_idx: u32, base: u32) -> Result<u32> {
     Ok(panel.min(MAX_JURORS as u32))
 }
 
+// --- Raw remaining_accounts (de)serialization (ADR-0032) ----------------------
+
+/// Deserialize a raw `remaining_accounts` entry as `T`. `remaining_accounts`
+/// are plain `AccountInfo`s — Anchor neither auto-deserializes them on entry
+/// nor auto-serializes them on exit — so this gives them the full Anchor
+/// treatment (the 8-byte discriminator is checked by `try_deserialize`).
+/// Owner + PDA re-derivation stay at the call sites (M-2 discipline).
+pub(crate) fn read_account<T: AccountDeserialize>(info: &AccountInfo) -> Result<T> {
+    let data = info.try_borrow_data()?;
+    T::try_deserialize(&mut &data[..])
+}
+
+/// Deserialize a raw `remaining_accounts` entry as `T`, apply `f`, serialize
+/// the whole account back — only when `f` succeeds (an error leaves the
+/// account untouched). ADR-0032: auditability over CU; the full re-serialize
+/// replaces the former targeted byte-offset field writes.
+pub(crate) fn mutate_account<T, R>(
+    info: &AccountInfo,
+    f: impl FnOnce(&mut T) -> Result<R>,
+) -> Result<R>
+where
+    T: AccountDeserialize + AccountSerialize,
+{
+    let mut data = info.try_borrow_mut_data()?;
+    let mut acct = T::try_deserialize(&mut &data[..])?;
+    let out = f(&mut acct)?;
+    acct.try_serialize(&mut &mut data[..])?;
+    Ok(out)
+}
+
 // --- Free-list neighbor helpers (accord-b5v5, doubly-linked RECLAIM-LEAF) ----
 
 /// Read a free-list neighbor JurorStake passed as a raw `remaining_accounts`
@@ -328,13 +353,8 @@ pub(crate) fn read_free_list_neighbor(
     expected_index: u32,
 ) -> Result<(Pubkey, u32, u32, u32)> {
     require!(info.owner == &crate::ID, AccordError::FreeListHeadMismatch);
-    let data = info.try_borrow_data()?;
-    require!(
-        data.len() >= crate::layout::JS_PREV_FREE_OFF + 4,
-        AccordError::FreeListHeadMismatch
-    );
-    let js = JurorStake::try_deserialize(&mut &data[..])
-        .map_err(|_| error!(AccordError::FreeListHeadMismatch))?;
+    let js: JurorStake =
+        read_account(info).map_err(|_| error!(AccordError::FreeListHeadMismatch))?;
     require!(
         js.tree_index == expected_index,
         AccordError::FreeListHeadMismatch
@@ -348,14 +368,19 @@ pub(crate) fn read_free_list_neighbor(
     Ok((js.juror, js.tree_index, js.next_free, js.prev_free))
 }
 
-/// Targeted u32 write into a raw JurorStake account at `offset` (CU-opt field
-/// write — see `constants::layout`): maintains `next_free`/`prev_free` on
-/// free-list neighbor accounts without a full re-serialize.
-pub(crate) fn write_free_list_pointer(info: &AccountInfo, offset: usize, value: u32) -> Result<()> {
-    let mut data = info.try_borrow_mut_data()?;
-    require!(data.len() >= offset + 4, AccordError::FreeListHeadMismatch);
-    data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-    Ok(())
+/// Mutate a free-list neighbor JurorStake passed as a raw `remaining_accounts`
+/// entry (doubly-linked pointer maintenance — accord-b5v5). Full Anchor
+/// (de)serialization via `mutate_account`; any malformed account surfaces as
+/// `FreeListHeadMismatch`, matching the other free-list checks.
+pub(crate) fn mutate_free_list_neighbor(
+    info: &AccountInfo,
+    set: impl FnOnce(&mut JurorStake),
+) -> Result<()> {
+    mutate_account::<JurorStake, _>(info, |js| {
+        set(js);
+        Ok(())
+    })
+    .map_err(|_| error!(AccordError::FreeListHeadMismatch))
 }
 
 /// ADR-0030 Failed-path bounty strip: credit each live appeal bond's
@@ -375,8 +400,6 @@ pub(crate) fn credit_bond_bounty_units<'info>(
     if n == 0 {
         return Ok(0);
     }
-    // CU-opt field access — see `crate::layout`.
-    const BOND_REWARD_OFFSET: usize = crate::layout::AB_REWARD_OFF;
     let mut credited: u64 = 0;
     for i in 0..n {
         let expected_pda = Pubkey::find_program_address(
@@ -397,20 +420,13 @@ pub(crate) fn credit_bond_bounty_units<'info>(
             bond_info.owner == &crate::ID,
             AccordError::InvalidMembershipProof
         );
-        let mut d = bond_info.try_borrow_mut_data()?;
-        require!(
-            d.len() >= BOND_REWARD_OFFSET + 8,
-            AccordError::InvalidMembershipProof
-        );
-        let reward = u64::from_le_bytes(
-            d[BOND_REWARD_OFFSET..BOND_REWARD_OFFSET + 8]
-                .try_into()
-                .unwrap(),
-        );
-        let new_reward = reward
-            .checked_add(unit)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-        d[BOND_REWARD_OFFSET..BOND_REWARD_OFFSET + 8].copy_from_slice(&new_reward.to_le_bytes());
+        mutate_account::<AppealBond, _>(bond_info, |bond| {
+            bond.reward = bond
+                .reward
+                .checked_add(unit)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            Ok(())
+        })?;
         credited = credited
             .checked_add(unit)
             .ok_or(AccordError::ArithmeticOverflow)?;
@@ -444,10 +460,6 @@ pub(crate) fn release_prior_rounds<'info>(
         return Ok(start);
     }
     let mut idx = start;
-    // CU-opt field access — see `crate::layout`.
-    const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
-    const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-    const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
     for round_idx in 0..current_round {
         require!(idx < accounts.len(), AccordError::InvalidState);
         let round_info = &accounts[idx];
@@ -493,44 +505,25 @@ pub(crate) fn release_prior_rounds<'info>(
                 acct_info.owner == &crate::ID,
                 AccordError::InvalidMembershipProof
             );
-            let mut data = acct_info.try_borrow_mut_data()?;
-            // Participation credit (ADR-0029 Failed path): revealers only.
-            if fee_per_juror > 0 && reveals[j] != u64::MAX {
-                let fees = u64::from_le_bytes(
-                    data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                        .try_into()
-                        .unwrap(),
-                );
-                let new_fees = fees
-                    .checked_add(fee_per_juror)
-                    .ok_or(AccordError::ArithmeticOverflow)?;
-                data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                    .copy_from_slice(&new_fees.to_le_bytes());
-                if round_idx == 0 {
-                    round0_earned = round0_earned
+            mutate_account::<JurorStake, _>(acct_info, |js| {
+                // Participation credit (ADR-0029 Failed path): revealers only.
+                if fee_per_juror > 0 && reveals[j] != u64::MAX {
+                    js.fees_earned = js
+                        .fees_earned
                         .checked_add(fee_per_juror)
                         .ok_or(AccordError::ArithmeticOverflow)?;
+                    if round_idx == 0 {
+                        round0_earned = round0_earned
+                            .checked_add(fee_per_juror)
+                            .ok_or(AccordError::ArithmeticOverflow)?;
+                    }
                 }
-            }
-            let draws = u32::from_le_bytes(
-                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            let new_draws = draws.saturating_sub(1);
-            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                .copy_from_slice(&new_draws.to_le_bytes());
-            // Release slash reserve for this dispute.
-            if data.len() >= SLASH_RESERVE_OFFSET + 8 {
-                let reserve = u64::from_le_bytes(
-                    data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-                        .try_into()
-                        .unwrap(),
-                );
-                let new_reserve = reserve.saturating_sub(slash_per_juror);
-                data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-                    .copy_from_slice(&new_reserve.to_le_bytes());
-            }
+                // Every drawn juror is released from this round.
+                js.active_draws = js.active_draws.saturating_sub(1);
+                // Release slash reserve for this dispute.
+                js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+                Ok(())
+            })?;
         }
         if round_idx == 0 && round0_earned > 0 {
             *fee_paid = fee_paid
@@ -632,15 +625,7 @@ pub(crate) fn settle_round_accounts(
         // today; keeping the two passes symmetric converts any future
         // violation into a smaller payout instead of stake_delta rewards
         // minted from nothing (ledger insolvency).
-        let staked = {
-            const STAKED_OFF: usize = crate::layout::JS_STAKED_OFF;
-            let data = acct.try_borrow_data()?;
-            require!(
-                data.len() >= STAKED_OFF + 8,
-                AccordError::InvalidMembershipProof
-            );
-            u64::from_le_bytes(data[STAKED_OFF..STAKED_OFF + 8].try_into().unwrap())
-        };
+        let staked = read_account::<JurorStake>(acct)?.staked;
         if judge_coherent(round.reveals[i]) {
             coherent_count += 1;
         } else {
@@ -696,45 +681,8 @@ pub(crate) fn settle_round_accounts(
     // ADR-0020: do NOT mutate `staked` — the accumulator root commits to it.
     // Write the net stake_delta instead; `reconcile_stake` folds it into
     // `staked` later via a Merkle proof. Fee rewards go to `fees_earned`.
-    // CU-opt field access — see `crate::layout`.
-    const STAKED_OFFSET: usize = crate::layout::JS_STAKED_OFF;
-    const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
-    const STAKE_DELTA_OFFSET: usize = crate::layout::JS_STAKE_DELTA_OFF;
-    const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-    const FEES_EARNED_OFFSET: usize = crate::layout::JS_FEES_EARNED_OFF;
-
     for (i, acct_info) in accounts.iter().enumerate() {
         let is_coherent = judge_coherent(round.reveals[i]);
-
-        let (staked, active_draws, existing_delta, slash_reserve, existing_fees) = {
-            let data = acct_info.try_borrow_data()?;
-            if data.len() < FEES_EARNED_OFFSET + 8 {
-                return Err(AccordError::InvalidMembershipProof.into());
-            }
-            let stk =
-                u64::from_le_bytes(data[STAKED_OFFSET..STAKED_OFFSET + 8].try_into().unwrap());
-            let draws = u32::from_le_bytes(
-                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            let delta = i64::from_le_bytes(
-                data[STAKE_DELTA_OFFSET..STAKE_DELTA_OFFSET + 8]
-                    .try_into()
-                    .unwrap(),
-            );
-            let reserve = u64::from_le_bytes(
-                data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-                    .try_into()
-                    .unwrap(),
-            );
-            let fees = u64::from_le_bytes(
-                data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8]
-                    .try_into()
-                    .unwrap(),
-            );
-            (stk, draws, delta, reserve, fees)
-        };
 
         // Slash every non-coherent juror (incoherent voter or no-show).
         // Reward eligibility: coherent normally; revealers as fallback when
@@ -744,36 +692,31 @@ pub(crate) fn settle_round_accounts(
         } else {
             round.reveals[i] != u64::MAX
         };
-        let slash_delta = if is_coherent {
-            0i64
-        } else {
-            -(slash_per_juror.min(staked) as i64)
-        };
-        let new_delta =
-            existing_delta
-                .saturating_add(slash_delta)
-                .saturating_add(if is_reward_eligible {
-                    stake_share as i64
-                } else {
-                    0
-                });
-        let new_fees = if is_reward_eligible {
-            existing_fees
-                .checked_add(fee_share)
-                .ok_or(AccordError::ArithmeticOverflow)?
-        } else {
-            existing_fees
-        };
-        let new_draws = active_draws.saturating_sub(1);
-        let new_reserve = slash_reserve.saturating_sub(slash_per_juror);
 
-        let mut data = acct_info.try_borrow_mut_data()?;
-        data[STAKE_DELTA_OFFSET..STAKE_DELTA_OFFSET + 8].copy_from_slice(&new_delta.to_le_bytes());
-        data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-            .copy_from_slice(&new_draws.to_le_bytes());
-        data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-            .copy_from_slice(&new_reserve.to_le_bytes());
-        data[FEES_EARNED_OFFSET..FEES_EARNED_OFFSET + 8].copy_from_slice(&new_fees.to_le_bytes());
+        mutate_account::<JurorStake, _>(acct_info, |js| {
+            let slash_delta = if is_coherent {
+                0i64
+            } else {
+                -(slash_per_juror.min(js.staked) as i64)
+            };
+            js.stake_delta =
+                js.stake_delta
+                    .saturating_add(slash_delta)
+                    .saturating_add(if is_reward_eligible {
+                        stake_share as i64
+                    } else {
+                        0
+                    });
+            if is_reward_eligible {
+                js.fees_earned = js
+                    .fees_earned
+                    .checked_add(fee_share)
+                    .ok_or(AccordError::ArithmeticOverflow)?;
+            }
+            js.active_draws = js.active_draws.saturating_sub(1);
+            js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+            Ok(())
+        })?;
     }
 
     Ok(())

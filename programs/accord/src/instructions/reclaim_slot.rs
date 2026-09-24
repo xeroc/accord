@@ -79,7 +79,7 @@ impl<'info> ReclaimSlot<'info> {
             // The current head must not already claim a predecessor (the
             // bidirectional invariant: head.prev == MAX).
             require!(head_prev == u32::MAX, AccordError::FreeListHeadMismatch);
-            write_free_list_pointer(head_info, crate::layout::JS_PREV_FREE_OFF, index)?;
+            mutate_free_list_neighbor(head_info, |head| head.prev_free = index)?;
         }
         sub.free_head = index;
 

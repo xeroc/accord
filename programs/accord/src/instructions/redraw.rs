@@ -89,10 +89,6 @@ impl<'info> Redraw<'info> {
 
         // --- Pass 1: slash no-shows; release active_draws + slash_reserve for
         //     every drawn juror of the failed round. ---
-        // CU-opt field access — see `crate::layout`.
-        const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
-        const STAKE_DELTA_OFFSET: usize = crate::layout::JS_STAKE_DELTA_OFF;
-        const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
         for i in 0..panel {
             let expected_pda = Pubkey::find_program_address(
                 &[SEED_JUROR_STAKE, sub_key.as_ref(), round.jurors[i].as_ref()],
@@ -109,33 +105,17 @@ impl<'info> Redraw<'info> {
                 AccordError::InvalidMembershipProof
             );
             let no_show = round.reveals[i] == u64::MAX;
-            let mut data = acct_info.try_borrow_mut_data()?;
-            // active_draws -= 1: every drawn juror is released from this round.
-            let draws = u32::from_le_bytes(
-                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                .copy_from_slice(&draws.saturating_sub(1).to_le_bytes());
-            // Release this draw's slash reservation (reserved at `draw_seat`).
-            let reserve = u64::from_le_bytes(
-                data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-                    .try_into()
-                    .unwrap(),
-            );
-            data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-                .copy_from_slice(&reserve.saturating_sub(slash_per_juror).to_le_bytes());
-            // No-shows only: realize the slash into `stake_delta` (pending).
-            if no_show {
-                let delta = i64::from_le_bytes(
-                    data[STAKE_DELTA_OFFSET..STAKE_DELTA_OFFSET + 8]
-                        .try_into()
-                        .unwrap(),
-                );
-                data[STAKE_DELTA_OFFSET..STAKE_DELTA_OFFSET + 8]
-                    .copy_from_slice(&delta.saturating_sub(slash_per_juror as i64).to_le_bytes());
-            }
+            mutate_account::<JurorStake, _>(acct_info, |js| {
+                // active_draws -= 1: every drawn juror is released from this round.
+                js.active_draws = js.active_draws.saturating_sub(1);
+                // Release this draw's slash reservation (reserved at `draw_seat`).
+                js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+                // No-shows only: realize the slash into `stake_delta` (pending).
+                if no_show {
+                    js.stake_delta = js.stake_delta.saturating_sub(slash_per_juror as i64);
+                }
+                Ok(())
+            })?;
         }
 
         if exhausted {

@@ -101,7 +101,8 @@ Every privileged action binds to a `Signer` + identity check (`pause`,
 Named accounts: `Account<T>` / `AccountLoader<T>` / `Program<T>` enforce
 owner + discriminator at deserialization. `remaining_accounts`: PDA
 re-derivation + owner check (`require!(owner == &crate::ID)`) at all sites
-(M-2 fix).
+(M-2 fix) **plus** full Anchor deserialization — discriminator-checked
+`try_deserialize` via `utils::read_account`/`mutate_account` (ADR-0032).
 
 ### 1.3 Account data matching — ✅
 
@@ -110,7 +111,7 @@ PDA seeds re-derive each account from stored relationship fields.
 ### 1.4 Type cosplay — ✅
 
 Anchor discriminators everywhere named; `remaining_accounts` checked via
-PDA derivation + owner check.
+PDA derivation + owner check + discriminator-checked deserialization.
 
 ### 1.5 Reinitialization — ✅
 
@@ -180,9 +181,9 @@ fix). A future migration to `Interface<TokenInterface>` +
 
 ## 9. Safe Rust patterns — ✅
 
-No `unsafe`. No `unwrap()`/`expect()` on user-controlled paths — all
-`.unwrap()` calls are on statically-sized slices after explicit length
-checks. `remaining_accounts` apply PDA + owner + length checks (M-2).
+No `unsafe`. No `unwrap()`/`expect()` on user-controlled paths —
+`remaining_accounts` are fully Anchor-deserialized after PDA + owner checks
+(no manual byte slicing; M-2 + ADR-0032).
 
 ---
 

@@ -195,9 +195,11 @@ impl<'info> DrawSeat<'info> {
             .checked_mul(dispute.terms.min_stake)
             .and_then(|v| v.checked_div(10_000))
             .ok_or(AccordError::ArithmeticOverflow)?;
-        let (current_draws, new_slash_reserve) = {
-            let data = js_info.try_borrow_data()?;
-            let js = JurorStake::try_deserialize(&mut &data[..])?;
+        // Inflation guard + slash reservation in one full (de)serialization
+        // pass (ADR-0032 — raw remaining_accounts AccountInfo: Anchor gives
+        // no auto-exit here, so the helper deserializes, validates, mutates,
+        // and re-serializes).
+        mutate_account::<JurorStake, _>(js_info, |js| {
             require!(js.juror == leaf.juror, AccordError::InvalidMembershipProof);
             // ADR-0012 inflation guard: live staked must cover the frozen leaf.
             require!(js.staked >= leaf.stake, AccordError::InflatedStake);
@@ -209,26 +211,16 @@ impl<'info> DrawSeat<'info> {
                 .checked_add(slash_per_juror)
                 .ok_or(AccordError::ArithmeticOverflow)?;
             require!(free_stake >= required, AccordError::InsufficientStake);
-            let new_reserve = js
+            js.slash_reserve = js
                 .slash_reserve
                 .checked_add(slash_per_juror)
                 .ok_or(AccordError::ArithmeticOverflow)?;
-            (js.active_draws, new_reserve)
-        };
-        let new_draws = current_draws
-            .checked_add(1)
-            .ok_or(AccordError::ArithmeticOverflow)?;
-        {
-            let mut data = js_info.try_borrow_mut_data()?;
-            // CU-opt field write — see `crate::layout` (raw remaining_accounts
-            // AccountInfo: no Anchor auto-serialize; write only the 2 changed fields).
-            const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
-            const SLASH_RESERVE_OFFSET: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-            data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                .copy_from_slice(&new_draws.to_le_bytes());
-            data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8]
-                .copy_from_slice(&new_slash_reserve.to_le_bytes());
-        }
+            js.active_draws = js
+                .active_draws
+                .checked_add(1)
+                .ok_or(AccordError::ArithmeticOverflow)?;
+            Ok(())
+        })?;
         // PROG-ATTESTTION: defense-in-depth credential re-check. With the prune
         // crank an expired juror should already be evicted from the accumulator;
         // this catches the race (credential expired between prune-eligible and

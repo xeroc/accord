@@ -47,6 +47,7 @@ status banner is annotated.
 | [0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md)   | Juror fees settle at finality vs the final ruling; same-mint slash-dominance guard (supersedes 0018 §1) | Accepted (impl pending) |
 | [0030](0030-flip-bounty-finality-settled-appellant-reward.md)               | Flip-bounty — finality-settled reward for verdict-flipping appellants (blocked by 0029 plumbing)     | Accepted (impl pending) |
 | [0031](0031-evidence-v2-loose-per-file-transport.md)                        | Evidence v2 — loose per-file transport: manifest-first PUTs, split juror delivery, derived completeness (no index) | Accepted |
+| [0032](0032-remaining-accounts-full-anchor-deserialization.md)                | `remaining_accounts` use full Anchor deserialization (drop the manual layout offsets)                                              | Accepted             |
 
 ### Supersession map
 
@@ -80,6 +81,9 @@ status banner is annotated.
   data-free `rent_payer` so PDA authorities (Arbitrables like Canon) can CPI; `UpdatePayload`
   grows append-only `RevealThresholdBps`/`MaxDrawAttempts`). The single-authority +
   48h-timelock model is unchanged.
+- **0032** supersedes the layout-offset consequences of **0020 / 0022 / 0023 / 0024** (manual
+  byte-offset consts + `offsets_match_borsh` pins replaced by discriminator-checked
+  `try_deserialize`/`try_serialize` in `utils::read_account`/`mutate_account`).
 
 ## How to read them
 
@@ -93,10 +97,9 @@ status banner is annotated.
 - **Auditing**: 0008 + 0009 + 0012 are the security-critical ADRs (snapshot fraud
   proofs → canonical accumulator, sortition enforcement, VRF integration).
 
-1. Number = next sequential (currently **0032**).
+1. Number = next sequential (currently **0033**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at
-   `apps/docs/adr/accord/`.
 4. Add a row to the table above.
 5. Reference related ADRs and beans.
