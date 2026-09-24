@@ -34,7 +34,7 @@ apps/
   canon/ synod/      Canon / Synod dApps (React + Vite)
   landing/           landing page (useaccord.xyz)
   hanse/             Hanse landing page (hanse.useaccord.xyz) — the protocol for mutuals
-  pitch/             demo-day deck — full-viewport slide app (content: meta/PITCH-MUTUAL.md)
+  pitch/             demo-day deck — full-viewport slide app (Accord-first golden-circle pitch; content + notes live in src/deck/slides.tsx)
   docs/              MkDocs site — docs/, adr/, beans/ (issue tracker storage)
 reports/             security reviews (accord, canon)
 runbooks/            Surfpool deployment runbooks (wired via txtx.yml + anchor test)

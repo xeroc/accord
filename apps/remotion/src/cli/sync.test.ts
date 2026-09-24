@@ -1,0 +1,184 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  collectTwClasses,
+  renderManifest,
+  renderTwClassesFile,
+  scanVideos,
+  sync,
+} from "./sync";
+
+const dirs: string[] = [];
+
+function tmp(): string {
+  const d = mkdtempSync(path.join(tmpdir(), "remotion-sync-"));
+  dirs.push(d);
+  return d;
+}
+afterEach(() => {
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
+describe("scanVideos", () => {
+  it("discovers dirs with index.ts or index.tsx, sorted, with src-relative import paths", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "beta"));
+    writeFileSync(path.join(root, "beta", "index.ts"), "export {}");
+    mkdirSync(path.join(root, "alpha"));
+    writeFileSync(path.join(root, "alpha", "index.tsx"), "export {}");
+    mkdirSync(path.join(root, "assets-only"));
+
+    expect(scanVideos(root)).toEqual([
+      { slug: "alpha", importPath: "../videos/alpha/index" },
+      { slug: "beta", importPath: "../videos/beta/index" },
+    ]);
+  });
+
+  it("skips the _template scaffold dir", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "_template"));
+    writeFileSync(path.join(root, "_template", "index.tsx"), "export {}");
+
+    expect(scanVideos(root)).toEqual([]);
+  });
+
+  it("rejects invalid slug names with a helpful error", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "Bad_Name"));
+    writeFileSync(path.join(root, "Bad_Name", "index.ts"), "export {}");
+
+    expect(() => scanVideos(root)).toThrow(/Bad_Name/);
+  });
+});
+
+describe("renderManifest", () => {
+  it("emits static imports plus the videos array", () => {
+    const out = renderManifest([
+      { slug: "how-it-works", importPath: "../videos/how-it-works/index" },
+      { slug: "example", importPath: "../videos/example/index" },
+    ]);
+
+    expect(out).toContain(
+      'import { video as video_how_it_works } from "../videos/how-it-works/index";',
+    );
+    expect(out).toContain(
+      'import { video as video_example } from "../videos/example/index";',
+    );
+    expect(out).toContain("export const videos: VideoDefinition[] = [");
+    expect(out).toContain("video_how_it_works,");
+    expect(out).toContain("video_example,");
+  });
+});
+
+describe("sync", () => {
+  it("writes the generated manifest file and reports the slugs", () => {
+    const videosRoot = tmp();
+    mkdirSync(path.join(videosRoot, "demo"));
+    writeFileSync(path.join(videosRoot, "demo", "index.tsx"), "export {}");
+    const outDir = tmp();
+    const outFile = path.join(outDir, "videos.gen.ts");
+    const twFile = path.join(outDir, "video-tw-classes.ts");
+
+    const result = sync(videosRoot, outFile, twFile);
+
+    expect(result.slugs).toEqual(["demo"]);
+    const content = readFileSync(outFile, "utf8");
+    expect(content).toContain('from "../videos/demo/index"');
+  });
+
+  it("is idempotent for unchanged content", () => {
+    const videosRoot = tmp();
+    mkdirSync(path.join(videosRoot, "demo"));
+    writeFileSync(path.join(videosRoot, "demo", "index.tsx"), "export {}");
+    const outDir = tmp();
+    const outFile = path.join(outDir, "videos.gen.ts");
+    const twFile = path.join(outDir, "video-tw-classes.ts");
+
+    sync(videosRoot, outFile, twFile);
+    const second = sync(videosRoot, outFile, twFile);
+
+    expect(second.changed).toBe(false);
+  });
+});
+
+describe("collectTwClasses / renderTwClassesFile", () => {
+  it("collects candidate classes from all video sources, sorted and unique", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo", "scenes"), { recursive: true });
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const v = <div className="text-7xl w-[430px]" />;',
+    );
+    writeFileSync(
+      path.join(root, "demo", "scenes", "s.tsx"),
+      "export const s = <div className={`text-7xl border-amber`} />;",
+    );
+
+    const classes = collectTwClasses(root);
+    expect(classes).toContain("text-7xl");
+    expect(classes).toContain("w-[430px]");
+    expect(classes).toContain("border-amber");
+    expect(classes.indexOf("text-7xl")).toBe(classes.lastIndexOf("text-7xl"));
+  });
+
+  it("skips plain identifiers without a dash, bracket, or slash", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo"));
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const hooks = "useCurrentFrame"; // Accord notAClass',
+    );
+
+    expect(collectTwClasses(root)).toEqual([]);
+  });
+
+  it("collects negative utilities (-top-14, -translate-x-1/2, -rotate-36)", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo"));
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const v = <div className="absolute -top-14 left-1/2 -translate-x-1/2 -rotate-36 -top-[86px]" />;',
+    );
+
+    const classes = collectTwClasses(root);
+    expect(classes).toContain("-top-14");
+    expect(classes).toContain("-translate-x-1/2");
+    expect(classes).toContain("-rotate-36");
+    expect(classes).toContain("-top-[86px]");
+  });
+
+  it("still rejects negative numbers and css variables as classes", () => {
+    const root = tmp();
+    mkdirSync(path.join(root, "demo"));
+    writeFileSync(
+      path.join(root, "demo", "index.tsx"),
+      'export const x = ["-460px", "-36deg", "var(--accord-amber)"];',
+    );
+
+    expect(collectTwClasses(root)).toEqual([]);
+  });
+
+  it("renders the manifest with the generated-file header", () => {
+    const out = renderTwClassesFile(["bg-amber", "text-7xl"]);
+    expect(out).toContain("GENERATED");
+    expect(out).toContain('"bg-amber text-7xl"');
+  });
+
+  it("sync writes the tw-classes file alongside the manifest", () => {
+    const videosRoot = tmp();
+    mkdirSync(path.join(videosRoot, "demo"));
+    writeFileSync(
+      path.join(videosRoot, "demo", "index.tsx"),
+      'export const v = <div className="text-7xl" />;',
+    );
+    const outDir = tmp();
+    const twFile = path.join(outDir, "video-tw-classes.ts");
+
+    sync(videosRoot, path.join(outDir, "videos.gen.ts"), twFile);
+
+    expect(readFileSync(twFile, "utf8")).toContain("text-7xl");
+  });
+});
