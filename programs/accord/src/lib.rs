@@ -5,23 +5,41 @@
 //! a Dispute; the Accord draws stake-weighted Jurors (VRF), collects
 //! commit-reveal votes, and emits Rulings governed by coherence incentives.
 //!
-//! ## Program surface (v1 target)
+//! ## Program surface
 //!
-//! - `create_subaccord` — permissionless specialized juror pool (staking token,
-//!   min stake, review/commit/reveal windows, alpha slash factor)
-//! - `stake` / `unstake` — juror capital into a Subaccord (USDC in v1)
+//! - `create_subaccord` — permissionless specialized juror pool (staking +
+//!   fee tokens, min stake, windows, alpha slash factor; ADR-0002/0020)
+//! - `stake` / `request_withdraw` / `withdraw` — juror capital in/out of a
+//!   Subaccord's `staking_token` (two-phase withdraw), plus the accumulator
+//!   cranks `reconcile_stake`, `prune_juror`, `reclaim_slot`
 //! - `create_dispute` — the **Arbitrable** CPI entry: subaccord, options,
 //!   evidence hash, fee → dispute id
-//! - `draw` — random stake-weighted juror selection (VRF)
-//! - `commit` / `reveal` — `hash(vote, salt)` then `{vote, salt}`
-//! - `appeal` — escalate to 2N+1 jurors; losing party posts an appeal bond
-//! - `execute_ruling` — write the winning option; lazy-read by the filer
+//! - `request_vrf` / `commit_vrf_callback` / `draw_seat` — stake-weighted
+//!   juror draw: the VRF callback freezes the MST accumulator root, then
+//!   seats are filled one per transaction (ADR-0009/0012/0013)
+//! - `commit` / `reveal` — `hash(vote_le ‖ salt ‖ juror)` then `{vote, salt}`
+//! - `finalize_round` / `finalize_dispute` / `settle_round` — tally the round,
+//!   write `final_ruling`, settle coherence economics; `get_ruling` is the
+//!   Arbitrable's lazy read
+//! - `appeal` — permissionless (ADR-0004): anyone may escalate a resolved
+//!   round to a 2N+1 panel; the appellant deposits the new round fee + bond
+//! - `redraw` / `cancel_dispute` — liveness cranks (reveal-shortfall redraw,
+//!   stalled-dispute escape; ADR-0014/0021)
+//! - `claim_appeal_refund` / `claim_filing_bounty` / `withdraw_fees` — return
+//!   custodied funds (bonds, filing bounty, earned fees)
+//! - `initialize_pause` / `pause` / `propose_unpause` / `execute_unpause` —
+//!   circuit breaker (ADR-0007/0016)
+//! - `propose_subaccord_update` / `execute_subaccord_update` — Subaccord
+//!   parameter governance behind a 48h slot timelock (ADR-0005)
+//! - `health` — liveness probe
 //!
 //! ## Spec authority
 //!
 //! - `PROJECT.md` (rationale), `CONTEXT.md` (domain language), `programs/accord/SPEC.md` (build spec)
-//! - `docs/adr/0001` Schelling, `0002` per-Subaccord staking token, `0003` draw,
-//!   `0004` party-agnostic, `0005` Subaccord authority, `0006` evidence, `0007` upgrade
+//! - `apps/docs/adr/accord/` — `0001` Schelling, `0002` per-Subaccord staking
+//!   token, `0003`/`0012` draw over the on-chain accumulator, `0004`
+//!   party-agnostic, `0005` Subaccord authority, `0006` evidence, `0007`
+//!   upgrade authority
 //!
 //! Build order: this program ships FIRST. Client programs (the Arbitrable)
 //! integrate via the Arbitrable CPI.
@@ -46,9 +64,9 @@ pub use instructions::*;
 pub use pda::*;
 pub use state::*;
 
-// Program id for the Accord. (`anchor build` normally provisions this; it is
-// blocked by the platform-tools/edition2024 toolchain issue — see AGENTS.md —
-// so the keypair was generated with `solana-keygen` into target/deploy/.)
+// Program id for the Accord. The canonical keypair lives in `target/deploy/`;
+// every build MUST pass `--ignore-keys` (see AGENTS.md) so `declare_id!` and
+// the Codama clients are never rewritten from it.
 declare_id!("cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed");
 
 #[program]
@@ -61,8 +79,8 @@ pub mod accord {
     /// Arbitrables / ops may call it to confirm the program is reachable. It
     /// exists so the testing harness has a trivial instruction to round-trip;
     /// every subsequent instruction ships with its own LiteSVM `#[test]`.
-    pub fn health(_ctx: Context<Health>) -> Result<()> {
-        Health::handler_health(_ctx)
+    pub fn health(ctx: Context<Health>) -> Result<()> {
+        Health::handler_health(ctx)
     }
 
     // --- Circuit breaker (ADR-0007; veridao-63v3; scope split ADR-0016) ---
@@ -169,8 +187,8 @@ pub mod accord {
     ///
     /// Any caller may trigger this — no tokens move, it's pure ledger + root
     /// accounting. The cranker supplies the juror's Merkle path (same format as
-    /// `stake`/`unstake`), which authenticates the old leaf against the stored
-    /// root and recomputes a new root for the adjusted amount.
+    /// `stake`/`request_withdraw`), which authenticates the old leaf against
+    /// the stored root and recomputes a new root for the adjusted amount.
     pub fn reconcile_stake(ctx: Context<ReconcileStake>, path: Vec<MSTNode>) -> Result<()> {
         ReconcileStake::handler_reconcile_stake(ctx, path)
     }
@@ -467,8 +485,10 @@ pub mod accord {
     pub fn claim_filing_bounty(ctx: Context<ClaimFilingBounty>) -> Result<()> {
         ClaimFilingBounty::handler_claim_filing_bounty(ctx)
     }
-    /// dispute has stalled past its per-stage timeout, any cranker may cancel
-    /// it: the filer's round-1 fee is refunded from the vault, the current
+
+    /// Permissionless crank (ADR-0014): if a dispute has stalled past its
+    /// per-stage timeout, any cranker may cancel it: the filer's round-1 fee
+    /// is refunded from the vault, the current
     /// round's drawn jurors have their `active_draws` released (post-draw
     /// stalls only), and the dispute transitions to the terminal `Failed`
     /// state.
