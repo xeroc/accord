@@ -140,3 +140,4 @@ export {
   type DrawCommitRevealDraw,
 } from "./mechanism/draw-commit-reveal";
 export { PayoutFlow } from "./mechanism/payout-flow";
+export { DisputeFlow } from "./mechanism/dispute-flow";
