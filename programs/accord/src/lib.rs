@@ -509,13 +509,13 @@ pub mod accord {
     ///   drawn `JurorStake` PDAs follow (`[1..=panel]`).
     ///
     /// `Final`/`Closed`/`Failed` are terminal and revert. The filer refund is
-    /// exactly the REMAINING `dispute.fee_paid` (C-1: the per-dispute fee pool
-    /// — NOT the shared vault balance; the fee_vault is one ATA for the entire
-    /// Subaccord). ADR-0029 D3: resolved rounds (a `RoundResolved` current
-    /// round, and prior appeal rounds) pay their revealers the base
-    /// participation fee out of `fee_paid`/bond fee portions BEFORE the refund
-    /// — no final ruling exists, so participation is the only judgeable act.
-    /// Appeal bonds stay claimable via `claim_appeal_refund`.
+    /// exactly `dispute.fee_paid` + the filer's own bounty unit (C-1: the
+    /// per-dispute fee pool — NOT the shared vault balance; the fee_vault is
+    /// one ATA for the entire Subaccord). ADR-0033: the Failed path pays NO
+    /// participation — no final ruling exists, so no coherence judgment is
+    /// possible, and `fee_paid` is never decremented before the refund.
+    /// Appeal bonds stay claimable via `claim_appeal_refund` (whole on
+    /// Failed — the appeal fee has no destination).
     pub fn cancel_dispute(ctx: Context<CancelDispute>) -> Result<()> {
         CancelDispute::handler_cancel_dispute(ctx)
     }

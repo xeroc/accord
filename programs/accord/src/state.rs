@@ -447,12 +447,12 @@ pub struct Round {
 /// final settlement is `final_ruling != prior_result`. `amount` stores the
 /// **total deposit** (appeal fee + bond); the appeal-fee portion is derived at
 /// settlement as `panel_size_for_round(round_idx) *
-/// fee_per_juror`. `claim_appeal_refund` ALWAYS returns only the bond — never
-/// the appeal fee — regardless of terminal state (bean accord-xftx). The
-/// appeal fee funds the round's fee pot at settlement (ADR-0029: coherent
-/// jurors split the whole pot; on a Failed dispute, resolved-round revealers
-/// bank the base participation fee from it; it is trapped in the vault only
-/// if the round never resolved).
+/// fee_per_juror`. `claim_appeal_refund` returns only the bond on **Final**
+/// — never the appeal fee (bean accord-xftx) — and the WHOLE deposit on
+/// **Failed** (ADR-0033: no ruling, no pay — the appeal fee's only
+/// destination, the round's jurors, earns nothing, so the unconsumed fee
+/// returns to its depositor). The appeal fee funds the round's fee pot at
+/// settlement (ADR-0029: coherent jurors split the whole pot).
 /// A no-flip bond is zeroed (`amount = 0`) by `finalize_dispute` (bond forfeited into the
 /// coherent fee pool); a flipped or unresolved bond keeps its `amount` until
 /// `claim_appeal_refund` returns the bond portion and zeroes the record

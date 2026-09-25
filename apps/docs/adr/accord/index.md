@@ -48,6 +48,7 @@ status banner is annotated.
 | [0030](0030-flip-bounty-finality-settled-appellant-reward.md)               | Flip-bounty — finality-settled reward for verdict-flipping appellants (blocked by 0029 plumbing)     | Accepted (impl pending) |
 | [0031](0031-evidence-v2-loose-per-file-transport.md)                        | Evidence v2 — loose per-file transport: manifest-first PUTs, split juror delivery, derived completeness (no index) | Accepted |
 | [0032](0032-remaining-accounts-full-anchor-deserialization.md)                | `remaining_accounts` use full Anchor deserialization (drop the manual layout offsets)                                              | Accepted             |
+| [0033](0033-failed-path-no-participation-no-ruling-no-pay.md)                  | Failed-path participation removed — no ruling, no pay (amends 0029 D3)                                                              | Accepted             |
 
 ### Supersession map
 
@@ -84,6 +85,11 @@ status banner is annotated.
 - **0032** supersedes the layout-offset consequences of **0020 / 0022 / 0023 / 0024** (manual
   byte-offset consts + `offsets_match_borsh` pins replaced by discriminator-checked
   `try_deserialize`/`try_serialize` in `utils::read_account`/`mutate_account`).
+- **0033** amends **0029 D3** (the Failed path): cancel/redraw-exhaustion pay no
+  participation — `fee_paid` is never decremented, the filer refund is exactly
+  the filing-time fee, and appeal bonds refund whole via `claim_appeal_refund`.
+  0029's finality-conditional fee settlement on the success path (and the
+  no-coherent revealers fallback, where a ruling exists) is unchanged.
 
 ## How to read them
 

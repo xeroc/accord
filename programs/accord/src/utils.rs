@@ -435,13 +435,13 @@ pub(crate) fn credit_bond_bounty_units<'info>(
 }
 
 /// Release `active_draws` for every juror in every prior round
-/// (`0..current_round`), and — ADR-0029 D3 — pay each prior round's
-/// **revealers** their base `fee_per_juror` participation fee. Used by
-/// `cancel_dispute` and `redraw`'s exhaustion branch (the Failed path: no
-/// final ruling exists, so no coherence judgment is possible — participation
-/// only). Round 0's consumption debits `dispute.fee_paid` (the filer's
-/// refundable pool); appeal rounds' fees are covered by their `AppealBond`'s
-/// fee portion (never the appellant's to reclaim — bean accord-xftx).
+/// (`0..current_round`). Used by `cancel_dispute` and `redraw`'s exhaustion
+/// branch (the Failed path). ADR-0033: no ruling exists on the Failed path,
+/// so no coherence judgment is possible — and no fee is paid either (no
+/// ruling, no pay). `dispute.fee_paid` is therefore never decremented before
+/// settlement: the filer refund is exactly the filing-time fee, and appeal
+/// bonds refund whole via `claim_appeal_refund` (the appeal fee's only
+/// destination — the round's jurors — is unpaid).
 ///
 /// Each round's `JurorStake` PDAs must follow the `Round` PDA in
 /// `remaining_accounts`, laid out sequentially starting at `start`.
@@ -453,8 +453,6 @@ pub(crate) fn release_prior_rounds<'info>(
     start: usize,
     current_round: u32,
     slash_per_juror: u64,
-    fee_per_juror: u64,
-    fee_paid: &mut u64,
 ) -> Result<usize> {
     if current_round == 0 {
         return Ok(start);
@@ -473,7 +471,7 @@ pub(crate) fn release_prior_rounds<'info>(
             AccordError::InvalidMembershipProof
         );
 
-        let (jurors, reveals): (Vec<Pubkey>, Vec<u64>) = {
+        let (jurors, _reveals): (Vec<Pubkey>, Vec<u64>) = {
             let loader = AccountLoader::<Round>::try_from(round_info)?;
             let round = loader.load()?;
             let count = round.juror_count as usize;
@@ -484,9 +482,6 @@ pub(crate) fn release_prior_rounds<'info>(
         };
         let count = jurors.len();
 
-        // ADR-0029 D3: participation pay — every revealer of a resolved prior
-        // round banks the base fee; the round-0 pot leaves `fee_paid`.
-        let mut round0_earned = 0u64;
         idx += 1;
         require!(idx + count <= accounts.len(), AccordError::InvalidPanelSize);
 
@@ -506,29 +501,12 @@ pub(crate) fn release_prior_rounds<'info>(
                 AccordError::InvalidMembershipProof
             );
             mutate_account::<JurorStake, _>(acct_info, |js| {
-                // Participation credit (ADR-0029 Failed path): revealers only.
-                if fee_per_juror > 0 && reveals[j] != u64::MAX {
-                    js.fees_earned = js
-                        .fees_earned
-                        .checked_add(fee_per_juror)
-                        .ok_or(AccordError::ArithmeticOverflow)?;
-                    if round_idx == 0 {
-                        round0_earned = round0_earned
-                            .checked_add(fee_per_juror)
-                            .ok_or(AccordError::ArithmeticOverflow)?;
-                    }
-                }
-                // Every drawn juror is released from this round.
+                // ADR-0033: release only — no participation credit on the
+                // Failed path (no ruling, no pay).
                 js.active_draws = js.active_draws.saturating_sub(1);
-                // Release slash reserve for this dispute.
                 js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
                 Ok(())
             })?;
-        }
-        if round_idx == 0 && round0_earned > 0 {
-            *fee_paid = fee_paid
-                .checked_sub(round0_earned)
-                .ok_or(AccordError::ArithmeticOverflow)?;
         }
         idx += count;
     }

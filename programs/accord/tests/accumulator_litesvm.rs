@@ -2037,10 +2037,9 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
         "vault retains appeal deposit + juror stake collateral"
     );
 
-    // claim_appeal_refund: appellant recovers ONLY the bond (bean accord-xftx).
-    // The appeal fee is never the appellant's to reclaim — it is owned by the
-    // round's jurors (credited if the round resolved) or trapped in the vault
-    // (this round never resolved, so it stays trapped).
+    // claim_appeal_refund: appellant recovers the WHOLE deposit (ADR-0033) —
+    // the appeal fee's only destination, the round's jurors, earns nothing
+    // on the Failed path, so the unconsumed fee returns to its depositor.
     let ix = env
         .ctx
         .program()
@@ -2060,24 +2059,25 @@ fn cancel_with_appeal_bond_reserves_and_claim_recovers() {
     let r = env.ctx.execute_instruction(ix, &[&env.creator]).unwrap();
     r.assert_success();
 
-    // Appellant received the bond + their +1 bounty unit (ADR-0030: cancel
-    // strips the unit onto the bond's `reward`).
+    // Appellant received the whole appeal deposit + their +1 bounty unit
+    // (ADR-0030 strip + ADR-0033 whole-refund).
     let appellant_after = env.ctx.svm.get_account(&appellant_ata).unwrap();
     let appellant_balance = u64::from_le_bytes(appellant_after.data[64..72].try_into().unwrap());
     assert_eq!(
         appellant_balance,
-        bond + TEST_FPJ,
-        "appellant recovers bond + bounty unit on cancel (not the appeal fee)"
+        bond + appeal_fee + TEST_FPJ,
+        "appellant recovers the whole deposit + bounty unit on cancel (ADR-0033)"
     );
 
-    // Vault retains juror stake collateral + the trapped appeal fee (the round
-    // never resolved, so no juror earned it; it is not the appellant's either).
+    // Vault retains only the juror stake collateral (ADR-0033: the appeal
+    // fee is no longer trapped — the appellant recovered the whole deposit,
+    // minus the stripped bounty unit that left with the filer refund path).
     let vault_final = env.ctx.svm.get_account(&vault).unwrap();
     let vault_final_balance = u64::from_le_bytes(vault_final.data[64..72].try_into().unwrap());
     assert_eq!(
         vault_final_balance,
-        stake_collateral + appeal_fee - TEST_FPJ,
-        "vault retains stake collateral + trapped appeal fee − the stripped bounty unit"
+        stake_collateral - TEST_FPJ,
+        "vault retains stake collateral − the stripped bounty unit (appeal fee refunded)"
     );
 }
 
@@ -2191,10 +2191,13 @@ fn cancel_after_real_appeal_no_double_refund() {
     let filer_refund = spl_balance(&env, &fata) - filer_before;
     let appellant_refund = spl_balance(&env, &appellant_ata) - appellant_before;
 
-    // Invariant: total refunds never exceed total deposits.
-    assert!(
-        filer_refund + appellant_refund <= round_0_fee + appeal_deposit,
-        "double-refund: filer={} appellant={} deposits={}",
+    // ADR-0033 conservation: with no participation on the Failed path, every
+    // deposited fee token is refunded — filer and appellant recover their
+    // full tenders including both bounty units; nothing is trapped.
+    assert_eq!(
+        filer_refund + appellant_refund,
+        round_0_fee + appeal_deposit + 2 * fee_per_juror,
+        "exact conservation: refunds == deposits (filer={} appellant={} deposits={})",
         filer_refund,
         appellant_refund,
         round_0_fee + appeal_deposit,
@@ -2206,12 +2209,13 @@ fn cancel_after_real_appeal_no_double_refund() {
         round_0_fee + fee_per_juror,
         "filer refund = round-0 filing fee + bounty unit"
     );
-    // Appellant recovers the bond + their stripped +1 unit (ADR-0030; the
-    // appeal fee is consumed by the round, or trapped if never resolved).
+    // Appellant recovers the WHOLE deposit + their stripped +1 unit
+    // (ADR-0033: the appeal fee's only destination — the round's jurors —
+    // earns nothing on the Failed path, so the unconsumed fee returns).
     assert_eq!(
         appellant_refund,
-        bond + fee_per_juror,
-        "appellant refund = bond + bounty unit"
+        appeal_deposit + fee_per_juror,
+        "appellant refund = whole deposit + bounty unit"
     );
 }
 
@@ -6831,10 +6835,11 @@ fn settle_round_lone_coherent_takes_whole_pot() {
 }
 
 #[test]
-fn cancel_after_resolved_round_pays_participation_then_refunds_remainder() {
-    // ADR-0029 L3 (cancel path): a RoundResolved current round pays its
-    // revealers the base participation fee out of fee_paid BEFORE the filer
-    // refund — no final ruling exists on the Failed path.
+fn cancel_after_resolved_round_pays_nothing_refunds_full() {
+    // ADR-0033 (cancel path): a RoundResolved current round pays its
+    // revealers NOTHING on cancel — no final ruling exists, and a fee paid
+    // regardless of outcome is what ADR-0029 removed from every other path.
+    // The filer refund is exactly the filing-time tender.
     let mut dd = setup_and_finalize(3_333, 3, 2); // 2 of 3 reveal vote 0 → resolved
     assert_eq!(dispute_state(&dd), DisputeState::RoundResolved);
 
@@ -6898,32 +6903,28 @@ fn cancel_after_resolved_round_pays_participation_then_refunds_remainder() {
 
     assert_eq!(dispute_state(&dd), DisputeState::Failed);
 
-    // Both revealers banked the base participation fee; the no-show nothing.
+    // ADR-0033: nobody banks anything — not the revealers, not the no-show.
     for (seat, &(_, leaf_idx)) in dd.drawn.iter().enumerate() {
         let js = read_juror_stake(&dd.env, &dd.env.subaccord, &dd.leaves[leaf_idx].0);
-        if seat < 2 {
-            assert_eq!(
-                js.fees_earned, TEST_FPJ,
-                "revealer seat {seat} participation"
-            );
-        } else {
-            assert_eq!(js.fees_earned, 0, "no-show seat {seat} gets nothing");
-        }
+        assert_eq!(
+            js.fees_earned, 0,
+            "seat {seat}: no ruling, no pay (ADR-0033)"
+        );
     }
-    // Filer refund = remaining fee_paid = 3·fee − 2·fee.
+    // Filer refund = the FULL filing tender (fee_paid never decremented).
     assert_eq!(
         spl_balance(&dd.env, &fata) - before,
-        4 * TEST_FPJ - 2 * TEST_FPJ,
-        "filer refunded the unconsumed remainder + their bounty unit (ADR-0030)"
+        4 * TEST_FPJ,
+        "filer refunded the full fee + their bounty unit (ADR-0033)"
     );
 }
 
 #[test]
-fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
-    // ADR-0029 L3 (redraw path): on exhaustion → Failed, each RESOLVED prior
-    // round's revealers bank the base fee (round 0 from fee_paid; the appeal
-    // round's from its bond's fee portion), the filer is refunded the
-    // remainder, and the bond stays claimable (bond-only).
+fn redraw_exhaustion_after_appeal_pays_nothing_refunds_full() {
+    // ADR-0033 (redraw path): on exhaustion → Failed, nobody earns — not
+    // round-0's revealers, not the appeal round's — the filer is refunded
+    // the FULL filing tender (fee_paid never decremented), and the bond
+    // refunds whole (deposit + unit).
     let mut env = setup_accumulator_with(6_666, 1, 3); // max_draw_attempts = 1
     let jurors = arm_n_stakers(&mut env, 7);
     let leaves: Vec<(Pubkey, u64)> = jurors.iter().map(|j| (j.pubkey(), 5_000u64)).collect();
@@ -7053,47 +7054,36 @@ fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
         DisputeState::Failed
     );
 
-    // Round-0's two revealers banked participation; round 1 (never resolved)
-    // paid nothing — its lone revealer gets no fee.
+    // ADR-0033: nobody banks anything on the Failed path — round-0's
+    // revealers included (no ruling, no pay).
     for &(seat, leaf_idx) in &drawn0 {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
         if votes0[seat as usize].is_some() {
-            assert_eq!(js.fees_earned, TEST_FPJ, "round-0 revealer participation");
+            assert_eq!(js.fees_earned, 0, "round-0 revealer: no ruling, no pay");
         } else {
             assert_eq!(js.fees_earned, 0);
         }
     }
-    // Round-1 jurors: a juror ALSO drawn (and revealing) in round 0 gains its
-    // round-0 participation inside this redraw; everyone else gains nothing —
-    // the unresolved shortfall round itself pays no one.
-    let r0_revealers: std::collections::HashSet<usize> = drawn0
-        .iter()
-        .filter(|&&(s, _)| votes0[s as usize].is_some())
-        .map(|&(_, l)| l)
-        .collect();
+    // Round-1 jurors: unchanged from before the redraw — the unresolved
+    // shortfall round pays no one, and round 0 no longer pays through it.
     for (i, &(seat, leaf_idx)) in drawn1.iter().enumerate() {
         let js = read_juror_stake(&env, &env.subaccord, &leaves[leaf_idx].0);
-        let expected = fees_before[i]
-            + if r0_revealers.contains(&leaf_idx) {
-                TEST_FPJ
-            } else {
-                0
-            };
         assert_eq!(
-            js.fees_earned, expected,
-            "unresolved shortfall round pays nothing (seat {seat})"
+            js.fees_earned, fees_before[i],
+            "nobody earns on the Failed path (seat {seat})"
         );
     }
 
-    // Filer refund = fee_paid minus round-0 participation = 150 − 100.
+    // Filer refund = the FULL filing tender (fee_paid never decremented).
     assert_eq!(
         spl_balance(&env, &fata) - before,
-        4 * TEST_FPJ - 2 * TEST_FPJ,
-        "filer refunded the unconsumed round-0 remainder + bounty unit (ADR-0030)"
+        4 * TEST_FPJ,
+        "filer refunded the full fee + bounty unit (ADR-0033)"
     );
 
-    // The bond stays claimable — bond portion only (the fee portion funded
-    // the never-resolved round 1 and is trapped).
+
+    // The bond stays claimable — WHOLE deposit + unit (ADR-0033: the appeal
+    // fee has no destination on the Failed path).
     let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
     let ix = env
         .ctx
@@ -7118,8 +7108,8 @@ fn redraw_exhaustion_after_appeal_pays_prior_round_participation() {
         .assert_success();
     assert_eq!(
         spl_balance(&env, &appellant_ata) - appellant_before_claim,
-        bond + TEST_FPJ,
-        "appellant recovers bond + their stripped bounty unit (ADR-0030)"
+        bond + appeal_fee + TEST_FPJ,
+        "appellant recovers the whole deposit + their stripped bounty unit (ADR-0033)"
     );
 }
 
@@ -7792,14 +7782,14 @@ fn cancel_refunds_filer_bounty_and_strips_appellant_units() {
         "cancel credits the appellant's +1"
     );
 
-    // Claim: bond (7·fpj) + unit — NOT the appeal fee.
+    // Claim: the WHOLE deposit (bond + appeal fee) + unit (ADR-0033).
     let appellant_ata = juror_ata(&appellant.pubkey(), &env.mint);
     let before = spl_balance(&env, &appellant_ata);
     do_claim_appeal_refund(&mut env, dispute, 0).assert_success();
     assert_eq!(
         spl_balance(&env, &appellant_ata) - before,
-        8 * TEST_FPJ,
-        "appellant recovers bond + their +1 unit"
+        15 * TEST_FPJ,
+        "appellant recovers the whole deposit + their +1 unit (ADR-0033)"
     );
 
     // Idempotent.
