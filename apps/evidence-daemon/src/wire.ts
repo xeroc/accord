@@ -20,10 +20,11 @@ import type { Accord } from "@useaccord/sdk";
 import { readDispute, readRound, readSubaccord, readSynodCase } from "./chain/reader";
 import {
   deliverToDeliveryKey,
-  ed25519ToX25519PublicKey,
   operatorDecrypt,
   sha256,
+  verifyDeliveryKeyRegistration,
 } from "@useaccord/sdk/evidence";
+import type { DeliveryKeyStore, JurorDeliveryKey } from "./store/delivery-key.js";
 import { EnvKeyring } from "./keys/keyring";
 import { deliver, deliverFile } from "./pipeline/deliver";
 import {
@@ -50,15 +51,17 @@ import {
 import type { DomainStore } from "./store/domain";
 import type {
   DeliverHandler,
+  DeliverFileHandler,
+  DeliveryKeyGetHandler,
+  DeliveryKeyPutHandler,
   DomainGetHandler,
   DomainPutHandler,
   IngestHandler,
+  IngestFileHandler,
   ManifestHandler,
   ServerDeps,
   SynodIngestHandler,
   SynodManifestHandler,
-  IngestFileHandler,
-  DeliverFileHandler,
 } from "./server/handlers";
 import type { KeyringPublicKeys } from "./server/public-keys";
 
@@ -116,6 +119,8 @@ function fromStoreBundle(b: StoreBundle): EvidenceBundle {
 export interface WireDeps {
   /** Ciphertext store (v1: S3Store). Address-typed. */
   readonly store: EvidenceStore;
+  /** Delivery Key registry (ADR-0034) — same backend selection as `store`. */
+  readonly deliveryKeyStore: DeliveryKeyStore;
   /** Public domain-doc CAS (ADR-0027) — same backend selection as `store`. */
   readonly domainStore: DomainStore;
   /** PUT /domains/{hash} body cap in bytes (default 1 MiB, config.ts). */
@@ -261,14 +266,19 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
         return null;
       }
     },
-    // TODO(accord-5wkt): strict ADR-0034 delivery — resolve the juror's
-    // registered Delivery Key from the DeliveryKeyStore after the drawn gate
-    // (none ⇒ 404). Until that lands, this adapter is the ONLY remaining
-    // Ed→X delivery use: it bridges the drawn juror's Ed25519 pubkey to
-    // X25519, preserving the pre-ADR-0034 dual-use semantics byte-for-byte.
-    async reencryptToJuror(watermarked: Uint8Array, jurorPubkey: Uint8Array) {
-      const jb = await deliverToDeliveryKey(watermarked, ed25519ToX25519PublicKey(jurorPubkey));
+    // STRICT (ADR-0034): re-encrypt to the juror's registered Delivery Key —
+    // raw X25519, no Ed→X conversion anywhere in delivery.
+    async reencryptToDeliveryKey(watermarked: Uint8Array, deliveryEncPub: Uint8Array) {
+      const jb = await deliverToDeliveryKey(watermarked, deliveryEncPub);
       return { out: jb.out, operator_ephem_pub: jb.operator_ephem_pub };
+    },
+  };
+
+  // --- Delivery Key registry adapter (ADR-0034): pipeline bytes → store Address ---
+  const deliveryKeys = {
+    async resolve(juror: Uint8Array) {
+      const k = await deps.deliveryKeyStore.get(bytesToAddr(juror));
+      return k === null ? null : k.encPub;
     },
   };
 
@@ -491,6 +501,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       store: deliverStore,
       chain: deliverChain,
       keyring: deliverKeyring,
+      deliveryKeys,
       crypto,
       watermark: NoOpWatermark,
     });
@@ -524,6 +535,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       store: deliverStore,
       chain: deliverChain,
       keyring: deliverKeyring,
+      deliveryKeys,
       crypto,
       watermark: NoOpWatermark,
     });
@@ -638,6 +650,52 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       : { ok: false, status: out.status, error: out.reason };
   };
 
+  // --- Delivery Key registration handlers (ADR-0034) ---
+  // Gates in order: address decode → body shape → wallet signature →
+  // monotonic registered_at (replay-downgrade protection) → overwrite.
+  const deliveryKeyPutHandler: DeliveryKeyPutHandler = async (jurorStr, body) => {
+    let juror: Uint8Array;
+    try {
+      juror = b58ToBytes(jurorStr);
+    } catch {
+      return { ok: false, status: 400, error: "invalid base58 address" };
+    }
+    const parsed = parseDeliveryKeyBody(body);
+    if (parsed === null) {
+      return { ok: false, status: 400, error: "malformed delivery key registration" };
+    }
+    if (!verifyDeliveryKeyRegistration(juror, parsed.encPub, parsed.registeredAt, parsed.sig)) {
+      return { ok: false, status: 400, error: "signature does not verify for juror" };
+    }
+    const addr = bytesToAddr(juror);
+    const stored = await deps.deliveryKeyStore.get(addr);
+    if (stored !== null && parsed.registeredAt <= stored.registeredAt) {
+      return { ok: false, status: 409, error: "stale registered_at (replay-downgrade refused)" };
+    }
+    const k: JurorDeliveryKey = {
+      juror: addr,
+      encPub: parsed.encPub,
+      registeredAt: parsed.registeredAt,
+    };
+    await deps.deliveryKeyStore.put(k);
+    return { ok: true, status: 201 };
+  };
+  const deliveryKeyGetHandler: DeliveryKeyGetHandler = async (jurorStr) => {
+    let juror: Uint8Array;
+    try {
+      juror = b58ToBytes(jurorStr);
+    } catch {
+      return { ok: false, status: 404, error: "invalid address" };
+    }
+    const k = await deps.deliveryKeyStore.get(bytesToAddr(juror));
+    if (k === null) return { ok: false, status: 404, error: "no delivery key registered" };
+    return {
+      ok: true,
+      status: 200,
+      body: { enc_pub: bytesToBase64(k.encPub), registered_at: k.registeredAt },
+    };
+  };
+
   return {
     ingest: ingestHandler,
     ingestFile: ingestFileHandler,
@@ -647,6 +705,8 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     synodManifest: synodManifestHandler,
     deliver: deliverHandler,
     deliverFile: deliverFileHandler,
+    deliveryKeyPut: deliveryKeyPutHandler,
+    deliveryKeyGet: deliveryKeyGetHandler,
     manifest: manifestHandler,
     publicKeys: deps.publicKeys,
     health: deps.health,
@@ -678,6 +738,30 @@ function parseIngestBody(body: unknown): ParsedBundle | null {
       claimant_ephem_pub: base64ToBytes(asString(o.claimant_ephem_pub)),
       wrapped: base64ToBytes(asString(o.wrapped)),
       plaintext_hash: base64ToBytes(asString(o.plaintext_hash)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface ParsedDeliveryKey {
+  readonly encPub: Uint8Array;
+  readonly registeredAt: number;
+  readonly sig: Uint8Array;
+}
+
+function parseDeliveryKeyBody(body: unknown): ParsedDeliveryKey | null {
+  if (body === null || typeof body !== "object") return null;
+  const o = body as Record<string, unknown>;
+  if (typeof o.enc_pub !== "string" || typeof o.sig !== "string") return null;
+  if (typeof o.registered_at !== "number" || !Number.isSafeInteger(o.registered_at)) {
+    return null;
+  }
+  try {
+    return {
+      encPub: base64ToBytes(o.enc_pub),
+      registeredAt: o.registered_at,
+      sig: base64ToBytes(o.sig),
     };
   } catch {
     return null;

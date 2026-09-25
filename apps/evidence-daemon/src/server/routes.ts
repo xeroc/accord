@@ -2,12 +2,13 @@
  * Evidence HTTP routes (ADR-0011 §HTTP API). Pure wiring: parse path params,
  * guard shape, delegate to injected handlers, map results to HTTP responses.
  * No domain logic lives here.
- *
  *   POST /evidence/synod/:case/:party          → synod ingest handler (pre-dispute grouping, accord-1viq)
  *   GET  /evidence/synod/:case                 → synod manifest handler (assembled group, accord-lry5)
  *   POST /evidence/:subaccord/:dispute[/:round]   → ingest handler (round default 0)
  *   GET  /evidence/:dispute/for/:juror            → deliver handler
  *   GET  /evidence/:subaccord/:dispute[/:round]   → manifest handler (public, round default 0)
+ *   PUT  /jurors/:juror/delivery-key              → Delivery Key registration (ADR-0034)
+ *   GET  /jurors/:juror/delivery-key              → registered Delivery Key (ADR-0034)
  */
 import { Hono } from "hono";
 import type { ServerDeps } from "./handlers.js";
@@ -195,6 +196,29 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     if (!ADDRESS.test(subaccord)) return badAddress("subaccord");
     if (!ADDRESS.test(dispute)) return badAddress("dispute");
     const res = await deps.manifest(subaccord, dispute, 0);
+    if (res.ok) return Response.json(res.body, { status: 200 });
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  // Delivery Key registration (ADR-0034): register/rotate + read-back. Open
+  // registration — the wallet signature IS the binding; delivery gates on
+  // Round.jurors[] separately.
+  app.put("/jurors/:juror/delivery-key", async (c) => {
+    const juror = c.req.param("juror");
+    if (!ADDRESS.test(juror)) return badAddress("juror");
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== "object") {
+      return Response.json({ error: "invalid json body" }, { status: 400 });
+    }
+    const res = await deps.deliveryKeyPut(juror, body);
+    if (res.ok) return c.body(null, 201);
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  app.get("/jurors/:juror/delivery-key", async (c) => {
+    const juror = c.req.param("juror");
+    if (!ADDRESS.test(juror)) return badAddress("juror");
+    const res = await deps.deliveryKeyGet(juror);
     if (res.ok) return Response.json(res.body, { status: 200 });
     return Response.json({ error: res.error }, { status: res.status });
   });

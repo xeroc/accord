@@ -36,8 +36,8 @@ const SUB = new Uint8Array(32).fill(0x01);
 const DISPUTE = new Uint8Array(32).fill(0x07); // == case.dispute (bound)
 const JUROR = new Uint8Array(32).fill(0x05);
 const OP_SK = new Uint8Array(32).fill(0x99);
+const DELKEY_PUB = new Uint8Array(32).fill(0xe1); // registered Delivery Key pub (ADR-0034)
 const NON_SYNOD_FILER = new Uint8Array(32).fill(0x0d);
-
 /** Party i's committed hash / stub-plaintext (identity sha256: hash == bytes). */
 function partyBytes(i: number): Uint8Array {
   return new Uint8Array(32).fill(0xa0 + i);
@@ -109,12 +109,53 @@ function stubCrypto() {
     async unwrap(bundle: EvidenceBundle) {
       return { plaintext: bundle.ct };
     },
-    async reencryptToJuror(wm: Uint8Array) {
+    async reencryptToDeliveryKey(wm: Uint8Array) {
       return { out: wm, operator_ephem_pub: new Uint8Array(32).fill(0xff) };
     },
   };
 }
 
+test("synod deliver: STRICT — bound case + drawn juror without a Delivery Key → 404 (ADR-0034)", async () => {
+  const h = [partyBytes(0), partyBytes(1)];
+  const out = await deliver(
+    DISPUTE,
+    JUROR,
+    deps(
+      groupStore(
+        new Map([
+          [0, slotBundle(0)],
+          [1, slotBundle(1)],
+        ]),
+      ),
+      chain({ filer: CASE, evidenceHash0: concatRoot(CASE, h), synodCase: caseView(2) }),
+    ),
+  );
+  // The rig's resolver always returns a key — force the strict path directly.
+  const outStrict = await deliver(DISPUTE, JUROR, {
+    store: groupStore(
+      new Map([
+        [0, slotBundle(0)],
+        [1, slotBundle(1)],
+      ]),
+    ),
+    chain: chain({ filer: CASE, evidenceHash0: concatRoot(CASE, h), synodCase: caseView(2) }),
+    keyring: {
+      async forOperator() {
+        return OP_SK;
+      },
+    },
+    deliveryKeys: {
+      async resolve() {
+        return null;
+      },
+    },
+    crypto: stubCrypto(),
+  });
+  assert.equal(out.status, 200); // control: with a key it delivers
+  assert.equal(outStrict.status, 404);
+  if (outStrict.status !== 404) throw new Error("unreachable");
+  assert.match(outStrict.reason, /delivery key/i);
+});
 function deps(store: DeliverStore, ch: DeliverChainReader): DeliverDeps {
   return {
     store,
@@ -122,6 +163,11 @@ function deps(store: DeliverStore, ch: DeliverChainReader): DeliverDeps {
     keyring: {
       async forOperator() {
         return OP_SK;
+      },
+    },
+    deliveryKeys: {
+      async resolve() {
+        return DELKEY_PUB;
       },
     },
     crypto: stubCrypto(),

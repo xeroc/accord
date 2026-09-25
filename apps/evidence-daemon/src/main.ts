@@ -24,6 +24,9 @@ import { EnvKeyring } from "./keys/keyring.js";
 import type { EvidenceStore } from "./store/store.js";
 import { FsStore } from "./store/fs.js";
 import { S3Store } from "./store/s3.js";
+import type { DeliveryKeyStore } from "./store/delivery-key.js";
+import { FsDeliveryKeyStore } from "./store/delivery-key-fs.js";
+import { S3DeliveryKeyStore } from "./store/delivery-key-s3.js";
 import type { DomainStore } from "./store/domain.js";
 import { FsDomainStore } from "./store/domain-fs.js";
 import { S3DomainStore } from "./store/domain-s3.js";
@@ -68,6 +71,7 @@ function main(): void {
   let store: EvidenceStore;
   let storagePing: () => Promise<boolean>;
   let domainStore: DomainStore;
+  let deliveryKeyStore: DeliveryKeyStore;
   if (cfg.storage.kind === "fs") {
     // Pre-create the root so /healthz is green from boot (the store creates
     // parent dirs lazily per-object, but the probe stat()s the root itself).
@@ -75,6 +79,7 @@ function main(): void {
     const root = cfg.storage.fs.rootDir;
     store = new FsStore({ rootDir: root });
     domainStore = new FsDomainStore({ rootDir: root });
+    deliveryKeyStore = new FsDeliveryKeyStore({ rootDir: root });
     storagePing = async () => {
       try {
         return (await stat(root)).isDirectory();
@@ -113,6 +118,7 @@ function main(): void {
         : {}),
       ...(cfg.storage.s3.kmsKeyId ? { kmsKeyId: cfg.storage.s3.kmsKeyId } : {}),
     });
+    deliveryKeyStore = new S3DeliveryKeyStore({ client: s3Client, bucket });
     storagePing = async () => {
       try {
         await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
@@ -143,6 +149,7 @@ function main(): void {
   const deps = createServerDeps({
     store,
     domainStore,
+    deliveryKeyStore,
     maxDomainBytes: srv.maxDomainBytes,
     maxEntries: srv.maxEntries,
     maxDocBytes: srv.maxDocBytes,

@@ -12,12 +12,15 @@ import bs58 from "bs58";
 import { DisputeState } from "@useaccord/sdk";
 
 import {
+  buildDeliveryKeyMessage,
   claimantEncrypt,
   ed25519PublicKeyFromSeed,
-  ed25519SecretToX25519,
+  generateDeliveryKey,
   jurorDecryptDelivery,
   sha256,
 } from "@useaccord/sdk/evidence";
+import { ed25519 } from "@noble/curves/ed25519";
+import type { DeliveryKeyStore, JurorDeliveryKey } from "../src/store/delivery-key";
 import { EnvKeyring } from "../src/keys/keyring";
 import {
   base64ToBytes,
@@ -36,6 +39,8 @@ const operatorSeed = crypto.getRandomValues(new Uint8Array(32));
 const operatorPub = ed25519PublicKeyFromSeed(operatorSeed);
 const jurorSeed = crypto.getRandomValues(new Uint8Array(32));
 const jurorPub = ed25519PublicKeyFromSeed(jurorSeed);
+/** The juror's registered Delivery Key (ADR-0034). */
+const jurorDelivery = generateDeliveryKey();
 
 const SUB: Address = address("11111111111111111111111111111111");
 const CASE: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -170,10 +175,26 @@ async function rig(opts: {
       ingestedAt: 1,
     });
   }
+  // ADR-0034: the drawn juror's Delivery Key is pre-registered (as if via
+  // PUT /jurors/{juror}/delivery-key before the draw).
+  let storedDeliveryKey: JurorDeliveryKey | null = {
+    juror: address(bs58.encode(jurorPub)),
+    encPub: jurorDelivery.publicKey,
+    registeredAt: 1,
+  };
+  const deliveryKeyStore: DeliveryKeyStore = {
+    async put(k: JurorDeliveryKey) {
+      storedDeliveryKey = k;
+    },
+    async get() {
+      return storedDeliveryKey;
+    },
+  };
   const deps = createServerDeps({
     store,
     accord,
     domainStore: memoryDomainStore(),
+    deliveryKeyStore,
     maxDomainBytes: 1_048_576,
     keyring: EnvKeyring.fromEnv(bs58.encode(operatorSeed)),
     health: async () => ({ ok: true }),
@@ -237,15 +258,14 @@ test("synod wire: deliver bridge — drawn juror gets one package per party slot
   if (!res.ok) throw new Error("unreachable");
   expect(res.status).toBe(200);
   expect(res.body.rounds.map((r) => r.round)).toEqual([0, 1]);
-  // TODO(accord-5wkt): strict ADR-0034 delivery replaces this Ed-seed bridge
-  // with a registered Delivery Key + registration flow.
-  const jxSk = ed25519SecretToX25519(jurorSeed);
+  // Juror decrypts each party package with its registered Delivery Key secret
+  // (ADR-0034 strict delivery; the rig registers jurorDelivery pre-dispute).
   const p0 = await jurorDecryptDelivery(
     {
       out: base64ToBytes(res.body.rounds[0]!.out),
       operator_ephem_pub: base64ToBytes(res.body.rounds[0]!.operator_ephem_pub),
     },
-    jxSk,
+    jurorDelivery.secretKey,
   );
   expect(p0).toEqual(PT0);
   const p1 = await jurorDecryptDelivery(
@@ -253,7 +273,7 @@ test("synod wire: deliver bridge — drawn juror gets one package per party slot
       out: base64ToBytes(res.body.rounds[1]!.out),
       operator_ephem_pub: base64ToBytes(res.body.rounds[1]!.operator_ephem_pub),
     },
-    jxSk,
+    jurorDelivery.secretKey,
   );
   expect(p1).toEqual(PT1);
 });
@@ -333,4 +353,43 @@ test("synod wire: manifest GET — unknown case → 404", async () => {
   expect(res.ok).toBe(false);
   if (res.ok) throw new Error("unreachable");
   expect(res.status).toBe(404);
+});
+
+// -------------------------------------------- delivery-key routes (wire) ---
+
+test("jurors route: PUT delivery-key (sig-valid) → 201; GET → 200; sig-invalid → 400", async () => {
+  const { app } = await rig({ bound: false });
+  const juror58 = bs58.encode(jurorPub);
+  const registeredAt = Date.now();
+  const sig = ed25519.sign(
+    buildDeliveryKeyMessage(jurorDelivery.publicKey, registeredAt),
+    jurorSeed,
+  );
+
+  const put = await app.request(`http://x/jurors/${juror58}/delivery-key`, {
+    method: "PUT",
+    body: JSON.stringify({
+      enc_pub: Buffer.from(jurorDelivery.publicKey).toString("base64"),
+      registered_at: registeredAt,
+      sig: Buffer.from(sig).toString("base64"),
+    }),
+  });
+  expect(put.status).toBe(201);
+
+  const get = await app.request(`http://x/jurors/${juror58}/delivery-key`);
+  expect(get.status).toBe(200);
+  const body = (await get.json()) as { enc_pub: string; registered_at: number };
+  expect(body.registered_at).toBe(registeredAt);
+  expect(Buffer.from(body.enc_pub, "base64")).toEqual(Buffer.from(jurorDelivery.publicKey));
+
+  // Sig-invalid registration through the route → 400.
+  const bad = await app.request(`http://x/jurors/${juror58}/delivery-key`, {
+    method: "PUT",
+    body: JSON.stringify({
+      enc_pub: Buffer.from(jurorDelivery.publicKey).toString("base64"),
+      registered_at: registeredAt + 1,
+      sig: Buffer.from(new Uint8Array(64)).toString("base64"),
+    }),
+  });
+  expect(bad.status).toBe(400);
 });

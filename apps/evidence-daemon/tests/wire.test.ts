@@ -14,12 +14,16 @@ import bs58 from "bs58";
 import { DisputeState } from "@useaccord/sdk";
 
 import {
+  buildDeliveryKeyMessage,
   claimantEncrypt,
   ed25519PublicKeyFromSeed,
-  ed25519SecretToX25519,
+  generateDeliveryKey,
   jurorDecryptDelivery,
   sha256,
 } from "@useaccord/sdk/evidence";
+import { ed25519 } from "@noble/curves/ed25519";
+import type { DeliveryKeyStore, JurorDeliveryKey } from "../src/store/delivery-key";
+
 import { EnvKeyring } from "../src/keys/keyring";
 import {
   bytesToBase64,
@@ -31,12 +35,12 @@ import { type DomainStore } from "../src/store/domain";
 import { createServerDeps } from "../src/wire";
 import { stubAccord } from "./helpers/accordStub.ts";
 import type { KeyringPublicKeys } from "../src/server/public-keys";
-
-// --- key fixtures: real Ed25519 keys (crypto needs genuine material) -------
 const operatorSeed = crypto.getRandomValues(new Uint8Array(32));
 const operatorPub = ed25519PublicKeyFromSeed(operatorSeed);
 const jurorSeed = crypto.getRandomValues(new Uint8Array(32));
 const jurorPub = ed25519PublicKeyFromSeed(jurorSeed);
+/** The juror's registered Delivery Key (ADR-0034). */
+const jurorDelivery = generateDeliveryKey();
 
 // Path addresses (arbitrary valid base58; the system-program id = 32 zero bytes).
 const SUB: Address = address("11111111111111111111111111111111");
@@ -100,8 +104,37 @@ function memoryDomainStore(): DomainStore {
     },
   };
 }
+/** In-memory DeliveryKeyStore stand-in (ADR-0034). */
+function memoryDeliveryKeyStore(): DeliveryKeyStore {
+  const byJuror = new Map<string, JurorDeliveryKey>();
+  return {
+    async put(k) {
+      byJuror.set(k.juror, k);
+    },
+    async get(juror) {
+      return byJuror.get(juror) ?? null;
+    },
+  };
+}
 
-async function rig() {
+/** Sign + PUT a registration for the drawn juror through the real handler. */
+async function registerJurorDeliveryKey(deps: {
+  deliveryKeyPut: (juror: string, body: unknown) => Promise<{ ok: boolean }>;
+}): Promise<void> {
+  const registeredAt = Date.now();
+  const sig = ed25519.sign(
+    buildDeliveryKeyMessage(jurorDelivery.publicKey, registeredAt),
+    jurorSeed,
+  );
+  const res = await deps.deliveryKeyPut(bs58.encode(jurorPub), {
+    enc_pub: bytesToBase64(jurorDelivery.publicKey),
+    registered_at: registeredAt,
+    sig: bytesToBase64(sig),
+  });
+  expect(res.ok).toBe(true);
+}
+
+async function rig(registerDeliveryKey = true) {
   const evidenceHash = await sha256(PLAINTEXT);
   const accord = await stubAccord({
     subaccord: {
@@ -132,6 +165,7 @@ async function rig() {
     store,
     accord,
     domainStore: memoryDomainStore(),
+    deliveryKeyStore: memoryDeliveryKeyStore(),
     maxDomainBytes: 1_048_576,
     maxEntries: 64,
     maxDocBytes: 10_485_760,
@@ -140,6 +174,7 @@ async function rig() {
     health: async () => ({ ok: true }),
     publicKeys,
   });
+  if (registerDeliveryKey) await registerJurorDeliveryKey(deps);
   return { deps, store, evidenceHash, accord };
 }
 
@@ -168,16 +203,15 @@ test("wire: ingest + deliver round-trip — juror decrypts to the original plain
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
   expect(delivered.ok).toBe(true);
   if (!delivered.ok) throw new Error("unreachable");
-  // Juror decrypts with its own seed — recovers exactly the claimant's plaintext.
-  // (Body is { rounds: [...] } per ADR-0023; round 0 is the filer's package.)
-  // TODO(accord-5wkt): strict ADR-0034 delivery replaces this Ed-seed bridge
-  // with a registered Delivery Key + registration flow.
+  // Juror decrypts with its registered Delivery Key secret — recovers exactly
+  // the claimant's plaintext (ADR-0034 strict delivery; the rig registers
+  // jurorDelivery for the drawn juror before delivering).
   const recovered = await jurorDecryptDelivery(
     {
       out: base64ToBytes(delivered.body.rounds[0]!.out),
       operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
     },
-    ed25519SecretToX25519(jurorSeed),
+    jurorDelivery.secretKey,
   );
   expect(recovered).toEqual(PLAINTEXT);
 });
@@ -218,6 +252,7 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
     store,
     accord,
     domainStore: memoryDomainStore(),
+    deliveryKeyStore: memoryDeliveryKeyStore(),
     maxDomainBytes: 1_048_576,
     maxEntries: 64,
     maxDocBytes: 10_485_760,
@@ -240,21 +275,19 @@ test("wire: malformed POST body (missing fields) → 400", async () => {
   expect(res.status).toBe(400);
 });
 
-test("wire: a different juror's seed cannot decrypt the delivered bundle", async () => {
+test("wire: a different Delivery Key secret cannot decrypt the delivered bundle", async () => {
   const { deps } = await rig();
   await deps.ingest(SUB, DISPUTE, 0, await postBody());
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
   if (!delivered.ok) throw new Error("unreachable");
-  // TODO(accord-5wkt): strict ADR-0034 delivery — stranger test moves to a
-  // non-registered Delivery Key; the Ed-seed bridge keeps the 409 contract.
-  const stranger = ed25519SecretToX25519(crypto.getRandomValues(new Uint8Array(32)));
+  // Any key but the registered one fails the AES-GCM auth tag.
   await expect(
     jurorDecryptDelivery(
       {
         out: base64ToBytes(delivered.body.rounds[0]!.out),
         operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
       },
-      stranger,
+      generateDeliveryKey().secretKey,
     ),
   ).rejects.toThrow();
 });
@@ -319,6 +352,7 @@ test("wire: multifile — POST manifest with entries, PUT document (real ECIES)"
     store: memoryStore(),
     accord,
     domainStore: memoryDomainStore(),
+    deliveryKeyStore: memoryDeliveryKeyStore(),
     maxDomainBytes: 1_048_576,
     maxEntries: 64,
     maxDocBytes: 10_485_760,
@@ -357,4 +391,141 @@ test("wire: multifile — POST manifest with entries, PUT document (real ECIES)"
     plaintext_hash: bytesToBase64(wrong.plaintext_hash),
   });
   expect(put2.ok).toBe(false);
+});
+
+// --- Delivery Key registration + strict delivery (ADR-0034) -----------------
+
+test("delivery-key: register happy → 201; GET returns the registered key", async () => {
+  const { deps } = await rig();
+  const got = await deps.deliveryKeyGet(bs58.encode(jurorPub));
+  expect(got.ok).toBe(true);
+  if (!got.ok) throw new Error("unreachable");
+  expect(base64ToBytes(got.body.enc_pub)).toEqual(jurorDelivery.publicKey);
+  expect(typeof got.body.registered_at).toBe("number");
+});
+
+test("delivery-key: GET before any registration → 404", async () => {
+  const { deps } = await rig(false);
+  const got = await deps.deliveryKeyGet(bs58.encode(jurorPub));
+  expect(got.ok).toBe(false);
+  if (got.ok) throw new Error("unreachable");
+  expect(got.status).toBe(404);
+});
+
+test("delivery-key: signature by a different wallet → 400", async () => {
+  const { deps } = await rig(false);
+  const registeredAt = Date.now();
+  const sig = ed25519.sign(
+    buildDeliveryKeyMessage(jurorDelivery.publicKey, registeredAt),
+    crypto.getRandomValues(new Uint8Array(32)),
+  );
+  const res = await deps.deliveryKeyPut(bs58.encode(jurorPub), {
+    enc_pub: bytesToBase64(jurorDelivery.publicKey),
+    registered_at: registeredAt,
+    sig: bytesToBase64(sig),
+  });
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(400);
+});
+
+test("delivery-key: stale registered_at (≤ stored) → 409; rotation with a later ts → 201", async () => {
+  const { deps } = await rig();
+  const stored = await deps.deliveryKeyGet(bs58.encode(jurorPub));
+  if (!stored.ok) throw new Error("unreachable");
+
+  // Replay at the SAME ts — even sig-valid — is refused (replay-downgrade).
+  const sig = ed25519.sign(
+    buildDeliveryKeyMessage(jurorDelivery.publicKey, stored.body.registered_at),
+    jurorSeed,
+  );
+  const replay = await deps.deliveryKeyPut(bs58.encode(jurorPub), {
+    enc_pub: bytesToBase64(jurorDelivery.publicKey),
+    registered_at: stored.body.registered_at,
+    sig: bytesToBase64(sig),
+  });
+  expect(replay.ok).toBe(false);
+  if (replay.ok) throw new Error("unreachable");
+  expect(replay.status).toBe(409);
+
+  // Rotation (new key, later ts) succeeds and is what GET serves next.
+  const rotated = generateDeliveryKey();
+  const sig2 = ed25519.sign(
+    buildDeliveryKeyMessage(rotated.publicKey, stored.body.registered_at + 1),
+    jurorSeed,
+  );
+  const res2 = await deps.deliveryKeyPut(bs58.encode(jurorPub), {
+    enc_pub: bytesToBase64(rotated.publicKey),
+    registered_at: stored.body.registered_at + 1,
+    sig: bytesToBase64(sig2),
+  });
+  expect(res2.ok).toBe(true);
+  const after = await deps.deliveryKeyGet(bs58.encode(jurorPub));
+  if (!after.ok) throw new Error("unreachable");
+  expect(base64ToBytes(after.body.enc_pub)).toEqual(rotated.publicKey);
+});
+
+test("delivery-key: malformed body → 400", async () => {
+  const { deps } = await rig(false);
+  const res = await deps.deliveryKeyPut(bs58.encode(jurorPub), { enc_pub: "not-b64!!" });
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(400);
+});
+
+test("deliver: STRICT — drawn juror without a registered Delivery Key → 404 (ADR-0034)", async () => {
+  const { deps } = await rig(false);
+  await deps.ingest(SUB, DISPUTE, 0, await postBody());
+  const res = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
+  expect(res.ok).toBe(false);
+  if (res.ok) throw new Error("unreachable");
+  expect(res.status).toBe(404);
+  expect(res.error).toMatch(/delivery key/i);
+});
+
+test("deliver: self-heal — after re-registration the juror decrypts again", async () => {
+  // Another origin rotated the key; the local origin finds GET ≠ local pub,
+  // re-registers (one signMessage), re-pulls, and decrypts (ADR-0034 §self-heal).
+  const { deps } = await rig(false);
+  await deps.ingest(SUB, DISPUTE, 0, await postBody());
+
+  // Another origin's key is registered first.
+  const otherOrigin = generateDeliveryKey();
+  const ts = Date.now();
+  const otherSig = ed25519.sign(buildDeliveryKeyMessage(otherOrigin.publicKey, ts), jurorSeed);
+  expect(
+    (
+      await deps.deliveryKeyPut(bs58.encode(jurorPub), {
+        enc_pub: bytesToBase64(otherOrigin.publicKey),
+        registered_at: ts,
+        sig: bytesToBase64(otherSig),
+      })
+    ).ok,
+  ).toBe(true);
+
+  // The local origin re-registers (monotonic ts: strictly later) + re-pulls.
+  const localSig = ed25519.sign(
+    buildDeliveryKeyMessage(jurorDelivery.publicKey, ts + 1),
+    jurorSeed,
+  );
+  expect(
+    (
+      await deps.deliveryKeyPut(bs58.encode(jurorPub), {
+        enc_pub: bytesToBase64(jurorDelivery.publicKey),
+        registered_at: ts + 1,
+        sig: bytesToBase64(localSig),
+      })
+    ).ok,
+  ).toBe(true);
+
+  const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
+  if (!delivered.ok) throw new Error("unreachable");
+  const recovered = await jurorDecryptDelivery(
+    {
+      out: base64ToBytes(delivered.body.rounds[0]!.out),
+      operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
+    },
+    jurorDelivery.secretKey,
+  );
+  expect(recovered).toEqual(PLAINTEXT);
 });

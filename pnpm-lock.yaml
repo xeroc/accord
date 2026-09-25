@@ -288,6 +288,9 @@ importers:
       '@eslint/js':
         specifier: ^9.35.0
         version: 9.39.5
+      '@noble/curves':
+        specifier: ^1.9.7
+        version: 1.9.7
       '@types/bs58':
         specifier: ^4.0.1
         version: 4.0.4
