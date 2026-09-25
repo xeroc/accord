@@ -96,7 +96,37 @@ Claimant posts `bundle` to `POST /evidence/{subaccord}/{dispute}`. `plaintext_ha
 **must** equal the dispute's on-chain `evidence_hash`; the daemon enforces this
 at ingest (and again at delivery as a tamper gate).
 
-### Delivery re-encryption (operator → drawn juror)
+### Delivery Key registration (juror → operator; ADR-0034)
+
+Browser wallets expose `signMessage` only — no key export, no ECDH — so
+delivery cannot target the juror's wallet key. A juror registers a **Delivery
+Key**: a self-generated X25519 keypair (noble; the raw secret stays
+client-side in origin-scoped storage) whose public half is bound to the
+wallet by an Ed25519 signature:
+
+```
+msg  = utf8("accord-delkey-v1\nregistered_at:{ms}\nenc_pub:{base58}")
+sig  = ed25519.sign(msg, wallet_sk)       // wallet signMessage — any adapter
+```
+
+Registration gates:
+
+- **Signature gate:** `sig` must verify against `{juror}`. Open registration —
+  no staked/drawn requirement (delivery already gates on `Round.jurors[]`; a
+  chain-read gate would race with draws).
+- **Replay gate (monotonic):** reject when `registered_at <=
+  stored.registered_at`. A replayed superseded registration (e.g. an
+  exfiltrated old key after rotation) must never downgrade the juror back to
+  it. Clock skew backwards ⇒ rejected; re-register once the clock catches up.
+- **No origin binding (deliberate):** the message is daemon-agnostic — the
+  same Delivery Key may be registered at several daemons; a cross-daemon
+  replay only ever registers the juror's own chosen key.
+- **One active key per juror, last-writer-wins.** Rotation = re-register +
+  re-pull (delivery re-encrypts per request; nothing stored is keyed). A
+  client that finds itself stale (decrypt failure, or `GET` shows a different
+  `enc_pub`) re-registers and re-pulls — one `signMessage`.
+
+### Delivery re-encryption (operator → drawn juror) — STRICT (ADR-0034)
 
 ```
 // 1. decrypt claimant ciphertext
@@ -112,26 +142,37 @@ require!(sha256(plaintext) == dispute.evidence_hash)   // else: refuse + alert
 // 3. watermark seam (no-op pass-through in v1)
 watermarked  = Watermark.apply(plaintext, juror_pubkey)
 
-// 4. re-encrypt to the juror's X25519 key
-juror_x25519 = Ed25519ToX25519(juror_pubkey)           // from Round.jurors[]
+// 4. resolve the juror's registered Delivery Key — STRICT
+delivery_key = deliveryKeys.get(juror_pubkey)          // juror ∈ Round.jurors[]
+require!(delivery_key != null)                         // unregistered ⇒ 404
+
+// 5. re-encrypt to the Delivery Key (native X25519 — no Ed→X conversion)
 ephem2_sk    = random X25519 secret
-shared_out   = X25519(ephem2_sk, juror_x25519)
+shared_out   = X25519(ephem2_sk, delivery_key.enc_pub)
 k_out        = HKDF-SHA256(shared_out, info="accord-deliver-v1")
 out          = AES-256-GCM.encrypt(k_out, watermarked)
 
-// 5. discard plaintext; return
+// 6. discard plaintext; return
 { out, operator_ephem_pub: X25519_pub(ephem2_sk) }
 ```
 
-Juror decrypts symmetrically: convert own Ed25519 secret → X25519,
-`X25519(juror_sk, operator_ephem_pub)`, HKDF, AES-GCM decrypt → cleartext; then
-verifies `sha256(cleartext) == dispute.evidence_hash` (ADR-0006).
+Juror decrypts with the Delivery Key secret: `X25519(delivery_sk,
+operator_ephem_pub)`, HKDF (`accord-deliver-v1`), AES-GCM decrypt → cleartext;
+then verifies `sha256(cleartext) == dispute.evidence_hash` (ADR-0006).
 
-**Why pull + no auth is safe:** step 4 targets the Juror pubkey, so the returned
-`out` is decryptable only by the Juror key. A non-Juror fetching gets ciphertext
-it cannot read. Per-Juror watermarking (step 3, v1.1) embeds the fingerprint in
-`watermarked` _before_ the Juror-bound encryption, so only the Juror key can
-ever surface the fingerprint — attribution holds without request auth.
+**Strict mode:** there is no Ed→X fallback — a drawn juror without a
+registered Delivery Key gets `404`. The construction and HKDF label are
+unchanged from the dual-use era; only the target key differs (ADR-0034), so
+the `JurorBundle { out, operator_ephem_pub }` wire shape is identical.
+`Ed25519ToX25519PublicKey` survives only on the ingest path (claimant →
+operator).
+
+**Why pull + no auth is safe:** step 5 targets a key only the juror holds
+(their Delivery Key), so the returned `out` is decryptable only by the juror.
+A non-juror fetching gets ciphertext it cannot read. Per-Juror watermarking
+(step 3, v1.1) embeds the fingerprint in `watermarked` _before_ the
+juror-bound encryption, so only the Delivery Key can ever surface the
+fingerprint — attribution holds without request auth.
 
 ### Per-round delivery (ADR-0023 — in flight, milestone `accord-qp7c`)
 
@@ -248,6 +289,27 @@ credentials (and vice versa).
   metastable race — a conflicting PUT does not occur in the protocol).
 - **Single-node only.** For HA / multi-replica, use S3 (or a shared volume).
 
+### Delivery Key registry (storage seam — ADR-0034)
+
+```ts
+interface JurorDeliveryKey {
+  juror: PublicKey; // wallet pubkey — the map key (base58 path component)
+  enc_pub: Uint8Array; // X25519 public key, 32 bytes — the delivery target
+  registered_at: number; // unix ms, from the signed message (monotonic gate)
+}
+
+interface DeliveryKeyStore {
+  put(k: JurorDeliveryKey): Promise<void>; // overwrite; caller gates sig + monotonic first
+  get(juror: PublicKey): Promise<JurorDeliveryKey | null>;
+}
+```
+
+- One object per juror, last-writer-wins. Key `juror-keys/{juror}` on both
+  backends (S3 object / `{EVIDENCE_FS_ROOT_DIR}/juror-keys/{juror}.json`);
+  retention sweeps never touch the namespace (it is not dispute-scoped).
+- Same S3/fs clients as the evidence store — another `Storage`-seam tenant.
+- Only `enc_pub` exists server-side; the secret never leaves the client.
+
 ### Domain CAS namespace (storage seam — ADR-0027)
 
 Public, content-addressed storage for domain documents (canon's
@@ -344,6 +406,9 @@ apps/evidence-daemon/
       domain.ts                // DomainStore trait — public doc CAS (ADR-0027)
       domain-s3.ts             // S3/MinIO impl — key domains/{hash}
       domain-fs.ts             // local filesystem impl — domains/{hash}.json envelope
+      delivery-key.ts           # DeliveryKeyStore trait + JurorDeliveryKey record (ADR-0034)
+      delivery-key-s3.ts        # S3/MinIO impl — key juror-keys/{juror}
+      delivery-key-fs.ts        # local filesystem impl — juror-keys/{juror}.json
     chain/
       reader.ts                // @useaccord/sdk reads (Subaccord/Dispute/Round)
       events.ts                // log subscriber (DisputeCreated/JurorsDrawn/RulingFinalized)
@@ -388,11 +453,18 @@ header is accepted for **accounting only** — it never grants or denies access
 | GET    | `/domains/{hash}`                           | → `200` the stored bytes + stored Content-Type; `ETag: {hash}`, `Cache-Control: immutable` (retention is forever — no DELETE route, sweeps never touch `domains/`). `404` unknown hash; `400` malformed hash. No auth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | GET    | `/healthz`                                  | `200` if Storage + RPC reachable, else `503`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | GET    | `/config`                                   | → `200` `{ operators: [{ base58, hex }] }` — the operator Ed25519 **public** keys loaded into the keyring (== on-chain `evidence_operator` set). Discloses nothing else: no seeds, no RPC/storage/server config. Pubkeys are public by construction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| PUT    | `/jurors/{juror}/delivery-key`                | Register/rotate the juror's Delivery Key (ADR-0034). Body `{ enc_pub: base64(32B X25519), registered_at: unix-ms, sig: base64(Ed25519 over "accord-delkey-v1\nregistered_at:{ms}\nenc_pub:{base58}") }`. Gates: malformed body / signature not verifying against `{juror}` ⇒ `400`; `registered_at <= stored.registered_at` ⇒ `409` (stale — replay protection); accept ⇒ `201`. Open registration: no staked/drawn requirement. |
+| GET    | `/jurors/{juror}/delivery-key`                | → `200 { enc_pub, registered_at }` — the currently registered key; `404` when none. Public by design (a public key + timestamp): clients use it to detect staleness and self-heal (re-register + re-pull). |
 
 Delivery preconditions (enforced via live account reads): `Dispute.state` is at
 or past Drawn for the current round; `{juror}` ∈ `Round.jurors[]` for that
 round; a bundle exists for each `(dispute.subaccord, dispute, round)` where
 `evidence_hashes[round]` is non-zero and `round ≤ juror's round` (ADR-0023).
+
+**Strict Delivery Keys (ADR-0034):** every delivery route additionally
+requires a registered Delivery Key for `{juror}` — unregistered ⇒ `404`.
+Applies to `for/{juror}`, the per-file route, and the Synod group bridge
+alike; there is no Ed→X fallback.
 
 ## Configuration
 
@@ -425,9 +497,11 @@ EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
 
 ## Deployment / HA
 
-- **Stateless replicas.** Delivery is a pure function of `(bundle, juror_pubkey,
-operator_key)`; ingest is an object PUT. Run N replicas behind a TCP/TLS load
-  balancer. No session affinity.
+- **Stateless replicas.** Delivery is a pure function of `(bundle, juror's
+  registered Delivery Key, operator_key)`; ingest is an object PUT; the
+  Delivery Key registry rides the shared storage backend. Run N replicas
+  behind a TCP/TLS load balancer. No session affinity.
+
 - **Shared state.** All replicas share the same `EVIDENCE_KEYRING` env (injected
   by the orchestrator) and the same storage backend (S3 bucket for HA; the FS
   backend is single-node — share via a volume at your own discretion).
@@ -445,6 +519,10 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   bundle is ever stored, the delivery integrity gate refuses (`409`) and alerts.
 - **Premature fetch** (dispute not yet drawn, or juror not in `Round.jurors[]`):
   `404`. Juror retries after `JurorsDrawn`.
+- **Juror without a registered Delivery Key:** `404` (strict, ADR-0034).
+  Clients self-heal — `GET /jurors/{juror}/delivery-key`, compare with the
+  local key, re-register (one `signMessage`) and re-pull. Replay of a
+  superseded registration dies at the monotonic `registered_at` gate.
 - **Integrity gate failure at delivery** (stored plaintext ≠ on-chain
   `evidence_hash`): `409`, alert, quarantine object.
 - **Unknown operator** (Subaccord's `evidence_operator` not in the keyring map):
@@ -481,6 +559,12 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   accounting-only API key. No auth path exists to brute-force.
 - **TLS mandatory** — ciphertext is the confidentiality layer, but TLS prevents
   metadata/traffic analysis and request enumeration.
+- **Delivery Keys (ADR-0034):** the registration signature binds the X25519
+  key to the wallet pubkey; only the public half is ever stored server-side.
+  The monotonic `registered_at` gate makes replayed registrations useless —
+  the one attack that matters (downgrade to an exfiltrated superseded key)
+  fails. Custody is client-side (noble, origin-scoped browser storage); a
+  stolen key grants reads only until the juror rotates (re-register + re-pull).
 
 ## Testing strategy
 
@@ -503,6 +587,7 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
 - ADR-0011 (this daemon's decision), ADR-0006 (evidence), ADR-0005 (authority),
   ADR-0007 (upgrade/multisig), ADR-0023 (per-round evidence hashes),
   ADR-0027 (domain document registry — public CAS on this daemon)
+- ADR-0034 (Delivery Keys — registered X25519 keys, strict juror delivery)
 - `apps/evidence-daemon/EVIDENCE-FORMAT.md` §9 (per-round data format)
 - `programs/accord/SPEC.md` (Evidence flow), `programs/accord/src/state.rs:33,265`
 - `CONTEXT.md` — Evidence Operator

@@ -1,5 +1,10 @@
 # Evidence crypto protocol lives in @accord/sdk — shared by claimant, operator, and juror (amends ADR-0011)
 
+> **Status:** Partially superseded by [ADR-0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md) —
+> juror-side Ed↔X25519 dual-use delivery is replaced by registered Delivery Keys
+> (strict mode). The SDK-home decision, the noble spine, and the operator-side
+> dual-use for claimant→operator ingest all stand.
+
 The evidence encryption protocol — ECIES ingest/deliver envelopes, AES-256-GCM,
 HKDF-SHA256, and the Ed25519↔X25519 conversion (ADR-0006's "standard asymmetric
 encryption" decrypt-re-encrypt) — is a **multi-party wire contract** pinned by

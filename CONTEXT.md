@@ -66,6 +66,10 @@ _Avoid_: client, consumer (of the accord)
 A Subaccord-designated off-chain service that re-encrypts the filer's evidence for the drawn Jurors of that Subaccord.
 _Avoid_: evidence relay, decryption service, coordinator
 
+**Delivery Key**:
+A Juror-held keypair, registered with an Evidence Operator under the Juror's wallet signature, to which evidence delivery is re-encrypted — separate from the wallet's signing identity, which wallets never expose for decryption. One active Delivery Key per Juror per Evidence Operator; rotating is re-registering and re-pulling, since delivery re-encrypts per request.
+_Avoid_: session key, encryption key, browser key, enckey
+
 **Credential Authority**:
 A trusted off-chain service that issues Solana Attestation Service (SAS) attestations binding a Juror's wallet to a credential under a schema. A peer of the Evidence Operator: where the Evidence Operator controls evidence delivery, the Credential Authority controls who may sit on a gated Subaccord's panel. A Subaccord opts into the gate by setting `juror_credential`/`juror_schema` at creation; thereafter every Juror must hold a valid, unexpired attestation from this authority to stake and be drawn. Like the Evidence Operator, the trust is explicit and off-chain — the Accord verifies the attestation's on-chain binding, not the authority's judgment.
 _Avoid_: attestation issuer, KYC provider (unless it literally is one), identity oracle
