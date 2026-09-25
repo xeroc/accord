@@ -9,6 +9,9 @@
  */
 
 export interface ParsedManifest {
+  /** Top-level `schema:` value; "" when absent (pre-schema bytes). The daemon
+   * dispatches multifile on schema + entries (milestone accord-5d0r). */
+  schema: string;
   title: string;
   /** Markdown claim body; "" when absent (pre-`description` manifests). */
   description: string;
@@ -20,6 +23,13 @@ export interface ParsedManifest {
   options: { index: number; label: string }[];
   entries: { path: string; sha256: string }[];
 }
+/** Flow-map scalar: `"quoted"` wins; else the run up to `,`/`}`, trimmed. */
+function scalar(item: string, key: string): string {
+  const quoted = item.match(new RegExp(`${key}:\\s*"([^"]*)"`))?.[1];
+  if (quoted !== undefined) return quoted;
+  return item.match(new RegExp(`${key}:\\s*([^,}]+)`))?.[1]?.trim() ?? "";
+}
+
 
 /** Parse the `accord-evidence/v1` YAML format (produced by `buildManifest`). */
 export function parseManifest(text: string): ParsedManifest {
@@ -51,20 +61,30 @@ export function parseManifest(text: string): ParsedManifest {
       const label = item.match(/label:\s*"([^"]*)"/)?.[1] ?? "";
       options.push({ index, label });
     } else if (section === "entries") {
-      const path = item.match(/path:\s*"([^"]*)"/)?.[1] ?? "";
-      const sha256 = item.match(/sha256:\s*"([^"]*)"/)?.[1] ?? "";
+      // Quoted (buildManifest emits yamlQuote) or unquoted scalar (riprap
+      // wizard) — both valid up to the row's `,`/`}` delimiter.
+      const path = scalar(item, "path");
+      const sha256 = scalar(item, "sha256");
       entries.push({ path, sha256 });
     }
   }
 
   // description is JSON-escaped on a single line (see buildManifest); getField
   // strips the outer quotes, so re-quote + JSON.parse to unescape markdown.
+  // Total function: malformed bytes fall back to the raw string — callers at
+  // trust boundaries reject the manifest, the parser never throws.
   const descriptionRaw = getField("description");
-  const description = descriptionRaw
-    ? (JSON.parse(`"${descriptionRaw}"`) as string)
-    : "";
+  let description = descriptionRaw ?? "";
+  if (descriptionRaw) {
+    try {
+      description = JSON.parse(`"${descriptionRaw}"`) as string;
+    } catch {
+      description = descriptionRaw;
+    }
+  }
 
   return {
+    schema: getField("schema") ?? "",
     title: getField("title") ?? "Untitled dispute",
     description,
     filedAt: getField("filed_at") ?? "—",

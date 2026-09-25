@@ -3,7 +3,8 @@
  * `create_dispute` fee. SDK: `requiredFee` (methods/dispute.ts:113).
  *
  * The panel for round 1 is the fixed `INITIAL_NUM_JURORS` (=3), so the fee is
- * `3 · fee_per_juror`. No signer, no RPC — extends `BaseCommand`. Matches the
+ * `(min_jury_size + 1) · fee_per_juror` (ADR-0030: the round-1 juror pot +
+ * one flip-bounty unit). No signer, no RPC — extends `BaseCommand`. Matches the
  * value `dispute:create --fee auto` computes on-chain.
  */
 import { Flags } from "@oclif/core";
@@ -14,7 +15,7 @@ import { BaseCommand, accordBaseFlags } from "../../lib/base-command.js";
 import { groupBigInt } from "../../lib/format.js";
 
 export default class DisputeRequiredFee extends BaseCommand {
-  static summary = "Compute the round-1 create_dispute fee (pure; 3 × fee-per-juror)";
+  static summary = "Compute the round-1 create_dispute tender (pure; (J+1) × fee-per-juror)";
 
   static description =
     "Print the total fee a filer must deposit to file a dispute, given a " +

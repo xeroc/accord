@@ -16,6 +16,9 @@ import { registerCrank, type CrankDispatch } from "../../dispatch.js";
 import type { ActionOf, CrankContext, CrankResult } from "../../types.js";
 import { fetchSubaccord } from "../../util.js";
 
+/** `u32::MAX` — `Subaccord.freeHead` empty-list sentinel. */
+const UINT32_MAX = 4294967295;
+
 export async function execute(
   ctx: CrankContext,
   action: ActionOf<"reclaim_slot">,
@@ -49,12 +52,25 @@ export async function execute(
   // Build the Merkle path for the drained juror's leaf position.
   const proof = await prepareStakeProof(view, leaves, js.juror);
 
+  // accord-b5v5: the free list is doubly linked — pushing onto a NON-empty
+  // list must pass the current head's JurorStake account (remaining_accounts[0])
+  // so the program can rewire its prevFree to the pushed index.
+  const freeHead = subaccord.data.freeHead;
+  const headSlotAccount =
+    freeHead !== UINT32_MAX
+      ? (allStakes.find((s) => s.data.treeIndex === freeHead)?.address ?? null)
+      : null;
+  if (freeHead !== UINT32_MAX && !headSlotAccount) {
+    return { skipped: "free-list head account not found" };
+  }
+
   // Build + send the reclaim instruction.
   const ix = reclaimSlot(
     ctx.accord.adapter,
     ctx.programId,
     { subaccord: action.subaccord, jurorStake: action.jurorStake },
     proof.path,
+    headSlotAccount ?? undefined,
   );
   const signature = await ctx.sendIx(ix);
   ctx.log("reclaim_slot", null, `${action.subaccord} idx=${js.treeIndex} ${signature}`);

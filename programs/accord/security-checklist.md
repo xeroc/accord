@@ -45,7 +45,7 @@
 | L-4 | 🟢 Low | No mint validation at registration | ✅ Fixed — `Account<Mint>` in context |
 | L-5 | 🟢 Low | Legacy Token only (no Token-2022) | ⚠️ Accepted — fails closed |
 | SR2-M-1 | 🟡 Medium | Median pools accept `reveal_threshold_bps = 0` — zero-reveal rounds resolve with a fabricated `final_ruling = 0` (review SR2 2026-08-19) | ✅ Fixed — Median-only creation bound; comment corrected; LiteSVM + e2e tests |
-| SR2-M-2 | 🟡 Medium | `reclaim_slot` bricks the drained juror's re-staking until another staker recycles the slot (review SR2 2026-08-19) | ✅ Fixed — `stake` re-claims own blanked slot at the free-list head (root-based disambiguation); `SlotAwaitingRecycle` mid-list |
+| SR2-M-2 | 🟡 Medium | `reclaim_slot` bricks the drained juror's re-staking until another staker recycles the slot (review SR2 2026-08-19) | ✅ Fixed — doubly-linked free list (accord-b5v5): `stake` re-claims the own blanked slot by splicing out of ANY list position (root-based disambiguation + `prev_free`/`next_free`); `SlotAwaitingRecycle` retained but unreachable; LiteSVM + e2e splice tests |
 | SR2-L-1 | 🟢 Low | `MaxAppeals` update skips the appeal-ladder cross-field invariant (review SR2) | ✅ Fixed — `validate_update_cross_field` at propose + execute |
 | SR2-L-2 | 🟢 Low | `RedrawEligible` has no `cancel_dispute` timeout escape (review SR2) | Open — hardening |
 | SR2-L-3 | 🟢 Low | Settle credits from uncapped gross slashes; safety rests on `draw_seat`'s free-stake gate (review SR2) | ✅ Fixed — credit pool from capped debits |
@@ -53,6 +53,15 @@
 | SR2-L-5 | 🟢 Low | `propose_unpause` repeatable — pushes unpause ETA forward (review SR2) | ✅ Fixed — arms once |
 | SR2-L-6 | 🟢 Low | `attestation_horizon` u64→i64 wrapping cast (review SR2) | Open — checked cast |
 | SR2-I-1..5 | ⚪ Info | AppealBond seed doc mismatch; Token-2022 migration prerequisite (gross-vs-net fees); `Unstaked` event overload; unreachable `Closed` state; VRF window tradeoff (review SR2) | Notes — see `reports/accord/2026-08-19-accord-security-review.md` |
+| 0030-1 | 🟡 Medium | Flip-bounty double-pay: the Failed path strips each appellant's +1 onto their bond while the filer refund also pays the pool — an accounting slip would mint tokens from the shared vault (ADR-0030) | ✅ Fixed — `credit_bond_bounty_units` moves `unit` onto `bond.reward` AND subtracts the same total from `bounty_pool` BEFORE the filer refund (`fee_paid + bounty_pool` post-strip); `claim_appeal_refund` = `amount − fee + reward`, zero-on-claim for BOTH columns; LiteSVM `cancel_refunds_filer_bounty_and_strips_appellant_units` + `redraw_exhaustion_after_appeal…` |
+| 0030-2 | 🟡 Medium | Aligned-flipper misclassification pays the pool to a wrong appellant (ADR-0030) | ✅ Fixed — alignment reads only the bond chain (`prior_result ≠ final_ruling` ∧ next bond's `prior_result == final_ruling`), with the pinned `round_idx == i+1` invariant; non-aligned keep bond-only, no-flip forfeits per the UNCHANGED ADR-0004 rule; LiteSVM whipsaw + failed-appeal tests |
+| 0030-3 | 🟢 Low | `claim_filing_bounty` on a Final-with-appeals dispute would double-pay the pool | ✅ Fixed — requires `Final ∧ current_round == 0 ∧ bounty_pool > 0`; every other terminal shape zeroes or refunds the pool first; e2e `appeal.spec.ts` |
+| SR3-H-1 | 🟠 High | Undrawable stake weight (post-freeze withdrawal / sub-min dust leaves / expired credentials) is a sortition dead zone: `draw_seat` cannot skip it, the seat deadlocks, and the dispute exits only via the 3-day pre-draw cancel. A majority staker cycling withdraw-after-freeze bricks pool resolution at ~zero cost (review 2026-09-23) | 🟥 Open — needs a proof-of-undrawable skip in `draw_seat` + a `request_withdraw`/re-stake minimum gate |
+| SR3-M-1 | — | **Tombstone — never registered.** The ID was allocated in the reviewer's working notes and withdrawn before registration (registered set per bean accord-6zpj: H-1/M-2/L-3..5; the original `reports/` bodies were never committed — `jj log -r 'files("reports/**")'` is empty). Recorded so the numbering gap stops sending auditors hunting. | ⚪ Retired |
+| SR3-M-2 | 🟡 Medium | Fee-on-transfer `fee_token`: dispute liabilities (`fee_paid`, `bounty_pool`, `AppealBond.amount`) are booked at the nominal fee while the vault receives the actual delta — every refund pays nominal from the SHARED vault, draining other depositors by the transfer-fee delta per file→cancel cycle (review 2026-09-23) | ✅ Fixed 2026-09-24 — fail-closed exact-delta custody: `require!(delta == fee)` / `require!(delta == total)` after the vault reload at `create_dispute`/`appeal`; liabilities stay nominal and always deposit-backed. Unreachable today (classic Token transfers exact; Token-2022 rejected at the `Mint` constraint) and harness-inexpressible (SR3-L-3 precedent) — pinned by code comments + `fee_vault_deposited == tender` LiteSVM assertions. A registration-time fee-mint rejection remains a Token-2022-migration TODO |
+| SR3-L-3 | 🔵 Low | `commit_vrf_callback` gated only on `!= Failed` — leaned on "every post-`Created` state implies `committed_vrf.is_some()`" instead of pinning the precondition (review 2026-09-23) | ✅ Fixed — requires `state == Created`. Untestable in LiteSVM/Surfpool (the scoped VRF identity PDA cannot sign in either harness — same limitation as the existing freeze tests); pinned by the SPEC row + code comment |
+| SR3-L-4 | 🔵 Low | MST verifiers did not pin `path.len() == depth` or `index < 2^depth` — the walk reads only the low `path.len()` bits of `index`, so an aliased index verified identically (review 2026-09-23) | ✅ Fixed — both verifiers take `depth` and reject malformed proofs up front; RED-then-GREEN host test `aliased_index_beyond_tree_depth_is_rejected` (the aliased index genuinely verified pre-fix) + `path_length_must_equal_tree_depth` pin |
+| SR3-L-5 | 🔵 Low | `MAX_SORTITION_RETRIES = 1024` was unreachable inside the 1.4M CU per-instruction cap, and its comment promised crankers could raise the limit (they cannot) — degenerate chains died on CU exhaustion, never reaching `MaxRetriesExceeded` (review 2026-09-23) | ✅ Fixed — cap lowered to 128 with a truthful comment; RED-then-GREEN LiteSVM test `draw_seat_rejects_retries_above_cu_bounded_cap` (a genuine 483-retry chain succeeded pre-fix, 106k CU measured); SDK `MAX_SORTITION_RETRIES` mirror + CLI/cranker/e2e call sites migrated |
 
 ---
 
@@ -93,7 +102,8 @@ Every privileged action binds to a `Signer` + identity check (`pause`,
 Named accounts: `Account<T>` / `AccountLoader<T>` / `Program<T>` enforce
 owner + discriminator at deserialization. `remaining_accounts`: PDA
 re-derivation + owner check (`require!(owner == &crate::ID)`) at all sites
-(M-2 fix).
+(M-2 fix) **plus** full Anchor deserialization — discriminator-checked
+`try_deserialize` via `utils::read_account`/`mutate_account` (ADR-0032).
 
 ### 1.3 Account data matching — ✅
 
@@ -102,7 +112,7 @@ PDA seeds re-derive each account from stored relationship fields.
 ### 1.4 Type cosplay — ✅
 
 Anchor discriminators everywhere named; `remaining_accounts` checked via
-PDA derivation + owner check.
+PDA derivation + owner check + discriminator-checked deserialization.
 
 ### 1.5 Reinitialization — ✅
 
@@ -137,13 +147,14 @@ Distinct `associated_token::authority` constraints make all token-account
 pairs structurally distinct. PDA derivation enforces distinctness for
 `remaining_accounts`.
 
----
-
 ## 5. CPI safety — ✅
 
 Program IDs hardcoded via `Program<T>`. `reload()` after every custodying
-transfer. Fee-on-transfer delta accounting on stake/create_dispute/appeal.
-PDA-signed sweeps extend signer privilege only to the Subaccord PDA.
+transfer. Fee-on-transfer delta accounting on the vault ledger
+(stake/create_dispute/appeal); dispute-side liabilities are booked at the
+nominal fee, pinned deposit-backed by the SR3-M-2 exact-delta custody guard
+(fixed 2026-09-24). PDA-signed sweeps extend signer
+privilege only to the Subaccord PDA.
 
 ---
 
@@ -172,9 +183,9 @@ fix). A future migration to `Interface<TokenInterface>` +
 
 ## 9. Safe Rust patterns — ✅
 
-No `unsafe`. No `unwrap()`/`expect()` on user-controlled paths — all
-`.unwrap()` calls are on statically-sized slices after explicit length
-checks. `remaining_accounts` apply PDA + owner + length checks (M-2).
+No `unsafe`. No `unwrap()`/`expect()` on user-controlled paths —
+`remaining_accounts` are fully Anchor-deserialized after PDA + owner checks
+(no manual byte slicing; M-2 + ADR-0032).
 
 ---
 

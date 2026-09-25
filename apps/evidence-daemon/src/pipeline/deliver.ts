@@ -36,6 +36,9 @@
  * juror pubkey, so every returned `out` is decryptable only by the juror key.
  * Do NOT add request auth.
  */
+import { parseManifest } from "@useaccord/sdk/evidence";
+import { SENTINEL_HEX, URL_PATH } from "./ingest";
+import type { FileStat } from "../store/store.js";
 import { NoOpWatermark, type Watermark } from "./watermark";
 import type { EvidenceBundle } from "./ingest";
 import type { SynodCaseView } from "./synod-ingest";
@@ -73,6 +76,15 @@ export interface DeliverChainReader {
 export interface DeliverStore {
   /** Fetch the round-`k` ciphertext bundle, or `null` if none is stored. */
   get(subaccord: Uint8Array, dispute: Uint8Array, round: number): Promise<EvidenceBundle | null>;
+  /** v2 multifile (accord-5d0r): stored file objects — derived-completeness input. */
+  listFiles(subaccord: Uint8Array, dispute: Uint8Array, round: number): Promise<FileStat[]>;
+  /** v2 per-file delivery (accord-5d0r): fetch one stored document bundle. */
+  getFile(
+    subaccord: Uint8Array,
+    dispute: Uint8Array,
+    round: number,
+    path: string,
+  ): Promise<EvidenceBundle | null>;
 }
 
 export interface Keyring {
@@ -101,13 +113,25 @@ export interface DeliverDeps {
   watermark?: Watermark;
 }
 
-/** One round's re-encrypted package. */
+/** One manifest entry's delivery status (accord-5d0r derived index). */
+export interface DeliveredFile {
+  readonly path: string;
+  readonly status: "stored" | "pending" | "out_of_band";
+}
+
+/** One round's re-encrypted package + derived per-entry index. */
 export interface DeliveredRound {
   round: number;
   out: Uint8Array;
   operator_ephem_pub: Uint8Array;
+  /**
+   * v2 multifile (accord-5d0r): per-entry delivery status, derived on read —
+   * no persisted index. `[]` for manifest-only rounds (v1 shape-compat).
+   */
+  files: DeliveredFile[];
+  /** True iff every tracked entry is stored (always true for manifest-only). */
+  complete: boolean;
 }
-
 export type DeliverOutcome =
   | { status: 200; rounds: DeliveredRound[] }
   | { status: 404; reason: string }
@@ -187,7 +211,26 @@ export async function deliver(
 
     const watermarked = wm.apply(plaintext, juror);
     const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
-    delivered.push({ round: k, out, operator_ephem_pub });
+
+    // v2 derived index (accord-5d0r): manifest entries × store listing, no
+    // persisted state. PUT leaf-gates every stored object, so path presence
+    // implies content match — re-hashing here would re-decrypt every file.
+    const entries = parseManifest(new TextDecoder().decode(plaintext)).entries;
+    const storedPaths = new Set(
+      (await deps.store.listFiles(dv.subaccord, dispute, k)).map((f) => f.path),
+    );
+    const files: DeliveredFile[] = [];
+    let complete = true;
+    for (const e of entries) {
+      if (URL_PATH.test(e.path) || e.sha256 === SENTINEL_HEX) {
+        files.push({ path: e.path, status: "out_of_band" });
+        continue;
+      }
+      const ok = storedPaths.has(e.path);
+      files.push({ path: e.path, status: ok ? "stored" : "pending" });
+      if (!ok) complete = false;
+    }
+    delivered.push({ round: k, out, operator_ephem_pub, files, complete });
   }
 
   if (delivered.length === 0) {
@@ -195,6 +238,106 @@ export async function deliver(
   }
 
   return { status: 200, rounds: delivered };
+}
+export type DeliverFileOutcome =
+  | { status: 200; out: Uint8Array; operator_ephem_pub: Uint8Array }
+  | { status: 404; reason: string }
+  | { status: 409; reason: string };
+
+/**
+ * Per-file delivery (accord-5d0r): `GET /evidence/{dispute}/for/{juror}/{round}/{path}`.
+ * One document, one plaintext in memory. Gates: drawn juror → non-sentinel
+ * round slot → stored manifest (integrity-gated like the index) → tracked
+ * entry → DERIVED completeness (409 until every tracked entry is stored —
+ * jurors never see half a case) → file decrypt + leaf gate → watermark →
+ * re-encrypt. Synod pre-dispute groups have no per-path namespace → 404.
+ */
+export async function deliverFile(
+  dispute: Uint8Array,
+  juror: Uint8Array,
+  round: number,
+  path: string,
+  deps: DeliverDeps,
+): Promise<DeliverFileOutcome> {
+  const wm = deps.watermark ?? NoOpWatermark;
+
+  const dv = await deps.chain.readDispute(dispute);
+  if (dv === null) return { status: 404, reason: "dispute not found" };
+
+  const synodCase = await deps.chain.readSynodCase(dv.filer);
+  if (synodCase !== null && bytesEqual(synodCase.dispute, dispute)) {
+    return { status: 404, reason: "per-file delivery not available for synod groups" };
+  }
+
+  const sub = await deps.chain.readSubaccord(dv.subaccord);
+  if (sub === null) return { status: 404, reason: "subaccord not found" };
+  const operatorSk = await deps.keyring.forOperator(sub.evidence_operator);
+  if (operatorSk === null) return { status: 404, reason: "unknown evidence operator" };
+
+  const rd = await deps.chain.readRound(dispute);
+  if (rd === null) return { status: 404, reason: "dispute not yet drawn" };
+  if (!rd.jurors.some((j) => bytesEqual(j, juror))) {
+    return { status: 404, reason: "juror not drawn for this dispute" };
+  }
+
+  const h = dv.evidence_hashes[round];
+  if (h === undefined || isZero(h)) {
+    return { status: 404, reason: `no evidence this round ${round}` };
+  }
+
+  const manifest = await deps.store.get(dv.subaccord, dispute, round);
+  if (manifest === null) return { status: 404, reason: `no evidence ingested for round ${round}` };
+
+  const unwrapped = await deps.crypto.unwrap(manifest, operatorSk);
+  if (unwrapped === null) {
+    return { status: 409, reason: `round ${round}: ciphertext undecryptable (tampered bundle)` };
+  }
+  if (!bytesEqual(await deps.crypto.sha256(unwrapped.plaintext), h)) {
+    return {
+      status: 409,
+      reason: `round ${round}: integrity gate failed (sha256 != evidence_hashes[${round}])`,
+    };
+  }
+
+  const entry = parseManifest(new TextDecoder().decode(unwrapped.plaintext)).entries.find(
+    (e) => e.path === path && !URL_PATH.test(e.path) && e.sha256 !== SENTINEL_HEX,
+  );
+  if (entry === undefined) {
+    return { status: 404, reason: `path not tracked in round-${round} manifest` };
+  }
+
+  // Derived completeness over the full entry set (not just this path): the
+  // claimant's package is all-or-nothing for the juror.
+  const entries = parseManifest(new TextDecoder().decode(unwrapped.plaintext)).entries;
+  const storedPaths = new Set(
+    (await deps.store.listFiles(dv.subaccord, dispute, round)).map((f) => f.path),
+  );
+  for (const e of entries) {
+    if (URL_PATH.test(e.path) || e.sha256 === SENTINEL_HEX) continue;
+    if (!storedPaths.has(e.path)) {
+      return {
+        status: 409,
+        reason: `round ${round} incomplete: ${JSON.stringify(e.path)} not yet stored`,
+      };
+    }
+  }
+
+  const fileBundle = await deps.store.getFile(dv.subaccord, dispute, round, path);
+  if (fileBundle === null) return { status: 404, reason: "file not stored" };
+  const fileUnwrapped = await deps.crypto.unwrap(fileBundle, operatorSk);
+  if (fileUnwrapped === null) {
+    return { status: 409, reason: "document undecryptable (tampered bundle)" };
+  }
+  const leafHex = Array.from(await deps.crypto.sha256(fileUnwrapped.plaintext))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  if (leafHex !== entry.sha256) {
+    return { status: 409, reason: `leaf gate failed: sha256(document) != manifest entry` };
+  }
+
+  const watermarked = wm.apply(fileUnwrapped.plaintext, juror);
+  const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
+  return { status: 200, out, operator_ephem_pub };
 }
 
 /**
@@ -258,7 +401,7 @@ async function deliverSynodGroup(
     }
     const watermarked = wm.apply(unwrapped.plaintext, juror);
     const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
-    delivered.push({ round: slot, out, operator_ephem_pub });
+    delivered.push({ round: slot, out, operator_ephem_pub, files: [], complete: true });
   }
   return { status: 200, rounds: delivered };
 }

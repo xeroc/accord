@@ -4,7 +4,8 @@
  *
  * The loaded `--keypair` wallet is the filer (fee payer + fee source + the
  * signing account the adapter pins). `--fee auto` (default) fetches the
- * Subaccord's `feePerJuror` and computes `requiredFee` (= 3 · fee_per_juror);
+ * Subaccord's `feePerJuror` and computes `requiredFee` ((min_jury_size + 1)
+ * · fee_per_juror — juror pot + one flip-bounty unit, ADR-0030).
  * `--fee <lamports>` skips the fetch when paired with `--fee-token` (enables
  * offline `--dry-run`). `emitCreated(dispute, { bump })`.
  */

@@ -89,6 +89,7 @@ function makeApp(opts: MakeAppOpts = {}) {
   const anchor = opts.anchor ?? mapAnchor;
   const deps: ServerDeps = {
     ingest: async () => ({ ok: true, status: 201, location: "/evidence/s/d" }),
+    ingestFile: async () => ({ ok: true, status: 201, idempotent: false }),
     synodIngest: async () => ({ ok: true, status: 201, location: "/evidence/synod/c/0" }),
     synodManifest: async () => ({
       ok: true,
@@ -96,6 +97,11 @@ function makeApp(opts: MakeAppOpts = {}) {
       body: { party_count: 0, parties: [], verified: null },
     }),
     deliver: async () => ({ ok: true, status: 200, body: { rounds: [] } }),
+    deliverFile: async () => ({
+      ok: true,
+      status: 200,
+      body: { out: "b3V0", operator_ephem_pub: "cHVi" },
+    }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
     health: async () => ({ ok: true }),
     publicKeys: STUB_PUBLIC_KEYS,

@@ -24,11 +24,9 @@ use accord::state::{
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
+use solana_account::Account as SvmAccount;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::{
-    account::Account as SvmAccount, native_token::LAMPORTS_PER_SOL, signature::Keypair,
-    signer::Signer,
-};
+use solana_sdk::{native_token::LAMPORTS_PER_SOL, signature::Keypair, signer::Signer};
 use spl_token::solana_program::{program_option::COption, program_pack::Pack};
 use spl_token::state::Mint as SplMint;
 use spl_token::ID as TOKEN_PROGRAM_ID;
@@ -97,7 +95,7 @@ fn params(aggregation: Aggregation, authority: Pubkey) -> CreateSubaccordParams 
         max_appeals: 3,
         min_jury_size: 3,
         aggregation,
-        fee_per_juror: 1_000_000,
+        fee_per_juror: 50,
         reveal_threshold_bps: 6_666,
         coherence_tol_bps: 0,
         shortfall_policy: ShortfallPolicy::Redraw,
@@ -542,4 +540,147 @@ fn max_appeals_update_rechecked_against_ladder() {
         UpdatePayload::MaxAppeals(3),
     );
     assert!(!r.is_success(), "logs={:?}", r.logs());
+}
+
+// ─── ADR-0029: same-mint slash-dominance on the update gates ─────────────────
+
+/// Same as `create_sub` but with a DISTINCT fee mint (split-mint pool — the
+/// numeric dominance comparison is explicitly not applied cross-mint).
+fn create_sub_split_mint(
+    ctx: &mut anchor_litesvm::AnchorContext,
+    authority: &Keypair,
+    staking: &Pubkey,
+    fee_mint: &Pubkey,
+) -> Pubkey {
+    let domain_ref = {
+        let mut rt = [0u8; 32];
+        rt[0] = 0x2c;
+        rt
+    };
+    let sub = subaccord_pda(&authority.pubkey(), &domain_ref);
+    let ix = ctx
+        .program()
+        .accounts(accounts::CreateSubaccord {
+            creator: authority.pubkey(),
+            subaccord: sub,
+            staking_token: *staking,
+            fee_token: *fee_mint,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateSubaccord {
+            domain_ref,
+            evidence_spec: [0u8; 32],
+            params: params(Aggregation::Plurality, authority.pubkey()),
+        })
+        .instruction()
+        .unwrap();
+    ctx.execute_instruction(ix, &[authority])
+        .unwrap()
+        .assert_success();
+    sub
+}
+
+#[test]
+fn same_mint_updates_reject_fee_dominated_configs() {
+    // ADR-0029 L4: the dominance gate composes each economics payload with
+    // the live pool (slash = α·min_stake/10_000 ≥ 2·fee). Baseline pool:
+    // α=1_000, min_stake=1_000, fee=50 → slash 100, exactly at the bound.
+    let (mut ctx, authority, rent_payer, mint) = setup();
+    let (_, sub) = create_sub(&mut ctx, &authority, &mint, Aggregation::Plurality);
+
+    // FeePerJuror above the bound: slash 100 < 2·1_000_000.
+    let r = try_propose(
+        &mut ctx,
+        &authority,
+        &rent_payer,
+        &sub,
+        1,
+        UpdatePayload::FeePerJuror(1_000_000),
+    );
+    assert!(
+        !r.is_success(),
+        "FeePerJuror(1_000_000) must be FeeDominatesSlash; logs={:?}",
+        r.logs()
+    );
+
+    // MinStake drop: slash falls to 1 < 2·50.
+    let r = try_propose(
+        &mut ctx,
+        &authority,
+        &rent_payer,
+        &sub,
+        1,
+        UpdatePayload::MinStake(10),
+    );
+    assert!(
+        !r.is_success(),
+        "MinStake(10) must be FeeDominatesSlash; logs={:?}",
+        r.logs()
+    );
+
+    // AlphaBps(0) with a non-zero fee: slash 0.
+    let r = try_propose(
+        &mut ctx,
+        &authority,
+        &rent_payer,
+        &sub,
+        1,
+        UpdatePayload::AlphaBps(0),
+    );
+    assert!(
+        !r.is_success(),
+        "AlphaBps(0) with fee 50 must be FeeDominatesSlash; logs={:?}",
+        r.logs()
+    );
+
+    // FeePerJuror(0) is the feeless bypass — legal under ANY α.
+    let r = try_propose(
+        &mut ctx,
+        &authority,
+        &rent_payer,
+        &sub,
+        1,
+        UpdatePayload::FeePerJuror(0),
+    );
+    r.assert_success();
+
+    // A dominance-PRESERVING retune still round-trips propose → timelock →
+    // execute (the execute gate re-checks the same composed config).
+    let (mut ctx, authority, rent_payer, mint) = setup();
+    let (_, sub) = create_sub(&mut ctx, &authority, &mint, Aggregation::Plurality);
+    try_propose(
+        &mut ctx,
+        &authority,
+        &rent_payer,
+        &sub,
+        1,
+        UpdatePayload::AlphaBps(2_000),
+    )
+    .assert_success();
+    let eta = read_pending(&ctx, &pending_update_pda(&sub, 1))
+        .unwrap()
+        .execute_after_slot;
+    ctx.svm.warp_to_slot(eta + 1);
+    try_execute(&mut ctx, &rent_payer, &sub, 1).assert_success();
+    assert_eq!(read_subaccord(&ctx, &sub).alpha_bps, 2_000);
+}
+
+#[test]
+fn split_mint_updates_accept_fee_dominated_configs() {
+    // ADR-0029 L4: the gate must NOT fire cross-mint. On a split-mint pool a
+    // fee 20_000× the slash is accepted — the ratio is operator discipline.
+    let (mut ctx, authority, rent_payer, mint) = setup();
+    let fee_mint = Pubkey::new_unique();
+    create_mint(&mut ctx, &fee_mint);
+    let sub = create_sub_split_mint(&mut ctx, &authority, &mint, &fee_mint);
+
+    let r = try_propose(
+        &mut ctx,
+        &authority,
+        &rent_payer,
+        &sub,
+        1,
+        UpdatePayload::FeePerJuror(1_000_000),
+    );
+    r.assert_success();
 }

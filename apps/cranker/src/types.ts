@@ -48,6 +48,7 @@ export type CrankKind =
   | "execute_update"
   | "execute_unpause"
   | "claim_refund"
+  | "claim_filing_bounty"
   | "reclaim_slot"
   | "canon_advance_pending"
   | "canon_settle_item"
@@ -85,6 +86,7 @@ export type CrankAction =
   | { kind: "execute_update"; subaccord: Address }
   | { kind: "execute_unpause" }
   | { kind: "claim_refund"; dispute: Address; roundIdx: number }
+  | { kind: "claim_filing_bounty"; dispute: Address }
   | { kind: "reclaim_slot"; subaccord: Address; jurorStake: Address }
   | { kind: "canon_advance_pending"; item: Address }
   | { kind: "canon_settle_item"; item: Address }

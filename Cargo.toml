@@ -10,18 +10,21 @@ edition = "2021"
 # `init-if-needed`: required for `stake`'s top-up pattern (init_or_update the
 # JurorStake PDA + lazily create the Subaccord vault ATA on first stake).
 # Safe here — both accounts are zero-fill on init with no privileged init logic.
-anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
-anchor-spl = { version = "1.0.2", features = ["token", "associated_token"] }
+anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
+anchor-spl = { version = "1.2.0", features = ["token", "associated_token"] }
 # `solana-program` was split into smaller crates in anchor 0.32 / Solana 2.x;
 # `anchor_lang::solana_program` no longer re-exports `hash`. Anchor 1.0 relaxed
 # the separate-dep check (#4166), so we pull it directly for `hashv`
 # (commit/reveal hashing + merkle verification).
 solana-program = "3"
-# VRF via the unified SDK (magicblock skill known-good snapshot). The `vrf`
-# feature re-exports `ephemeral-vrf-sdk` under `ephemeral_rollups_sdk::vrf` and
-# flips the `#[vrf]` macro to emit `::ephemeral_rollups_sdk::vrf` paths — so no
-# direct `ephemeral-vrf-sdk` dependency is needed.
-ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor", "vrf"] }
+# VRF via the unified SDK. 0.17.2 is the first line where the plain `anchor`
+# feature resolves ONLY solana-program 3.x — 0.16.2 unconditionally also pulled
+# a `solana-program-compat` (<3, extern-"C" syscalls) into the program ELF,
+# which cannot link as sBPFv3. The `vrf` feature re-exports `ephemeral-vrf-sdk`
+# under `ephemeral_rollups_sdk::vrf` and flips the `#[vrf]` macro to emit
+# `::ephemeral_rollups_sdk::vrf` paths — so no direct `ephemeral-vrf-sdk`
+# dependency is needed.
+ephemeral-rollups-sdk = { version = "0.17.2", features = ["anchor", "vrf"] }
 
 [profile.release]
 overflow-checks = true

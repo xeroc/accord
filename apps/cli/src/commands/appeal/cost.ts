@@ -25,9 +25,11 @@ export default class AppealCost extends BaseCommand {
   static description =
     "Compute the appeal cost breakdown for opening round `--current-round + 1` " +
     "from a Subaccord's per-juror fee. Panel follows the 2N+1 ladder " +
-    "(3 → 7 → 15 → 31). `total` = new-round fee + equal bond; the bond is " +
-    "forfeited on no-flip and refunded on flip. This is the exact amount " +
-    "`appeal:open` transfers, so it can be used to pre-fund the appellant.";
+    "(3 → 7 → 15 → 31). `total` = new-round fee + equal bond + one " +
+    "flip-bounty unit (ADR-0030: `fee_per_juror` joins the dispute's bounty " +
+    "pool). The bond is forfeited on no-flip and refunded on flip. This is " +
+    "the exact amount `appeal:open` transfers, so it can be used to pre-fund " +
+    "the appellant.";
 
   static examples = [
     "<%= config.bin %> appeal:cost --current-round 0 --fee-per-juror 1000000",
@@ -80,6 +82,7 @@ export default class AppealCost extends BaseCommand {
         `panel        : ${cost.panel} jurors`,
         `new-round fee: ${groupBigInt(cost.fee)}`,
         `bond         : ${groupBigInt(cost.bond)}  (== fee; forfeit if no flip, refund if flip)`,
+        `bounty unit  : ${groupBigInt(cost.bounty)}  (ADR-0030 flip-bounty; joins the dispute pool)`,
         `total payable: ${groupBigInt(cost.total)}`,
       ],
     });

@@ -121,87 +121,28 @@ pub const DEFAULT_MAX_DRAW_ATTEMPTS: u8 = 3;
 pub const DEFAULT_COHERENCE_TOL_BPS: u16 = 100;
 /// Program ceiling on per-round redraw attempts (bounds the redraw ladder).
 pub const MAX_DRAW_ATTEMPTS: u8 = 10;
+/// Same-mint slash-dominance margin (ADR-0029): where `staking_token ==
+/// fee_token`, creation + both update gates enforce
+/// `α·min_stake/10_000 ≥ MIN_SLASH_FEE_RATIO · fee_per_juror`. Ratio 2 = the
+/// pre-0029 binary-P bound, kept (not the post-0029 theoretical 1) as margin —
+/// coherent-pool shares are endogenous (forfeited bonds) and widen the
+/// lucky-noise edge. Split-mint pools are explicitly NOT numerically checked
+/// (units are incommensurable; the 2026-08-31 reverted gate is the recorded
+/// proof) — operator/governance discipline governs those.
+pub const MIN_SLASH_FEE_RATIO: u64 = 2;
 
 /// Maximum sortition retries per seat in `draw_seat` (bean accord-tzo0). The
 /// deterministic collision re-roll increments this counter until the selected
-/// leaf is not an already-drawn juror. 1024 is generous: with ≥ N eligible
-/// jurors the expected retries per seat is < 1; even a 99 %-whale pool rarely
-/// exceeds a few hundred. Crankers raise the CU limit for degenerate cases.
-pub const MAX_SORTITION_RETRIES: u32 = 1024;
-
-// ===========================================================================
-// Manual byte-offset reads/writes into `remaining_accounts` `AccountInfo`s.
-// ===========================================================================
-//
-// Accounts passed via `remaining_accounts` are raw `AccountInfo`s — they are NOT
-// declared in `#[derive(Accounts)]`, so Anchor neither auto-deserializes them
-// on entry nor auto-serializes them on exit. Every field read or mutation is
-// therefore a manual slice into the raw account data.
-//
-// We write ONLY the changed field(s) — never a full `Account::try_serialize`
-// re-encode — as a **compute-budget optimization** in the hot paths: `draw_seat`
-// (once per seat, up to 31 per round), `cancel_dispute`, and settlement. A full
-// re-serialize costs CU proportional to the whole account; a targeted field
-// write costs CU proportional to the field width. The trade is layout-coupling:
-// these offsets must track the Borsh field order/widths.
-//
-// Compile-time pinning is deliberately limited. A true field-POSITION `const`
-// assert is **impossible** for Borsh-serialized Anchor accounts:
-//   - `core::mem::offset_of!` reflects in-memory layout (the compiler may even
-//     reorder non-`repr(C)` fields, and inserts alignment padding) — NOT the
-//     packed Borsh wire format these offsets slice.
-//   - `BorshSerialize`/per-field layout is not `const fn`, so the layout cannot
-//     be discovered in a `const` context.
-// What we do instead: (a) derive every offset from named field-width consts so
-// the arithmetic is self-evident, and (b) compile-time-assert the highest sliced
-// field still fits inside the account (`<= 8 + INIT_SPACE`, which IS derived
-// from the real struct — catches a struct shrink at compile time). The
-// authoritative tie of these offsets to the actual structs is the run-time test
-// `tests::layout_tests::offsets_match_borsh` (serialize a fixture → check the bytes):
-// a field reorder/resize that drifts these consts fails `cargo test`.
-pub(crate) mod layout {
-    use crate::state::{AppealBond, JurorStake};
-    use anchor_lang::Space;
-
-    const DISC: usize = 8;
-    const PUBKEY: usize = 32;
-
-    // --- JurorStake (state.rs) ---
-    // disc | subaccord | juror | staked | active_draws | bump | tree_index | stake_delta | slash_reserve | withdraw_requested_at | pending_withdrawal | fees_earned | next_free
-    const JS_STAKED_W: usize = 8;
-    const JS_ACTIVE_DRAWS_W: usize = 4;
-    const JS_BUMP_W: usize = 1;
-    const JS_TREE_INDEX_W: usize = 4;
-    const JS_STAKE_DELTA_W: usize = 8;
-    const JS_SLASH_RESERVE_W: usize = 8;
-    const JS_WITHDRAW_REQUESTED_AT_W: usize = 8;
-    const JS_PENDING_WITHDRAWAL_W: usize = 8;
-    const JS_FEES_EARNED_W: usize = 8;
-
-    pub(crate) const JS_STAKED_OFF: usize = DISC + PUBKEY + PUBKEY;
-    pub(crate) const JS_ACTIVE_DRAWS_OFF: usize = JS_STAKED_OFF + JS_STAKED_W;
-    pub(crate) const JS_STAKE_DELTA_OFF: usize =
-        JS_ACTIVE_DRAWS_OFF + JS_ACTIVE_DRAWS_W + JS_BUMP_W + JS_TREE_INDEX_W;
-    pub(crate) const JS_SLASH_RESERVE_OFF: usize = JS_STAKE_DELTA_OFF + JS_STAKE_DELTA_W;
-    pub(crate) const JS_FEES_EARNED_OFF: usize = JS_SLASH_RESERVE_OFF
-        + JS_SLASH_RESERVE_W
-        + JS_WITHDRAW_REQUESTED_AT_W
-        + JS_PENDING_WITHDRAWAL_W;
-
-    // --- AppealBond (state.rs) ---
-    // disc | dispute | round_idx | appellant | amount | prior_result | bump
-    const AB_ROUND_IDX_W: usize = 4;
-    const AB_AMOUNT_W: usize = 8;
-    const AB_PRIOR_W: usize = 8; // u64 since scalar voting (ADR-0025)
-
-    pub(crate) const AB_ROUND_IDX_OFF: usize = DISC + PUBKEY;
-    pub(crate) const AB_AMOUNT_OFF: usize = AB_ROUND_IDX_OFF + AB_ROUND_IDX_W + PUBKEY;
-    pub(crate) const AB_PRIOR_OFF: usize = AB_AMOUNT_OFF + AB_AMOUNT_W;
-
-    // Compile-time bounds check (strongest const check available for Borsh
-    // offsets): the highest sliced field must fit inside a serialized account.
-    // Catches a struct shrink; does NOT catch a wrong field — that's
-    // `tests::layout_tests::offsets_match_borsh`.
-    const _: () = assert!(JS_FEES_EARNED_OFF + JS_FEES_EARNED_W <= DISC + JurorStake::INIT_SPACE);
-    const _: () = assert!(AB_PRIOR_OFF + AB_PRIOR_W <= DISC + AppealBond::INIT_SPACE);
-}
+/// leaf is not an already-drawn juror.
+///
+/// L-5 (security review 2026-09-23): this must be a bound one `draw_seat`
+/// instruction can actually reach inside the 1.4M CU per-instruction cap —
+/// each retry is one sha256 syscall plus a collision scan, so the old 1024
+/// was unreachable (chains that long died on CU exhaustion, never reaching
+/// the `MaxRetriesExceeded` error). 128 keeps the worst-case loop comfortably
+/// under the cap on mainnet metering (LiteSVM measures ~220 CU/retry;
+/// mainnet's sha256 syscall fee is an order of magnitude higher — either way
+/// 128 fits) and still admits ~99.8 %-whale pools, where the expected chain
+/// is ~450. Beyond it the dispute exits via the pre-draw `cancel_dispute`
+/// timeout — crankers CANNOT raise the CU cap past 1.4M, so don't promise it.
+pub const MAX_SORTITION_RETRIES: u32 = 128;

@@ -302,7 +302,7 @@ The draw is the security-critical path (ADR-0012; supersedes ADR-0003/0008/0009)
 
 Inherited from Kleros (live since 2019, 1000+ disputes):
 
-- **Fee:** filer pays `N · fee_per_juror`; appellant pays `N_new · fee_per_juror` + bond.
+- **Fee:** filer tenders `(N + 1) · fee_per_juror` (juror pot + one flip-bounty unit, ADR-0030); appellant tenders `(2 · N_new + 1) · fee_per_juror` (fee + bond + one bounty unit).
 - **Slash:** each Incoherent Juror loses `α · min_stake` (flat; ADR-0003).
 - **Redistribution:** forfeited fees + slashed stake → Coherent Jurors, equal split.
 - **Non-reveal penalty:** ≥ the Incoherent penalty (forces reveal).

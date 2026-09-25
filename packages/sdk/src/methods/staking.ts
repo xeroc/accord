@@ -197,8 +197,19 @@ export interface AccordStakingClient {
 }
 
 /** Build `stake` (lib.rs). SPL-transfers `amount` into the vault.
- * RECLAIM-LEAF: when `freedSlotAccount` is provided, the stake pops from the
- * free list (the freed JurorStake is appended as a remaining account). */
+ *
+ * RECLAIM-LEAF free-list accounts (accord-b5v5 — the list is doubly linked;
+ * neighbors are appended as remaining accounts after the optional
+ * attestation, in list order):
+ * - **New juror popping the head** (`is_new_leaf` + `freeHead != MAX`):
+ *   `freedSlotAccount` = the freed head node, `nextNeighborAccount` = the
+ *   new head (required when the freed node has a successor, so its
+ *   `prevFree` can be cleared).
+ * - **Returning juror splicing their own reclaimed slot out** (any list
+ *   position): `freedSlotAccount` = the predecessor (required when the
+ *   juror's `prevFree != MAX`), `nextNeighborAccount` = the successor
+ *   (required when `nextFree != MAX`). Discover both off-chain from the
+ *   juror's own JurorStake pointers. */
 export function stake(
   client: AccordStakingClient,
   programId: Address,
@@ -207,24 +218,32 @@ export function stake(
   path: MSTNode[],
   /** PROG-ATTESTATION: juror SAS attestation (required on credential-gated Subaccords). */
   attestation?: Address,
-  /** RECLAIM-LEAF: freed JurorStake PDA to pop from the free list when staking into a recycled slot. */
+  /** Free-list neighbor #1: the freed head (pop path) or the predecessor (splice path). */
   freedSlotAccount?: Address,
+  /** Free-list neighbor #2: the new head (pop path) or the successor (splice path). */
+  nextNeighborAccount?: Address,
 ): Instruction {
   assertValidAmount(amount);
   // An empty `path` is the canonical proof for a depth-0 Subaccord (single
   // leaf = root). The on-chain verifier authenticates the path against the
   // stored root + depth; do not reject it here (REVIEW #13).
   const ix = client.buildStake({ programId, accounts, amount, path, attestation });
-  // RECLAIM-LEAF: append the freed JurorStake PDA as a remaining account when
-  // staking into a recycled slot. The adapter placed the attestation (if any)
-  // at remaining_accounts[0]; the freed slot follows at [1] on gated pools, or
-  // sits at [0] on stake-only pools — matching the on-chain gated-aware layout.
-  if (freedSlotAccount) {
+  // RECLAIM-LEAF: append the free-list neighbor PDAs as remaining accounts
+  // (writable). The adapter placed the attestation (if any) at
+  // remaining_accounts[0]; the neighbors follow at [1],[2] on gated pools, or
+  // [0],[1] on stake-only pools — matching the on-chain gated-aware layout.
+  const neighbors = [freedSlotAccount, nextNeighborAccount].filter(
+    (a): a is Address => a !== undefined,
+  );
+  if (neighbors.length > 0) {
     return {
       ...ix,
       accounts: [
         ...(ix.accounts ?? []),
-        { address: freedSlotAccount, role: AccountRole.WRITABLE },
+        ...neighbors.map((address) => ({
+          address,
+          role: AccountRole.WRITABLE,
+        })),
       ],
     };
   }
@@ -303,14 +322,30 @@ export function reconcileStake(
  *
  * Preconditions: the juror must be fully drained (`staked == 0`,
  * `active_draws == 0`, `stake_delta == 0`, `fees_earned == 0`).
+ *
+ * accord-b5v5: the free list is doubly linked — when the list is non-empty
+ * (`subaccord.freeHead != MAX`), `headSlotAccount` (the CURRENT head's
+ * JurorStake PDA) is required so its `prevFree` can be rewired to the pushed
+ * index. Omit it only when the list is empty.
  */
 export function reclaimSlot(
   client: AccordStakingClient,
   programId: Address,
   accounts: { subaccord: Address; jurorStake: Address },
   path: MSTNode[],
+  headSlotAccount?: Address,
 ): Instruction {
-  return client.buildReclaimSlot({ programId, accounts, path });
+  const ix = client.buildReclaimSlot({ programId, accounts, path });
+  if (headSlotAccount) {
+    return {
+      ...ix,
+      accounts: [
+        ...(ix.accounts ?? []),
+        { address: headSlotAccount, role: AccountRole.WRITABLE },
+      ],
+    };
+  }
+  return ix;
 }
 
 /** Accounts for `withdraw_fees` (ADR-0020). */

@@ -56,7 +56,7 @@ export interface SynodArm {
   /** Subaccord fee_vault ATA (Accord CPI destination for the frozen fee). */
   feeVault: Address;
   accordState: Address;
-  /** `min_jury_size · fee_per_juror`, frozen at open. */
+  /** `(min_jury_size + 1) · fee_per_juror` (ADR-0030), frozen at open. */
   frozenFee: bigint;
   /** The staked jury pool (DrawFixture panel) — real draw/vote chains. */
   jurors: JurorCtx[];

@@ -96,7 +96,37 @@ Claimant posts `bundle` to `POST /evidence/{subaccord}/{dispute}`. `plaintext_ha
 **must** equal the dispute's on-chain `evidence_hash`; the daemon enforces this
 at ingest (and again at delivery as a tamper gate).
 
-### Delivery re-encryption (operator → drawn juror)
+### Delivery Key registration (juror → operator; ADR-0034)
+
+Browser wallets expose `signMessage` only — no key export, no ECDH — so
+delivery cannot target the juror's wallet key. A juror registers a **Delivery
+Key**: a self-generated X25519 keypair (noble; the raw secret stays
+client-side in origin-scoped storage) whose public half is bound to the
+wallet by an Ed25519 signature:
+
+```
+msg  = utf8("accord-delkey-v1\nregistered_at:{ms}\nenc_pub:{base58}")
+sig  = ed25519.sign(msg, wallet_sk)       // wallet signMessage — any adapter
+```
+
+Registration gates:
+
+- **Signature gate:** `sig` must verify against `{juror}`. Open registration —
+  no staked/drawn requirement (delivery already gates on `Round.jurors[]`; a
+  chain-read gate would race with draws).
+- **Replay gate (monotonic):** reject when `registered_at <=
+  stored.registered_at`. A replayed superseded registration (e.g. an
+  exfiltrated old key after rotation) must never downgrade the juror back to
+  it. Clock skew backwards ⇒ rejected; re-register once the clock catches up.
+- **No origin binding (deliberate):** the message is daemon-agnostic — the
+  same Delivery Key may be registered at several daemons; a cross-daemon
+  replay only ever registers the juror's own chosen key.
+- **One active key per juror, last-writer-wins.** Rotation = re-register +
+  re-pull (delivery re-encrypts per request; nothing stored is keyed). A
+  client that finds itself stale (decrypt failure, or `GET` shows a different
+  `enc_pub`) re-registers and re-pulls — one `signMessage`.
+
+### Delivery re-encryption (operator → drawn juror) — STRICT (ADR-0034)
 
 ```
 // 1. decrypt claimant ciphertext
@@ -112,26 +142,37 @@ require!(sha256(plaintext) == dispute.evidence_hash)   // else: refuse + alert
 // 3. watermark seam (no-op pass-through in v1)
 watermarked  = Watermark.apply(plaintext, juror_pubkey)
 
-// 4. re-encrypt to the juror's X25519 key
-juror_x25519 = Ed25519ToX25519(juror_pubkey)           // from Round.jurors[]
+// 4. resolve the juror's registered Delivery Key — STRICT
+delivery_key = deliveryKeys.get(juror_pubkey)          // juror ∈ Round.jurors[]
+require!(delivery_key != null)                         // unregistered ⇒ 404
+
+// 5. re-encrypt to the Delivery Key (native X25519 — no Ed→X conversion)
 ephem2_sk    = random X25519 secret
-shared_out   = X25519(ephem2_sk, juror_x25519)
+shared_out   = X25519(ephem2_sk, delivery_key.enc_pub)
 k_out        = HKDF-SHA256(shared_out, info="accord-deliver-v1")
 out          = AES-256-GCM.encrypt(k_out, watermarked)
 
-// 5. discard plaintext; return
+// 6. discard plaintext; return
 { out, operator_ephem_pub: X25519_pub(ephem2_sk) }
 ```
 
-Juror decrypts symmetrically: convert own Ed25519 secret → X25519,
-`X25519(juror_sk, operator_ephem_pub)`, HKDF, AES-GCM decrypt → cleartext; then
-verifies `sha256(cleartext) == dispute.evidence_hash` (ADR-0006).
+Juror decrypts with the Delivery Key secret: `X25519(delivery_sk,
+operator_ephem_pub)`, HKDF (`accord-deliver-v1`), AES-GCM decrypt → cleartext;
+then verifies `sha256(cleartext) == dispute.evidence_hash` (ADR-0006).
 
-**Why pull + no auth is safe:** step 4 targets the Juror pubkey, so the returned
-`out` is decryptable only by the Juror key. A non-Juror fetching gets ciphertext
-it cannot read. Per-Juror watermarking (step 3, v1.1) embeds the fingerprint in
-`watermarked` _before_ the Juror-bound encryption, so only the Juror key can
-ever surface the fingerprint — attribution holds without request auth.
+**Strict mode:** there is no Ed→X fallback — a drawn juror without a
+registered Delivery Key gets `404`. The construction and HKDF label are
+unchanged from the dual-use era; only the target key differs (ADR-0034), so
+the `JurorBundle { out, operator_ephem_pub }` wire shape is identical.
+`Ed25519ToX25519PublicKey` survives only on the ingest path (claimant →
+operator).
+
+**Why pull + no auth is safe:** step 5 targets a key only the juror holds
+(their Delivery Key), so the returned `out` is decryptable only by the juror.
+A non-juror fetching gets ciphertext it cannot read. Per-Juror watermarking
+(step 3, v1.1) embeds the fingerprint in `watermarked` _before_ the
+juror-bound encryption, so only the Delivery Key can ever surface the
+fingerprint — attribution holds without request auth.
 
 ### Per-round delivery (ADR-0023 — in flight, milestone `accord-qp7c`)
 
@@ -199,8 +240,20 @@ interface EvidenceStore {
   get(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<EvidenceBundle | null>;
   delete(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<void>;
   exists(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<boolean>;
+  // v2 per-file objects (accord-5d0r) — same idempotency, keyed by entry path:
+  putFile(b: EvidenceBundle, path: string): Promise<void>;
+  getFile(subaccord: PublicKey, dispute: PublicKey, round: u8, path: string): Promise<EvidenceBundle | null>;
+  listFiles(subaccord: PublicKey, dispute: PublicKey, round: u8): Promise<FileStat[]>; // {path, bytes} — derived-completeness + package-cap input
 }
 ```
+
+v2 file-object layout (both backends): the manifest object keeps its v1 key
+(`{subaccord}/{dispute}/{round}` / `{round}.json`); documents live under the
+per-round prefix `{subaccord}/{dispute}/{round}.files/{path}` /
+`{EVIDENCE_FS_ROOT_DIR}/{subaccord}/{dispute}/{round}.files/{path}` — one
+serialized `EvidenceBundle` per document, path = the manifest entry (format
+§3.2 hygiene enforced at parse AND at store key construction). No index
+object anywhere: completeness is derived on read from entries × listing.
 
 Backend is selected by `EVIDENCE_STORAGE` (`s3` default, or `fs`). Only the
 selected backend's env vars are required — an `fs` deployment needs no S3
@@ -235,6 +288,27 @@ credentials (and vice versa).
 - Race semantics match S3Store (read-then-write; last-writer-wins on the
   metastable race — a conflicting PUT does not occur in the protocol).
 - **Single-node only.** For HA / multi-replica, use S3 (or a shared volume).
+
+### Delivery Key registry (storage seam — ADR-0034)
+
+```ts
+interface JurorDeliveryKey {
+  juror: PublicKey; // wallet pubkey — the map key (base58 path component)
+  enc_pub: Uint8Array; // X25519 public key, 32 bytes — the delivery target
+  registered_at: number; // unix ms, from the signed message (monotonic gate)
+}
+
+interface DeliveryKeyStore {
+  put(k: JurorDeliveryKey): Promise<void>; // overwrite; caller gates sig + monotonic first
+  get(juror: PublicKey): Promise<JurorDeliveryKey | null>;
+}
+```
+
+- One object per juror, last-writer-wins. Key `juror-keys/{juror}` on both
+  backends (S3 object / `{EVIDENCE_FS_ROOT_DIR}/juror-keys/{juror}.json`);
+  retention sweeps never touch the namespace (it is not dispute-scoped).
+- Same S3/fs clients as the evidence store — another `Storage`-seam tenant.
+- Only `enc_pub` exists server-side; the secret never leaves the client.
 
 ### Domain CAS namespace (storage seam — ADR-0027)
 
@@ -332,6 +406,9 @@ apps/evidence-daemon/
       domain.ts                // DomainStore trait — public doc CAS (ADR-0027)
       domain-s3.ts             // S3/MinIO impl — key domains/{hash}
       domain-fs.ts             // local filesystem impl — domains/{hash}.json envelope
+      delivery-key.ts           # DeliveryKeyStore trait + JurorDeliveryKey record (ADR-0034)
+      delivery-key-s3.ts        # S3/MinIO impl — key juror-keys/{juror}
+      delivery-key-fs.ts        # local filesystem impl — juror-keys/{juror}.json
     chain/
       reader.ts                // @useaccord/sdk reads (Subaccord/Dispute/Round)
       events.ts                // log subscriber (DisputeCreated/JurorsDrawn/RulingFinalized)
@@ -365,20 +442,29 @@ header is accepted for **accounting only** — it never grants or denies access
 
 | Method | Path                                        | Body / Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------ | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/evidence/{subaccord}/{dispute}[/{round}]` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists for that `(dispute, round)`. `round` defaults to `0` (filer); appeal rounds `1..MAX_APPEALS` post under ADR-0023.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| POST   | `/evidence/{subaccord}/{dispute}[/{round}]` | `EvidenceBundle` → `201` + `Location`. `409` if a different `plaintext_hash` exists for that `(dispute, round)`. `round` defaults to `0` (filer); appeal rounds `1..MAX_APPEALS` post under ADR-0023. **v2 (accord-5d0r):** the bundle is decrypt-verified at ingest (`sha256(plaintext) == plaintext_hash`) and dispatched on `schema` + `entries` — known multifile schemas (`accord-evidence/v1`, `riprap-claim/v1`) with entries enter multifile mode (entry validation: path hygiene, uniqueness, 64-hex leaves, `EVIDENCE_MAX_ENTRIES`); an **unknown schema WITH entries ⇒ `400`** (loud at POST, never a silent manifest-only degrade that would strand jurors); no entries ⇒ manifest-only v1 semantics. |
+| PUT    | `/evidence/{subaccord}/{dispute}/{round}/{path…}` | **v2 per-document upload (accord-5d0r).** Body = one ECIES `EvidenceBundle` (same shape as POST; identity from the path). Gate order: no stored manifest ⇒ `404` (manifest-first is structural); path not tracked in the manifest's entries ⇒ `400`; `plaintext_hash != entry.sha256` ⇒ `400` (checked WITHOUT decrypting); same-hash re-PUT ⇒ `201` idempotent, divergent stored hash ⇒ `409`; `ct > EVIDENCE_MAX_DOC_BYTES` or round package > `EVIDENCE_MAX_PACKAGE_BYTES` ⇒ `413`; decrypt-verify failure ⇒ `400`. Unauthenticated but content-gated: only bytes hashing to the manifest leaf can ever land. No `Location` — file objects have no public GET. |
 | POST   | `/evidence/synod/{case}/{party}`            | Synod pre-dispute grouping (accord-daq8): party `0..6` pushes an `EvidenceBundle` for a SynodCase **before** a dispute exists; stored grouped by case PDA + slot (key `{subaccord}/{case}/{slot}`). Unauthenticated by design — the join-committed per-party hash is the commit; junk fails post-file root verification. `404` case absent; `400` slot ≥ `party_count`; `409` once `SynodCase.dispute` is bound or a different hash fills the slot.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| GET    | `/evidence/{dispute}/for/{juror}`           | → `200` `{ rounds: [{ round, out, operator_ephem_pub }] }` — every non-zero `evidence_hashes[0..=N]` package for the juror's round `N` (ADR-0023). `404` if juror not drawn / not deliverable. `409` if any round's integrity gate fails (alerts). **Synod bridge (accord-g1dy):** when `Dispute.filer` is a SynodCase bound to the dispute, serves the assembled group — one package per party slot (`round` = slot), gated by the recomputed file-time root `H(case ‖ h_0…h_{N-1}) == evidence_hashes[0]`; mismatch ⇒ `409` assembly refused.                                                                                                                                                                                                                                                                                                                                    |
+| GET    | `/evidence/{dispute}/for/{juror}`           | → `200` `{ rounds: [{ round, out, operator_ephem_pub, files, complete }] }` — every non-zero `evidence_hashes[0..=N]` package for the juror's round `N` (ADR-0023). **v2 (accord-5d0r):** `files: [{path, status: stored/pending/out_of_band}]` + `complete` are derived on read from manifest entries × store listing (no persisted index); manifest-only rounds carry `files: [], complete: true` (v1 shape-compat, additive fields). `404` if juror not drawn / not deliverable. `409` if any round's integrity gate fails (alerts). **Synod bridge (accord-g1dy):** when `Dispute.filer`is a SynodCase bound to the dispute, serves the assembled group — one package per party slot (`round` = slot), gated by the recomputed file-time root `H(case ‖ h_0…h_{N-1}) == evidence_hashes[0]`; mismatch ⇒`409` assembly refused.                                                                                                                                                                                                                                                                                                                                    |
+| GET    | `/evidence/{dispute}/for/{juror}/{round}/{path…}` | **v2 per-file delivery (accord-5d0r):** one document per GET — drawn-juror gate (`404`), non-sentinel round slot (`404`), stored manifest integrity gate (`409` on tamper), tracked-entry lookup (`404`), **derived completeness — `409` until every tracked entry of the round is stored** (jurors never see half a case), then decrypt + leaf gate (`409`) → watermark → juror-bound re-encryption. One plaintext in memory at a time. Synod-group filers ⇒ `404` (no per-path namespace). |
 | GET    | `/evidence/synod/{case}`                    | Assembled multi-bundle manifest (accord-lry5): per-slot entries with the ADR-0017 payload + `party` field, absent slots marked (partial pre-file view), daemon-decrypted in memory. Post-file `verified` = recomputed `H(case ‖ h_0…h_{N-1})` vs `evidence_hashes[0]`; mismatch/missing slot ⇒ `verified: false` (deliver bridge refuses assembly on the same input). `404` case/bound-dispute absent.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | GET    | `/evidence/{subaccord}/{dispute}[/{round}]` | → `200` decrypted manifest (plaintext). Daemon decrypts in memory using the operator key; no auth. `404` if no bundle / subaccord / unknown operator. `409` if undecryptable. `round` defaults to `0`. **MVP:** returns the full plaintext; will publish only public parts once the manifest schema is defined.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | PUT    | `/domains/{hash}?subaccord=<addr>`          | Public document CAS (ADR-0027, chain-anchored per accord-lbst). Body = arbitrary bytes ≤ `EVIDENCE_MAX_DOMAIN_BYTES` (default 1 MiB; over-cap ⇒ `413` before any store write). **Identity mode:** `sha256(body)` must equal the 64-lowercase-hex route hash, else `400`. **Proof mode (derived `domain_ref`, e.g. Hanse):** add `?preimage=<hex>&offset=<n>` (both-or-neither, else `400`) — the preimage must satisfy `sha256(preimage) == hash` AND contain `sha256(body)` as the 32-byte slice at byte `n`, else `400`; the `sha256(body) == hash` check is skipped. **Chain gate (create-first, both modes):** `?subaccord` is REQUIRED — the anchor Subaccord must exist on-chain with `domain_ref == hash` (polled ≤ 1 s for commitment lag after the create-tx confirms); anchor missing after the poll ⇒ `404`, `domain_ref` mismatch ⇒ `400`, param absent/malformed ⇒ `400`. `201` + `Location` on create; `200` no-op on byte-identical re-PUT (first Content-Type wins); `409` if different bytes exist at the hash (collision alarm — never overwrite). Proof mode additionally stores the content-addressed copy at `domains/{sha256(body)}` (idempotent; heals on re-PUT), so `GET /domains/{content hash}` also serves the document. |
 | GET    | `/domains/{hash}`                           | → `200` the stored bytes + stored Content-Type; `ETag: {hash}`, `Cache-Control: immutable` (retention is forever — no DELETE route, sweeps never touch `domains/`). `404` unknown hash; `400` malformed hash. No auth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | GET    | `/healthz`                                  | `200` if Storage + RPC reachable, else `503`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | GET    | `/config`                                   | → `200` `{ operators: [{ base58, hex }] }` — the operator Ed25519 **public** keys loaded into the keyring (== on-chain `evidence_operator` set). Discloses nothing else: no seeds, no RPC/storage/server config. Pubkeys are public by construction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| PUT    | `/jurors/{juror}/delivery-key`                | Register/rotate the juror's Delivery Key (ADR-0034). Body `{ enc_pub: base64(32B X25519), registered_at: unix-ms, sig: base64(Ed25519 over "accord-delkey-v1\nregistered_at:{ms}\nenc_pub:{base58}") }`. Gates: malformed body / signature not verifying against `{juror}` ⇒ `400`; `registered_at <= stored.registered_at` ⇒ `409` (stale — replay protection); accept ⇒ `201`. Open registration: no staked/drawn requirement. |
+| GET    | `/jurors/{juror}/delivery-key`                | → `200 { enc_pub, registered_at }` — the currently registered key; `404` when none. Public by design (a public key + timestamp): clients use it to detect staleness and self-heal (re-register + re-pull). |
 
 Delivery preconditions (enforced via live account reads): `Dispute.state` is at
 or past Drawn for the current round; `{juror}` ∈ `Round.jurors[]` for that
 round; a bundle exists for each `(dispute.subaccord, dispute, round)` where
 `evidence_hashes[round]` is non-zero and `round ≤ juror's round` (ADR-0023).
+
+**Strict Delivery Keys (ADR-0034):** every delivery route additionally
+requires a registered Delivery Key for `{juror}` — unregistered ⇒ `404`.
+Applies to `for/{juror}`, the per-file route, and the Synod group bridge
+alike; there is no Ed→X fallback.
 
 ## Configuration
 
@@ -400,7 +486,10 @@ EVIDENCE_FS_ROOT_DIR=          // absolute path; created on first put
 EVIDENCE_PORT=443
 EVIDENCE_RATE_LIMIT_PER_MIN=   // per-IP
 EVIDENCE_TRUST_PROXY=          // true → honor X-Forwarded-For (only behind a trusted LB/Ingress); default false
-EVIDENCE_MAX_EVIDENCE_BYTES=
+EVIDENCE_MAX_EVIDENCE_BYTES=   // HTTP body cap (0 = uncapped); ops should set ≥ EVIDENCE_MAX_DOC_BYTES so the pipeline's 413 fires before a body read
+EVIDENCE_MAX_ENTRIES=          // v2 manifest entries per round cap (accord-5d0r); default 64
+EVIDENCE_MAX_DOC_BYTES=        // v2 per-document ciphertext cap; default 10 MiB; over ⇒ 413
+EVIDENCE_MAX_PACKAGE_BYTES=    // v2 per-round cumulative stored-bytes cap (stored object sizes + incoming ct; a liability bound, not billing); default 100 MiB; over ⇒ 413
 EVIDENCE_MAX_DOMAIN_BYTES=     // domain-doc PUT cap (ADR-0027); default 1 MiB; domain objects are never swept
 EVIDENCE_RETENTION_DAYS=       // delete N days after RulingFinalized
 EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
@@ -408,9 +497,11 @@ EVIDENCE_TLS_CERT=, EVIDENCE_TLS_KEY=
 
 ## Deployment / HA
 
-- **Stateless replicas.** Delivery is a pure function of `(bundle, juror_pubkey,
-operator_key)`; ingest is an object PUT. Run N replicas behind a TCP/TLS load
-  balancer. No session affinity.
+- **Stateless replicas.** Delivery is a pure function of `(bundle, juror's
+  registered Delivery Key, operator_key)`; ingest is an object PUT; the
+  Delivery Key registry rides the shared storage backend. Run N replicas
+  behind a TCP/TLS load balancer. No session affinity.
+
 - **Shared state.** All replicas share the same `EVIDENCE_KEYRING` env (injected
   by the orchestrator) and the same storage backend (S3 bucket for HA; the FS
   backend is single-node — share via a volume at your own discretion).
@@ -428,6 +519,10 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   bundle is ever stored, the delivery integrity gate refuses (`409`) and alerts.
 - **Premature fetch** (dispute not yet drawn, or juror not in `Round.jurors[]`):
   `404`. Juror retries after `JurorsDrawn`.
+- **Juror without a registered Delivery Key:** `404` (strict, ADR-0034).
+  Clients self-heal — `GET /jurors/{juror}/delivery-key`, compare with the
+  local key, re-register (one `signMessage`) and re-pull. Replay of a
+  superseded registration dies at the monotonic `registered_at` gate.
 - **Integrity gate failure at delivery** (stored plaintext ≠ on-chain
   `evidence_hash`): `409`, alert, quarantine object.
 - **Unknown operator** (Subaccord's `evidence_operator` not in the keyring map):
@@ -464,6 +559,12 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
   accounting-only API key. No auth path exists to brute-force.
 - **TLS mandatory** — ciphertext is the confidentiality layer, but TLS prevents
   metadata/traffic analysis and request enumeration.
+- **Delivery Keys (ADR-0034):** the registration signature binds the X25519
+  key to the wallet pubkey; only the public half is ever stored server-side.
+  The monotonic `registered_at` gate makes replayed registrations useless —
+  the one attack that matters (downgrade to an exfiltrated superseded key)
+  fails. Custody is client-side (noble, origin-scoped browser storage); a
+  stolen key grants reads only until the juror rotates (re-register + re-pull).
 
 ## Testing strategy
 
@@ -486,6 +587,7 @@ evidence_hash`): rejected at ingest (`400`); claimant re-uploads. If a bad
 - ADR-0011 (this daemon's decision), ADR-0006 (evidence), ADR-0005 (authority),
   ADR-0007 (upgrade/multisig), ADR-0023 (per-round evidence hashes),
   ADR-0027 (domain document registry — public CAS on this daemon)
+- ADR-0034 (Delivery Keys — registered X25519 keys, strict juror delivery)
 - `apps/evidence-daemon/EVIDENCE-FORMAT.md` §9 (per-round data format)
 - `programs/accord/SPEC.md` (Evidence flow), `programs/accord/src/state.rs:33,265`
 - `CONTEXT.md` — Evidence Operator

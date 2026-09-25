@@ -52,7 +52,7 @@ const ATA_PROGRAM_ID =
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 
-const FEE_PER_JUROR = 1_000_000n;
+const FEE_PER_JUROR = 50n; // ADR-0029
 const MIN_STAKE = 1_000n;
 const STAKE_FUND = 50_000n;
 const STAKE_AMT = 5_000n;
@@ -286,6 +286,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
     // JurorStake persists as a free-list node (nextFree = old freeHead = MAX).
     const aStakeReclaimed = await readStake(a.jurorStake);
     expect(aStakeReclaimed!.nextFree).toBe(UINT32_MAX);
+    expect(aStakeReclaimed!.prevFree).toBe(UINT32_MAX); // new head: no predecessor
     expect(aStakeReclaimed!.staked).toBe(0n);
   });
 
@@ -353,7 +354,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
 
     // Now we have 3 active stakers (B, C, D). Create a dispute.
     const filerAta = await ata(mint, env.payer.address);
-    await setTokenBalance(env, env.payer.address, mint, FEE_PER_JUROR * 3n);
+    await setTokenBalance(env, env.payer.address, mint, FEE_PER_JUROR * 4n); // ADR-0030: (J+1)·fpj tender
 
     const feeVault = await ata(mint, subaccord);
     const nonce = crypto.getRandomValues(new BigUint64Array(1))[0]!;
@@ -375,7 +376,7 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
         ],
         evidenceHash: randomBytes32(),
         nonce,
-        fee: FEE_PER_JUROR * 3n,
+        fee: FEE_PER_JUROR * 4n, // ADR-0030: (J+1)·fpj tender
       },
       env.programId,
     );
@@ -469,15 +470,25 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
     for (const a of attackers) {
       await env.sendIx(withdraw(a.facade.adapter, env.programId, a.accounts));
     }
-
-    // Reclaim all 4 slots.
+    // Reclaim all 4 slots. accord-b5v5: pushing onto a NON-empty list must
+    // pass the current head's JurorStake account (remaining_accounts[0]).
     for (const a of attackers) {
       const path = await tree2.pathFor(a.index);
+      const freeHead = (
+        await fetchDecoded(env, sub2.subaccord, getSubaccordDecoder())
+      )!.freeHead;
+      const headAccount =
+        freeHead === UINT32_MAX
+          ? undefined
+          : attackers.find((x) => x.index === freeHead)!.jurorStake;
       await env.sendIx(
-        reclaimSlot(env.accord.adapter, env.programId, {
-          subaccord: sub2.subaccord,
-          jurorStake: a.jurorStake,
-        }, path),
+        reclaimSlot(
+          env.accord.adapter,
+          env.programId,
+          { subaccord: sub2.subaccord, jurorStake: a.jurorStake },
+          path,
+          headAccount,
+        ),
       );
       await tree2.blankLeaf(a.index);
     }
@@ -505,7 +516,6 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
         stakeVault: vault2,
       };
       const facade = new Accord({ endpoint: env.rpcUrl, signer: j });
-
       // Read the free head to find which freed JurorStake to pass.
       const subState = await fetchDecoded(env, sub2.subaccord, getSubaccordDecoder());
       const freeIdx = subState!.freeHead;
@@ -514,9 +524,26 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
         (a) => a.index === freeIdx,
       )!;
 
+      // accord-b5v5: when the freed head has a successor, its account rides
+      const freedNext = (await readStake(freedAttacker.jurorStake))!.nextFree;
+      const succAccount =
+        freedNext === UINT32_MAX
+          ? undefined
+          : attackers.find((x) => x.index === freedNext)!.jurorStake;
+
       const path = await tree2.pathFor(freeIdx);
       await env.sendIx(
-        stake(facade.adapter, env.programId, accounts, STAKE_AMT, path, undefined, freedAttacker.jurorStake),
+        stake(
+          facade.adapter,
+          env.programId,
+          accounts,
+          STAKE_AMT,
+          path,
+          // attestation (none — stake-only pool); freed head; new head.
+          undefined,
+          freedAttacker.jurorStake,
+          succAccount,
+        ),
       );
       // Update tree: set leaf at the recycled index.
       tree2.tree.leaves[freeIdx] = { juror: addrBytes(j.address), stake: STAKE_AMT };
@@ -569,6 +596,91 @@ describe("e2e: RECLAIM-LEAF slot recycling (requires Surfpool)", () => {
     expect(eStake!.treeIndex).toBe(e.index); // own slot re-claimed
     expect(eStake!.staked).toBe(STAKE_AMT);
     expect(eStake!.nextFree).toBe(UINT32_MAX); // no longer a free-list node
+    expect(new Uint8Array(sub!.rootHash)).toEqual(tree.rootHash);
+  });
+
+  it("re-stakes a drained juror from a MID-list slot (accord-b5v5 splice)", async () => {
+    if (!env.up) return;
+
+    // Main subaccord state here: B@0, C@1, D@2, E@3 active (previous test),
+    // nextIndex 4. Stake F@4, G@5, H@6, I@7 (filling the depth-3 pool),
+    // drain them all, then reclaim in index order → LIFO list
+    // 7 → 6 → 5 → 4. G (index 5) sits MID-list, buried behind two nodes
+    // (I, H), with predecessor H(6) and successor F(4).
+    const f = await stakeJuror();
+    const g = await stakeJuror();
+    const h = await stakeJuror();
+    const i = await stakeJuror();
+    expect(f.index).toBe(4);
+    expect(g.index).toBe(5);
+    expect(h.index).toBe(6);
+    expect(i.index).toBe(7);
+    await drainJuror(f);
+    await drainJuror(g);
+    await drainJuror(h);
+    await drainJuror(i);
+
+    const reclaimInOrder = async (j: (typeof f) & { index: number }) => {
+      const path = await tree.pathFor(j.index);
+      const freeHead = (await readSubaccord())!.freeHead;
+      const headAccount =
+        freeHead === UINT32_MAX
+          ? undefined
+          : [f, g, h, i].find((x) => x.index === freeHead)!.jurorStake;
+      await env.sendIx(
+        reclaimSlot(
+          env.accord.adapter,
+          env.programId,
+          { subaccord, jurorStake: j.jurorStake },
+          path,
+          headAccount,
+        ),
+      );
+      await tree.blankLeaf(j.index);
+    };
+    await reclaimInOrder(f);
+    await reclaimInOrder(g);
+    await reclaimInOrder(h);
+    await reclaimInOrder(i);
+    expect((await readSubaccord())!.freeHead).toBe(7);
+
+    // Mid-list pointers: G.prev = 6 (H), G.next = 4 (F) — sanity off-chain.
+    const gMid = await readStake(g.jurorStake);
+    expect(gMid!.prevFree).toBe(6);
+    expect(gMid!.nextFree).toBe(4);
+
+    // G re-stakes in ONE tx, splicing out from the middle: pass the
+    // predecessor (H) then the successor (F). The pre-b5v5 program reverted
+    // SlotAwaitingRecycle here.
+    const path = await tree.pathFor(g.index);
+    await env.sendIx(
+      stake(
+        g.facade.adapter,
+        env.programId,
+        g.accounts,
+        STAKE_AMT,
+        path,
+        undefined, // attestation — stake-only pool
+        h.jurorStake, // predecessor
+        f.jurorStake, // successor
+      ),
+    );
+    await tree.updateLeaf(g.index, g.juror.address, STAKE_AMT);
+
+    // List is now 7 → 6 → 4: H's next skips G, F's prev skips G.
+    const sub = await readSubaccord();
+    expect(sub!.freeHead).toBe(7);
+    expect(sub!.nextIndex).toBe(8); // pool was full; no fresh allocation
+    const hAfter = await readStake(h.jurorStake);
+    expect(hAfter!.nextFree).toBe(4);
+    const fAfter = await readStake(f.jurorStake);
+    expect(fAfter!.prevFree).toBe(6);
+    const gAfter = await readStake(g.jurorStake);
+    expect(gAfter!.treeIndex).toBe(5); // own slot re-claimed in place
+    expect(gAfter!.staked).toBe(STAKE_AMT);
+    expect(gAfter!.nextFree).toBe(UINT32_MAX);
+    expect(gAfter!.prevFree).toBe(UINT32_MAX);
+    expect(sub!.stakerCount).toBe(5); // B, C, D, E + G
     expect(new Uint8Array(sub!.rootHash)).toEqual(tree.rootHash);
   });
 });

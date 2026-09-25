@@ -21,6 +21,7 @@ import {
   appeal,
   appealCost,
   claimAppealRefund,
+  claimFilingBounty,
   commit,
   createDispute,
   createSubaccord,
@@ -67,7 +68,7 @@ import {
 import { injectCommittedVrf } from "./setup/vrf.js";
 
 // --- economics mirroring appeal_litesvm.rs -----------------------------------
-const FEE_PER_JUROR = 1_000_000n;
+const FEE_PER_JUROR = 50n; // ADR-0029
 // Round-1 panel is the fixed INITIAL_NUM_JURORS (=3); the first appeal grows it
 // to 7. draw_seat is per-seat, so a panel-7 round-1 draw is seven txs.
 const STAKE_AMOUNT = 5_000n;
@@ -324,7 +325,6 @@ async function resolveRound(
         dispute,
         round: roundPda,
       },
-      jurorStakes,
     ),
   );
 
@@ -527,11 +527,16 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(Number(d.state)).toBe(STATE_CREATED);
 
     // Appeal economics: appellant pays new-round fee + appeal bond (bond ==
-    // new-round fee), both custodied appellant → vault. panel_new = 2N+1 = 7.
+    // new-round fee) + ONE flip-bounty unit (ADR-0030), custodied appellant →
+    // vault. panel_new = 2N+1 = 7. The BOND keeps fee+bond semantics — the
+    // bounty unit is a separate column on the dispute.
     const cost = appealCost(0, FEE_PER_JUROR)!;
     expect(cost.panel).toBe(7);
-    expect(cost.total).toBe(14n * FEE_PER_JUROR);
-    expect((await readAppealBond(env, appealBond)).amount).toBe(cost.total);
+    expect(cost.total).toBe(15n * FEE_PER_JUROR);
+    expect(cost.bounty).toBe(FEE_PER_JUROR);
+    expect((await readAppealBond(env, appealBond)).amount).toBe(
+      cost.fee + cost.bond,
+    );
     expect(appellantBefore - (await tokenAmount(env, w.payerAta))).toBe(
       cost.total,
     );
@@ -568,8 +573,12 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(dFinal.finalizedAt).toBeGreaterThan(0n);
     expect(dFinal.finalizedAt >= dFinal.filedAt).toBe(true);
 
-    // Flipped bond survives finalization for claim_appeal_refund.
-    expect((await readAppealBond(env, appealBond)).amount).toBe(cost.total);
+    // Flipped bond survives finalization for claim_appeal_refund — the
+    // deposit keeps fee+bond semantics; the LONE flip's bounty share (the
+    // whole pool: filer +1 + appellant +1 = 2 units) rides `reward` (ADR-0030).
+    const flipped = await readAppealBond(env, appealBond);
+    expect(flipped.amount).toBe(cost.fee + cost.bond);
+    expect(flipped.reward).toBe(2n * FEE_PER_JUROR);
 
     // --- claim refund: vault → appellant ATA (full bond) ---
     const beforeClaim = await tokenAmount(env, w.payerAta);
@@ -589,7 +598,10 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
         0,
       ),
     );
-    expect((await tokenAmount(env, w.payerAta)) - beforeClaim).toBe(cost.bond);
+    // Bond + the full bounty pool (ADR-0030 lone-flip).
+    expect((await tokenAmount(env, w.payerAta)) - beforeClaim).toBe(
+      cost.bond + 2n * FEE_PER_JUROR,
+    );
 
     // Bond is zeroed on payout ⇒ second claim reverts.
     await expect(
@@ -669,29 +681,30 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
     expect(Number(dFinal.state)).toBe(STATE_FINAL);
     expect(dFinal.finalRuling).toBe(0n);
 
-    // Coherence redistribution (ADR-0004 + ADR-0020 two-mint/two-vault split):
-    // `finalize_dispute` settles the final round against the finalized ruling
-    // via `settle_round_accounts`, which distributes TWO distinct pools — never
-    // mixing mints, even when staking_token == fee_token:
+    // Coherence redistribution (ADR-0004 + ADR-0020 two-mint/two-vault split,
+    // ADR-0029 finality-conditional fees): `finalize_dispute` settles the
+    // final round against the finalized ruling via `settle_round_accounts`,
+    // which distributes TWO distinct pools — never mixing mints, even when
+    // staking_token == fee_token:
     //
     // 1. STAKE pool (staking_token → stake_delta, folded into `staked` later
     //    by `reconcile_stake`; the stake_vault balance is invariant):
     //    the slash proceeds from incoherent jurors.
     // 2. FEE pool (fee_token → fees_earned, pulled by `withdraw_fees`; lives
-    //    in fee_vault): non-revealer fees + the forfeited (no-flip) appeal bond.
+    //    in fee_vault): the round's ENTIRE pot — every seat's base fee (the
+    //    appeal-fee portion of the bond; NOT pre-paid at finalize_round under
+    //    ADR-0029) + the forfeited (no-flip) bond portion.
     //
-    // The forfeited bond was deposited into fee_vault at `appeal`, so it is
-    // fee_token and MUST route to `fees_earned`, not `stake_delta`.
-    //
-    // All 7 revealed ⇒ non-revealer fee = 0.
+    // All 7 revealed, 4 coherent with the final ruling.
     //   slash_total = 3·100 (three incoherent jurors; α·min_stake each) = 300
-    //   forfeit     = bond portion = total − fee = 14·fee − 7·fee = 7·fee (= 7_000_000)
-    //   stake_pool  = 300  ⇒ stake_share = 300 / 4        = 75
-    //   fee_pool    = 0 + 7_000_000                       = 7_000_000
-    //   fee_share   = 7_000_000 / 4                       = 1_750_000
+    //   forfeit     = bond portion = total − fee = 14·fee − 7·fee = 7·fee (= 350)
+    //   stake_pool  = 300  ⇒ stake_share = 300 / 4 = 75
+    //   fee_pool    = 7·fee + 7·fee + 2·fee (ADR-0030 no-flip bounty roll-up:
+    //                 the filer's + appellant's units) = 16·fee
+    //   fee_share   = 16·fee / 4               = 200
     const SLASH_PER_JUROR = 100n;
     const STAKE_SHARE = (3n * SLASH_PER_JUROR) / 4n; // 75
-    const FEE_SHARE = (7n * FEE_PER_JUROR) / 4n; // 1_750_000
+    const FEE_SHARE = (16n * FEE_PER_JUROR) / 4n; // 200 (incl. rolled-up bounty)
     for (let i = 0; i < coherentPdas.length; i++) {
       expect(
         (await readJurorSettlementDelta(env, coherentPdas[i]!)) -
@@ -782,5 +795,57 @@ describe("e2e: appeal + finalize_dispute (requires Surfpool)", () => {
       ),
     ).rejects.toThrow();
     expect(Number((await readDispute(env, w.dispute)).currentRound)).toBe(0);
+  }, 200_000);
+
+  // ADR-0030: a dispute that finalizes WITHOUT ever being appealed leaves the
+  // filer's +1 unit on `Dispute.bounty_pool`; `claim_filing_bounty` sweeps it
+  // vault → filer ATA exactly once (idempotent zero-on-claim).
+  it("claim_filing_bounty refunds the filer's +1 on a never-appealed Final", async () => {
+    if (!env.up) return;
+    const w = await buildWorldResolved0(env, {
+      maxAppeals: 1,
+      round0Result: 0,
+    });
+
+    // Round 0 is already resolved by the world builder — skip the appeal
+    // entirely and finalize straight away (appeal_n = 0 remaining accounts).
+    const round0 = await readRound(env, w.round0);
+    await warpTo(env, round0.revealEnd + DEFAULT_APPEAL_WINDOW_SECS + 1n);
+    await env.sendIx(
+      finalizeDispute(
+        env.accord.adapter,
+        env.programId,
+        {
+          signer: env.payer.address,
+          subaccord: w.subaccord,
+          dispute: w.dispute,
+          round: w.round0,
+        },
+        [...w.round0JurorStakes],
+      ),
+    );
+
+    const dFinal = await readDispute(env, w.dispute);
+    expect(Number(dFinal.state)).toBe(STATE_FINAL);
+    expect(dFinal.bountyPool).toBe(FEE_PER_JUROR); // intact — no appeal ever
+
+    const claim = () =>
+      env.sendIx(
+        claimFilingBounty(env.accord.adapter, env.programId, {
+          caller: env.payer.address,
+          subaccord: w.subaccord,
+          dispute: w.dispute,
+          feeToken: w.mint,
+          filerTokenAccount: w.payerAta,
+          feeVault: w.vault,
+        }),
+      );
+    const before = await tokenAmount(env, w.payerAta);
+    await claim();
+    expect((await tokenAmount(env, w.payerAta)) - before).toBe(FEE_PER_JUROR);
+    expect((await readDispute(env, w.dispute)).bountyPool).toBe(0n); // zero-on-claim
+
+    // Idempotent: the emptied pool reverts on re-claim.
+    await expect(claim()).rejects.toThrow();
   }, 200_000);
 });

@@ -63,7 +63,7 @@ const ATA_PROGRAM_ID =
 /** JurorStake PDA seed prefix (state.rs: SEED_JUROR_STAKE = b"stake"). */
 const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 
-const FEE_PER_JUROR = 1_000_000n;
+const FEE_PER_JUROR = 50n; // ADR-0029
 const MIN_STAKE = 1_000n;
 const STAKE_FUND = 10_000n; // juror ATA balance before staking
 const STAKE_AMT = 5_000n;

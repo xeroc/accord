@@ -44,14 +44,27 @@ export interface EvidenceBundle {
 }
 
 /**
- * Raised by {@link EvidenceStore.put} when an object already exists at the key
- * with a *different* `plaintextHash`. Maps to HTTP 409. An equal hash is a
- * no-op (idempotent) and does not raise.
+ * Format §3.2 path rules, applied when a manifest entry path becomes a
+ * storage key: relative POSIX only — non-empty, no leading `/`, no
+ * backslash, and no `.`, `..`, or empty segment. Defense-in-depth for store
+ * key construction; the ingest pipeline rejects the same shapes at
+ * manifest-parse time so honest flows never hit this.
+ */
+export function isSafeEntryPath(path: string): boolean {
+  if (path === "" || path.startsWith("/") || path.includes("\\")) return false;
+  return path.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+}
+/**
+ * Raised by {@link EvidenceStore.put}/{@link EvidenceStore.putFile} when an
+ * object already exists at the key with a *different* `plaintextHash`. Maps
+ * to HTTP 409. An equal hash is a no-op (idempotent) and does not raise.
  */
 export class EvidenceConflictError extends Error {
   readonly subaccord: Address;
   readonly dispute: Address;
   readonly round: number;
+  /** Entry path for per-file objects; undefined for the manifest object. */
+  readonly path?: string;
   /** Hash already stored at the key (32 bytes, or empty if metadata absent). */
   readonly existingHash: Uint8Array;
 
@@ -60,14 +73,16 @@ export class EvidenceConflictError extends Error {
     dispute: Address;
     round: number;
     existingHash: Uint8Array;
+    path?: string;
   }) {
     super(
-      `evidence conflict for ${b.subaccord}/${b.dispute}/round${b.round}: a different plaintext_hash is already stored`,
+      `evidence conflict for ${b.subaccord}/${b.dispute}/round${b.round}${b.path === undefined ? "" : ` file ${b.path}`}: a different plaintext_hash is already stored`,
     );
     this.name = "EvidenceConflictError";
     this.subaccord = b.subaccord;
     this.dispute = b.dispute;
     this.round = b.round;
+    this.path = b.path;
     this.existingHash = b.existingHash;
   }
 }
@@ -97,6 +112,28 @@ export interface EvidenceStore {
   delete(subaccord: Address, dispute: Address, round: number): Promise<void>;
   /** `true` iff a round-`round` object exists at the key. */
   exists(subaccord: Address, dispute: Address, round: number): Promise<boolean>;
+
+  /**
+   * v2 multifile (EVIDENCE-FORMAT §7.1, loose per-file transport): store one
+   * per-document bundle under the manifest entry's path. Idempotency contract
+   * identical to {@link put}, keyed by `(subaccord, dispute, round, path)`.
+   * `path` MUST satisfy {@link isSafeEntryPath}; implementations throw on
+   * anything else before touching the key namespace.
+   */
+  putFile(b: EvidenceBundle, path: string): Promise<void>;
+  /** Returns the per-file bundle at `path`, or `null` if absent. */
+  getFile(
+    subaccord: Address,
+    dispute: Address,
+    round: number,
+    path: string,
+  ): Promise<EvidenceBundle | null>;
+  /**
+   * Stored file objects under the round — POSIX-relative path + stored size,
+   * sorted by path. The derived-completeness + package-cap input (milestone
+   * accord-5d0r: no persisted index — this listing is the only truth).
+   */
+  listFiles(subaccord: Address, dispute: Address, round: number): Promise<FileStat[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +141,13 @@ export interface EvidenceStore {
 // CBOR would shave a few bytes; JSON needs no dependency and the body is
 // already ciphertext, so size is dominated by the evidence itself.
 // ---------------------------------------------------------------------------
+
+/** One stored file object: its manifest entry path and stored size in bytes. */
+export interface FileStat {
+  readonly path: string;
+  /** Stored object size — derived-completeness + package-cap input. */
+  readonly bytes: number;
+}
 
 interface BundleJson {
   v: 1;

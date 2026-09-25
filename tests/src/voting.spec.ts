@@ -141,7 +141,6 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
           dispute: armed.dispute,
           round: roundPda,
         },
-        jurorStakePdas,
       ),
     );
 

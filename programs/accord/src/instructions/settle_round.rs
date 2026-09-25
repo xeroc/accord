@@ -16,6 +16,7 @@ pub struct SettleRound<'info> {
     )]
     pub subaccord: Box<Account<'info, Subaccord>>,
     #[account(
+        mut,
         seeds = [SEED_DISPUTE, dispute.filer.as_ref(), &dispute.nonce.to_le_bytes()],
         bump = dispute.bump,
         has_one = subaccord,
@@ -31,7 +32,7 @@ pub struct SettleRound<'info> {
 
 impl<'info> SettleRound<'info> {
     pub fn handler_settle_round(ctx: Context<SettleRound>, round_idx: u32) -> Result<()> {
-        let dispute = &ctx.accounts.dispute;
+        let dispute = &mut ctx.accounts.dispute;
         require!(
             dispute.state == DisputeState::Final,
             AccordError::DisputeNotFinal
@@ -41,6 +42,7 @@ impl<'info> SettleRound<'info> {
             AccordError::RoundNotSettlable
         );
         let final_ruling = dispute.final_ruling;
+        let terms = dispute.terms; // Copy — splits the terms/fee_paid borrows below
         require!(final_ruling != u64::MAX, AccordError::InvalidState);
 
         let mut round = ctx.accounts.round.load_mut()?;
@@ -56,11 +58,12 @@ impl<'info> SettleRound<'info> {
 
         settle_round_accounts(
             &round,
-            &dispute.terms,
+            &terms,
             &sub_key,
             ctx.remaining_accounts,
             final_ruling,
             0, // no appeal bonds in prior-round settlement
+            &mut dispute.fee_paid,
         )?;
 
         round.settled = 1;

@@ -33,7 +33,7 @@ test("panelSizeForRound: (J+1)·2^k − 1 ladder, capped at MAX_JURORS; base con
   assert.equal(panelSizeForRound(0, -1), null);
 });
 
-test("appealCost: fee_new = panel · fee_per_juror, bond = fee_new, total = 2·fee_new", () => {
+test("appealCost: fee_new = panel · fee_per_juror, bond = fee_new, total = fee + bond + bounty unit (ADR-0030)", () => {
   // fee=1000: appealing round 0 -> new round 1, panel 7
   const c = appealCost(0, 1_000n);
   assert.ok(c);
@@ -41,12 +41,13 @@ test("appealCost: fee_new = panel · fee_per_juror, bond = fee_new, total = 2·f
   assert.equal(c!.panel, 7);
   assert.equal(c!.fee, 7_000n);
   assert.equal(c!.bond, 7_000n);
-  assert.equal(c!.total, 14_000n);
+  assert.equal(c!.bounty, 1_000n);
+  assert.equal(c!.total, 15_000n);
   // second appeal: round 1 -> 2, panel 15
   const c2 = appealCost(1, 1_000n);
   assert.equal(c2!.newRound, 2);
   assert.equal(c2!.panel, 15);
-  assert.equal(c2!.total, 30_000n);
+  assert.equal(c2!.total, 31_000n);
   // overflow path
   assert.equal(appealCost(31, 1n), null);
 });

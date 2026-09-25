@@ -30,9 +30,15 @@ impl<'info> CommitVrfCallback<'info> {
         randomness: [u8; 32],
     ) -> Result<()> {
         let dispute = &mut ctx.accounts.dispute;
+        // L-3 (security review 2026-09-23): the callback commits randomness AND
+        // freezes the accumulator root — only a `Created` dispute may receive
+        // either. The old `!= Failed` gate leaned on "every post-Created state
+        // implies committed_vrf.is_some()", which is true today only because
+        // every other state derives from `draw_seat`; pin the precondition
+        // instead of the derivation chain.
         require!(
-            dispute.state != DisputeState::Failed,
-            AccordError::DisputeFailed
+            dispute.state == DisputeState::Created,
+            AccordError::InvalidState
         );
         require!(
             dispute.committed_vrf.is_none(),

@@ -46,7 +46,11 @@ export async function execute(
   } catch {
     // round may not exist if cancelled pre-draw; remaining carries just bonds.
   }
-  for (let r = 1; r <= d.data.currentRound; r++) {
+  // AppealBond PDAs are seeded by the round BEING appealed (appeal index
+  // 0..currentRound-1) — not the round the appeal opened. The failed-path
+  // bounty strip (ADR-0030) writes each bond's `reward`, and appendRemaining
+  // maps plain addresses to writable metas, so no extra flag is needed.
+  for (let r = 0; r < d.data.currentRound; r++) {
     remaining.push(await appealBondPda(ctx.programId, d.address, r));
   }
   const ix = cancelDispute(ctx.accord.adapter, ctx.programId, accounts, remaining);

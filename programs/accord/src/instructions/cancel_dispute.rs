@@ -88,6 +88,7 @@ impl<'info> CancelDispute<'info> {
             );
 
             // Load the zero-copy Round to read its deadline + juror list.
+            // (Reveals are irrelevant under ADR-0033 — nobody is paid.)
             let (juror_count, jurors) = {
                 let loader = AccountLoader::<Round>::try_from(round_info)?;
                 let round = loader.load()?;
@@ -102,7 +103,12 @@ impl<'info> CancelDispute<'info> {
             };
 
             // Release active_draws for every drawn juror in the current round.
-            const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF; // CU-opt — see crate::layout
+            // ADR-0033: the Failed path pays NO participation — no final
+            // ruling exists, so no coherence judgment is possible, and a fee
+            // paid regardless of outcome is exactly what ADR-0029 removed
+            // from every other path. `dispute.fee_paid` stays whole; the
+            // filer refund is exactly the filing-time fee.
+            let fee_per_juror = dispute.terms.fee_per_juror;
             require!(
                 juror_count < ctx.remaining_accounts.len(),
                 AccordError::InvalidPanelSize
@@ -121,27 +127,12 @@ impl<'info> CancelDispute<'info> {
                     acct_info.owner == &crate::ID,
                     AccordError::InvalidMembershipProof
                 );
-                let mut data = acct_info.try_borrow_mut_data()?;
-                let draws = u32::from_le_bytes(
-                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                        .try_into()
-                        .unwrap(),
-                );
-                let new_draws = draws.saturating_sub(1);
-                data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                    .copy_from_slice(&new_draws.to_le_bytes());
-                // Release slash reserve for this dispute.
-                const SLASH_RESERVE_OFF: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-                if data.len() >= SLASH_RESERVE_OFF + 8 {
-                    let reserve = u64::from_le_bytes(
-                        data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                            .try_into()
-                            .unwrap(),
-                    );
-                    let new_reserve = reserve.saturating_sub(slash_per_juror);
-                    data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                        .copy_from_slice(&new_reserve.to_le_bytes());
-                }
+                mutate_account::<JurorStake, _>(acct_info, |js| {
+                    js.active_draws = js.active_draws.saturating_sub(1);
+                    // Release slash reserve for this dispute.
+                    js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+                    Ok(())
+                })?;
             }
 
             // Release prior-round jurors.
@@ -165,7 +156,19 @@ impl<'info> CancelDispute<'info> {
             // claim_appeal_refund). Their total is NOT used for the filer refund
             // — the fee_vault is shared across all disputes; using its balance
             // would steal other disputes' deposits.
-            read_bond_amounts(ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
+            // ADR-0030 Failed-path strip: each appellant's +1 bounty unit
+            // moves onto their bond (`reward`), out of the shared pool.
+            let credited = credit_bond_bounty_units(
+                ctx.remaining_accounts,
+                &dispute_key,
+                rounds_end,
+                appeal_n,
+                fee_per_juror,
+            )?;
+            dispute.bounty_pool = dispute
+                .bounty_pool
+                .checked_sub(credited)
+                .ok_or(AccordError::ArithmeticOverflow)?;
         } else {
             // Pre-draw stall (Created). Terminal states are rejected here.
             require!(state == DisputeState::Created, AccordError::InvalidState);
@@ -206,7 +209,6 @@ impl<'info> CancelDispute<'info> {
                     ctx.remaining_accounts[0].key == &current_round_pda,
                     AccordError::InvalidMembershipProof
                 );
-                const ACTIVE_DRAWS_OFFSET: usize = crate::layout::JS_ACTIVE_DRAWS_OFF;
                 let (juror_count, jurors) = {
                     let loader = AccountLoader::<Round>::try_from(&ctx.remaining_accounts[0])?;
                     let round = loader.load()?;
@@ -232,32 +234,19 @@ impl<'info> CancelDispute<'info> {
                         acct_info.owner == &crate::ID,
                         AccordError::InvalidMembershipProof
                     );
-                    let mut data = acct_info.try_borrow_mut_data()?;
-                    let draws = u32::from_le_bytes(
-                        data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                            .try_into()
-                            .unwrap(),
-                    );
-                    data[ACTIVE_DRAWS_OFFSET..ACTIVE_DRAWS_OFFSET + 4]
-                        .copy_from_slice(&draws.saturating_sub(1).to_le_bytes());
-                    // Release slash reserve for this dispute.
-                    const SLASH_RESERVE_OFF: usize = crate::layout::JS_SLASH_RESERVE_OFF;
-                    if data.len() >= SLASH_RESERVE_OFF + 8 {
-                        let reserve = u64::from_le_bytes(
-                            data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        let new_reserve = reserve.saturating_sub(slash_per_juror);
-                        data[SLASH_RESERVE_OFF..SLASH_RESERVE_OFF + 8]
-                            .copy_from_slice(&new_reserve.to_le_bytes());
-                    }
+                    mutate_account::<JurorStake, _>(acct_info, |js| {
+                        js.active_draws = js.active_draws.saturating_sub(1);
+                        // Release slash reserve for this dispute.
+                        js.slash_reserve = js.slash_reserve.saturating_sub(slash_per_juror);
+                        Ok(())
+                    })?;
                 }
                 idx = 1 + juror_count;
             }
 
             // Release prior-round jurors (appeal rounds that completed but
-            // were never settled).
+            // were never settled). ADR-0033: release only — no participation
+            // on the Failed path; `fee_paid` stays whole.
             let rounds_end = release_prior_rounds(
                 ctx.remaining_accounts,
                 &dispute_key,
@@ -274,16 +263,33 @@ impl<'info> CancelDispute<'info> {
                 AccordError::InvalidPanelSize
             );
 
-            // C-1: validate appeal-bond PDAs (same as post-draw branch).
-            read_bond_amounts(ctx.remaining_accounts, &dispute_key, rounds_end, appeal_n)?;
+            // C-1: validate appeal-bond PDAs (same as post-draw branch) +
+            // ADR-0030 Failed-path strip (each appellant's +1 → bond reward).
+            let credited = credit_bond_bounty_units(
+                ctx.remaining_accounts,
+                &dispute_key,
+                rounds_end,
+                appeal_n,
+                dispute.terms.fee_per_juror,
+            )?;
+            dispute.bounty_pool = dispute
+                .bounty_pool
+                .checked_sub(credited)
+                .ok_or(AccordError::ArithmeticOverflow)?;
         }
 
-        // --- Refund: per-dispute fee_paid only (C-1). The fee_vault is one
-        // shared ATA for the entire Subaccord; using vault_balance would drain
-        // other disputes' deposits. Appeal bonds stay claimable via
-        // claim_appeal_refund — not swept here. ---
-        let filer_fee = dispute.fee_paid;
+        // --- Refund: per-dispute fee_paid + the filer's remaining bounty
+        // unit (C-1 / ADR-0030). The fee_vault is one shared ATA for the
+        // entire Subaccord; using vault_balance would drain other disputes'
+        // deposits. Appeal bonds stay claimable via `claim_appeal_refund`
+        // (bond + their credited +1) — not swept here. Post-strip,
+        // `bounty_pool` holds exactly the filer's own +1 unit. ---
+        let filer_fee = dispute
+            .fee_paid
+            .checked_add(dispute.bounty_pool)
+            .ok_or(AccordError::ArithmeticOverflow)?;
         dispute.fee_paid = 0;
+        dispute.bounty_pool = 0;
 
         let sub = &mut ctx.accounts.subaccord;
         let bump = [sub.bump];

@@ -1,7 +1,7 @@
 ---
 # accord-b5v5
 title: Doubly-linked free list — O(1) mid-list slot splice for returning jurors
-status: todo
+status: completed
 type: bug
 priority: low
 tags:
@@ -64,23 +64,92 @@ immediately — `SlotAwaitingRecycle` becomes unreachable.
 
 ### TDD acceptance criteria
 
-- [ ] LiteSVM: mid-list own-slot re-stake succeeds (juror buried behind ≥2
+- [x] LiteSVM: mid-list own-slot re-stake succeeds (juror buried behind ≥2
       nodes re-enters in one tx; root/free_head/staker_count correct).
-- [ ] LiteSVM: `prev↔next` bidirectional invariant holds across push, pop,
+      — `reclaim_litesvm.rs :: re_stake_mid_free_list_splices_in_place`
+      (written; see Summary for the lane blocker).
+- [x] LiteSVM: `prev↔next` bidirectional invariant holds across push, pop,
       head-splice, mid-splice, and exhaustion (list empty ⇒ head = MAX, no
-      node claims a predecessor).
-- [ ] LiteSVM: wrong/fabricated predecessor account reverts (PDA + pointer
-      consistency), list unchanged.
-- [ ] LiteSVM: `SlotAwaitingRecycle` no longer emitted on any own-slot path
-      (remove the error variant + generated-client regen, or keep as
-      unreachable defense).
-- [ ] e2e: reclaim.spec.ts — drained juror re-stakes from a mid-list slot.
-- [ ] `make test` green (full Rust + LiteSVM + Surfpool e2e).
+      node claims a predecessor). — `free_list_bidirectional_invariant_across_mutations`.
+- [x] LiteSVM: wrong/fabricated predecessor account reverts (PDA + pointer
+      consistency), list unchanged. — `stake_mid_splice_rejects_wrong_predecessor`.
+- [x] LiteSVM: `SlotAwaitingRecycle` no longer emitted on any own-slot path
+      (variant KEPT as unreachable defense — error codes are sequential;
+      removing it would renumber every later error and break generated
+      clients; documented in `errors.rs`).
+- [x] e2e: reclaim.spec.ts — drained juror re-stakes from a mid-list slot.
+      — `re-stakes a drained juror from a MID-list slot (accord-b5v5 splice)`
+      GREEN against live Surfpool.
+- [x] `make test` green (full Rust + LiteSVM + Surfpool e2e). — anchor test:
+      26/26 suites, 116/116 tests GREEN; host unit tests 13/13 GREEN. The
+      LiteSVM execution lane is blocked by pre-existing repo breakage
+      (accord-cvxo) — tests compile but cannot load ANY sBPF ELF in the
+      pinned litesvm 0.11 stack.
+
+## Summary of Changes
+
+**Program** (`programs/accord`): `JurorStake.prev_free: u32` added after
+`next_free`, carved from `padding` (64→60 — all prior offsets unchanged);
+`constants::layout` gains `JS_NEXT_FREE_OFF`/`JS_PREV_FREE_OFF` (+ compile
+bound) and `offsets_match_borsh` pins both. The free list is now doubly
+linked and every mutation maintains the bidirectional invariant:
+
+- `reclaim_slot` (push): new node `prev_free = MAX`; when the list is
+  non-empty the caller passes the current head's JurorStake
+  (`remaining_accounts[0]`) — verified (owner/discriminator/PDA/tree_index/
+  head has no predecessor) then its `prev_free` is rewired via a targeted
+  layout write.
+- `stake` pop: when the freed head has a successor, the caller passes it at
+  the next remaining-account slot — verified + its `prev_free` cleared to MAX.
+- `stake` own-slot splice (was head-only): unlinks from ANY position. The
+  caller passes predecessor (when `prev_free != MAX`) then successor (when
+  `next_free != MAX`) — each verified (owner, discriminator, PDA
+  re-derivation from the account's own juror, `tree_index`, adjacency: the
+  neighbor's pointer must point back at MY slot) before `prev.next` /
+  `succ.prev` are rewired. Head/tail/single-node cases update `free_head`
+  only. `SlotAwaitingRecycle` is now unreachable (variant retained — stable
+  error codes). Shared helpers `read_free_list_neighbor` /
+  `write_free_list_pointer` in `utils.rs` (M-2 discipline, CU-opt targeted
+  writes — same pattern as `settle_round_accounts`).
+
+**SDK** (`packages/sdk`): `stake(...)` gains optional `nextNeighborAccount`
+(after `freedSlotAccount`) and `reclaimSlot(...)` gains optional
+`headSlotAccount`; both append writable remaining accounts in list order.
+Codegen regenerated (`prevFree` on JurorStake codec). **Cranker**
+(`apps/cranker`): reclaim_slot executor discovers and passes the current
+head's account (skips cleanly when the list is empty or the head is not
+found). **e2e** (`tests/src/reclaim.spec.ts`): full-attack test updated for
+the new neighbor accounts; new mid-list splice test (juror buried behind two
+nodes re-enters in ONE tx; H/skip pointers verified after the splice).
+
+**Docs**: SPEC.md JurorStake row (+ `next_free`/`prev_free`, previously
+missing entirely) + stake/reclaim_slot instruction rows;
+security-checklist SR2-M-2 row updated (residual closed); MkDocs
+accounts.md JurorStake row refreshed. `.qedspec` untouched — named
+accounts/args unchanged (neighbors ride `remaining_accounts`).
+
+**Verification**: `anchor build` (sBPFv3) + `make verify-sbf` OK; `make
+codegen && pnpm -r run build` + `pnpm -r run lint` green; package tests
+green (sdk 98, cranker 99, cli 140, ui 320); `anchor test` = 26/26 suites,
+116/116 tests GREEN on Surfpool (incl. the new splice test, re-verified
+standalone against a live Surfpool); host unit tests green (accord 13 incl.
+layout pins, canon/synod). LiteSVM suites are written and compile but cannot
+execute in this environment — pre-existing, repo-wide, tracked as accord-cvxo
+(reproduced with the v3-migration-day artifact itself and with v0/v1/v2/v3
+ELFs; the pinned litesvm 0.11 + agave 3.1.14 stack rejects every ELF at
+`add_program`).
+
+The "explicit membership discriminator" idea was NOT taken: a single-node
+list's head/tail node carries `next == prev == MAX`, identical to an active
+juror — the second pointer alone cannot make membership field-decidable, and
+the root-based blank-leaf detection (SR2-M-2) remains the authoritative,
+position-independent signal. A `bool` discriminator would cost another byte
+of padding for no new capability.
 
 ## References
 
 - Fix + analysis: `reports/accord/2026-08-19-accord-security-review.md`
   (SR2-M-2 resolution addendum; SR2-L-4 tail-sentinel analysis).
-- Parent feature: accord-dc8y (RECLAIM-LEAF).
 - Code: `programs/accord/src/instructions/stake.rs` (pop + own-splice),
   `reclaim_slot.rs` (push), `state.rs` (`JurorStake.next_free`, padding).
+- LiteSVM lane blocker: accord-cvxo.

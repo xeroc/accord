@@ -64,7 +64,7 @@ export const COMMITTED_VRF = new Uint8Array(32).fill(42);
 /** Per-juror stake (above MIN_STAKE 1_000). */
 export const STAKE_AMOUNT = 5_000n;
 /** Fee per juror. */
-export const FEE_PER_JUROR = 1_000_000n;
+export const FEE_PER_JUROR = 50n; // ADR-0029: same-mint harness keeps the dominance gate green (slash 100 ≥ 2·50)
 /** Panel size for round 0 (fixed INITIAL_NUM_JURORS = 3). */
 export const PANEL_SIZE = 3;
 /** Distinct jurors staked per dispute. */

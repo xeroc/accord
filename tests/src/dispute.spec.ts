@@ -56,8 +56,8 @@ const SEED_JUROR_STAKE = new Uint8Array([115, 116, 97, 107, 101]); // "stake"
 const SEED_DISPUTE = new Uint8Array([100, 105, 115, 112, 117, 116, 101]); // "dispute"
 
 const INITIAL_NUM_JURORS = 3; // fixed round-1 panel size (ADR-0019)
-const FEE_PER_JUROR = 1_000_000n;
-const REQUIRED_FEE = requiredFee(FEE_PER_JUROR)!; // 3_000_000
+const FEE_PER_JUROR = 50n; // ADR-0029
+const REQUIRED_FEE = requiredFee(FEE_PER_JUROR)!; // (J+1) · FEE_PER_JUROR (ADR-0030 tender)
 // DisputeState::Created is the first variant of the numeric enum (state.rs) = 0.
 const STATE_CREATED = 0;
 
@@ -266,7 +266,8 @@ describe("e2e: dispute (requires Surfpool)", () => {
     expect(Array.from(d!.options[0]!)).toEqual(Array.from(opt0));
     expect(Array.from(d!.options[1]!)).toEqual(Array.from(opt1));
     expect(Array.from(d!.evidenceHashes[0]!)).toEqual(Array.from(evidence));
-    expect(d!.feePaid).toBe(REQUIRED_FEE);
+    expect(d!.feePaid).toBe(REQUIRED_FEE - FEE_PER_JUROR); // juror pot only (ADR-0030)
+    expect(d!.bountyPool).toBe(FEE_PER_JUROR); // the +1 banks into the pool
     expect(d!.currentRound).toBe(0);
     // final_ruling: read straight off the decoded Dispute (the `getRuling` facade
     // helper is broken over a raw Rpc). NOTE: the deployed .so + generated SDK

@@ -618,23 +618,23 @@ describe("PayoutFlow", () => {
 
     rerender(<PayoutFlow frame={200} />);
     expect(fill().style.width).toBe("75%");
-    expect((container.querySelector("[data-window-readout]") as HTMLElement).textContent).toBe(
-      "interrupted",
-    );
+    // challenged ⇒ the numeric readout clears (the clock is stopped, the
+    // challenge pill carries the state from here on)
+    expect((container.querySelector("[data-window-readout]") as HTMLElement).textContent).toBe("");
   });
 
-  it("the ghost auto-pay lane greys out and is struck through after the click", () => {
+  it("the challenge pill is absent before the click and lands after it", () => {
     const { container, rerender } = render(<PayoutFlow frame={75} />);
-    const ghost = () => container.querySelector("[data-ghost]") as HTMLElement;
-    const pill = () => ghost().firstElementChild as HTMLElement;
-    expect(ghost().style.opacity).toBe("1");
-    expect(pill()).toHaveClass("text-confirm");
+    const pill = () => container.querySelector("[data-challenge]") as HTMLElement;
+    // the pop (opacity) lives on the pill's wrapper div — `data-challenge`
+    // itself only carries the click glow
+    const pop = () => pill().parentElement as HTMLElement;
+    // before the challenge lands (click at 84) the pill is invisible
+    expect(pop().style.opacity).toBe("0");
 
     rerender(<PayoutFlow frame={200} />);
-    expect(pill()).toHaveClass("text-muted-foreground");
-    expect((container.querySelector("[data-strike]") as HTMLElement).style.transform).toBe(
-      "scaleX(1)",
-    );
+    expect(pop().style.opacity).toBe("1");
+    expect(pill().textContent).toContain("member challenges");
   });
 
   it("the jury decides before the protocol pays", () => {

@@ -72,7 +72,7 @@ export type SettleRoundInstruction<
         ? ReadonlyAccount<TAccountSubaccord>
         : TAccountSubaccord,
       TAccountDispute extends string
-        ? ReadonlyAccount<TAccountDispute>
+        ? WritableAccount<TAccountDispute>
         : TAccountDispute,
       TAccountRound extends string
         ? WritableAccount<TAccountRound>
@@ -158,7 +158,7 @@ export async function getSettleRoundInstructionAsync<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
-    dispute: { value: input.dispute ?? null, isWritable: false },
+    dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<
@@ -242,7 +242,7 @@ export function getSettleRoundInstruction<
   const originalAccounts = {
     caller: { value: input.caller ?? null, isWritable: true },
     subaccord: { value: input.subaccord ?? null, isWritable: false },
-    dispute: { value: input.dispute ?? null, isWritable: false },
+    dispute: { value: input.dispute ?? null, isWritable: true },
     round: { value: input.round ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<

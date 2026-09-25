@@ -24,10 +24,10 @@ use accord::state::{
 use accord::{accounts, instruction, ID};
 use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::{AnchorLiteSVM, TransactionResult};
+use solana_account::Account as SvmAccount;
 use solana_program::hash::hashv;
 use solana_program::instruction::AccountMeta;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -271,7 +271,7 @@ fn setup_accumulator() -> AccEnv {
                 max_appeals: 3,
                 min_jury_size: 3,
                 aggregation: Aggregation::Plurality,
-                fee_per_juror: 1_000_000,
+                fee_per_juror: 50,
                 reveal_threshold_bps: 6_666,
                 coherence_tol_bps: 0,
                 shortfall_policy: ShortfallPolicy::Redraw,
@@ -448,6 +448,90 @@ fn do_reclaim_slot(
         .instruction()
         .unwrap();
     env.ctx.execute_instruction(ix, &[caller]).unwrap()
+}
+
+/// `reclaim_slot` with optional remaining_accounts (the current free-list
+/// head's JurorStake — required by the program when the list is non-empty).
+fn do_reclaim_slot_with_remaining(
+    env: &mut AccEnv,
+    caller: &Keypair,
+    juror: &Pubkey,
+    path: Vec<MSTNode>,
+    remaining: Vec<AccountMeta>,
+) -> TransactionResult {
+    let js = juror_stake_pda(&env.subaccord, juror);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ReclaimSlot {
+            caller: caller.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js,
+        })
+        .args(instruction::ReclaimSlot { path })
+        .instruction()
+        .unwrap();
+    let ix_with_meta = if remaining.is_empty() {
+        ix
+    } else {
+        solana_program::instruction::Instruction {
+            program_id: ix.program_id,
+            accounts: {
+                let mut accts = ix.accounts;
+                accts.extend(remaining);
+                accts
+            },
+            data: ix.data,
+        }
+    };
+    env.ctx
+        .execute_instruction(ix_with_meta, &[caller])
+        .unwrap()
+}
+
+/// Find the juror whose on-chain `tree_index == wanted` and return
+/// `(pda, deserialized JurorStake)`.
+fn node_for_index(env: &AccEnv, jurors: &[&Keypair], wanted: u32) -> (Pubkey, JurorStake) {
+    for kp in jurors {
+        let pda = juror_stake_pda(&env.subaccord, &kp.pubkey());
+        if let Some(acc) = env.ctx.svm.get_account(&pda) {
+            if let Ok(js) = JurorStake::try_deserialize(&mut &acc.data[..]) {
+                if js.tree_index == wanted {
+                    return (pda, js);
+                }
+            }
+        }
+    }
+    panic!("no JurorStake found with tree_index {wanted}");
+}
+
+/// Walk the on-chain free list head→tail and assert the bidirectional
+/// invariant (accord-b5v5): head.prev == MAX, every adjacent pair
+/// (a→b) satisfies a.next == b && b.prev == a, tail.next == MAX.
+/// `expected` is the head→tail sequence of tree indices; `jurors` maps
+/// every index to its account.
+fn assert_free_list(env: &AccEnv, expected: &[u32], jurors: &[&Keypair]) {
+    let sub = read_subaccord(env);
+    if expected.is_empty() {
+        assert_eq!(sub.free_head, u32::MAX, "free list must be empty");
+    } else {
+        assert_eq!(sub.free_head, expected[0], "head must be expected");
+    }
+    let mut prev_idx = u32::MAX;
+    for (i, &idx) in expected.iter().enumerate() {
+        let (_, js) = node_for_index(env, jurors, idx);
+        assert_eq!(js.tree_index, idx);
+        assert_eq!(
+            js.prev_free, prev_idx,
+            "node {idx} (pos {i}): prev_free must point at the preceding node"
+        );
+        let next_idx = expected.get(i + 1).copied().unwrap_or(u32::MAX);
+        assert_eq!(
+            js.next_free, next_idx,
+            "node {idx} (pos {i}): next_free must point at the following node"
+        );
+        prev_idx = idx;
+    }
 }
 
 fn warp_seconds(env: &mut AccEnv, secs: i64) {
@@ -904,13 +988,28 @@ fn full_attack_and_recovery_cycle() {
         .svm
         .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
         .unwrap();
+    let attacker_refs: Vec<&Keypair> = attackers.iter().collect();
     for kp in &attackers {
         let idx = read_juror_stake(&env, &env.subaccord, &kp.pubkey()).tree_index;
         let (_, _, rpath) = build_root_and_path(&live_leaves, TEST_DEPTH, idx);
-        do_reclaim_slot(&mut env, &caller, &kp.pubkey(), rpath).assert_success();
+        // accord-b5v5: a push onto a NON-empty list must pass the current
+        // head's account so its prev_free can be rewired.
+        let head = read_subaccord(&env).free_head;
+        let remaining = if head != u32::MAX {
+            vec![AccountMeta::new(
+                node_for_index(&env, &attacker_refs, head).0,
+                false,
+            )]
+        } else {
+            vec![]
+        };
+        do_reclaim_slot_with_remaining(&mut env, &caller, &kp.pubkey(), rpath, remaining)
+            .assert_success();
         // After reclaim, the leaf is blanked to (default, 0).
         live_leaves[idx as usize] = (Pubkey::default(), 0);
     }
+    // Reclaimed in index order → LIFO list: 7 → 6 → … → 0.
+    assert_free_list(&env, &[7, 6, 5, 4, 3, 2, 1, 0], &attacker_refs);
 
     let sub = read_subaccord(&env);
     assert_ne!(sub.free_head, u32::MAX, "free list should be non-empty");
@@ -924,21 +1023,20 @@ fn full_attack_and_recovery_cycle() {
         let free_head = read_subaccord(&env).free_head;
         // Find the attacker whose JurorStake has tree_index == free_head.
         // (In tests we scan; in production the cranker reads this off-chain.)
-        let freed_attacker = attackers
-            .iter()
-            .find(|kp| {
-                let pda = juror_stake_pda(&env.subaccord, &kp.pubkey());
-                env.ctx.svm.get_account(&pda).is_some() && {
-                    let acc = env.ctx.svm.get_account(&pda).unwrap();
-                    let js = JurorStake::try_deserialize(&mut &acc.data[..]).unwrap();
-                    js.tree_index == free_head
-                }
-            })
-            .expect("found freed head node");
-        let freed_pda = juror_stake_pda(&env.subaccord, &freed_attacker.pubkey());
+        let (freed_pda, freed_js) = node_for_index(&env, &attacker_refs, free_head);
 
+        // accord-b5v5: when the freed head has a successor, its account must
+        // ride along so the new head's prev_free can be cleared.
+        let remaining = if freed_js.next_free != u32::MAX {
+            let (succ_pda, _) = node_for_index(&env, &attacker_refs, freed_js.next_free);
+            vec![
+                AccountMeta::new(freed_pda, false),
+                AccountMeta::new(succ_pda, false),
+            ]
+        } else {
+            vec![AccountMeta::new(freed_pda, false)]
+        };
         let (_, _, path) = build_root_and_path(&live_leaves, TEST_DEPTH, free_head);
-        let remaining = vec![AccountMeta::new(freed_pda, false)];
         do_stake_with_remaining(&mut env, &new_juror, amount, path, remaining).assert_success();
 
         live_leaves[free_head as usize] = (new_juror.pubkey(), amount);
@@ -1116,67 +1214,290 @@ fn re_stake_after_reclaim_reclaims_own_head_slot() {
     assert_eq!(sub.total_stake, restake, "root sum restored");
 }
 
+/// Reclaim `juror`'s slot (at `idx`), auto-passing the current free-list
+/// head's account as remaining_accounts[0] when the list is non-empty.
+fn reclaim_with_head(
+    env: &mut AccEnv,
+    caller: &Keypair,
+    juror: &Keypair,
+    leaves: &[(Pubkey, u64)],
+    idx: u32,
+    jurors: &[&Keypair],
+) {
+    let (_, _, path) = build_root_and_path(leaves, TEST_DEPTH, idx);
+    let head = read_subaccord(env).free_head;
+    let remaining = if head != u32::MAX {
+        vec![AccountMeta::new(node_for_index(env, jurors, head).0, false)]
+    } else {
+        vec![]
+    };
+    do_reclaim_slot_with_remaining(env, caller, &juror.pubkey(), path, remaining).assert_success();
+}
+
+/// Own-slot re-stake via the doubly-linked splice (accord-b5v5): derives the
+/// [predecessor?, successor?] neighbor accounts from the juror's OWN
+/// free-list pointers and passes them as remaining accounts.
+fn splice_stake(
+    env: &mut AccEnv,
+    juror: &Keypair,
+    amount: u64,
+    leaves: &[(Pubkey, u64)],
+    idx: u32,
+    jurors: &[&Keypair],
+) {
+    let js = read_juror_stake(env, &env.subaccord, &juror.pubkey());
+    let (_, _, path) = build_root_and_path(leaves, TEST_DEPTH, idx);
+    let mut remaining = vec![];
+    if js.prev_free != u32::MAX {
+        remaining.push(AccountMeta::new(
+            node_for_index(env, jurors, js.prev_free).0,
+            false,
+        ));
+    }
+    if js.next_free != u32::MAX {
+        remaining.push(AccountMeta::new(
+            node_for_index(env, jurors, js.next_free).0,
+            false,
+        ));
+    }
+    do_stake_with_remaining(env, juror, amount, path, remaining).assert_success();
+}
+
 #[test]
-fn re_stake_mid_free_list_reverts_with_awaiting_recycle() {
-    // SR2-M-2: when the juror's reclaimed slot sits mid-free-list, `stake`
-    // must revert with SlotAwaitingRecycle (not a misleading
-    // InvalidMerklePath) — the head slot reclaims first and unblocks the
-    // next. A's slot is index 0 (reclaimed first), B's is index 1 (head).
+fn re_stake_mid_free_list_splices_in_place() {
+    // accord-b5v5: the free list is doubly linked — a drained juror whose
+    // reclaimed slot sits MID-list re-stakes in ONE tx by splicing the node
+    // out (prev.next = my.next, succ.prev = my.prev), passing the neighbor
+    // accounts. The SR2-M-2 singly-linked residual (SlotAwaitingRecycle
+    // burial grief) is closed.
     let mut env = setup_accumulator();
     let amount = 5_000;
+    let restake = 4_000; // distinct from `amount` (LiteSVM tx dedup)
 
+    // Four jurors stake at indices 0..3 and fully drain.
     let juror_a = Keypair::new();
-    let idx_a = stake_and_drain(&mut env, &juror_a, amount, &[]);
-    assert_eq!(idx_a, 0);
     let juror_b = Keypair::new();
-    let idx_b = stake_and_drain(&mut env, &juror_b, amount, &[(juror_a.pubkey(), 0)]);
-    assert_eq!(idx_b, 1);
+    let juror_c = Keypair::new();
+    let juror_d = Keypair::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    let idx_a = stake_and_drain(&mut env, &juror_a, amount, &leaves);
+    leaves.push((juror_a.pubkey(), 0));
+    let idx_b = stake_and_drain(&mut env, &juror_b, amount, &leaves);
+    leaves.push((juror_b.pubkey(), 0));
+    let idx_c = stake_and_drain(&mut env, &juror_c, amount, &leaves);
+    leaves.push((juror_c.pubkey(), 0));
+    let idx_d = stake_and_drain(&mut env, &juror_d, amount, &leaves);
+    leaves.push((juror_d.pubkey(), 0));
+    assert_eq!((idx_a, idx_b, idx_c, idx_d), (0, 1, 2, 3));
+    let jurors = [&juror_a, &juror_b, &juror_c, &juror_d];
 
-    // Live leaves after both drained: [(A,0), (B,0)].
-    let live = vec![(juror_a.pubkey(), 0), (juror_b.pubkey(), 0)];
     let caller = Keypair::new();
     env.ctx
         .svm
         .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
         .unwrap();
-    // Reclaim A first (head = 0, A is the tail), then B (head = 1, B → A) —
-    // A's slot is now mid-list.
-    let (_, _, rpath_a) = build_root_and_path(&live, TEST_DEPTH, 0);
-    do_reclaim_slot(&mut env, &caller, &juror_a.pubkey(), rpath_a).assert_success();
-    let blanked_a = vec![(Pubkey::default(), 0), (juror_b.pubkey(), 0)];
-    let (_, _, rpath_b) = build_root_and_path(&blanked_a, TEST_DEPTH, 1);
-    do_reclaim_slot(&mut env, &caller, &juror_b.pubkey(), rpath_b).assert_success();
-    assert_eq!(read_subaccord(&env).free_head, 1);
 
-    // A (mid-list) re-stakes → SlotAwaitingRecycle. Both leaves are blanked
-    // now (B was reclaimed too), so the path proves (default, 0) at index 0
-    // against the both-blanked root.
-    let blanked_both = vec![(Pubkey::default(), 0), (Pubkey::default(), 0)];
-    let (_, _, apath) = build_root_and_path(&blanked_both, TEST_DEPTH, 0);
-    let res = do_stake(&mut env, &juror_a, amount - 1_000, apath);
+    // Reclaim order b, a, d, c → list (head→tail): c(2) → d(3) → a(0) → b(1).
+    // A is buried behind TWO nodes and holds BOTH neighbors: prev = d(3),
+    // succ = b(1). (Reclaim paths are built from the PRE-blank leaves.)
+    reclaim_with_head(&mut env, &caller, &juror_b, &leaves, 1, &jurors);
+    leaves[1] = (Pubkey::default(), 0);
+    reclaim_with_head(&mut env, &caller, &juror_a, &leaves, 0, &jurors);
+    leaves[0] = (Pubkey::default(), 0);
+    reclaim_with_head(&mut env, &caller, &juror_d, &leaves, 3, &jurors);
+    leaves[3] = (Pubkey::default(), 0);
+    reclaim_with_head(&mut env, &caller, &juror_c, &leaves, 2, &jurors);
+    leaves[2] = (Pubkey::default(), 0);
+    assert_free_list(&env, &[2, 3, 0, 1], &jurors);
+
+    // A (mid-list, buried behind d and c) re-stakes in ONE transaction.
+    splice_stake(&mut env, &juror_a, restake, &leaves, 0, &jurors);
+
+    // List is now c(2) → d(3) → b(1): d's next skips A, b's prev skips A.
+    assert_free_list(&env, &[2, 3, 1], &jurors);
+    let js_a = read_juror_stake(&env, &env.subaccord, &juror_a.pubkey());
+    assert_eq!(js_a.tree_index, 0, "own slot re-claimed in place");
+    assert_eq!(js_a.staked, restake);
+    assert_eq!(js_a.next_free, u32::MAX, "no longer a free-list node");
+    assert_eq!(js_a.prev_free, u32::MAX, "no longer a free-list node");
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.next_index, 4, "no fresh allocation");
+    assert_eq!(sub.staker_count, 1);
+    assert_eq!(sub.total_stake, restake, "root sum restored");
+
+    // B is now the TAIL (prev = d only) — tail splice needs the predecessor
+    // alone.
+    let mut leaves_after_a = leaves.clone();
+    leaves_after_a[0] = (juror_a.pubkey(), restake);
+    splice_stake(&mut env, &juror_b, restake, &leaves_after_a, 1, &jurors);
+    assert_free_list(&env, &[2, 3], &jurors);
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.free_head, 2);
+    assert_eq!(sub.staker_count, 2);
+    assert_eq!(sub.total_stake, 2 * restake);
+}
+
+#[test]
+fn stake_mid_splice_rejects_wrong_predecessor() {
+    // M-2 discipline: every raw free-list account is verified (owner, PDA
+    // re-derivation, tree_index, adjacency). A wrong-but-valid account or a
+    // fabricated key reverts FreeListHeadMismatch and leaves the list intact.
+    let mut env = setup_accumulator();
+    let amount = 5_000;
+
+    let juror_a = Keypair::new();
+    let juror_b = Keypair::new();
+    let juror_c = Keypair::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    stake_and_drain(&mut env, &juror_a, amount, &leaves);
+    leaves.push((juror_a.pubkey(), 0));
+    stake_and_drain(&mut env, &juror_b, amount, &leaves);
+    leaves.push((juror_b.pubkey(), 0));
+    stake_and_drain(&mut env, &juror_c, amount, &leaves);
+    leaves.push((juror_c.pubkey(), 0));
+    let jurors = [&juror_a, &juror_b, &juror_c];
+
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+
+    // Reclaim b, a, c → list (head→tail): c(2) → a(0) → b(1). A is mid-list
+    // (prev = c, succ = b). (Paths are built from the PRE-blank leaves.)
+    reclaim_with_head(&mut env, &caller, &juror_b, &leaves, 1, &jurors);
+    leaves[1] = (Pubkey::default(), 0);
+    reclaim_with_head(&mut env, &caller, &juror_a, &leaves, 0, &jurors);
+    leaves[0] = (Pubkey::default(), 0);
+    reclaim_with_head(&mut env, &caller, &juror_c, &leaves, 2, &jurors);
+    leaves[2] = (Pubkey::default(), 0);
+    assert_free_list(&env, &[2, 0, 1], &jurors);
+
+    // Attempt 1: B's PDA in the predecessor slot (valid account, wrong
+    // position — B is A's SUCCESSOR). tree_index check fails.
+    let b_pda = juror_stake_pda(&env.subaccord, &juror_b.pubkey());
+    let (_, _, path0) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let res = do_stake_with_remaining(
+        &mut env,
+        &juror_a,
+        amount,
+        path0.clone(),
+        vec![AccountMeta::new(b_pda, false)],
+    );
+    assert!(!res.is_success(), "wrong predecessor must revert");
     assert!(
-        !res.is_success(),
-        "mid-list own slot must revert; logs={:?}",
+        res.logs().join("\n").contains("FreeListHeadMismatch"),
+        "expected FreeListHeadMismatch, got: {:?}",
         res.logs()
     );
-    assert!(
-        res.logs().join("\n").contains("SlotAwaitingRecycle"),
-        "expected SlotAwaitingRecycle, got: {:?}",
-        res.logs()
+    assert_free_list(&env, &[2, 0, 1], &jurors);
+
+    // Attempt 2: a fabricated (non-existent) account as predecessor.
+    let fake = Pubkey::new_unique();
+    let res = do_stake_with_remaining(
+        &mut env,
+        &juror_a,
+        amount,
+        path0,
+        vec![AccountMeta::new(fake, false)],
     );
+    assert!(!res.is_success(), "fabricated predecessor must revert");
+    assert_free_list(&env, &[2, 0, 1], &jurors);
 
-    // B (head) re-claims their slot; the head advances to A's.
-    let (_, _, bpath) = build_root_and_path(&blanked_both, TEST_DEPTH, 1);
-    do_stake(&mut env, &juror_b, amount, bpath).assert_success();
-    assert_eq!(read_subaccord(&env).free_head, 0, "head advances to A");
+    // The correct splice still succeeds afterwards — the list was untouched.
+    splice_stake(&mut env, &juror_a, amount, &leaves, 0, &jurors);
+    assert_free_list(&env, &[2, 1], &jurors);
+}
 
-    // Unblocked, A re-stakes successfully.
-    let live_after_b = vec![(Pubkey::default(), 0), (juror_b.pubkey(), amount)];
-    let (_, _, apath2) = build_root_and_path(&live_after_b, TEST_DEPTH, 0);
-    do_stake(&mut env, &juror_a, amount, apath2).assert_success();
+#[test]
+fn free_list_bidirectional_invariant_across_mutations() {
+    // accord-b5v5 acceptance: prev↔next holds across push, pop, head-splice,
+    // tail/mid-splice, and exhaustion (empty list ⇒ head = MAX, no node
+    // claims a predecessor).
+    let mut env = setup_accumulator();
+    let amount = 5_000;
+    let restake = 4_000;
+
+    let juror_a = Keypair::new();
+    let juror_b = Keypair::new();
+    let juror_c = Keypair::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    stake_and_drain(&mut env, &juror_a, amount, &leaves);
+    leaves.push((juror_a.pubkey(), 0));
+    stake_and_drain(&mut env, &juror_b, amount, &leaves);
+    leaves.push((juror_b.pubkey(), 0));
+    stake_and_drain(&mut env, &juror_c, amount, &leaves);
+    leaves.push((juror_c.pubkey(), 0));
+    let mut jurors: Vec<&Keypair> = vec![&juror_a, &juror_b, &juror_c];
+
+    let caller = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&caller.pubkey(), LAMPORTS_PER_SOL)
+        .unwrap();
+    // --- push ×3 (each onto a non-empty list passes the old head; paths
+    // are built from the PRE-blank leaves) ---
+    reclaim_with_head(&mut env, &caller, &juror_a, &leaves, 0, &jurors);
+    leaves[0] = (Pubkey::default(), 0);
+    assert_free_list(&env, &[0], &jurors);
+    reclaim_with_head(&mut env, &caller, &juror_b, &leaves, 1, &jurors);
+    leaves[1] = (Pubkey::default(), 0);
+    assert_free_list(&env, &[1, 0], &jurors);
+    reclaim_with_head(&mut env, &caller, &juror_c, &leaves, 2, &jurors);
+    leaves[2] = (Pubkey::default(), 0);
+    assert_free_list(&env, &[2, 1, 0], &jurors);
+
+    // --- pop (head has a successor: new head's prev_free must clear) ---
+    let juror_e = Keypair::new();
+    arm_juror(&mut env, &juror_e, amount);
+    let c_pda = juror_stake_pda(&env.subaccord, &juror_c.pubkey());
+    let b_pda = juror_stake_pda(&env.subaccord, &juror_b.pubkey());
+    let (_, _, epath) = build_root_and_path(&leaves, TEST_DEPTH, 2);
+    do_stake_with_remaining(
+        &mut env,
+        &juror_e,
+        amount,
+        epath,
+        vec![
+            AccountMeta::new(c_pda, false),
+            AccountMeta::new(b_pda, false),
+        ],
+    )
+    .assert_success();
+    assert_free_list(&env, &[1, 0], &jurors);
+    leaves[2] = (juror_e.pubkey(), amount);
+    jurors.push(&juror_e);
+
+    // --- head-splice (B re-claims the head slot; successor's prev rewires) ---
+    splice_stake(&mut env, &juror_b, restake, &leaves, 1, &jurors);
+    assert_free_list(&env, &[0], &jurors);
+    leaves[1] = (juror_b.pubkey(), restake);
+
+    // --- single-node splice (A is head AND tail: no neighbors) → exhaustion ---
+    splice_stake(&mut env, &juror_a, restake, &leaves, 0, &jurors);
+    assert_free_list(&env, &[], &jurors);
+
+    // Exhaustion: head = MAX, and NO surviving node claims a list neighbor.
     let sub = read_subaccord(&env);
     assert_eq!(sub.free_head, u32::MAX);
-    assert_eq!(sub.staker_count, 2);
+    // C's stake account was closed when E's stake popped free slot 2 (see
+    // stake_pops_from_free_list_and_closes_freed_account) — only live stakers
+    // A, B, E hold accounts at exhaustion.
+    assert!(
+        env.ctx
+            .svm
+            .get_account(&juror_stake_pda(&env.subaccord, &juror_c.pubkey()))
+            .is_none(),
+        "popped juror's stake account must be closed"
+    );
+    for kp in [&juror_a, &juror_b, &juror_e] {
+        let js = read_juror_stake(&env, &env.subaccord, &kp.pubkey());
+        assert_eq!(js.next_free, u32::MAX, "no next neighbor at exhaustion");
+        assert_eq!(js.prev_free, u32::MAX, "no prev neighbor at exhaustion");
+    }
+    assert_eq!(sub.next_index, 3);
+    assert_eq!(sub.staker_count, 3);
+    assert_eq!(sub.total_stake, 2 * restake + amount);
 }
 
 #[test]

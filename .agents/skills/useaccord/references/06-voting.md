@@ -37,7 +37,7 @@ dispute, so a 48h governance timelock cannot shift them mid-dispute.
 | `vote:commit`           | `commit`          | **juror**  | no       |
 | `vote:reveal`           | `reveal`          | **juror**  | no       |
 | `vote:commit-hash`      | `commitHash`      | none       | — pure   |
-| `vote:finalize-round`   | `finalizeRound`   | any caller | **yes**  |
+| `vote:finalize-round`   | `finalizeRound`   | any caller | no (ADR-0029: fees settle at finality) |
 | `vote:finalize-dispute` | `finalizeDispute` | any caller | **yes**  |
 | `vote:redraw`           | `redraw`          | any caller | **yes**  |
 
@@ -131,26 +131,27 @@ gates the tally on a reveal quorum
 
 - **Quorum met + decisive tally** → the aggregation's `result` written (winning
   option index for `Plurality`; the median of revealed scalars for `Median` —
-  ADR-0025), each revealer credited `fees_earned += fee_per_juror` (ADR-0020),
-  state → `RoundResolved`.
+  ADR-0025), state → `RoundResolved`. **ADR-0029: no fee credit here** — the
+  round's entire fee pot settles at `settle:round`/`vote:finalize-dispute`
+  against the FINAL ruling (coherent jurors split the whole pot; incoherent
+  revealers forfeit their base fee into it). No remaining accounts.
 - **Shortfall or Plurality top-count tie** (≥2 options share the max count,
-  ADR-0026) → no result, no fee credits, state → `RedrawEligible` (hand to
+  ADR-0026) → no result, state → `RedrawEligible` (hand to
   `vote:redraw`). This kills zero-mandate tie-break rulings (CONCEPT-REVIEW §4.9).
 
-`--remaining-accounts <auto|list>`: the panel's `JurorStake` PDAs (needed only
-when `fee_per_juror > 0`). **The cranker automates this** when `now ≥ reveal_end` or all revealed.
+**The cranker automates this** when `now ≥ reveal_end` or all revealed.
 
 ```bash
 useaccord vote:finalize-round \
-  --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 \
-  --remaining-accounts auto --json
-# {"signature":"…","round":"<round-pda>","remainingCount":3}
+  --subaccord 7xKXtw...kZw --dispute 9pQDR...eY7 --round-idx 0 --json
+# {"signature":"…","round":"<round-pda>"}
 # quorum met + decisive → RoundResolved; round.result = option index / median (ADR-0025)
 # shortfall OR plurality tie → RedrawEligible, no result (inspect via read:round; ADR-0026)
 
 After `reveal_end + appeal_window` with no appeal, settles the **final round**:
-slash incoherent/non-revealing jurors into `stake_delta`, redistribute the
-coherent pool (slash + forfeited bonds), write `final_ruling`, state → `Final`.
+slash incoherent/non-revealing jurors into `stake_delta`, distribute the round's
+ENTIRE fee pot (base fees + forfeited bonds; ADR-0029) to the
+final-ruling-coherent, write `final_ruling`, state → `Final`.
 Prior rounds settle separately via `settle:round`. **Cranker automates this.**
 
 `--remaining-accounts`: `[panel JurorStake PDAs]` + one `AppealBond` PDA per
@@ -174,8 +175,9 @@ the panel size or the appeal budget.
   `stake_delta`, release every drawn juror's `active_draws`/`slash_reserve`,
   bump `draw_attempt`, clear the round, reopen `Created`.
 - **Fail** (`draw_attempt+1 ≥ max_draw_attempts`): same slash/release + prior
-  rounds, refund the filer's remaining `fee_paid`, state → `Failed`. No-shows'
-  accumulated slashes stand; appeal bonds stay claimable.
+  rounds, pay each RESOLVED prior round's revealers their base participation
+  fee (ADR-0029 D3), refund the filer's remaining `fee_paid`, state →
+  `Failed`. No-shows' accumulated slashes stand; appeal bonds stay claimable.
 
 **Cranker automates this.** Filer's single fee deposit suffices across the whole
 ladder — shortfall rounds pay nothing. The bumped `draw_attempt` salts the

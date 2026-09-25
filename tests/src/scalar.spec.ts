@@ -24,6 +24,7 @@ import { createMint } from "./setup/tokens.js";
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import { fetchDecoded } from "./setup/assertions.js";
 import {
+  FEE_PER_JUROR,
   armDispute,
   armSubaccordAndJurors,
   ensurePause,
@@ -152,7 +153,6 @@ describe("e2e: scalar voting — Median aggregation + coherence band (requires S
           dispute: armed.dispute,
           round: roundPda,
         },
-        jurorStakePdas,
       ),
     );
 
@@ -187,7 +187,7 @@ describe("e2e: scalar voting — Median aggregation + coherence band (requires S
     for (const pda of jurorStakePdas) {
       const js = await fetchDecoded(env, pda, getJurorStakeDecoder());
       expect(js!.stakeDelta).toBe(0n);
-      expect(js!.feesEarned).toBe(1_000_000n);
+      expect(js!.feesEarned).toBe(FEE_PER_JUROR); // ADR-0029: full-coherent panel — pot 3·fee / 3 = base fee
       expect(js!.activeDraws).toBe(0);
     }
   }, 300_000);

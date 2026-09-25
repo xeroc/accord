@@ -52,7 +52,7 @@ const ATA_PROGRAM_ID =
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 
 const INITIAL_NUM_JURORS = 3;
-const FEE_PER_JUROR = 1_000_000n;
+const FEE_PER_JUROR = 50n; // ADR-0029
 const REQUIRED_FEE = requiredFee(FEE_PER_JUROR)!;
 const STATE_CREATED = 0;
 

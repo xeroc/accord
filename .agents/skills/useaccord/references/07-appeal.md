@@ -84,7 +84,11 @@ selects the appeal (the round that was appealed — the AppealBond PDA seed). Th
 refund lands in the original appellant's `feeToken` ATA (owner checked
 on-chain); `--claimant-token-account` defaults to the loaded wallet's ATA (the
 single-signer model — the appellant reclaims their own bond). Idempotent: the
-bond is zeroed on payout, so re-invocation is a no-op.
+bond is zeroed on payout, so re-invocation is a no-op. ADR-0030: an aligned
+flipper's claim ALSO pays the bond's flip-bounty share (`AppealBond.reward` —
+the equal split of the dispute's bounty pool credited at `finalize_dispute`),
+and on `Failed` it pays the bond + the appellant's own +1 unit; the refund is
+`amount − fee + reward`.
 
 ```bash
 useaccord appeal:claim-refund --dispute RokL…HEef --round-idx 0

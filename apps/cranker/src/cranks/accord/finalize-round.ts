@@ -1,14 +1,14 @@
 /**
  * finalize_round crank — advance a round to `RoundResolved` once the reveal window elapses OR every juror has revealed.
  * Writes the round result — plurality winner or median, per the dispute's
- * aggregation (ADR-0025). Permissionless. Passes the
- * panel's JurorStake PDAs as remainingAccounts so ADR-0020 `fees_earned`
- * credits land when `fee_per_juror > 0`. (lib.rs:1136, milestone accord-27r5.)
+ * aggregation (ADR-0025). Permissionless. ADR-0029: credits nothing — the
+ * round's fee pot settles at settle_round/finalize_dispute against the final
+ * ruling, so no remaining_accounts. (lib.rs:1136, milestone accord-27r5.)
  */
 import { DisputeState, finalizeRound, type VotingAccounts } from "@useaccord/sdk";
 import { registerCrank, type CrankDispatch } from "../../dispatch.js";
 import type { CrankContext, CrankResult, ActionOf } from "../../types.js";
-import { fetchDispute, fetchRound, panelStakePdas, roundPda } from "../../util.js";
+import { fetchDispute, roundPda } from "../../util.js";
 
 export async function execute(
   ctx: CrankContext,
@@ -27,15 +27,13 @@ export async function execute(
     return { skipped: `dispute state ${DisputeState[state]} not finalizable` };
   }
   const roundAddr = await roundPda(ctx.programId, d.address, d.data.currentRound);
-  const round = await fetchRound(ctx.accord.rpc, roundAddr);
   const accounts: VotingAccounts = {
     signer: ctx.cranker,
     subaccord: d.data.subaccord,
     dispute: d.address,
     round: roundAddr,
   };
-  const remaining = await panelStakePdas(ctx.programId, d.data.subaccord, round.data.jurors);
-  const ix = finalizeRound(ctx.accord.adapter, ctx.programId, accounts, remaining);
+  const ix = finalizeRound(ctx.accord.adapter, ctx.programId, accounts);
   const signature = await ctx.sendIx(ix);
   ctx.log("finalize_round", d.address, signature);
   return { signature };

@@ -19,8 +19,10 @@ import {
   type IngestDeps,
   type IngestStore,
 } from "../src/pipeline/ingest.ts";
+import { sha256 } from "@useaccord/sdk/evidence";
 import {
   deliver,
+  deliverFile,
   type DeliverChainReader,
   type DeliverDeps,
   type DeliverStore,
@@ -37,15 +39,19 @@ function hex(b: Uint8Array): string {
 // ================================================================== INGEST ===
 const I_SUB = new Uint8Array(32).fill(0x01);
 const I_DISPUTE = new Uint8Array(32).fill(0x02);
-const I_HASH = new Uint8Array(32).fill(0xaa);
+// v2: the decrypt-verify gate requires sha256(ct) == plaintext_hash, so the
+// canonical hash is derived from the canonical ct (fake unwrap: ct IS plaintext).
+const I_CT = new Uint8Array([1, 2, 3, 4]);
+const I_HASH = await sha256(I_CT);
 const I_OTHER_HASH = new Uint8Array(32).fill(0xbb);
+const I_OPERATOR = new Uint8Array(32).fill(0x03);
 
 function iBundle(overrides: Partial<EvidenceBundle> = {}): EvidenceBundle {
   return {
     subaccord: I_SUB,
     dispute: I_DISPUTE,
     round: 0,
-    ct: new Uint8Array([1, 2, 3, 4]),
+    ct: I_CT,
     claimant_ephem_pub: new Uint8Array(32).fill(0xcc),
     wrapped: new Uint8Array([9, 9, 9]),
     plaintext_hash: I_HASH,
@@ -70,6 +76,19 @@ function iMemoryStore(): IngestStore & {
     async put(b) {
       objects.set(key(b.subaccord, b.dispute, b.round), b);
     },
+    async putFile(b, path) {
+      objects.set(`${key(b.subaccord, b.dispute, b.round)}:${path}`, b);
+    },
+    async getFile(s, d, r, path) {
+      return objects.get(`${key(s, d, r)}:${path}`) ?? null;
+    },
+    async listFiles(s, d, r) {
+      const p = `${key(s, d, r)}:`;
+      return [...objects.keys()]
+        .filter((k) => k.startsWith(p))
+        .map((k) => k.slice(p.length))
+        .sort();
+    },
   };
 }
 
@@ -82,11 +101,29 @@ function iChain(
       if (hex(d) !== hex(dispute)) return null;
       return view;
     },
+    async readSubaccord() {
+      return { evidence_operator: I_OPERATOR };
+    },
   };
 }
 
 function iDeps(store: IngestStore, chain: IngestChainReader): IngestDeps {
-  return { store, chain };
+  return {
+    store,
+    chain,
+    keyring: {
+      async forOperator(pub) {
+        return hex(pub) === hex(I_OPERATOR) ? new Uint8Array(32).fill(0xee) : null;
+      },
+    },
+    crypto: {
+      sha256,
+      async unwrap(bundle) {
+        return { plaintext: bundle.ct };
+      },
+    },
+    limits: { maxEntries: 64, maxDocBytes: 10_000_000, maxPackageBytes: 100_000_000 },
+  };
 }
 
 test("ingest: happy → 201, idempotent:false, stored with server-stamped ingested_at", async () => {
@@ -284,6 +321,12 @@ function dStoreWith(b: EvidenceBundle | null): DeliverStore {
     async get() {
       return b;
     },
+    async listFiles() {
+      return [];
+    },
+    async getFile() {
+      return null;
+    },
   };
 }
 
@@ -434,6 +477,9 @@ test("deliver: encrypted-at-rest — store object exposes no plaintext field", a
       seen = dBundle();
       return seen;
     },
+    async listFiles() {
+      return [];
+    },
   };
   const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ store }));
   assert.equal(out.status, 200);
@@ -458,6 +504,12 @@ function roundStore(byRound: Map<number, EvidenceBundle>): DeliverStore {
   return {
     async get(_sa, _d, round) {
       return byRound.get(round) ?? null;
+    },
+    async listFiles() {
+      return [];
+    },
+    async getFile() {
+      return null;
     },
   };
 }
@@ -556,6 +608,9 @@ test("deliver: sentinel — [0u8;32] at slot 1 → only rounds 0 and 2 (slot 1 s
       if (round === 2) return rBundle(h2);
       return null;
     },
+    async listFiles() {
+      return [];
+    },
   };
   const out = await deliver(
     D_DISPUTE,
@@ -649,8 +704,9 @@ test("deliver: bounded by current_round — round-1 juror does not receive round
 // [0u8;32] sentinel means "no new evidence this round" — a claimant cannot
 // ingest against a sentinel slot (the hash can never match).
 
-const APPEAL_HASH = new Uint8Array(32).fill(0x5a);
-const ZERO_HASH = new Uint8Array(32); // ADR-0023 sentinel
+const APPEAL_CT = new Uint8Array([7, 7, 7, 7, 7]);
+const APPEAL_HASH = await sha256(APPEAL_CT); // v2: decrypt-verify needs sha256(ct)==hash
+const ZERO_HASH = new Uint8Array(); // ADR-0023 sentinel
 
 /** evidence_hashes fixture: round 0 = I_HASH, round k = given, else zero. */
 function iHashes(
@@ -668,7 +724,7 @@ test("ingest: round 1 appeal evidence stored at its own key, gated against evide
     I_SUB,
     I_DISPUTE,
     1,
-    iBundle({ round: 1, plaintext_hash: APPEAL_HASH }),
+    iBundle({ round: 1, ct: APPEAL_CT, plaintext_hash: APPEAL_HASH }),
     iDeps(store, iChain(I_DISPUTE, iHashes(1, APPEAL_HASH))),
   );
   assert.equal(out.status, 201);
@@ -685,7 +741,7 @@ test("ingest: round>0 + round 0 coexist as distinct keys", async () => {
     I_SUB,
     I_DISPUTE,
     1,
-    iBundle({ round: 1, plaintext_hash: APPEAL_HASH }),
+    iBundle({ round: 1, ct: APPEAL_CT, plaintext_hash: APPEAL_HASH }),
     iDeps(store, chain),
   );
   assert.equal(store.objects.size, 2, "round 0 and round 1 stored independently");
@@ -738,4 +794,213 @@ test("ingest: negative round → 400", async () => {
     iDeps(iMemoryStore(), iChain(I_DISPUTE, iHashes(0, I_HASH))),
   );
   assert.equal(out.status, 400);
+});
+
+// ============================== DELIVER (v2 multifile index, accord-5d0r) ===
+// Derived completeness: no persisted index — the manifest's entries × the
+// store listing decide. Sentinel/URL entries are born satisfied; a
+// manifest-only round (no entries) is complete immediately with files: [].
+
+const riprapManifest = (rows: { path: string; sha256: string }[]): Uint8Array => {
+  const enc = new TextEncoder();
+  const lines = ["schema: riprap-claim/v1", "entries:"];
+  for (const r of rows) lines.push(`  - { path: "${r.path}", sha256: "${r.sha256}" }`);
+  return enc.encode(lines.join("\n") + "\n");
+};
+const HEX_LEAF_A = "ab".repeat(32);
+const HEX_LEAF_B = "cd".repeat(32);
+const HEX_SENTINEL = "0".repeat(64);
+
+function fileStore(b: EvidenceBundle, stored: string[]): DeliverStore {
+  return {
+    async get() {
+      return b;
+    },
+    async listFiles() {
+      return stored.map((p) => ({ path: p, bytes: 100 }));
+    },
+  };
+}
+
+test("deliver: multifile index — per-entry status derived from the store listing", async () => {
+  const manifest = riprapManifest([
+    { path: "01-ticket.pdf", sha256: HEX_LEAF_A },
+    { path: "02-id.jpg", sha256: HEX_LEAF_B },
+    { path: "https://example.com/x.pdf", sha256: HEX_SENTINEL },
+  ]);
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    dDeps({
+      store: fileStore(dBundle(), ["01-ticket.pdf"]),
+      crypto: dCrypto({ plaintext: manifest }),
+    }),
+  );
+  assert.equal(out.status, 200);
+  if (out.status !== 200) throw new Error("unreachable");
+  const r = out.rounds[0]!;
+  assert.deepEqual(
+    r.files.map((f) => [f.path, f.status]),
+    [
+      ["01-ticket.pdf", "stored"],
+      ["02-id.jpg", "pending"],
+      ["https://example.com/x.pdf", "out_of_band"],
+    ],
+  );
+  assert.equal(r.complete, false, "one tracked entry missing ⇒ incomplete");
+});
+
+test("deliver: multifile index — complete flips when every tracked path is stored", async () => {
+  const manifest = riprapManifest([
+    { path: "01-ticket.pdf", sha256: HEX_LEAF_A },
+    { path: "02-id.jpg", sha256: HEX_LEAF_B },
+  ]);
+  const out = await deliver(
+    D_DISPUTE,
+    D_JUROR,
+    dDeps({
+      store: fileStore(dBundle(), ["01-ticket.pdf", "02-id.jpg"]),
+      crypto: dCrypto({ plaintext: manifest }),
+    }),
+  );
+  assert.equal(out.status, 200);
+  assert.equal(out.rounds[0]!.complete, true);
+});
+
+test("deliver: manifest-only round → files: [] + complete: true (v1 shape-compat)", async () => {
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ store: fileStore(dBundle(), []) }));
+  assert.equal(out.status, 200);
+  const r = out.rounds[0]!;
+  assert.deepEqual(r.files, []);
+  assert.equal(r.complete, true);
+});
+
+// ========================= DELIVER FILE (v2 per-file GET, accord-5d0r) ===
+// One document, one GET: juror gate → round gate → manifest integrity →
+// tracked-entry lookup → derived completeness (409 until complete) → file
+// decrypt + leaf gate → watermark → re-encrypt. One plaintext in memory.
+
+const sha256Real = (await import("@useaccord/sdk/evidence")).sha256;
+
+test("deliverFile: happy — complete round, drawn juror → 200 re-encrypted doc", async () => {
+  const enc = new TextEncoder();
+  const doc = enc.encode("police report bytes");
+  const leaf = Array.from(await sha256Real(doc))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  const manifest = riprapManifest([
+    { path: "03-police-report.pdf", sha256: leaf },
+    { path: "04-medical.pdf", sha256: "ee".repeat(32) },
+  ]);
+  const mHash = await sha256Real(manifest);
+
+  const bundleFor = async (pt: Uint8Array, hash: Uint8Array): Promise<EvidenceBundle> => ({
+    subaccord: D_SUB,
+    dispute: D_DISPUTE,
+    round: 0,
+    ct: pt,
+    claimant_ephem_pub: new Uint8Array(32).fill(1),
+    wrapped: new Uint8Array(4).fill(2),
+    plaintext_hash: hash,
+    ingested_at: 0,
+  });
+
+  const store: DeliverStore = {
+    async get() {
+      return bundleFor(manifest, mHash);
+    },
+    async getFile(_sa, _d, _r, p) {
+      return p === "03-police-report.pdf" ? bundleFor(doc, await sha256Real(doc)) : null;
+    },
+    async listFiles() {
+      return [
+        { path: "03-police-report.pdf", bytes: doc.length },
+        { path: "04-medical.pdf", bytes: 5 },
+      ];
+    },
+  };
+  const crypto: DeliveryCrypto = {
+    sha256: sha256Real,
+    unwrap: async (b) => ({ plaintext: b.ct }),
+    reencryptToJuror: async (wm) => ({ out: wm, operator_ephem_pub: D_EPH }),
+  };
+
+  const out = await deliverFile(D_DISPUTE, D_JUROR, 0, "03-police-report.pdf", {
+    store,
+    chain: dChain({ dispute: { subaccord: D_SUB, evidence_hashes: [mHash], current_round: 0 } }),
+    keyring: dKeyring(D_OP_SK),
+    crypto,
+  });
+  assert.equal(out.status, 200);
+  if (out.status !== 200) throw new Error("unreachable");
+  assert.deepEqual(out.out, doc, "juror receives the watermarked document bytes");
+  assert.deepEqual(out.operator_ephem_pub, D_EPH);
+});
+
+test("deliverFile: incomplete round → 409 (jurors never see half a case)", async () => {
+  const manifest = riprapManifest([{ path: "a.pdf", sha256: "ab".repeat(32) }]);
+  const mHash = await sha256Real(manifest);
+  const mBundle: EvidenceBundle = {
+    subaccord: D_SUB,
+    dispute: D_DISPUTE,
+    round: 0,
+    ct: manifest,
+    claimant_ephem_pub: new Uint8Array(32),
+    wrapped: new Uint8Array(1),
+    plaintext_hash: mHash,
+    ingested_at: 0,
+  };
+  const out = await deliverFile(D_DISPUTE, D_JUROR, 0, "a.pdf", {
+    store: {
+      async get() {
+        return mBundle;
+      },
+      async getFile() {
+        return null;
+      },
+      async listFiles() {
+        return []; // nothing stored — incomplete
+      },
+    },
+    chain: dChain({ dispute: { subaccord: D_SUB, evidence_hashes: [mHash], current_round: 0 } }),
+    keyring: dKeyring(D_OP_SK),
+    crypto: {
+      sha256: sha256Real,
+      unwrap: async (b) => ({ plaintext: b.ct }),
+      reencryptToJuror: async (wm) => ({ out: wm, operator_ephem_pub: D_EPH }),
+    },
+  });
+  assert.equal(out.status, 409);
+  if (out.status !== 409) throw new Error("unreachable");
+  assert.match(out.reason, /incomplete/i);
+});
+
+test("deliverFile: juror not drawn → 404; path not tracked → 404; sentinel round → 404", async () => {
+  const deps = {
+    store: {
+      async get() {
+        return null;
+      },
+      async getFile() {
+        return null;
+      },
+      async listFiles() {
+        return [];
+      },
+    } as DeliverStore,
+    chain: dChain({}),
+    keyring: dKeyring(D_OP_SK),
+    crypto: dCrypto({}),
+  } satisfies DeliverDeps;
+  const notDrawn = await deliverFile(D_DISPUTE, new Uint8Array(32).fill(0xff), 0, "a.pdf", deps);
+  assert.equal(notDrawn.status, 404);
+  const noManifest = await deliverFile(D_DISPUTE, D_JUROR, 0, "a.pdf", deps);
+  assert.equal(noManifest.status, 404);
+  const sentinel = await deliverFile(D_DISPUTE, D_JUROR, 1, "a.pdf", {
+    ...deps,
+    chain: dChain({
+      dispute: { subaccord: D_SUB, evidence_hashes: [D_HASH, ZERO32], current_round: 1 },
+    }),
+  });
+  assert.equal(sentinel.status, 404);
 });

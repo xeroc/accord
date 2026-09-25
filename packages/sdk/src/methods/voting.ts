@@ -48,8 +48,8 @@ const COMMIT_PREIMAGE_LEN = 8 + 32 + 32;
  *
  * `commit`/`reveal`/`finalizeRound`/`finalizeDispute` use only the first four.
  * The `stakingToken`/`jurorTokenAccount`/`vault` fields are vestigial: pre
- * ADR-0020 `reveal` paid a fee on reveal; that credit now happens in
- * `finalize_round`. The adapter ignores them and the chain doesn't ask.
+ * ADR-0020 `reveal` paid a fee on reveal; under ADR-0029 no fee moves until
+ * settlement. The adapter ignores them and the chain doesn't ask.
  * `tokenProgram` is a fixed constant.
  */
 export interface VotingAccounts {
@@ -243,7 +243,6 @@ export interface AccordVotingClient {
   buildFinalizeRound(input: {
     programId: Address;
     accounts: VotingAccounts;
-    remainingAccounts?: Address[];
   }): Instruction;
   buildFinalizeDispute(input: {
     programId: Address;
@@ -317,17 +316,16 @@ export function reveal(
  * (instructions/finalize_round.rs). After the reveal window elapses, anyone
  * can advance the dispute to `RoundResolved` with the tally winner written
  * to `round.result` (plurality option or median scalar, ADR-0025).
- * ADR-0020: credits
- * `fees_earned` to each revealer — pass the panel's JurorStake PDAs as
- * `remainingAccounts` when `fee_per_juror > 0`.
+ * ADR-0029: credits nothing — the round's entire fee pot settles at
+ * `settleRound`/`finalizeDispute` against the FINAL ruling. No
+ * remaining_accounts.
  */
 export function finalizeRound(
   client: AccordVotingClient,
   programId: Address,
   accounts: VotingAccounts,
-  remainingAccounts: Address[] = [],
 ): Instruction {
-  return client.buildFinalizeRound({ programId, accounts, remainingAccounts });
+  return client.buildFinalizeRound({ programId, accounts });
 }
 
 /**

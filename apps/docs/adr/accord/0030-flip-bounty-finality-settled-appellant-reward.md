@@ -2,7 +2,18 @@
 
 ## Status
 
-Accepted (implementation pending — bean `accord-82yf`; blocked by `accord-3j58`)
+Implemented (bean `accord-82yf`; landed on top of ADR-0029 / `accord-3j58`).
+
+> Implementation note (2026-09-22): the aligned-flipper rule needs NO extra
+> accounts — the bond chain already encodes the round-result history
+> (`bond[j].prior_result` = round j's result; the final round's result is the
+> final ruling), so `finalize_dispute`'s remaining-account shape is unchanged
+> (`panel + appeal_n`) and the L6 `Round.flipped_to` fallback was not needed.
+> The A→B→A first flipper forfeits their BOND too: their `prior_result` equals
+> the final ruling, which is exactly the unchanged ADR-0004 no-flip forfeit
+> rule — the ADR text ("stiffers the first [flipper]") governs only the +1
+> unit, which stays in the split pool, per "the bond forfeit rule itself is
+> unchanged" below.
 
 ## Context
 

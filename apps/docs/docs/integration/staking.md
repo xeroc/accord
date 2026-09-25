@@ -28,7 +28,7 @@ Stake capital into a Subaccord; become draw-eligible. Capital moves between the 
 
 ## `withdraw_fees` — earned compensation (ADR-0020)
 
-- Jurors accumulate earned fees on `JurorStake.fees_earned` (in `fee_token`), credited at `finalize_round` + settlement.
+- Jurors accumulate earned fees on `JurorStake.fees_earned` (in `fee_token`), credited at settlement against the final ruling (ADR-0029; `finalize_round` credits nothing).
 - `withdraw_fees` pulls the entire `fees_earned` balance from the Subaccord's `fee_vault` → the juror's `fee_token` ATA.
 - **No `active_draws` gate, no timelock** — earned fees are not at-risk capital.
 

@@ -46,18 +46,18 @@ test("disputeSeeds: [b'dispute', filer[32], nonce_le8]", () => {
   assert.deepEqual(Array.from(sN[2]!), [8, 7, 6, 5, 4, 3, 2, 1]);
 });
 
-test("requiredFee: min_jury_size · fee_per_juror, null on overflow (accord-9q3e)", () => {
-  // Default min_jury_size = 3; fee = 3 · fee_per_juror.
-  assert.equal(requiredFee(1_000n), 3_000n);
+test("requiredFee: (min_jury_size + 1) · fee_per_juror, null on overflow (accord-9q3e + ADR-0030)", () => {
+  // Default min_jury_size = 3; tender = 4 · fee_per_juror (juror pot + 1 bounty unit).
+  assert.equal(requiredFee(1_000n), 4_000n);
   assert.equal(requiredFee(0n), 0n);
-  // u64 ceiling: (2^64-1) / 3 per juror fits exactly 3x; +1 tips over.
-  const per = U64_MAX / 3n;
-  assert.equal(requiredFee(per), per * 3n);
+  // u64 ceiling: (2^64-1) / 4 per juror fits exactly 4x; +1 tips over.
+  const per = U64_MAX / 4n;
+  assert.equal(requiredFee(per), per * 4n);
   assert.equal(requiredFee(per + 1n), null); // overflow
   assert.equal(requiredFee(-1n), null); // negative fee
-  // accord-9q3e: N=1 pool → fee = 1 · fee_per_juror.
-  assert.equal(requiredFee(1_000n, 1), 1_000n);
-  assert.equal(requiredFee(1_000n, 5), 5_000n);
+  // N=1 pool → tender = 2 · fee_per_juror.
+  assert.equal(requiredFee(1_000n, 1), 2_000n);
+  assert.equal(requiredFee(1_000n, 5), 6_000n);
   assert.equal(requiredFee(1_000n, 0), null); // invalid min_jury_size
 });
 

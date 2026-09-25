@@ -24,7 +24,7 @@ describe("useaccord appeal:cost", () => {
     expect(stdout).toContain("bond");
   });
 
-  it("quotes the round-0→1 appeal (panel 7, total = 2·fee·7)", async () => {
+  it("quotes the round-0→1 appeal (panel 7, total = 2·fee·7 + bounty unit)", async () => {
     // First appeal: currentRound 0 → newRound 1, panel 7. fee = 7·fpj, bond = fee,
     // total = 14·fpj. Matches the on-chain `appeal` math + appealCost() in the SDK.
     const { stdout, exitCode } = await run([
@@ -41,7 +41,8 @@ describe("useaccord appeal:cost", () => {
     // bigints serialize as decimal strings (jsonStringify) — jq-friendly.
     expect(out.fee).toBe("7000000");
     expect(out.bond).toBe("7000000");
-    expect(out.total).toBe("14000000");
+    expect(out.bounty).toBe("1000000");
+    expect(out.total).toBe("15000000");
   });
 
   it("honors --quiet (prints only the total)", async () => {
@@ -53,7 +54,7 @@ describe("useaccord appeal:cost", () => {
       "--quiet",
     ]);
     expect(exitCode).toBe(0);
-    expect(stdout.trim()).toBe("14000000");
+    expect(stdout.trim()).toBe("15000000");
   });
 
   it("rejects a non-integer --fee-per-juror", async () => {

@@ -25,6 +25,7 @@
  *   - sortition criterion: ADR-0009 §2 (subtree-sum form, ADR-0012)
  */
 import type { Address, Instruction } from "@solana/kit";
+import { MAX_SORTITION_RETRIES } from "../constants.js";
 import {
   type LeafClaim,
   type MSTNode,
@@ -161,7 +162,7 @@ export async function resolveSeat(
   seat: number,
   tree: MerkleAccumulator,
   alreadyDrawn: Uint8Array[],
-  maxRetries: number = 1024,
+  maxRetries: number = MAX_SORTITION_RETRIES,
   drawAttempt: number = 0,
 ): Promise<{
   leaf: LeafClaim;

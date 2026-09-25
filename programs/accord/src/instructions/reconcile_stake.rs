@@ -37,6 +37,7 @@ impl<'info> ReconcileStake<'info> {
             &js.juror,
             new_amount,
             js.tree_index,
+            sub.depth,
             &path,
             &sub.root_hash,
             sub.total_stake,

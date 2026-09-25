@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (implementation pending — bean `accord-3j58`)
+Accepted — implemented (bean `accord-3j58`); decision 3 (Failed-dispute path) amended by [ADR-0033](0033-failed-path-no-participation-no-ruling-no-pay.md)
 
 ## Context
 

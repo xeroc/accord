@@ -26,7 +26,8 @@ Four decisions, resolved in the 2026-08-07 grilling:
    disputes into a single withdrawal.
 3. **Per-Subaccord `fee_vault` (not per-dispute).** Every fee movement is a balanced ledger entry,
    so the invariant `fee_vault.balance == Σ dispute.fee_paid + Σ JurorStake.fees_earned +
-   Σ AppealBond.amount` holds by construction. A juror only ever withdraws what was credited to
+   Σ AppealBond.amount + Σ dispute.bounty_pool` (the last term added by ADR-0030's
+   flip-bounty pool) holds by construction. A juror only ever withdraws what was credited to
    them, from a specific dispute's pool; no dispute can overdraw. This eliminates per-dispute ATAs
    while keeping each dispute's fee accounting isolated in the ledger.
 4. **Slash proceeds redistribute as stake (Option A).** Slashing is pure ledger: subtract from the
@@ -35,8 +36,9 @@ Four decisions, resolved in the 2026-08-07 grilling:
    "rich-get-richer" stake drift this causes was judged less harmful than the weaker coherence
    carrot of burning slash proceeds.
 
-Participation-fee **conditionality** (paid only when the round reaches its reveal threshold, at
-`finalize_round`, not on `reveal`) is locked in [ADR-0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md);
+Participation-fee **conditionality** is set by [ADR-0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md),
+which supersedes this ADR's `finalize_round`-time credit: no fee moves before settlement — the
+round's entire pot settles at finality against the final ruling; the earlier conditionality was [ADR-0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md);
 it is what makes failed rounds pay nothing and the filer's single deposit suffice across the
 redraw ladder.
 
@@ -92,7 +94,7 @@ redraw ladder.
   slash ledger (never by dispute fee economics); `fee_vault` by `create_dispute`/`appeal`/
   `withdraw_fees`/`cancel_dispute`/`claim_appeal_refund`.
 - `reveal` becomes vote-recording only (no fee credit, no ATA, no SPL transfer). The participation
-  fee is credited at `finalize_round`, gated on the reveal threshold (ADR-0021).
+  fee settles with the round's entire pot at settlement, gated on the final ruling (amended by ADR-0029).
 - `dispute.fee_paid` changes meaning from "total deposited" to **"running available fee pool"**
   (decremented as jurors earn, incremented on an appeal's fee portion). The bond portion stays
   tracked in `AppealBond`.
@@ -104,7 +106,7 @@ redraw ladder.
 - **Fund invariant, enforced by `assert_fund_invariants()`** at every fee/stake mutation site in
   the test harness (and a debug read path):
   `stake_vault.balance == Σ JurorStake.staked` (± pending `stake_delta`);
-  `fee_vault.balance == Σ dispute.fee_paid + Σ JurorStake.fees_earned + Σ AppealBond.amount`.
+  `fee_vault.balance == Σ dispute.fee_paid + Σ JurorStake.fees_earned + Σ AppealBond.amount + Σ dispute.bounty_pool` (ADR-0030).
 - The Schelling point is stake-asset-agnostic (0002 stands); the split changes only the
   denomination of each economic role, not the coherence incentive. No Accord token is introduced
   in v1 (0002 stands).

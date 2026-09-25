@@ -31,6 +31,12 @@
 | `InvalidAmount`       | Amount must be greater than zero.                                                    | `stake`, `unstake`, `claim_appeal_refund` |
 | `InsufficientBalance` | Withdrawal exceeds the Juror's staked balance.                                       | `unstake`                                 |
 
+## Pool economics ([ADR-0029](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0029-finality-conditional-juror-fees-same-mint-slash-dominance.md))
+
+| Code                 | Message                                                                                                                          | Raised by                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `FeeDominatesSlash`  | Same-mint pool is fee-dominated: `alpha_bps·min_stake/10_000` must cover `MIN_SLASH_FEE_RATIO · fee_per_juror` (split-mint pools are deliberately un-gated). | `create_subaccord`, `propose_subaccord_update`, `execute_subaccord_update` |
+
 ## Dispute intake
 
 | Code                 | Message                                                                                     | Raised by                                                                                              |

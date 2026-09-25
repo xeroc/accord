@@ -100,11 +100,11 @@ describe("useaccord vote:reveal", () => {
 });
 
 describe("useaccord vote:finalize-round", () => {
-  it("--help renders usage with --remaining-accounts", async () => {
+  it("--help renders usage; no --remaining-accounts (ADR-0029: fees settle at finality)", async () => {
     const { stdout, exitCode } = await help("vote:finalize-round");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("--round-idx");
-    expect(stdout).toContain("--remaining-accounts");
+    expect(stdout).not.toContain("--remaining-accounts");
   });
 });
 

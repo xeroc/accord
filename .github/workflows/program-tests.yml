@@ -1,5 +1,10 @@
 name: Anchor Tests
 
+env:
+  # sBPFv3 bytecode (SIMD-0178/0189/0377). Anchor 1.2 defaults to v3; pin it so
+  # a future default change can't silently shift CI to another bytecode format.
+  ANCHOR_BUILD_SBF_ARCH: v3
+
 on:
   workflow_call:
     inputs:
@@ -40,3 +45,10 @@ jobs:
           anchor_version: ${{ steps.versions.outputs.anchor_version }}
           program: ${{ inputs.program }}
           package_manager: pnpm
+
+      - name: Verify sBPFv3 bytecode
+        run: |
+          for so in target/deploy/accord.so target/deploy/canon.so target/deploy/synod.so; do
+            readelf -h "$so" | grep -Eq 'Flags:.*0x3(,| |$)' || { echo "FAIL: $so is not sBPFv3"; exit 1; }
+            echo "OK: $so -> $(readelf -h "$so" | grep Flags:)"
+          done

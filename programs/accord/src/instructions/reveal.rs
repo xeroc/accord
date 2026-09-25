@@ -2,8 +2,8 @@ use crate::{constants::*, errors::AccordError, events::*, state::*};
 use anchor_lang::prelude::*;
 
 /// Account context for `reveal`. Same shape as `Commit` — ADR-0020 removed the
-/// participation-fee SPL transfer (fees are credited at `finalize_round`
-/// instead). No token accounts needed.
+/// participation-fee SPL transfer (no fee moves before settlement — ADR-0029:
+/// the round's entire fee pot settles at `settle_round`/`finalize_dispute`). No token accounts needed.
 #[derive(Accounts)]
 pub struct Reveal<'info> {
     #[account(mut)]

@@ -37,8 +37,9 @@ apps/docs/pitch
 **/.cache
 target/
 meta
-.omp
-.claude
+ .omp
+ .claude
 
-# Cross-repo handoff notes (never committed)
-HANSE_DOMAIN_SPEC_UPLOAD.md
+# Remotion (apps/remotion) — local videos, generated manifest, renders
+apps/remotion/out/
+apps/remotion/public/audio/

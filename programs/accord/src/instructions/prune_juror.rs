@@ -81,6 +81,7 @@ impl<'info> PruneJuror<'info> {
             &juror_key,
             0,
             index,
+            sub.depth,
             &path,
             &sub.root_hash,
             sub.total_stake,

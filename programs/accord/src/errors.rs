@@ -177,6 +177,11 @@ pub enum AccordError {
     SlotAlreadyReclaimed,
     #[msg("Provided freed-slot account does not match the free-list head.")]
     FreeListHeadMismatch,
+    /// Unreachable since accord-b5v5 (doubly-linked free list): `stake`
+    /// splices the juror's own reclaimed slot out from ANY list position, so
+    /// no own-slot path waits on recycling anymore. Variant retained — error
+    /// codes are sequential and stable; removing it would renumber every
+    /// later error and break generated clients.
     #[msg(
         "Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled."
     )]
@@ -187,4 +192,9 @@ pub enum AccordError {
     EvenJurySize,
     #[msg("The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round.")]
     LadderExceedsMaxJurors,
+    // --- same-mint slash dominance (ADR-0029) ---
+    #[msg(
+        "Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror."
+    )]
+    FeeDominatesSlash,
 }

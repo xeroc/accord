@@ -167,14 +167,52 @@ export type HealthProbe = () => Promise<
   { readonly ok: true } | { readonly ok: false; readonly detail: string }
 >;
 
+/**
+ * PUT /evidence/{subaccord}/{dispute}/{round}/{path} (v2 multifile,
+ * milestone accord-5d0r): one document per call, gated against the stored
+ * manifest's entry leaf. No Location header — file objects have no public GET.
+ */
+export type IngestFileResult =
+  | { readonly ok: true; readonly status: 201; readonly idempotent: boolean }
+  | { readonly ok: false; readonly status: 400 | 404 | 409 | 413; readonly error: string };
+
+export type IngestFileHandler = (
+  subaccord: string,
+  dispute: string,
+  round: number,
+  path: string,
+  body: unknown,
+) => Promise<IngestFileResult>;
+
 /** The full handler set the server needs to serve traffic. */
+
+/**
+ * Per-file delivery = GET /evidence/{dispute}/for/{juror}/{round}/{path} (v2
+ * multifile, accord-5d0r). Body mirrors one DeliveryPayload (base64 fields).
+ */
+export type DeliverFileResult =
+  | {
+      readonly ok: true;
+      readonly status: 200;
+      readonly body: { out: string; operator_ephem_pub: string };
+    }
+  | { readonly ok: false; readonly status: 404 | 409; readonly error: string };
+
+export type DeliverFileHandler = (
+  dispute: string,
+  juror: string,
+  round: number,
+  path: string,
+) => Promise<DeliverFileResult>;
 
 export interface ServerDeps {
   readonly ingest: IngestHandler;
+  readonly ingestFile: IngestFileHandler;
+  readonly deliver: DeliverHandler;
+  readonly deliverFile: DeliverFileHandler;
   readonly domainPut: DomainPutHandler;
   readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;
-  readonly deliver: DeliverHandler;
   readonly manifest: ManifestHandler;
   readonly synodManifest: SynodManifestHandler;
   readonly health: HealthProbe;

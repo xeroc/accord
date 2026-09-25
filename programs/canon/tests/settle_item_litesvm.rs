@@ -19,8 +19,8 @@ use anchor_lang::{system_program, AccountDeserialize, AccountSerialize};
 use anchor_litesvm::AnchorLiteSVM;
 use canon::state::{CanonItem, CanonList, ItemState};
 use canon::{accounts, constants::*, instruction, ID as CANON_ID};
+use solana_account::Account as SvmAccount;
 use solana_program::pubkey::Pubkey;
-use solana_sdk::account::Account as SvmAccount;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
@@ -356,7 +356,8 @@ fn fabricate_dispute(
         filed_at: 0,
         bump: 254,
         drawn_seats: 0,
-        padding: [0; 60],
+        bounty_pool: 0,
+        padding: [0; 52],
     };
     let mut buf = Vec::new();
     d.try_serialize(&mut buf).unwrap();

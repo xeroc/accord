@@ -30,7 +30,7 @@ status banner is annotated.
 | [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)       | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5)                | Proposed             |
 | [0013](0013-vrf-authentication-via-oracle-callback.md)                        | VRF authentication via oracle callback — supersedes the ADR-0009 caller-commit VRF                  | Accepted             |
 | [0014](0014-failed-state-cancel-dispute-escape-hatch.md)                      | Failed state + `cancel_dispute` liveness-escape crank                                               | Accepted             |
-| [0015](0015-evidence-crypto-protocol-in-sdk.md)                               | Evidence crypto protocol lives in `@accord/sdk` — shared by claimant, operator, juror (amends 0011) | Accepted             |
+| [0015](0015-evidence-crypto-protocol-in-sdk.md)                               | Evidence crypto protocol lives in `@accord/sdk` — shared by claimant, operator, juror (amends 0011) | Partially superseded |
 | [0016](0016-pause-scope-split-contains-new-exposure-never-adjudication.md)    | Pause scope — split: pause contains new exposure, never adjudication (amends 0007)                  | Accepted             |
 | [0017](0017-evidence-data-format-manifest-yaml.md)                            | Evidence data format — `manifest.yaml` Merkle root, salted option labels                            | Accepted             |
 | [0018](0018-multi-round-settlement-against-final-ruling.md)                   | Multi-round settlement against the final ruling                                                     | Accepted             |
@@ -46,6 +46,10 @@ status banner is annotated.
 | [0028](0028-pda-authorities-rent-payer-split-retunable-court-params.md)      | PDA update authorities — rent-payer split + retunable court params (amends 0005)                    | Proposed             |
 | [0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md)   | Juror fees settle at finality vs the final ruling; same-mint slash-dominance guard (supersedes 0018 §1) | Accepted (impl pending) |
 | [0030](0030-flip-bounty-finality-settled-appellant-reward.md)               | Flip-bounty — finality-settled reward for verdict-flipping appellants (blocked by 0029 plumbing)     | Accepted (impl pending) |
+| [0031](0031-evidence-v2-loose-per-file-transport.md)                        | Evidence v2 — loose per-file transport: manifest-first PUTs, split juror delivery, derived completeness (no index) | Accepted |
+| [0032](0032-remaining-accounts-full-anchor-deserialization.md)                | `remaining_accounts` use full Anchor deserialization (drop the manual layout offsets)                                              | Accepted             |
+| [0033](0033-failed-path-no-participation-no-ruling-no-pay.md)                  | Failed-path participation removed — no ruling, no pay (amends 0029 D3)                                                              | Accepted             |
+| [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md)        | Delivery Keys — registered X25519 keys for juror delivery; strict mode drops juror-side dual-use (amends 0015, 0011)               | Accepted             |
 
 ### Supersession map
 
@@ -79,6 +83,21 @@ status banner is annotated.
   data-free `rent_payer` so PDA authorities (Arbitrables like Canon) can CPI; `UpdatePayload`
   grows append-only `RevealThresholdBps`/`MaxDrawAttempts`). The single-authority +
   48h-timelock model is unchanged.
+- **0032** supersedes the layout-offset consequences of **0020 / 0022 / 0023 / 0024** (manual
+  byte-offset consts + `offsets_match_borsh` pins replaced by discriminator-checked
+  `try_deserialize`/`try_serialize` in `utils::read_account`/`mutate_account`).
+- **0033** amends **0029 D3** (the Failed path): cancel/redraw-exhaustion pay no
+  participation — `fee_paid` is never decremented, the filer refund is exactly
+  the filing-time fee, and appeal bonds refund whole via `claim_appeal_refund`.
+  0029's finality-conditional fee settlement on the success path (and the
+  no-coherent revealers fallback, where a ruling exists) is unchanged.
+- **0034** amends **0015** (juror-side dual-use delivery is superseded: jurors
+  register a browser-held X25519 **Delivery Key** at the daemon under a wallet
+  `signMessage` binding; strict delivery — no registered key ⇒ no delivery.
+  Operator-side dual-use for claimant→operator ingest stands) and **0011** (the
+  daemon gains `PUT/GET /jurors/{juror}/delivery-key` + a `juror-keys/`
+  storage namespace). The `accord-deliver-v1` HKDF label and `JurorBundle`
+  wire shape are unchanged.
 
 ## How to read them
 
@@ -92,10 +111,10 @@ status banner is annotated.
 - **Auditing**: 0008 + 0009 + 0012 are the security-critical ADRs (snapshot fraud
   proofs → canonical accumulator, sortition enforcement, VRF integration).
 
-1. Number = next sequential (currently **0031**).
+1. Number = next sequential (currently **0034**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at
-   `apps/docs/adr/accord/`.
+
 4. Add a row to the table above.
 5. Reference related ADRs and beans.

@@ -58,28 +58,30 @@ describe("synod fixtures (pure)", () => {
   });
 
   it("computes payout math with the last claimant draining the vault", () => {
-    // Divisible pot: N=3, S=1000, fee=3·7=21 → pot 2979, everyone 993.
+    // Indivisible pot: N=3, S=1000, fee=(3+1)·7=28 (ADR-0030 bounty unit) →
+    // pot 2972; floor share 990, last claimant drains the 2-token remainder.
     const even = synodEconomics({
       partyCount: 3,
       stake: 1000n,
       feePerJuror: 7n,
       minJurySize: 3,
     });
-    expect(even.frozenFee).toBe(21n);
-    expect(even.pot).toBe(2979n);
-    expect(even.neutralShare).toBe(993n);
-    expect(even.lastNeutralShare).toBe(993n);
+    expect(even.frozenFee).toBe(28n);
+    expect(even.pot).toBe(2972n);
+    expect(even.neutralShare).toBe(990n);
+    expect(even.lastNeutralShare).toBe(992n);
 
-    // Indivisible pot: N=2, fee=21 → pot 1979; floor share 989, last
-    // claimant drains the 1-token remainder (990).
+    // Divisible pot: N=2, fee=28 → pot 1972; everyone 986 exactly.
     const odd = synodEconomics({
       partyCount: 2,
       stake: 1000n,
       feePerJuror: 7n,
       minJurySize: 3,
     });
-    expect(odd.neutralShare).toBe(989n);
-    expect(odd.lastNeutralShare).toBe(990n);
+    expect(odd.frozenFee).toBe(28n);
+    expect(odd.pot).toBe(1972n);
+    expect(odd.neutralShare).toBe(986n);
+    expect(odd.lastNeutralShare).toBe(986n);
 
     // Conservation + pot-positive gate (SPEC §Open-time validations) across N.
     for (const n of [2, 3, 4, 5, 6, 7]) {

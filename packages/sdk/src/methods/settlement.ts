@@ -25,7 +25,6 @@ export interface SettleRoundAccounts {
   round: Address;
 }
 
-/** Accounts for `cancel_dispute`. */
 export interface CancelDisputeAccounts {
   /** Any caller (permissionless crank). Signer. */
   caller: Address;
@@ -33,6 +32,18 @@ export interface CancelDisputeAccounts {
   dispute: Address;
   feeToken: Address;
   /** Filer's ATA — refund destination (owner checked on-chain). */
+  filerTokenAccount: Address;
+  feeVault: Address;
+}
+
+/** Accounts for `claim_filing_bounty` (ADR-0030). */
+export interface ClaimFilingBountyAccounts {
+  /** Any caller (permissionless crank). Signer. */
+  caller: Address;
+  subaccord: Address;
+  dispute: Address;
+  feeToken: Address;
+  /** Filer's ATA — sweep destination (pinned to `dispute.filer` on-chain). */
   filerTokenAccount: Address;
   feeVault: Address;
 }
@@ -54,6 +65,10 @@ export interface AccordSettlementClient {
     accounts: CancelDisputeAccounts;
     /** remaining_accounts: Round + JurorStake + AppealBond PDAs. */
     remainingAccounts: Address[];
+  }): Instruction;
+  buildClaimFilingBounty(input: {
+    programId: Address;
+    accounts: ClaimFilingBountyAccounts;
   }): Instruction;
 }
 
@@ -97,4 +112,20 @@ export function cancelDispute(
     accounts,
     remainingAccounts,
   });
+}
+
+/**
+ * Build the permissionless `claim_filing_bounty` crank (ADR-0030). Sweeps the
+ * flip-bounty pool back to the filer when a dispute finalized WITHOUT ever
+ * being appealed (`current_round == 0` at Final) — the filer's filing-time
+ * `+1 · fee_per_juror` unit. Every other terminal shape disposes of the pool
+ * elsewhere (finalize_dispute / the Failed transitions). Idempotent
+ * on-chain (the pool is zeroed on payout).
+ */
+export function claimFilingBounty(
+  client: AccordSettlementClient,
+  programId: Address,
+  accounts: ClaimFilingBountyAccounts,
+): Instruction {
+  return client.buildClaimFilingBounty({ programId, accounts });
 }

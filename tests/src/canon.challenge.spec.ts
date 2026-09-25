@@ -256,7 +256,6 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
         env.accord.adapter,
         env.programId,
         { signer: env.payer.address, subaccord, dispute, round: roundPda },
-        jurorStakeAccounts,
       ),
     );
     expect(await readDisputeState(env, dispute)).toBe(ROUND_RESOLVED);

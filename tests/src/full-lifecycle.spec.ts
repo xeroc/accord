@@ -140,7 +140,6 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
           dispute: armed.dispute,
           round: roundPda,
         },
-        jurorStakeAccounts,
       ),
     );
     expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);

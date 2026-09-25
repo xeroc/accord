@@ -153,12 +153,14 @@ pub struct Subaccord {
 }
 
 impl Subaccord {
-    /// Round-1 filing fee a filer must tender to `create_dispute`:
-    /// `min_jury_size · fee_per_juror` (in `fee_token`). Single source for
-    /// Accord's `FeeMismatch` check and for Arbitrables deriving their CPI
-    /// tender (e.g. Canon's `challenge_item`).
+    /// Total `create_dispute` tender (ADR-0030): the round-1 juror fee pot
+    /// `min_jury_size · fee_per_juror` PLUS one flip-bounty unit
+    /// `fee_per_juror` — `(min_jury_size + 1) · fee_per_juror` in
+    /// `fee_token`. Single source for Accord's `FeeMismatch` check and for
+    /// Arbitrables deriving their CPI tender (Canon's `challenge_item`,
+    /// Synod's `open_case` frozen fee).
     pub fn filing_fee(&self) -> Result<u64> {
-        (self.min_jury_size as u64)
+        (self.min_jury_size as u64 + 1)
             .checked_mul(self.fee_per_juror)
             .ok_or(error!(AccordError::ArithmeticOverflow))
     }
@@ -212,10 +214,20 @@ pub struct JurorStake {
     /// the next free index after this one. Set by `reclaim_slot`, consumed by
     /// `stake`.
     pub next_free: u32,
+    /// Previous free index in the free-slot linked list — the list is DOUBLY
+    /// linked (accord-b5v5): `u32::MAX` = no predecessor (head of the list, or
+    /// not a free-list node). Lets `stake` splice the juror's own reclaimed
+    /// slot out of the list from ANY position in O(1) accounts — the
+    /// singly-linked design forced a mid-list juror to wait behind every slot
+    /// pushed after theirs (soft grief, SR2-M-2 residual). Maintained by
+    /// `reclaim_slot` (push) and `stake` (pop + own-slot splice). Carved out of
+    /// the former padding like `Dispute.drawn_seats`: account size and all
+    /// prior field offsets unchanged.
+    pub prev_free: u32,
     /// Reserved tail space for future field extensions. Zeroed at `init`;
     /// must stay the last field — new fields are carved out of it without
     /// moving existing offsets or resizing the account.
-    pub padding: [u8; 64],
+    pub padding: [u8; 60],
 }
 
 /// Economics-relevant Subaccord params **frozen at `create_dispute` time**
@@ -294,10 +306,13 @@ pub struct Dispute {
     /// window, which must open exactly when the dispute finalizes). `0` is a
     /// safe sentinel: real Unix time is never 0 for on-chain disputes.
     pub finalized_at: i64,
-    /// Round-0 filing fee deposited by the filer (`N · fee_per_juror` at
-    /// creation). Decremented as round-0 jurors earn (`finalize_round`). This
-    /// is the filer's refundable pool on cancel/redraw-exhaustion. Appeal-round
-    /// fees live in their `AppealBond`, NOT here (bean accord-xftx).
+    /// Round-0 juror fee pot deposited by the filer at creation
+    /// (`min_jury_size · fee_per_juror` — the juror-compensation pot only;
+    /// ADR-0029 settlement consumes it, the Failed path refunds it).
+    /// ADR-0030: the filer tenders one EXTRA `fee_per_juror` unit at filing;
+    /// that unit lives in `bounty_pool`, never here, so settlement and refund
+    /// math are untouched by the bounty. Appeal-round fees live in their
+    /// `AppealBond`, NOT here (bean accord-xftx).
     pub fee_paid: u64,
     /// VRF result committed once via `commit_vrf` (ADR-0009). `None` until
     /// committed; `Some(vrf_result)` after. The draw reads this; the caller
@@ -327,10 +342,18 @@ pub struct Dispute {
     /// (jurors strand), so it cannot safely require them. Carved out of the
     /// former padding: account size and all prior field offsets unchanged.
     pub drawn_seats: u32,
+    /// Flip-bounty pool (ADR-0030): one `fee_per_juror` unit banked at
+    /// creation (the filer's +1) plus one per appeal (each appellant's +1).
+    /// Tokens custodyed in the shared `fee_vault`; disposition at
+    /// `finalize_dispute` (Final) or the Failed transitions (per-source
+    /// refund) — never before terminal state. Carved out of the former
+    /// padding like `drawn_seats`: account size and all prior field offsets
+    /// unchanged.
+    pub bounty_pool: u64,
     /// Reserved tail space for future field extensions. Zeroed at `init`;
     /// must stay the last field — new fields are carved out of it without
     /// moving existing offsets or resizing the account.
-    pub padding: [u8; 60],
+    pub padding: [u8; 52],
 }
 
 impl Dispute {
@@ -424,11 +447,13 @@ pub struct Round {
 /// final settlement is `final_ruling != prior_result`. `amount` stores the
 /// **total deposit** (appeal fee + bond); the appeal-fee portion is derived at
 /// settlement as `panel_size_for_round(round_idx) *
-/// fee_per_juror`. `claim_appeal_refund` ALWAYS returns only the bond — never
-/// the appeal fee — regardless of terminal state (bean accord-xftx). The
-/// appeal fee is owned by the round's jurors (credited as `fees_earned` if the
-/// round resolved) or trapped in the vault if it never resolved. A no-flip bond
-/// is zeroed (`amount = 0`) by `finalize_dispute` (bond forfeited into the
+/// fee_per_juror`. `claim_appeal_refund` returns only the bond on **Final**
+/// — never the appeal fee (bean accord-xftx) — and the WHOLE deposit on
+/// **Failed** (ADR-0033: no ruling, no pay — the appeal fee's only
+/// destination, the round's jurors, earns nothing, so the unconsumed fee
+/// returns to its depositor). The appeal fee funds the round's fee pot at
+/// settlement (ADR-0029: coherent jurors split the whole pot).
+/// A no-flip bond is zeroed (`amount = 0`) by `finalize_dispute` (bond forfeited into the
 /// coherent fee pool); a flipped or unresolved bond keeps its `amount` until
 /// `claim_appeal_refund` returns the bond portion and zeroes the record
 /// (idempotent).
@@ -442,11 +467,17 @@ pub struct AppealBond {
     /// Winning value of the round being appealed (set at `appeal` time).
     /// Option index for `Plurality`, median for `Median` (u64 since ADR-0025).
     pub prior_result: u64,
+    /// Flip-bounty share credited by `finalize_dispute` when this appeal is
+    /// an aligned flipper (ADR-0030: `prior_result ≠ final_ruling` ∧ its own
+    /// round's result == final ruling), or one `fee_per_juror` unit on the
+    /// Failed path. Claimed as a top-up in `claim_appeal_refund`
+    /// (zero-on-claim, same idempotency as `amount`).
+    pub reward: u64,
     pub bump: u8,
     /// Reserved tail space for future field extensions. Zeroed at `init`;
     /// must stay the last field — new fields are carved out of it without
     /// moving existing offsets or resizing the account.
-    pub padding: [u8; 64],
+    pub padding: [u8; 56],
 }
 
 /// A proposed Subaccord parameter update, executable only after the 48h on-chain
@@ -652,7 +683,8 @@ mod dispute_ruling_tests {
             filed_at: 0,
             bump: 0,
             drawn_seats: 0,
-            padding: [0; 60],
+            bounty_pool: 0,
+            padding: [0; 52],
         }
     }
 

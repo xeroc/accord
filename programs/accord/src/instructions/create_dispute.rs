@@ -114,6 +114,17 @@ impl<'info> CreateDispute<'info> {
         let delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
+        // SR3-M-2 (security review 2026-09-23): fail-closed custody. The
+        // liabilities below are booked at the NOMINAL fee (`fee_paid` =
+        // fee − fpj, `bounty_pool` = fpj); a fee-on-transfer mint would
+        // deliver `delta < fee` while every downstream refund still pays
+        // nominal out of the SHARED fee_vault — draining other depositors by
+        // (fee − delta) per file→cancel cycle. Classic Token cannot
+        // under-deliver and Token-2022 mints are rejected at the `Mint`
+        // constraint (L-4/L-5), so the guard is unreachable today; it is the
+        // discharge condition any Token-2022 migration must keep. Untestable
+        // in LiteSVM/Surfpool for the same reason (SR3-L-3 precedent).
+        require!(delta == fee, AccordError::FeeMismatch);
         sub.fee_vault_deposited = sub
             .fee_vault_deposited
             .checked_add(delta)
@@ -137,7 +148,15 @@ impl<'info> CreateDispute<'info> {
         d.drawn_seats = 0; // explicit for the field-per-field init style (H-2)
         d.final_ruling = u64::MAX;
         d.finalized_at = 0;
-        d.fee_paid = fee;
+        // ADR-0030: `fee` is the FULL tender `(J+1)·fpj` (FeeMismatch above);
+        // the round-0 juror pot `J·fpj` is the filer's refundable pool, the
+        // extra `fpj` unit banks into the flip-bounty pool. Splitting here
+        // keeps ADR-0029 settlement / Failed-refund math untouched by the
+        // bounty.
+        d.fee_paid = fee
+            .checked_sub(sub.fee_per_juror)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        d.bounty_pool = sub.fee_per_juror;
         // Ugly 4: record the filing timestamp so cancel_dispute has a pre-draw
         // anchor (snapshot/VRF liveness backstop).
         d.filed_at = Clock::get()?.unix_timestamp;

@@ -1,7 +1,8 @@
 //! `open_case` — SPEC §Instructions #1. Permissionless case opening.
 //!
 //! Runs every SPEC §Open-time validation, freezes `fee =
-//! min_jury_size · fee_per_joror` from the Subaccord onto the case (never
+//! (min_jury_size + 1) · fee_per_joror` (ADR-0030: Accord's full filing
+//! tender — the juror pot + one flip-bounty unit) from the Subaccord onto the case (never
 //! re-read — governance can't shift the deal mid-window), and inits the
 //! `SynodCase` PDA `["case", opener, nonce]` in `Opening`. The opener does NOT
 //! stake here — it joins via `join` like everyone else.
@@ -68,7 +69,8 @@ pub fn handler(
         sub.aggregation == Aggregation::Plurality,
         SynodError::AggregationNotPlurality
     );
-    // Fee frozen at open: round-1 panel x per-juror fee (Accord's own
+    // Fee frozen at open: Accord's full filing tender (round-1 panel x
+    // per-juror fee + one flip-bounty unit, ADR-0030) — Accord's own
     // derivation — single source with its `FeeMismatch` check).
     let fee = sub.filing_fee()?;
     // The pot must be positive: S is the only economic dial, it absorbs the fee.

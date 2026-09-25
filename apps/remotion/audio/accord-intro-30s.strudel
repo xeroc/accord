@@ -1,0 +1,64 @@
+// accord-intro-30s — "passive pulse" (Strudel score)
+//
+// Prebaked to public/audio/accord-intro-30s.wav (gitignored artifact) by:
+//   pnpm --filter @useaccord/remotion score accord-intro-30s 30
+// This exact file is also pasteable into https://strudel.cc (add
+// `._punchcard()` to the last line there if you want the visualizer).
+//
+// 120 BPM grid: cpm 30 → 1 bar = 2.000s = 60 frames @30fps.
+// bed runs the whole 30s; soft markers land on storyboard beats:
+//   reveal 8.0 · file 12.0 · draw 14.75 · vote 17.5 · flips 18.5–19 ·
+//   rule 20.25 · gavel 21.875 · drop 23.0 · slashed 23.75 · honesty 25.5 · 27.5
+setcpm(30)
+
+// ── bed ──
+const kick = s("bd ~ bd ~").bank("RolandTR909").gain(.45) // pulse on 1 & 3
+const tick = s("~ hh ~ hh").gain(.09).hpf(9000)           // whisper hats
+const rimt = s("~ ~ rim ~").gain(.13)                     // one wooden tick per bar
+// chord loop (one chord per bar): Dbmaj9 · Bbm9 · Gbmaj9 · Ab7sus
+const arpA = note("db3 [f3 ab3] [c4 eb4] ~").s("piano").gain(.34).room(.35)
+const arpB = note("bb2 [f3 ab3] [c4 db4] ~").s("piano").gain(.32).room(.35)
+const arpC = note("gb2 [bb2 db3] [f3 ab3] ~").s("piano").gain(.32).room(.35)
+const arpD = note("ab2 [eb3 gb3] [ab3 bb3] ~").s("piano").gain(.32).room(.35)
+const pad = x => note(x).s("triangle").fm("<0 2 4>").clip(1).attack(.8).release(1.2).gain(.22).room(.4)
+const hum = x => note(x).s("piano").gain(.2).room(.4)     // sparse top-line hum
+
+// ── S1 hook · 0–4s — almost nothing ──
+const b1 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.45), pad("db2"))
+const b2 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.45),
+  note("[db4,ab4] ~ ~ ~").s("piano").gain(.22).room(.45), pad("db2"))
+
+// ── S2 thesis · 4–8s — arps enter, hushed ──
+const b3 = stack(kick, arpA, tick, pad("db2"))
+const b4 = stack(kick, arpB, tick, pad("bb2"))
+
+// ── S3 reveal · 8–12s — bed blooms on the wordmark ──
+const b5 = stack(kick, arpC, tick, pad("gb2"), hum("ab5"))
+const b6 = stack(kick, arpD, tick, pad("ab2"), hum("gb5"))
+
+// ── S4 mechanism · 12–22s — loop steady, markers whisper ──
+const b7 = stack(kick, arpA, tick, pad("db2"), hum("f5"))          // 01 file @12.0
+const b8 = stack(kick, arpB, tick, pad("bb2"),
+  note("[~ ab5] ~ ~ ~").s("piano").gain(.16).room(.5))             // 02 draw @14.75
+const b9 = stack(kick, arpC, tick, pad("gb2"),
+  note("~ ~ db5 ~").s("piano").gain(.16).room(.5))                 // 03 vote @17.5
+const b10 = stack(kick, arpD, tick, pad("ab2"),
+  note("~ [eb5 f5] gb5 ~").s("piano").gain(.15).room(.5))          // flips cascade @18.5→19.0
+const b11 = stack(kick, arpA, tick, pad("db2"),
+  note("[~ bb5] ~ ~ ~").s("piano").gain(.16).room(.5),             // 04 rule @20.25
+  note("~ ~ ~ [~ ~ ~ db3]").s("piano").gain(.2).room(.5).release(2)) // gavel @21.875 — low note, ring damped
+
+// ── S5 payoff · 22–27.5s — bed thins so the text reads ──
+const b12 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), arpB.release(1.5), pad("bb2"),
+  note("~ ~ ~ [~ bb2]").s("piano").gain(.18).room(.5).release(1.5))  // "slashed" @23.75 — a shadow, ring damped
+const b13 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), pad("db2"),
+  note("~ ~ [db4,f4,ab4,c5,eb5]@2 ~").s("piano").gain(.3).room(.5).release(1.5)) // Dbmaj9 bloom @25.5 — "honesty", ring damped
+
+// ── S6 endcard · 26–30s — home ──
+const b14 = stack(kick, arpA.release(.6), pad("db2"),
+  note("~ ~ [db4,db5] ~").s("piano").gain(.24).room(.45).release(.5)) // wordmark button @27.5 — piano ring damped
+const b15 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.4),
+  note("[db3,f3,ab3,eb4]").s("piano").sustain(.2).release(.8).gain(.3).room(.5)) // fades out by 29.0 — silent before 30
+
+cat(b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15)
+  .gain(.55)

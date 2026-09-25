@@ -1,13 +1,11 @@
 /**
- * `useaccord vote:finalize-round` — permissionless crank: plurality tally →
- * RoundResolved. SDK: `finalizeRound` (voting.ts:254).
+ * `useaccord vote:finalize-round` — permissionless crank: plurality/median
+ * tally → RoundResolved. SDK: `finalizeRound` (voting.ts).
  *
- * After the reveal window elapses (or once every juror has revealed), anyone advances the round to resolved. Pass
- * the panel's JurorStake PDAs via `--remaining-accounts` so per-juror
- * `fees_earned` can be credited (ADR-0020). `--remaining-accounts auto` fetches
- * the round, reads the drawn panel, and derives each JurorStake PDA; a
- * comma-separated list passes them through verbatim; omitted ⇒ empty (valid
- * when `fee_per_juror == 0`).
+ * After the reveal window elapses (or once every juror has revealed), anyone
+ * advances the round to resolved. ADR-0029: no fee credit happens here — the
+ * round's entire fee pot settles at settle_round/finalize_dispute against
+ * the FINAL ruling, so the command takes no remaining accounts.
  */
 import { Flags } from "@oclif/core";
 import { type Address } from "@solana/kit";
@@ -26,14 +24,11 @@ export default class VoteFinalizeRound extends ChainCommand {
   static summary = "Permissionless finalize-round crank (plurality tally → RoundResolved)";
 
   static description =
-    "Advance a round to RoundResolved after the reveal window. Pass the panel's " +
-    "JurorStake PDAs so fees can credit. `--remaining-accounts auto` derives them " +
-    "from the on-chain round; a comma-separated list passes them through; " +
-    "omitted sends none (valid when fee_per_juror is zero).";
+    "Advance a round to RoundResolved after the reveal window (ADR-0029: fees " +
+    "settle at finality — no remaining accounts).";
 
   static examples = [
-    "<%= config.bin %> vote:finalize-round --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --remaining-accounts auto",
-    '<%= config.bin %> vote:finalize-round --subaccord 9aJb… --dispute 5xQ… --round-idx 0 --remaining-accounts "Addr1,Addr2,Addr3"',
+    "<%= config.bin %> vote:finalize-round --subaccord 9aJb… --dispute 5xQ… --round-idx 0",
   ];
 
   static flags = {
@@ -43,10 +38,6 @@ export default class VoteFinalizeRound extends ChainCommand {
     "round-idx": Flags.integer({
       description: "Round index (u32) — the round PDA is derived from (dispute, round-idx)",
       required: true,
-    }),
-    "remaining-accounts": Flags.string({
-      description:
-        '"auto" (derive panel JurorStake PDAs from the round) or a comma-separated list of addresses',
     }),
   };
 
@@ -59,15 +50,6 @@ export default class VoteFinalizeRound extends ChainCommand {
       { dispute: flags.dispute as Address, roundIdx: flags["round-idx"] },
       { programAddress: Accord.PROGRAM_ID },
     );
-
-    const remaining = await resolveRemaining(
-      ctx,
-      flags["remaining-accounts"],
-      flags.subaccord as Address,
-      flags.dispute as Address,
-      round,
-    );
-
     const accounts: VotingAccounts = {
       signer: ctx.signer.address,
       subaccord: flags.subaccord as Address,
@@ -75,7 +57,7 @@ export default class VoteFinalizeRound extends ChainCommand {
       round,
     };
 
-    const instruction = ctx.accord.methods.finalizeRound(accounts, remaining);
+    const instruction = ctx.accord.methods.finalizeRound(accounts);
 
     if (flags["dry-run"]) {
       this.emitDryRun(instruction);
@@ -83,7 +65,7 @@ export default class VoteFinalizeRound extends ChainCommand {
     }
 
     const signature = await this.sendInstruction(ctx, instruction);
-    this.emitSend(signature, { round, remainingCount: remaining.length });
+    this.emitSend(signature, { round });
   }
 }
 

@@ -1,0 +1,68 @@
+// hanse-intro-30s — "passive pulse" (Strudel score), hanse family (Ab major)
+//
+// Prebaked to public/audio/hanse-intro-30s.wav (gitignored artifact) by:
+//   pnpm --filter @useaccord/remotion score hanse-intro-30s 30
+// This exact file is also pasteable into https://strudel.cc.
+//
+// 120 BPM grid: cpm 30 → 1 bar = 2.000s = 60 frames @30fps.
+// Scene map (bar-quantized): hook 0–4 · machines 4–8 · reveal 8–12 ·
+// prereqs 12–18 · machine 18–24 · endcard 24–30.
+// Markers (quantized to the nearest 1/16, on-beat where allowed):
+//   chip cascade ~5.0 · reveal bloom 8.0 · LIVE rows ~12.5 · in-build shadow ~17.0
+//   claim rise ~19.7 · challenge click ~21.25 · ghost dies ~21.6
+//   verdict gravitas ~22.5 · pool pays ~22.75 · wordmark button ~25.0
+setcpm(30)
+
+// ── bed ──
+const kick = s("bd ~ bd ~").bank("RolandTR909").gain(.42) // pulse on 1 & 3
+const tick = s("~ hh ~ hh").gain(.09).hpf(9000)           // whisper hats
+const rimt = s("~ ~ rim ~").gain(.13)                     // one wooden tick per bar
+// chord loop (one chord per bar): Abmaj9 · Fm9 · Dbmaj9 · Eb7sus
+const arpA = note("ab2 [c3 eb3] [g3 bb3] ~").s("piano").gain(.34).room(.35)
+const arpB = note("f2 [c3 eb3] [g3 ab3] ~").s("piano").gain(.32).room(.35)
+const arpC = note("db2 [f3 ab3] [c4 eb4] ~").s("piano").gain(.32).room(.35)
+const arpD = note("eb2 [bb2 db3] [eb3 f3] ~").s("piano").gain(.32).room(.35)
+const pad = x => note(x).s("triangle").fm("<0 2 4>").clip(1).attack(.8).release(1.2).gain(.22).room(.4)
+const hum = x => note(x).s("piano").gain(.2).room(.4)     // sparse top-line hum
+
+// ── S1 hook · 0–4s — almost nothing ──
+const b1 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.42), pad("ab2"))
+const b2 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.42),
+  note("[ab4,eb4] ~ ~ ~").s("piano").gain(.22).room(.45), pad("ab2"))
+
+// ── S2 machines · 4–8s — arps enter, hushed ──
+const b3 = stack(kick, arpA, tick, pad("ab2"))
+const b4 = stack(kick, arpB, tick, pad("f2"),
+  note("[~ g4] ~ ~ ~").s("piano").gain(.16).room(.5))        // machine chips cascade @~5.0
+
+// ── S3 reveal · 8–12s — bed blooms on the wordmark ──
+const b5 = stack(kick, arpC, tick, pad("db2"),
+  note("[db4,f4,ab4,c5] ~ ~ ~").s("piano").gain(.24).room(.5).release(1.5)) // bloom @8.0
+const b6 = stack(kick, arpD, tick, pad("eb2"), hum("db5"))
+
+// ── S4 prereqs · 12–18s — loop steady, rim joins; markers whisper ──
+const b7 = stack(kick, arpA, tick, rimt, pad("ab2"),
+  note("~ [c5 db5] ~ ~").s("piano").gain(.15).room(.5))      // LIVE rows rise @~12.5
+const b8 = stack(kick, arpB, tick, rimt, pad("f2"))
+const b9 = stack(kick, arpC, tick, rimt, pad("db2"),
+  note("~ ~ ~ [~ ~ ~ db3]").s("piano").gain(.2).room(.5).release(2)) // "IN IMPLEMENTATION" shadow @~17.0
+
+// ── S5 machine · 18–24s — payout flow walks; markers on its beats ──
+const b10 = stack(kick, arpD, tick, rimt, pad("eb2"),
+  note("[~ ~ ~ [~ [ab4 bb4] ~ ~]]").s("piano").gain(.15).room(.5)) // claim lands @~19.7
+const b11 = stack(kick, arpA, tick, rimt, pad("ab2"),
+  note("~ ~ [~ ~ rim ~ ~] ~").gain(.17),                     // challenge clicks @~21.25
+  note("~ ~ ~ [~ f3]").s("piano").gain(.18).room(.5).release(1.5)) // ghost auto-pay dies @~21.6
+const b12 = stack(kick, arpB, tick, s("~ [~ rim] ~ ~").gain(.12), pad("f2"),
+  note("~ ~ [f3,f4] ~").s("piano").gain(.16).room(.5).release(1.5), // verdict gravitas @~22.5
+  note("~ ~ ~ [~ ~ c5]").s("piano").gain(.15).room(.5))      // the pool pays @~22.75
+
+// ── S6 endcard · 24–30s — home, thinned so the status reads ──
+const b13 = stack(kick, arpA.release(.6), pad("ab2"),
+  note("~ ~ [ab4,ab5] ~").s("piano").gain(.24).room(.45).release(.5)) // wordmark button @~25.0
+const b14 = stack(s("bd ~ bd ~").bank("RolandTR909").gain(.4), arpB.release(.6), pad("f2"))
+const b15 = stack(s("bd ~ ~ ~").bank("RolandTR909").gain(.4),
+  note("[ab3,c4,eb4,bb4]").s("piano").sustain(.2).release(.8).gain(.3).room(.5)) // fades out by 29.0 — silent before 30
+
+cat(b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15)
+  .gain(.55)

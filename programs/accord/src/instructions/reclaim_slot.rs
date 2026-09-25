@@ -56,18 +56,35 @@ impl<'info> ReclaimSlot<'info> {
             &Pubkey::default(),
             0,
             index,
+            sub.depth,
             &path,
             &sub.root_hash,
             sub.total_stake,
         )?;
-
-        // Linked-list push: this JurorStake becomes the new head.
+        // Linked-list push: this JurorStake becomes the new head. The list is
+        // DOUBLY linked (accord-b5v5): when the list is non-empty, the old
+        // head must learn its new predecessor — the caller passes the old
+        // head's JurorStake account as `remaining_accounts[0]` (discovered
+        // off-chain: the node whose `tree_index == free_head`).
+        js.prev_free = u32::MAX; // the new head has no predecessor
         js.next_free = sub.free_head;
+        if sub.free_head != u32::MAX {
+            require!(
+                !ctx.remaining_accounts.is_empty(),
+                AccordError::FreeListHeadMismatch
+            );
+            let head_info = &ctx.remaining_accounts[0];
+            let (_head_juror, _head_index, _head_next, head_prev) =
+                read_free_list_neighbor(head_info, &sub.key(), sub.free_head)?;
+            // The current head must not already claim a predecessor (the
+            // bidirectional invariant: head.prev == MAX).
+            require!(head_prev == u32::MAX, AccordError::FreeListHeadMismatch);
+            mutate_free_list_neighbor(head_info, |head| head.prev_free = index)?;
+        }
         sub.free_head = index;
 
         sub.root_hash = new_root;
         sub.total_stake = new_total;
-
         emit!(SlotReclaimed {
             subaccord: sub.key(),
             juror,

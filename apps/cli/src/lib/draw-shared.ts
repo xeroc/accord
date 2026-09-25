@@ -29,6 +29,7 @@ import {
   findJurorStakePda,
   findJurorStakesBySubaccord,
   resolveSeat,
+  MAX_SORTITION_RETRIES,
   type LeafClaim,
   type MerkleAccumulator,
   type MSTNode,
@@ -313,7 +314,7 @@ export async function resolveOneSeat(
     seat,
     tc.tree,
     alreadyDrawn,
-    1024,
+    MAX_SORTITION_RETRIES,
     drawAttempt,
   );
   const pda = tc.jurorPdaByHex.get(bytesToHex(resolved.leaf.juror));

@@ -111,13 +111,16 @@ impl<'info> Appeal<'info> {
             AccordError::InsufficientJurors
         );
 
-        // Exponential cost: new-round fee + appeal bond (bond == new-round fee).
+        // Exponential cost (ADR-0004): new-round fee + appeal bond
+        // (bond == new-round fee) + one flip-bounty unit (ADR-0030).
         let fee_new = (panel_new as u64)
             .checked_mul(dispute.terms.fee_per_juror)
             .ok_or(AccordError::ArithmeticOverflow)?;
         let bond = fee_new;
+        let bounty_unit = dispute.terms.fee_per_juror;
         let total = fee_new
             .checked_add(bond)
+            .and_then(|v| v.checked_add(bounty_unit))
             .ok_or(AccordError::ArithmeticOverflow)?;
 
         // Custody fee + bond: appellant ATA -> Subaccord PDA fee_vault (ADR-0020).
@@ -138,6 +141,14 @@ impl<'info> Appeal<'info> {
         let delta = after
             .checked_sub(before)
             .ok_or(AccordError::ArithmeticOverflow)?;
+        // SR3-M-2 (security review 2026-09-23): fail-closed custody — the
+        // measured delta must equal the nominal tender
+        // (`fee_new + bond + bounty_unit`), else `AppealBond.amount` (booked
+        // nominal) would exceed the deposit on a fee-on-transfer mint and the
+        // refund path would draw the difference from the SHARED fee_vault.
+        // Unreachable on classic Token (exact transfers; Token-2022 rejected
+        // at the Mint constraint) — see create_dispute for the full note.
+        require!(delta == total, AccordError::FeeMismatch);
         sub.fee_vault_deposited = sub
             .fee_vault_deposited
             .checked_add(delta)
@@ -151,7 +162,13 @@ impl<'info> Appeal<'info> {
         bond_acc.dispute = dispute.key();
         bond_acc.round_idx = new_round;
         bond_acc.appellant = ctx.accounts.appellant.key();
-        bond_acc.amount = total;
+        // ADR-0030: `amount` keeps the ADR-0004 semantics (fee + bond only —
+        // `claim_appeal_refund`'s `amount − panel·fpj` math is untouched);
+        // the bounty unit is a separate column on the dispute.
+        bond_acc.amount = fee_new
+            .checked_add(bond)
+            .ok_or(AccordError::ArithmeticOverflow)?;
+        bond_acc.reward = 0; // explicit for the field-per-field init style
         bond_acc.prior_result = prior_result;
         bond_acc.bump = ctx.bumps.appeal_bond;
 
@@ -161,14 +178,15 @@ impl<'info> Appeal<'info> {
         // the appeal fee in here caused a double-refund on cancel (filer via
         // fee_paid, appellant via the bond — same fee, two claimants).
 
-        // Open the new round: bump `current_round` and reset to `Created` so the
-        // snapshot → draw → vote cycle reruns for the larger panel.  Stamp
-        // `filed_at = now` so the pre-draw cancel timeout starts fresh — without
-        // this, the original filing timestamp (long past) makes the dispute
-        // immediately cancelable (REVIEW #2).
         dispute.current_round = new_round;
         dispute.state = DisputeState::Created;
         dispute.filed_at = now;
+        // ADR-0030: the appellant's bounty unit joins the pool (disposition
+        // happens only at the terminal transitions).
+        dispute.bounty_pool = dispute
+            .bounty_pool
+            .checked_add(bounty_unit)
+            .ok_or(AccordError::ArithmeticOverflow)?;
         // H-2: fresh round — no seats drawn for it yet (draw_seat re-mirrors).
         dispute.drawn_seats = 0;
         // Per-round evidence (milestone accord-qp7c): stash the appellant's

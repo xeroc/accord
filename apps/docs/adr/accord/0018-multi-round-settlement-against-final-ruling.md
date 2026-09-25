@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded (§1, by [ADR-0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md)): participation fees no longer credit at `finalize_round` — the round's entire fee pot settles at finality, judged against the final ruling. §2 (final-ruling coherence) is unchanged and now covers fees too.
 
 ## Context
 
