@@ -13,9 +13,10 @@ import { test, expect } from "bun:test";
 import bs58 from "bs58";
 import {
   claimantEncrypt,
-  deliverToJuror,
+  deliverToDeliveryKey,
   ed25519PublicKeyFromSeed,
-  jurorDecrypt,
+  generateDeliveryKey,
+  jurorDecryptDelivery,
   operatorDecrypt,
   verifyIntegrity,
 } from "@useaccord/sdk/evidence";
@@ -40,7 +41,6 @@ test("EnvKeyring end-to-end with ECIES: stored secret decrypts a bundle encrypte
 
 test("full flow: claimant -> operator (keyring) -> integrity gate -> juror", async () => {
   const op = edPair();
-  const juror = edPair();
   const kr = EnvKeyring.fromEnv(bs58.encode(op.sk));
   const plaintext = enc.encode("end-to-end evidence round-trip");
 
@@ -50,10 +50,10 @@ test("full flow: claimant -> operator (keyring) -> integrity gate -> juror", asy
   expect(opKey).not.toBeNull();
   const atOperator = await operatorDecrypt(bundle, opKey!.secretKey); // in-memory only
   await verifyIntegrity(atOperator, bundle.plaintext_hash);
-
-  // operator -> juror
-  const delivered = await deliverToJuror(atOperator, juror.pk);
-  const atJuror = await jurorDecrypt(delivered, juror.sk);
+  // operator -> juror (ADR-0034: re-encrypt to the juror's Delivery Key)
+  const dk = generateDeliveryKey();
+  const delivered = await deliverToDeliveryKey(atOperator, dk.publicKey);
+  const atJuror = await jurorDecryptDelivery(delivered, dk.secretKey);
   await verifyIntegrity(atJuror, bundle.plaintext_hash);
   expect([...atJuror]).toEqual([...plaintext]);
 });

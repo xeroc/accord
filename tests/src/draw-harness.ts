@@ -356,6 +356,8 @@ export async function armDispute(
     new Uint8Array(32).fill(2),
   ],
   aggregation: Aggregation = Aggregation.Plurality,
+  /** Caller-supplied evidence hash — e.g. sha256(plaintext) for the evidence e2e. */
+  evidenceHash: Uint8Array = randomBytes32(),
 ): Promise<ArmedDispute> {
   const { env, subaccord, mint, vault, accordState } = fx;
   const fee = requiredFee(FEE_PER_JUROR);
@@ -376,7 +378,7 @@ export async function armDispute(
     },
     {
       options,
-      evidenceHash: randomBytes32(),
+      evidenceHash,
       nonce,
       fee,
       aggregation,

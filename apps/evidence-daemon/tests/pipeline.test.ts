@@ -274,6 +274,16 @@ const D_OP_SK = new Uint8Array(64).fill(0x77);
 const D_PLAINTEXT = new Uint8Array([10, 20, 30, 40]);
 const D_HASH = new Uint8Array(32).fill(0xee);
 const D_EPH = new Uint8Array(32).fill(0xe0);
+/** The juror's registered Delivery Key pub (ADR-0034) — resolved by the pipeline. */
+const D_DELKEY_PUB = new Uint8Array(32).fill(0xe1);
+
+function dDeliveryKeys(encPub: Uint8Array | null) {
+  return {
+    async resolve() {
+      return encPub;
+    },
+  };
+}
 
 function dBundle(): EvidenceBundle {
   return {
@@ -351,7 +361,7 @@ function dCrypto(opts: {
         : opts.plaintext === null
           ? null
           : { plaintext: opts.plaintext },
-    reencryptToJuror: async (wm) => {
+    reencryptToDeliveryKey: async (wm) => {
       if (opts.reencryptInput) opts.reencryptInput.val = wm;
       return { out: wm, operator_ephem_pub: D_EPH };
     },
@@ -363,6 +373,7 @@ function dDeps(parts: Partial<DeliverDeps>): DeliverDeps {
     store: parts.store ?? dStoreWith(dBundle()),
     chain: parts.chain ?? dChain({}),
     keyring: parts.keyring ?? dKeyring(D_OP_SK),
+    deliveryKeys: parts.deliveryKeys ?? dDeliveryKeys(D_DELKEY_PUB),
     crypto: parts.crypto ?? dCrypto({}),
     watermark: parts.watermark,
   };
@@ -403,6 +414,13 @@ test("deliver: unknown evidence operator (keyring null) → 404", async () => {
   assert.match(out.reason, /operator/i);
 });
 
+test("deliver: STRICT — drawn juror with no registered Delivery Key → 404 (ADR-0034)", async () => {
+  const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ deliveryKeys: dDeliveryKeys(null) }));
+  assert.equal(out.status, 404);
+  if (out.status !== 404) throw new Error("unreachable");
+  assert.match(out.reason, /delivery key/i);
+});
+
 test("deliver: missing dispute → 404", async () => {
   const out = await deliver(D_DISPUTE, D_JUROR, dDeps({ chain: dChain({ dispute: null }) }));
   assert.equal(out.status, 404);
@@ -439,7 +457,7 @@ test("deliver: decrypt-failure (undecryptable/tampered bundle) → 409", async (
   assert.match(out.reason, /decrypt|tamper/i);
 });
 
-test("deliver: watermark seam — a custom Watermark's output reaches reencryptToJuror", async () => {
+test("deliver: watermark seam — a custom Watermark's output reaches reencryptToDeliveryKey", async () => {
   const tagging: Watermark = {
     apply: (plaintext) => {
       const t = new Uint8Array(plaintext.length + 1);
@@ -526,7 +544,7 @@ function multiCrypto(): DeliveryCrypto {
     async unwrap(bundle) {
       return { plaintext: bundle.ct };
     },
-    async reencryptToJuror(wm) {
+    async reencryptToDeliveryKey(wm) {
       return { out: wm, operator_ephem_pub: D_EPH };
     },
   };
@@ -561,6 +579,7 @@ function multiDeps(parts: {
     store: parts.store,
     chain: multiChain(parts.hashes, parts.currentRound),
     keyring: dKeyring(D_OP_SK),
+    deliveryKeys: dDeliveryKeys(D_DELKEY_PUB),
     crypto: multiCrypto(),
   };
 }
@@ -922,13 +941,14 @@ test("deliverFile: happy — complete round, drawn juror → 200 re-encrypted do
   const crypto: DeliveryCrypto = {
     sha256: sha256Real,
     unwrap: async (b) => ({ plaintext: b.ct }),
-    reencryptToJuror: async (wm) => ({ out: wm, operator_ephem_pub: D_EPH }),
+    reencryptToDeliveryKey: async (wm) => ({ out: wm, operator_ephem_pub: D_EPH }),
   };
 
   const out = await deliverFile(D_DISPUTE, D_JUROR, 0, "03-police-report.pdf", {
     store,
     chain: dChain({ dispute: { subaccord: D_SUB, evidence_hashes: [mHash], current_round: 0 } }),
     keyring: dKeyring(D_OP_SK),
+    deliveryKeys: dDeliveryKeys(D_DELKEY_PUB),
     crypto,
   });
   assert.equal(out.status, 200);
@@ -964,10 +984,11 @@ test("deliverFile: incomplete round → 409 (jurors never see half a case)", asy
     },
     chain: dChain({ dispute: { subaccord: D_SUB, evidence_hashes: [mHash], current_round: 0 } }),
     keyring: dKeyring(D_OP_SK),
+    deliveryKeys: dDeliveryKeys(D_DELKEY_PUB),
     crypto: {
       sha256: sha256Real,
       unwrap: async (b) => ({ plaintext: b.ct }),
-      reencryptToJuror: async (wm) => ({ out: wm, operator_ephem_pub: D_EPH }),
+      reencryptToDeliveryKey: async (wm) => ({ out: wm, operator_ephem_pub: D_EPH }),
     },
   });
   assert.equal(out.status, 409);
@@ -990,6 +1011,7 @@ test("deliverFile: juror not drawn → 404; path not tracked → 404; sentinel r
     } as DeliverStore,
     chain: dChain({}),
     keyring: dKeyring(D_OP_SK),
+    deliveryKeys: dDeliveryKeys(D_DELKEY_PUB),
     crypto: dCrypto({}),
   } satisfies DeliverDeps;
   const notDrawn = await deliverFile(D_DISPUTE, new Uint8Array(32).fill(0xff), 0, "a.pdf", deps);
@@ -1003,4 +1025,17 @@ test("deliverFile: juror not drawn → 404; path not tracked → 404; sentinel r
     }),
   });
   assert.equal(sentinel.status, 404);
+});
+
+test("deliverFile: STRICT — drawn juror with no registered Delivery Key → 404 (ADR-0034)", async () => {
+  const out = await deliverFile(D_DISPUTE, D_JUROR, 0, "a.pdf", {
+    store: dStoreWith(dBundle()),
+    chain: dChain({}),
+    keyring: dKeyring(D_OP_SK),
+    deliveryKeys: dDeliveryKeys(null),
+    crypto: dCrypto({}),
+  });
+  assert.equal(out.status, 404);
+  if (out.status !== 404) throw new Error("unreachable");
+  assert.match(out.reason, /delivery key/i);
 });

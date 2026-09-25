@@ -28,6 +28,8 @@ function okDeps(health: ServerDeps["health"]): ServerDeps {
       status: 200,
       body: { out: "b3V0", operator_ephem_pub: "cHVi" },
     }),
+    deliveryKeyPut: async () => ({ ok: true, status: 201 }),
+    deliveryKeyGet: async () => ({ ok: false, status: 404, error: "stub" }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
     domainPut: async () => ({ ok: true, status: 201 }),
     domainGet: async () => ({ ok: false, status: 404, error: "stub" }),

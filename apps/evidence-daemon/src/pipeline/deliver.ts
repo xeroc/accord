@@ -6,8 +6,9 @@
  * separate package. For each round the daemon confirms it operates the
  * Subaccord, loads that round's stored ciphertext bundle, decrypts **in
  * memory**, runs the per-round integrity gate against `evidence_hashes[k]`,
- * applies the watermark seam, and re-encrypts to the juror's X25519 key.
- * Plaintext exists only ephemerally and is never persisted.
+ * applies the watermark seam, and re-encrypts to the juror's registered
+ * Delivery Key (ADR-0034 — STRICT: unregistered juror ⇒ 404, no Ed→X
+ * fallback). Plaintext exists only ephemerally and is never persisted.
  *
  * The HTTP layer (server/routes.ts) base58-decodes the path params and calls
  * `deliver()`; this module owns the orchestration and the 404/409 decisions,
@@ -17,8 +18,9 @@
  *   - `200 { rounds: [{ round, out, operator_ephem_pub }] }` — one re-encrypted
  *     package per non-zero evidence hash in `evidence_hashes[0..=current_round]`,
  *     round-ascending,
- *   - `404` — dispute/subaccord/bundle missing, unknown operator, or juror not
- *     drawn (covers "premature": dispute not yet drawn), per SPEC the `Round`
+ *   - `404` — dispute/subaccord/bundle missing, unknown operator, juror not
+ *     drawn (covers "premature": dispute not yet drawn) or no registered
+ *     Delivery Key (strict, ADR-0034), per SPEC the `Round`
  *     account is authoritative for the drawn set,
  *   - `409` — any round's integrity-gate failure
  *     (`sha256(plaintext) != evidence_hashes[k]`) or an undecryptable/tampered
@@ -32,8 +34,9 @@
  * per-round bundles — see `deliverSynodGroup` below. `round` in a group
  * package carries the party slot.
  *
- * Pull + no-auth is safe (ADR-0006): each round's `reencryptToJuror` targets the
- * juror pubkey, so every returned `out` is decryptable only by the juror key.
+ * Pull + no-auth is safe (ADR-0006): each round's `reencryptToDeliveryKey`
+ * targets the juror's registered Delivery Key (ADR-0034), so every returned
+ * `out` is decryptable only by the juror's Delivery Key secret.
  * Do NOT add request auth.
  */
 import { parseManifest } from "@useaccord/sdk/evidence";
@@ -99,16 +102,24 @@ export interface DeliveryCrypto {
     bundle: EvidenceBundle,
     operatorSecret: Uint8Array,
   ): Promise<{ plaintext: Uint8Array } | null>;
-  reencryptToJuror(
+  /** Re-encrypt to the juror's registered Delivery Key pub (ADR-0034 — raw X25519). */
+  reencryptToDeliveryKey(
     watermarked: Uint8Array,
-    jurorPubkey: Uint8Array,
+    deliveryEncPub: Uint8Array,
   ): Promise<{ out: Uint8Array; operator_ephem_pub: Uint8Array }>;
+}
+
+/** Resolves a juror's registered Delivery Key pub, or null when none is (⇒ 404). */
+export interface DeliveryKeyResolver {
+  resolve(juror: Uint8Array): Promise<Uint8Array | null>;
 }
 
 export interface DeliverDeps {
   store: DeliverStore;
   chain: DeliverChainReader;
   keyring: Keyring;
+  /** STRICT (ADR-0034): a drawn juror without a registered key gets 404. */
+  deliveryKeys: DeliveryKeyResolver;
   crypto: DeliveryCrypto;
   watermark?: Watermark;
 }
@@ -171,6 +182,13 @@ export async function deliver(
     return { status: 404, reason: "juror not drawn for this dispute" };
   }
 
+  // STRICT (ADR-0034): resolve the registered Delivery Key once per request,
+  // right after the drawn gate — unregistered ⇒ 404, no Ed→X fallback.
+  const deliveryEncPub = await deps.deliveryKeys.resolve(juror);
+  if (deliveryEncPub === null) {
+    return { status: 404, reason: "no delivery key registered for juror" };
+  }
+
   // Synod deliver bridge (accord-g1dy): when the filer is a SynodCase PDA
   // bound to THIS dispute, the evidence source is the pre-dispute group
   // (keyed `{case.subaccord}/{case_pda}/{slot}`), not the per-round bundle —
@@ -179,7 +197,7 @@ export async function deliver(
   // program's PDA) falls through to the dispute-keyed path unchanged.
   const synodCase = await deps.chain.readSynodCase(dv.filer);
   if (synodCase !== null && bytesEqual(synodCase.dispute, dispute)) {
-    return deliverSynodGroup(dv, synodCase, juror, operatorSk, wm, deps);
+    return deliverSynodGroup(dv, synodCase, juror, operatorSk, deliveryEncPub, wm, deps);
   }
   // Per-round delivery loop (ADR-0023): iterate evidence_hashes[0..=current_round],
   // skip the [0u8;32] sentinel, integrity-gate each round's plaintext against its
@@ -210,7 +228,10 @@ export async function deliver(
     }
 
     const watermarked = wm.apply(plaintext, juror);
-    const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
+    const { out, operator_ephem_pub } = await deps.crypto.reencryptToDeliveryKey(
+      watermarked,
+      deliveryEncPub,
+    );
 
     // v2 derived index (accord-5d0r): manifest entries × store listing, no
     // persisted state. PUT leaf-gates every stored object, so path presence
@@ -280,6 +301,12 @@ export async function deliverFile(
     return { status: 404, reason: "juror not drawn for this dispute" };
   }
 
+  // STRICT (ADR-0034): same registry gate as `deliver`, after the drawn gate.
+  const deliveryEncPub = await deps.deliveryKeys.resolve(juror);
+  if (deliveryEncPub === null) {
+    return { status: 404, reason: "no delivery key registered for juror" };
+  }
+
   const h = dv.evidence_hashes[round];
   if (h === undefined || isZero(h)) {
     return { status: 404, reason: `no evidence this round ${round}` };
@@ -336,7 +363,10 @@ export async function deliverFile(
   }
 
   const watermarked = wm.apply(fileUnwrapped.plaintext, juror);
-  const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
+  const { out, operator_ephem_pub } = await deps.crypto.reencryptToDeliveryKey(
+    watermarked,
+    deliveryEncPub,
+  );
   return { status: 200, out, operator_ephem_pub };
 }
 
@@ -362,6 +392,8 @@ async function deliverSynodGroup(
   synodCase: SynodCaseView,
   juror: Uint8Array,
   operatorSk: Uint8Array,
+  /** The juror's registered Delivery Key pub, resolved by `deliver` (strict ADR-0034). */
+  deliveryEncPub: Uint8Array,
   wm: Watermark,
   deps: DeliverDeps,
 ): Promise<DeliverOutcome> {
@@ -400,7 +432,10 @@ async function deliverSynodGroup(
       };
     }
     const watermarked = wm.apply(unwrapped.plaintext, juror);
-    const { out, operator_ephem_pub } = await deps.crypto.reencryptToJuror(watermarked, juror);
+    const { out, operator_ephem_pub } = await deps.crypto.reencryptToDeliveryKey(
+      watermarked,
+      deliveryEncPub,
+    );
     delivered.push({ round: slot, out, operator_ephem_pub, files: [], complete: true });
   }
   return { status: 200, rounds: delivered };
