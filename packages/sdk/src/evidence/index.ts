@@ -23,4 +23,5 @@ export * from "./manifest.js";
 export * from "./options.js";
 export * from "./parse.js";
 export * from "./publish.js";
+export * from "./delivery-key.js";
 export * from "./fetch.js";

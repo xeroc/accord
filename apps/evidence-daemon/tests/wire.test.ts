@@ -15,9 +15,10 @@ import { DisputeState } from "@useaccord/sdk";
 
 import {
   claimantEncrypt,
-  jurorDecrypt,
-  sha256,
   ed25519PublicKeyFromSeed,
+  ed25519SecretToX25519,
+  jurorDecryptDelivery,
+  sha256,
 } from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "../src/keys/keyring";
 import {
@@ -167,16 +168,16 @@ test("wire: ingest + deliver round-trip — juror decrypts to the original plain
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
   expect(delivered.ok).toBe(true);
   if (!delivered.ok) throw new Error("unreachable");
-  expect(delivered.status).toBe(200);
-
   // Juror decrypts with its own seed — recovers exactly the claimant's plaintext.
   // (Body is { rounds: [...] } per ADR-0023; round 0 is the filer's package.)
-  const recovered = await jurorDecrypt(
+  // TODO(accord-5wkt): strict ADR-0034 delivery replaces this Ed-seed bridge
+  // with a registered Delivery Key + registration flow.
+  const recovered = await jurorDecryptDelivery(
     {
       out: base64ToBytes(delivered.body.rounds[0]!.out),
       operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),
     },
-    jurorSeed,
+    ed25519SecretToX25519(jurorSeed),
   );
   expect(recovered).toEqual(PLAINTEXT);
 });
@@ -244,9 +245,11 @@ test("wire: a different juror's seed cannot decrypt the delivered bundle", async
   await deps.ingest(SUB, DISPUTE, 0, await postBody());
   const delivered = await deps.deliver(DISPUTE, bs58.encode(jurorPub));
   if (!delivered.ok) throw new Error("unreachable");
-  const stranger = crypto.getRandomValues(new Uint8Array(32));
+  // TODO(accord-5wkt): strict ADR-0034 delivery — stranger test moves to a
+  // non-registered Delivery Key; the Ed-seed bridge keeps the 409 contract.
+  const stranger = ed25519SecretToX25519(crypto.getRandomValues(new Uint8Array(32)));
   await expect(
-    jurorDecrypt(
+    jurorDecryptDelivery(
       {
         out: base64ToBytes(delivered.body.rounds[0]!.out),
         operator_ephem_pub: base64ToBytes(delivered.body.rounds[0]!.operator_ephem_pub),

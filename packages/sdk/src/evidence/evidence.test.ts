@@ -4,9 +4,9 @@
 // primitive conforms to its standard: SHA-256 (RFC 6234), HKDF-SHA256
 // (RFC 5869 Test Case 1), AES-256-GCM (round-trip + auth), Ed25519<->X25519
 // (ECDH symmetry), and the ECIES ingest/deliver envelopes — including the DoD
-// property that ONLY the drawn juror's Ed25519 secret decrypts a delivered
-// bundle. This is the byte-exact reference the evidence-daemon, claimant SDK
-// clients, and juror SDK clients all import.
+// property that ONLY the juror's registered Delivery Key secret decrypts a
+// delivered bundle (ADR-0034). This is the byte-exact reference the
+// evidence-daemon, claimant SDK clients, and juror SDK clients all import.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hkdf } from "@noble/hashes/hkdf";
@@ -18,12 +18,13 @@ import {
   aesGcmEncrypt,
   claimantEncrypt,
   DELIVER_INFO,
-  deliverToJuror,
+  deliverToDeliveryKey,
   ed25519SecretToX25519,
   ed25519ToX25519PublicKey,
+  generateDeliveryKey,
   hkdfSha256,
   INGEST_INFO,
-  jurorDecrypt,
+  jurorDecryptDelivery,
   newX25519KeyPair,
   operatorDecrypt,
   parseManifest,
@@ -150,7 +151,7 @@ test("X25519 ECDH is symmetric: both parties derive the same shared secret", () 
   );
 });
 
-test("Ed->X25519 round-trip via ECDH end-to-end (ingest + deliver shared secrets agree)", () => {
+test("Ed->X25519 round-trip via ECDH end-to-end (ingest-path dual-use conversion symmetry)", () => {
   const op = edPair();
   const claimant = newX25519KeyPair();
   const juror = edPair();
@@ -167,7 +168,8 @@ test("Ed->X25519 round-trip via ECDH end-to-end (ingest + deliver shared secrets
   );
   assert.deepEqual(sharedInClaimant, sharedInOperator);
 
-  // deliver direction: operator ephemeral -> juror
+  // dual-use conversion symmetry (ingest-path only since ADR-0034): the
+  // operator-side Ed->X pub and juror-side Ed->X secret derive the same secret
   const sharedOutOperator = x25519SharedSecret(
     opEphem.secret,
     ed25519ToX25519PublicKey(juror.pk),
@@ -224,37 +226,39 @@ test("ECIES ingest: all-zero operator pubkey (Pubkey::default — unset on-chain
   );
 });
 
-test("ECIES deliver: operator re-encrypt -> juror decrypt round-trip", async () => {
-  const juror = edPair();
+test("ECIES deliver: operator re-encrypt -> juror decrypt round-trip (ADR-0034)", async () => {
+  const dk = generateDeliveryKey();
   const pt = enc.encode("for the juror's eyes");
-  const delivered = await deliverToJuror(pt, juror.pk);
-  assert.deepEqual(await jurorDecrypt(delivered, juror.sk), pt);
+  const delivered = await deliverToDeliveryKey(pt, dk.publicKey);
+  assert.deepEqual(await jurorDecryptDelivery(delivered, dk.secretKey), pt);
 });
 
 // ---------------------------------------------------------------------------
-// DoD property: ONLY the juror's Ed25519 secret decrypts a delivered bundle
+// DoD property: ONLY the registered Delivery Key secret decrypts a bundle
 // ---------------------------------------------------------------------------
 
-test("PROPERTY: only the juror secret decrypts; every stranger key fails", async () => {
-  const juror = edPair();
-  const delivered = await deliverToJuror(enc.encode("attributable"), juror.pk);
+test("PROPERTY: only the delivery secret decrypts; every stranger key fails", async () => {
+  const dk = generateDeliveryKey();
+  const delivered = await deliverToDeliveryKey(enc.encode("attributable"), dk.publicKey);
   for (let i = 0; i < 8; i++) {
-    const stranger = edPair();
-    await assert.rejects(() => jurorDecrypt(delivered, stranger.sk));
+    await assert.rejects(() => jurorDecryptDelivery(delivered, generateDeliveryKey().secretKey));
   }
-  // sanity: the real juror still decrypts
-  const pt = await jurorDecrypt(delivered, juror.sk);
+  // sanity: the registered key still decrypts
+  const pt = await jurorDecryptDelivery(delivered, dk.secretKey);
   assert.equal(new TextDecoder().decode(pt), "attributable");
 });
 
 test("PROPERTY: each delivery uses a fresh ephemeral key (out bytes differ, plaintext same)", async () => {
-  const juror = edPair();
+  const dk = generateDeliveryKey();
   const pt = enc.encode("replay-safe");
-  const a = await deliverToJuror(pt, juror.pk);
-  const b = await deliverToJuror(pt, juror.pk);
+  const a = await deliverToDeliveryKey(pt, dk.publicKey);
+  const b = await deliverToDeliveryKey(pt, dk.publicKey);
   assert.notDeepEqual(a.out, b.out);
   assert.notDeepEqual(a.operator_ephem_pub, b.operator_ephem_pub);
-  assert.deepEqual(await jurorDecrypt(a, juror.sk), await jurorDecrypt(b, juror.sk));
+  assert.deepEqual(
+    await jurorDecryptDelivery(a, dk.secretKey),
+    await jurorDecryptDelivery(b, dk.secretKey),
+  );
 });
 
 // ---------------------------------------------------------------------------

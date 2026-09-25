@@ -14,7 +14,8 @@ import { DisputeState } from "@useaccord/sdk";
 import {
   claimantEncrypt,
   ed25519PublicKeyFromSeed,
-  jurorDecrypt,
+  ed25519SecretToX25519,
+  jurorDecryptDelivery,
   sha256,
 } from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "../src/keys/keyring";
@@ -236,22 +237,23 @@ test("synod wire: deliver bridge — drawn juror gets one package per party slot
   if (!res.ok) throw new Error("unreachable");
   expect(res.status).toBe(200);
   expect(res.body.rounds.map((r) => r.round)).toEqual([0, 1]);
-
-  // Juror decrypts each party package with its own seed.
-  const p0 = await jurorDecrypt(
+  // TODO(accord-5wkt): strict ADR-0034 delivery replaces this Ed-seed bridge
+  // with a registered Delivery Key + registration flow.
+  const jxSk = ed25519SecretToX25519(jurorSeed);
+  const p0 = await jurorDecryptDelivery(
     {
       out: base64ToBytes(res.body.rounds[0]!.out),
       operator_ephem_pub: base64ToBytes(res.body.rounds[0]!.operator_ephem_pub),
     },
-    jurorSeed,
+    jxSk,
   );
   expect(p0).toEqual(PT0);
-  const p1 = await jurorDecrypt(
+  const p1 = await jurorDecryptDelivery(
     {
       out: base64ToBytes(res.body.rounds[1]!.out),
       operator_ephem_pub: base64ToBytes(res.body.rounds[1]!.operator_ephem_pub),
     },
-    jurorSeed,
+    jxSk,
   );
   expect(p1).toEqual(PT1);
 });

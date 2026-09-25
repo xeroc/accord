@@ -18,7 +18,12 @@ import bs58 from "bs58";
 import type { Accord } from "@useaccord/sdk";
 
 import { readDispute, readRound, readSubaccord, readSynodCase } from "./chain/reader";
-import { deliverToJuror, operatorDecrypt, sha256 } from "@useaccord/sdk/evidence";
+import {
+  deliverToDeliveryKey,
+  ed25519ToX25519PublicKey,
+  operatorDecrypt,
+  sha256,
+} from "@useaccord/sdk/evidence";
 import { EnvKeyring } from "./keys/keyring";
 import { deliver, deliverFile } from "./pipeline/deliver";
 import {
@@ -256,8 +261,13 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
         return null;
       }
     },
+    // TODO(accord-5wkt): strict ADR-0034 delivery — resolve the juror's
+    // registered Delivery Key from the DeliveryKeyStore after the drawn gate
+    // (none ⇒ 404). Until that lands, this adapter is the ONLY remaining
+    // Ed→X delivery use: it bridges the drawn juror's Ed25519 pubkey to
+    // X25519, preserving the pre-ADR-0034 dual-use semantics byte-for-byte.
     async reencryptToJuror(watermarked: Uint8Array, jurorPubkey: Uint8Array) {
-      const jb = await deliverToJuror(watermarked, jurorPubkey);
+      const jb = await deliverToDeliveryKey(watermarked, ed25519ToX25519PublicKey(jurorPubkey));
       return { out: jb.out, operator_ephem_pub: jb.operator_ephem_pub };
     },
   };
