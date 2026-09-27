@@ -17,8 +17,9 @@
 //      sha256 == evidence_hash, non-juror-key decrypt failure, and the
 //      multi-origin self-heal loop. The daemon is SPAWNED by the spec
 //      (bun, fs storage, generated keyring) unless EVIDENCE_DAEMON_URL points
-//      at an operator-run instance. Skips only on the offline CI lane
-//      (no validator), per the green rule.
+//      at an operator-run instance. Runs on a local Surfnet (MUST be green);
+//      disabled entirely on CI lanes (CI=true — GitHub Actions) via
+//      describe.skip, where no validator/daemon is provisioned.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -287,9 +288,11 @@ describe("evidence crypto contract (SPEC § Crypto model, ADR-0034 delivery)", (
 // ===========================================================================
 // Layer 2 — green-rule sign-off vs Surfpool + the spawned evidence daemon.
 // Boots the daemon (bun, fs storage, generated keyring) unless
-// EVIDENCE_DAEMON_URL points at an operator-run instance. Skips only when no
-// validator is reachable (offline CI lane); on a Surfnet it MUST be green.
+// EVIDENCE_DAEMON_URL points at an operator-run instance. On a local Surfnet
+// it MUST be green; disabled entirely on CI lanes (GitHub Actions and
+// standard CI export CI=true) where no validator/daemon is provisioned.
 // ===========================================================================
+const describeOnSurfnet = process.env.CI ? describe.skip : describe;
 
 const EXTERNAL_DAEMON_URL = process.env.EVIDENCE_DAEMON_URL ?? "";
 
@@ -382,6 +385,12 @@ async function spawnDaemon(rpcUrl: string): Promise<{
 }
 
 beforeAll(async () => {
+  if (process.env.CI) {
+    // Root hooks run even when the describe is skipped — don't probe the
+    // validator or spawn the daemon on the CI lane.
+    skipReason = "CI lane (CI=true) — layer 2 disabled";
+    return;
+  }
   const env = await createTestEnv();
   if (!env.up) {
     skipReason = "no validator reachable (offline CI lane)";
@@ -436,7 +445,7 @@ afterAll(async () => {
   await ctx?.cleanup();
 });
 
-describe("e2e: green-rule sign-off (Surfpool + evidence daemon, ADR-0034)", () => {
+describeOnSurfnet("e2e: green-rule sign-off (Surfpool + evidence daemon, ADR-0034)", () => {
   it(
     "draw → strict 404 → wrong-wallet 400 → stale 409 → register → GET → decrypt → sha256 == evidence_hash → self-heal",
     async () => {
