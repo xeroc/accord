@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/evidence-daemon",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Accord Evidence Operator Daemon — off-chain decrypt/re-encrypt service (ADR-0011)",
   "type": "module",

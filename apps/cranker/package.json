@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/cranker",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Accord Cranker — advances disputes through their lifecycle by calling permissionless instructions (milestone accord-27r5)",
   "type": "module",
