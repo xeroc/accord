@@ -11,14 +11,7 @@
  */
 import { claimantEncrypt } from "./ecies.js";
 import { sha256 } from "./crypto.js";
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary);
-}
+import { toBase64 } from "./base64.js";
 
 function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;

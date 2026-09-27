@@ -1,13 +1,18 @@
 /**
  * evidence/keys.ts — Ed25519/X25519 key material + the operator keyring
- * contract for the evidence protocol (ADR-0006 / ADR-0011).
+ * contract for the evidence protocol (ADR-0006 / ADR-0011; delivery amended
+ * by ADR-0034).
  *
- * Solana identities are Ed25519; the protocol encrypts to the on-chain
- * `evidence_operator` and `Round.jurors[]` Ed25519 pubkeys by dual-using each
- * key: signing on-chain (Ed25519) + encryption off-chain via its Montgomery
- * (X25519) form — a libsodium-style `crypto_sign_ed25519_{pk,sk}_to_curve25519`
- * `@noble/curves`; the wrappers only add length + zero-key validation at the
- * public seam.
+ * Ingest (claimant → operator) dual-uses the on-chain `evidence_operator`
+ * Ed25519 key: signing on-chain (Ed25519) + encryption off-chain via its
+ * Montgomery (X25519) form — a libsodium-style
+ * `crypto_sign_ed25519_{pk,sk}_to_curve25519`. Delivery no longer dual-uses
+ * the juror's Solana key: it targets the juror's registered X25519 Delivery
+ * Key (ADR-0034, `delivery-key.ts`), so these Ed→X helpers survive ONLY on
+ * the ingest path.
+ *
+ * Backed by `@noble/curves`; the wrappers only add length + zero-key
+ * validation at the public seam.
  */
 import {
   ed25519,

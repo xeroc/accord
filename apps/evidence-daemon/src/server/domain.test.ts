@@ -102,6 +102,12 @@ function makeApp(opts: MakeAppOpts = {}) {
       status: 200,
       body: { out: "b3V0", operator_ephem_pub: "cHVi" },
     }),
+    deliveryKeyPut: async () => ({ ok: true, status: 201 }),
+    deliveryKeyGet: async () => ({
+      ok: false,
+      status: 404,
+      error: "no delivery key registered",
+    }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
     health: async () => ({ ok: true }),
     publicKeys: STUB_PUBLIC_KEYS,

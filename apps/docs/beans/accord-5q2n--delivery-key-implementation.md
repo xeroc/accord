@@ -1,11 +1,11 @@
 ---
 # accord-5q2n
 title: Delivery Key implementation
-status: todo
+status: completed
 type: epic
 priority: normal
 created_at: 2026-09-25T08:59:29Z
-updated_at: 2026-09-25T09:00:45Z
+updated_at: 2026-09-25T10:22:45Z
 parent: accord-6im8
 ---
 

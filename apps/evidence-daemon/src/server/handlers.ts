@@ -205,11 +205,42 @@ export type DeliverFileHandler = (
   path: string,
 ) => Promise<DeliverFileResult>;
 
+/**
+ * PUT /jurors/{juror}/delivery-key (ADR-0034). Register/rotate the juror's
+ * Delivery Key. Body `{ enc_pub: base64(32B X25519), registered_at: unix-ms,
+ * sig: base64(Ed25519 over "accord-delkey-v1\nregistered_at:{ms}\nenc_pub:{base58}") }`.
+ * Gates: malformed body / signature not verifying against `{juror}` ⇒ 400;
+ * `registered_at <= stored.registered_at` ⇒ 409 (stale — replay protection);
+ * accept ⇒ 201. Open registration: no staked/drawn requirement.
+ */
+export type DeliveryKeyPutResult =
+  | { readonly ok: true; readonly status: 201 }
+  | { readonly ok: false; readonly status: 400 | 409; readonly error: string };
+
+export type DeliveryKeyPutHandler = (juror: string, body: unknown) => Promise<DeliveryKeyPutResult>;
+
+/**
+ * GET /jurors/{juror}/delivery-key (ADR-0034). → 200 `{ enc_pub, registered_at }`
+ * — the currently registered key; 404 when none. Public by design (a public
+ * key + timestamp): clients use it to detect staleness and self-heal.
+ */
+export type DeliveryKeyGetResult =
+  | {
+      readonly ok: true;
+      readonly status: 200;
+      readonly body: { enc_pub: string; registered_at: number };
+    }
+  | { readonly ok: false; readonly status: 404; readonly error: string };
+
+export type DeliveryKeyGetHandler = (juror: string) => Promise<DeliveryKeyGetResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
   readonly deliver: DeliverHandler;
   readonly deliverFile: DeliverFileHandler;
+  readonly deliveryKeyPut: DeliveryKeyPutHandler;
+  readonly deliveryKeyGet: DeliveryKeyGetHandler;
   readonly domainPut: DomainPutHandler;
   readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;

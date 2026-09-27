@@ -4,5 +4,15 @@
   "version": "0.1.0",
   "description": "Accord — Schelling-point arbitration primitive on Solana",
   "packageManager": "pnpm@9.15.0",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "scripts": {
+    "changeset": "changeset",
+    "release:version": "GITHUB_TOKEN=\"${GITHUB_TOKEN:-$(gh auth token)}\" changeset version && cargo set-version --workspace \"$(node -p 'require(\"./packages/sdk/package.json\").version')\" && pnpm install --lockfile-only",
+    "release:publish": "pnpm --filter @useaccord/sdk run build && changeset publish",
+    "release": "pnpm run release:version && pnpm run release:publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3"
+  }
 }

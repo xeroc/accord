@@ -1,31 +1,66 @@
-// e2e.test.ts — the Accord green-rule sign-off (ADR-0011, ADR-0006).
+// e2e.test.ts — the Accord green-rule sign-off (ADR-0011, ADR-0006, ADR-0034).
 //
-// Proves the end-to-end evidence contract:
-//   create_dispute → post_snapshot → request_vrf → draw
-//   → claimant POSTs encrypted evidence to the Evidence Operator daemon
-//   → drawn juror GETs from the daemon → decrypts → verifies sha256==evidence_hash.
+// Proves the end-to-end evidence contract in two layers:
 //
-// Two layers:
-//   1. "evidence crypto contract" — the ECIES round-trip (claimant↔operator↔juror)
-//      mirrored bit-for-bit from apps/evidence-daemon/SPEC.md § Crypto model. This
-//      is the load-bearing novel contract the daemon must implement; it is pure
-//      (no validator, no daemon) and RUNS in CI as the RED-but-green core. The
-//      daemon's crypto/ecies + the claimant/juror sides below share one algorithm
-//      — keep them in lockstep.
-//   2. "green-rule sign-off vs Surfpool + daemon" — the full on-chain flow plus
-//      the daemon HTTP round-trip. SKIPS (never fails) when any prerequisite is
-//      absent: a reachable validator, a reachable daemon, or the magicblock VRF
-//      oracle accounts. Mirrors the skip-don't-fail contract of
-//      onchain-smoke.spec.ts; goes live the moment the daemon + oracle infra land.
+//   1. "evidence crypto contract" — the ECIES round-trip
+//      (claimant↔operator↔juror) mirrored bit-for-bit from
+//      apps/evidence-daemon/SPEC.md § Crypto model, with ADR-0034 delivery:
+//      the operator re-encrypts to the juror's registered X25519 Delivery Key
+//      (no Ed→X dual-use in delivery). Pure (no validator, no daemon) and
+//      ALWAYS runs in CI as the always-green core.
+//
+//   2. "green-rule sign-off vs Surfpool + daemon" — the full on-chain flow
+//      (create_dispute → committed VRF → draw via the shared harness) plus
+//      the daemon HTTP round-trip including the ADR-0034 Delivery Key
+//      choreography: strict-404 unregistered, wrong-wallet 400, stale
+//      registered_at 409, happy register → GET → decrypt →
+//      sha256 == evidence_hash, non-juror-key decrypt failure, and the
+//      multi-origin self-heal loop. The daemon is SPAWNED by the spec
+//      (bun, fs storage, generated keyring) unless EVIDENCE_DAEMON_URL points
+//      at an operator-run instance. Skips only on the offline CI lane
+//      (no validator), per the green rule.
+
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { createServer } from "node:net";
 
 import {
-  x25519,
   ed25519,
-  edwardsToMontgomeryPub,
   edwardsToMontgomeryPriv,
+  edwardsToMontgomeryPub,
+  x25519,
 } from "@noble/curves/ed25519";
 import { sha256 } from "@noble/hashes/sha256";
 import { hkdf } from "@noble/hashes/hkdf";
+import {
+  buildDeliveryKeyMessage,
+  ensureRegisteredDeliveryKey,
+  fetchDelivery,
+  generateDeliveryKey,
+  getRegisteredDeliveryKey,
+  jurorDecryptDelivery,
+  registerDeliveryKey,
+} from "@useaccord/sdk/evidence";
+import { ACCORD_PROGRAM_ID } from "@useaccord/sdk";
+import {
+  getBase58Decoder,
+  getBase58Encoder,
+  type Address,
+} from "@solana/kit";
+
+import {
+  armDispute,
+  armSubaccordAndJurors,
+  ensurePause,
+  readRound,
+  resolveDistinctPanel,
+  submitDraw,
+  toAddress,
+  type DrawFixture,
+} from "./draw-harness.js";
+import { createTestEnv } from "./setup/env.js";
 
 // ===========================================================================
 // SPEC § Crypto model — the wire contract. The daemon must match bit-for-bit.
@@ -115,6 +150,7 @@ async function claimantEncryptEvidence(
   const ct = await aesGcmEncrypt(dek, plaintext);
   const ephemSk = x25519.utils.randomPrivateKey();
   const claimantEphemPub = x25519.getPublicKey(ephemSk);
+  // Ingest path keeps the Ed→X dual-use of the operator key (ADR-0034).
   const shared = x25519.scalarMult(
     ephemSk,
     edwardsToMontgomeryPub(operatorEd25519Pub),
@@ -136,29 +172,28 @@ async function operatorDecryptBundle(
   return aesGcmDecrypt(dek, bundle.ct);
 }
 
-/** Operator-side (daemon deliver): re-encrypt plaintext to a drawn juror's Ed25519 pubkey. */
-async function operatorReencryptToJuror(
+/**
+ * Operator-side (daemon deliver, ADR-0034): re-encrypt plaintext to the juror's
+ * registered Delivery Key — a RAW X25519 public key. No Ed→X conversion.
+ */
+async function operatorReencryptToDeliveryKey(
   plaintext: Uint8Array,
-  jurorEd25519Pub: Uint8Array,
+  deliveryEncPub: Uint8Array,
 ): Promise<DeliveredEvidence> {
   const ephemSk = x25519.utils.randomPrivateKey();
   const operatorEphemPub = x25519.getPublicKey(ephemSk);
-  const shared = x25519.scalarMult(
-    ephemSk,
-    edwardsToMontgomeryPub(jurorEd25519Pub),
-  );
+  const shared = x25519.scalarMult(ephemSk, deliveryEncPub);
   const k = hkdf(sha256, shared, undefined, DELIVER_INFO, 32);
   const out = await aesGcmEncrypt(k, plaintext);
   return { out, operatorEphemPub };
 }
 
-/** Juror-side: decrypt a delivered bundle with the juror's Ed25519 secret. */
-async function jurorDecryptDelivered(
+/** Juror-side (ADR-0034): decrypt with the Delivery Key secret (raw X25519). */
+async function jurorDecryptDeliveryLocal(
   delivered: DeliveredEvidence,
-  jurorEd25519Sk: Uint8Array,
+  deliverySecret: Uint8Array,
 ): Promise<Uint8Array> {
-  const jXSk = edwardsToMontgomeryPriv(jurorEd25519Sk);
-  const shared = x25519.scalarMult(jXSk, delivered.operatorEphemPub);
+  const shared = x25519.scalarMult(deliverySecret, delivered.operatorEphemPub);
   const k = hkdf(sha256, shared, undefined, DELIVER_INFO, 32);
   return aesGcmDecrypt(k, delivered.out);
 }
@@ -170,18 +205,19 @@ function eqBytes(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+const b64 = (b: Uint8Array) => Buffer.from(b).toString("base64");
+
 // ===========================================================================
 // Layer 1 — evidence crypto contract (always runs; no infra required).
 // This is the always-green RED core: it pins the exact ECIES contract the
 // daemon (apps/evidence-daemon) must implement, independent of chain state.
 // ===========================================================================
 
-describe("evidence crypto contract (SPEC § Crypto model)", () => {
-  it("Ed25519↔X25519 + ECIES round-trip: claimant → operator → juror", async () => {
+describe("evidence crypto contract (SPEC § Crypto model, ADR-0034 delivery)", () => {
+  it("Ed25519↔X25519 + ECIES round-trip: claimant → operator → juror Delivery Key", async () => {
     const operator = ed25519.utils.randomPrivateKey();
     const operatorPub = ed25519.getPublicKey(operator);
-    const juror = ed25519.utils.randomPrivateKey();
-    const jurorPub = ed25519.getPublicKey(juror);
+    const delivery = generateDeliveryKey();
     const plaintext = new TextEncoder().encode(
       "evidence-body-" + Math.random().toString(36).slice(2),
     );
@@ -194,19 +230,25 @@ describe("evidence crypto contract (SPEC § Crypto model)", () => {
     const recovered = await operatorDecryptBundle(bundle, operator);
     expect(eqBytes(sha256(recovered), evidenceHash)).toBe(true);
 
-    // 3. daemon re-encrypts to the drawn juror
-    const delivered = await operatorReencryptToJuror(recovered, jurorPub);
+    // 3. daemon re-encrypts to the juror's registered Delivery Key (raw X25519)
+    const delivered = await operatorReencryptToDeliveryKey(
+      recovered,
+      delivery.publicKey,
+    );
 
-    // 4. juror decrypts + verifies the integrity gate (ADR-0006)
-    const cleartext = await jurorDecryptDelivered(delivered, juror);
+    // 4. juror decrypts with the Delivery Key secret + verifies the integrity gate
+    const cleartext = await jurorDecryptDeliveryLocal(
+      delivered,
+      delivery.secretKey,
+    );
     expect(eqBytes(sha256(cleartext), evidenceHash)).toBe(true);
     expect(eqBytes(cleartext, plaintext)).toBe(true);
   });
 
-  it("a non-juror Ed25519 key cannot decrypt a delivered bundle", async () => {
+  it("a non-juror Delivery Key cannot decrypt a delivered bundle", async () => {
     const operator = ed25519.utils.randomPrivateKey();
-    const juror = ed25519.utils.randomPrivateKey();
-    const other = ed25519.utils.randomPrivateKey();
+    const delivery = generateDeliveryKey();
+    const other = generateDeliveryKey();
     const plaintext = new TextEncoder().encode("secret");
 
     const bundle = await claimantEncryptEvidence(
@@ -214,17 +256,19 @@ describe("evidence crypto contract (SPEC § Crypto model)", () => {
       ed25519.getPublicKey(operator),
     );
     const recovered = await operatorDecryptBundle(bundle, operator);
-    const delivered = await operatorReencryptToJuror(
+    const delivered = await operatorReencryptToDeliveryKey(
       recovered,
-      ed25519.getPublicKey(juror),
+      delivery.publicKey,
     );
 
-    // the real juror decrypts fine
-    const ok = await jurorDecryptDelivered(delivered, juror);
+    // the registered key decrypts fine
+    const ok = await jurorDecryptDeliveryLocal(delivered, delivery.secretKey);
     expect(eqBytes(ok, plaintext)).toBe(true);
 
     // any other key fails the AES-GCM auth tag
-    await expect(jurorDecryptDelivered(delivered, other)).rejects.toBeDefined();
+    await expect(
+      jurorDecryptDeliveryLocal(delivered, other.secretKey),
+    ).rejects.toBeDefined();
   });
 
   it("rejects a tampered claimant bundle at the operator integrity gate", async () => {
@@ -233,387 +277,342 @@ describe("evidence crypto contract (SPEC § Crypto model)", () => {
       new TextEncoder().encode("body"),
       ed25519.getPublicKey(operator),
     );
-    // flip one ciphertext byte — the AES-GCM tag must not verify
-    const tampered: EvidenceBundle = { ...bundle, ct: bundle.ct.slice() };
-    const last = tampered.ct.length - 1;
-    tampered.ct[last] = (tampered.ct[last] ?? 0) ^ 0xff;
-    await expect(
-      operatorDecryptBundle(tampered, operator),
-    ).rejects.toBeDefined();
+    const tampered = { ...bundle, ct: bundle.ct.slice() };
+    tampered.ct[tampered.ct.length - 1] =
+      (tampered.ct[tampered.ct.length - 1] ?? 0) ^ 0xff;
+    await expect(operatorDecryptBundle(tampered, operator)).rejects.toBeDefined();
   });
 });
 
 // ===========================================================================
-// Layer 2 — green-rule sign-off vs Surfpool + daemon (skips without infra).
-// Goes live when: (a) a validator/Surfpool is reachable, (b) the evidence
-// daemon is running and healthy, (c) the magicblock VRF oracle accounts are
-// configured. Until then it is an inert contract — skip, never fail.
+// Layer 2 — green-rule sign-off vs Surfpool + the spawned evidence daemon.
+// Boots the daemon (bun, fs storage, generated keyring) unless
+// EVIDENCE_DAEMON_URL points at an operator-run instance. Skips only when no
+// validator is reachable (offline CI lane); on a Surfnet it MUST be green.
 // ===========================================================================
 
-const RPC_URL = process.env.ACCORD_RPC_URL ?? "http://127.0.0.1:8899";
-const WS_URL = process.env.ACCORD_WS_URL ?? "ws://127.0.0.1:8900";
-const DAEMON_URL = process.env.EVIDENCE_DAEMON_URL ?? ""; // e.g. http://127.0.0.1:8787
-// magicblock VRF oracle — external infra dependency.
-const VRF_ORACLE_QUEUE = process.env.ACCORD_VRF_ORACLE_QUEUE ?? "";
-const VRF_PROGRAM_IDENTITY = process.env.ACCORD_VRF_PROGRAM_IDENTITY ?? "";
-// Operator Ed25519 secret (base58) shared with the daemon's EVIDENCE_KEYRING.
-// If unset, one is generated and logged — the operator must configure the daemon.
-const OPERATOR_SECRET_B58 = process.env.EVIDENCE_OPERATOR_SECRET ?? "";
+const EXTERNAL_DAEMON_URL = process.env.EVIDENCE_DAEMON_URL ?? "";
 
-describe("e2e: green-rule sign-off (Surfpool + evidence daemon)", () => {
-  // Everything from the lazy @solana/kit / @useaccord/sdk / @solana/spl-token
-  // imports is typed loosely: layer 2 cannot run until its infra exists, and
-  // the loose typing mirrors onchain-smoke.spec.ts.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let ctx: any = null;
-  let skipReason = "";
+/** Everything layer 2 arms once and shares across its single choreography it. */
+interface Layer2Ctx {
+  fx: DrawFixture;
+  daemonUrl: string;
+  operatorSecret: Uint8Array;
+  operatorPub: Uint8Array;
+  cleanup: () => Promise<void>;
+}
 
-  beforeAll(async () => {
-    if (!DAEMON_URL) {
-      skipReason =
-        "EVIDENCE_DAEMON_URL unset — start the daemon (apps/evidence-daemon)";
-      return;
+let ctx: Layer2Ctx | null = null;
+let skipReason = "";
+
+function freePort(): Promise<number> {
+  // executor form: the workspace lib targets ES2020 — no Promise.withResolvers
+  return new Promise((res, rej) => {
+    const srv = createServer();
+    srv.once("error", rej);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      srv.close(() => {
+        if (typeof addr === "object" && addr !== null) res(addr.port);
+        else rej(new Error("no free port"));
+      });
+    });
+  });
+}
+
+/**
+ * Spawn the daemon under bun with fs storage + a fresh operator keyring whose
+ * secret the Subaccord's `evidence_operator` is set to. Readiness = the real
+ * signal (`/healthz` 200), polled — the daemon is an external process, so
+ * deterministic timer control is impossible (integration-readiness polling).
+ */
+async function spawnDaemon(rpcUrl: string): Promise<{
+  url: string;
+  operatorSecret: Uint8Array;
+  cleanup: () => Promise<void>;
+}> {
+  const operatorSecret = ed25519.utils.randomPrivateKey();
+  // kit: the base58 DECODER turns bytes → base58 string (keyring env format).
+  const keyringB58 = getBase58Decoder().decode(operatorSecret);
+  const rootDir = await mkdtemp(join(tmpdir(), "evidence-e2e-"));
+  const port = await freePort();
+  // jest's cwd is the tests/ rootDir — the daemon lives one level up.
+  // (import.meta is unavailable under ts-jest's module transform.)
+  const cwd = resolve(process.cwd(), "..", "apps", "evidence-daemon");
+  const child: ChildProcess = spawn("bun", ["run", "src/main.ts"], {
+    cwd,
+    env: {
+      ...process.env,
+      EVIDENCE_RPC_URL: rpcUrl,
+      EVIDENCE_PROGRAM_ID: ACCORD_PROGRAM_ID,
+      EVIDENCE_KEYRING: keyringB58,
+      EVIDENCE_STORAGE: "fs",
+      EVIDENCE_FS_ROOT_DIR: rootDir,
+      EVIDENCE_PORT: String(port),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout?.on("data", () => {}); // drain; failures surface via /healthz
+  child.stderr?.on("data", (d) => process.stderr.write(`[daemon] ${d}`));
+
+  const url = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const alive = await fetch(`${url}/healthz`)
+      .then((r) => r.ok)
+      .catch(() => false);
+    if (alive) break;
+    if (Date.now() > deadline) {
+      child.kill("SIGKILL");
+      await rm(rootDir, { recursive: true, force: true });
+      throw new Error(`spawned daemon did not become healthy at ${url}`);
     }
-    try {
-      const res = await fetch(`${DAEMON_URL}/healthz`);
-      if (!res.ok) {
-        skipReason = `daemon /healthz returned ${res.status}`;
-        return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return {
+    url,
+    operatorSecret,
+    cleanup: async () => {
+      // SIGKILL: teardown after the spec — nothing in flight to drain, and
+      // bun's serve loop has been observed to outlive SIGTERM in tests.
+      child.kill("SIGKILL");
+      await rm(rootDir, { recursive: true, force: true }).catch(() => {});
+    },
+  };
+}
+
+beforeAll(async () => {
+  const env = await createTestEnv();
+  if (!env.up) {
+    skipReason = "no validator reachable (offline CI lane)";
+    return;
+  }
+  try {
+    // Daemon first — its operator key becomes the Subaccord's
+    // `evidence_operator`, so the daemon operates everything we arm below.
+    let daemonUrl: string;
+    let operatorSecret: Uint8Array;
+    let cleanup: () => Promise<void>;
+    if (EXTERNAL_DAEMON_URL) {
+      // Operator-provided daemon: its keyring must match
+      // EVIDENCE_OPERATOR_SECRET.
+      const secretB58 = process.env.EVIDENCE_OPERATOR_SECRET ?? "";
+      if (!secretB58) {
+        throw new Error(
+          "EVIDENCE_DAEMON_URL set but EVIDENCE_OPERATOR_SECRET missing — the daemon must operate the test Subaccord",
+        );
       }
-    } catch (e) {
-      skipReason = `daemon unreachable at ${DAEMON_URL}: ${(e as Error).message}`;
-      return;
-    }
-    if (!VRF_ORACLE_QUEUE || !VRF_PROGRAM_IDENTITY) {
-      skipReason =
-        "ACCORD_VRF_ORACLE_QUEUE / ACCORD_VRF_PROGRAM_IDENTITY unset";
-      return;
-    }
-    const sdk = await import("@useaccord/sdk");
-    const kit = await import("@solana/kit");
-    const spl = await import("@solana/spl-token");
-    const rpc = kit.createSolanaRpc(RPC_URL);
-    try {
-      await rpc.getEpochInfo().send();
-    } catch (e) {
-      skipReason = `validator unreachable at ${RPC_URL}: ${(e as Error).message}`;
-      return;
-    }
-    ctx = { sdk, kit, spl, rpc };
-  }, 60_000);
-
-  it("full flow: create_dispute → draw → juror GET → decrypt → verify evidence_hash", async () => {
-    if (skipReason) return void console.warn(`[e2e] skipped: ${skipReason}`);
-    const { sdk, kit, spl, rpc } = ctx;
-    const {
-      Accord,
-      ACCORD_PROGRAM_ID,
-      findJurorStakePda,
-      findSnapshotPda,
-      findRoundPda,
-      findAccordStatePda,
-      buildMst,
-      resolvePanel,
-      fetchDispute,
-      fetchRound,
-      DisputeState,
-    } = sdk;
-    const { lamports, address, pipe } = kit;
-    const {
-      TOKEN_PROGRAM_ID,
-      createMint,
-      getOrCreateAssociatedTokenAccount,
-      mintTo,
-    } = spl;
-    // base58 bridge: Ed25519 pubkeys (bytes) ↔ Solana Addresses (base58 strings),
-    // via @solana/kit's own codec — the canonical source, no hand-rolled duplicate.
-    const b58e = (b: Uint8Array) =>
-      new TextDecoder().decode(kit.getBase58Decoder().decode(b));
-    const b58d = (s: string) =>
-      new Uint8Array(kit.getBase58Encoder().encode(s));
-
-    // -- keypairs: carry each Ed25519 secret alongside its kit signer ----------
-    const payer = await kit.generateKeyPairSigner();
-    const operatorSecret = OPERATOR_SECRET_B58
-      ? b58d(OPERATOR_SECRET_B58)
-      : ed25519.utils.randomPrivateKey();
-    if (!OPERATOR_SECRET_B58) {
-      console.warn(
-        `[e2e] generated operator pubkey ${b58e(ed25519.getPublicKey(operatorSecret))} ` +
-          "— configure the daemon EVIDENCE_KEYRING with its secret to operate this Subaccord",
-      );
+      operatorSecret = new Uint8Array(getBase58Encoder().encode(secretB58));
+      daemonUrl = EXTERNAL_DAEMON_URL;
+      cleanup = () => Promise.resolve();
+      const healthy = await fetch(`${daemonUrl}/healthz`)
+        .then((r) => r.ok)
+        .catch(() => false);
+      if (!healthy) throw new Error(`daemon unhealthy at ${daemonUrl}`);
+    } else {
+      const spawned = await spawnDaemon(env.rpcUrl);
+      daemonUrl = spawned.url;
+      operatorSecret = spawned.operatorSecret;
+      cleanup = spawned.cleanup;
     }
     const operatorPub = ed25519.getPublicKey(operatorSecret);
-    const operatorAddr = b58e(operatorPub);
-
-    const MIN_STAKE = 1_000n;
-    const JUROR_COUNT = 4; // > panel(3) so the draw can pick a distinct set
-    const jurors: { address: string; secret: Uint8Array }[] = [];
-    for (let i = 0; i < JUROR_COUNT; i++) {
-      const secret = ed25519.utils.randomPrivateKey();
-      const signer = await kit.createKeyPairSignerFromBytes(secret);
-      jurors.push({ address: signer.address, secret });
-    }
-
-    const accord = new Accord({ endpoint: RPC_URL, signer: payer });
-    const rpcSubscriptions = kit.createSolanaRpcSubscriptions(WS_URL);
-    const sendAndConfirm = kit.sendAndConfirmTransactionFactory({
-      rpc,
-      rpcSubscriptions,
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState, {
+      evidenceOperator: toAddress(operatorPub),
     });
+    ctx = {
+      fx: { env, up: true, ...core },
+      daemonUrl,
+      operatorSecret,
+      operatorPub,
+      cleanup,
+    };
+  } catch (e) {
+    skipReason = `daemon/fixture setup failed: ${(e as Error).message}`;
+  }
+}, 120_000);
 
-    await rpc.requestAirdrop(payer.address, lamports(BigInt(5e9))).send();
-    await new Promise((r) => setTimeout(r, 500));
+afterAll(async () => {
+  await ctx?.cleanup();
+});
 
-    async function sendIx(...ixs: unknown[]) {
-      const { value: bh } = await rpc.getLatestBlockhash().send();
-      const msg = pipe(
-        kit.createTransactionMessage({ version: 0 }),
-        (tx: unknown) => kit.setTransactionMessageFeePayerSigner(payer, tx),
-        (tx: unknown) =>
-          kit.setTransactionMessageLifetimeUsingBlockhash(bh, tx),
-        (tx: unknown) => kit.appendTransactionMessageInstructions(ixs, tx),
+describe("e2e: green-rule sign-off (Surfpool + evidence daemon, ADR-0034)", () => {
+  it(
+    "draw → strict 404 → wrong-wallet 400 → stale 409 → register → GET → decrypt → sha256 == evidence_hash → self-heal",
+    async () => {
+      if (skipReason || ctx === null) {
+        return void console.warn(`[e2e] skipped: ${skipReason || "no ctx"}`);
+      }
+      const { fx, daemonUrl, operatorPub } = ctx;
+
+      // -- plaintext whose hash is committed on-chain at create_dispute -----
+      const plaintext = new TextEncoder().encode(
+        "evidence-for-dispute-" + Math.random().toString(36).slice(2),
       );
-      const signed = await kit.signTransactionMessageWithSigners(msg);
-      kit.assertIsTransactionWithBlockhashLifetime(signed);
-      await sendAndConfirm(signed, { commitment: "confirmed" });
-    }
+      const evidenceHash = sha256(plaintext);
 
-    // -- staking token mint + helpers ---------------------------------------
-    const stakingToken = await createMint(
-      rpc,
-      payer,
-      payer.address,
-      null,
-      6,
-      undefined,
-      {
-        programId: TOKEN_PROGRAM_ID,
-      },
-    );
-    const ataFor = (owner: string) =>
-      getOrCreateAssociatedTokenAccount(rpc, payer, stakingToken, owner, {
-        programId: TOKEN_PROGRAM_ID,
-      }).then((r: { address: string }) => r.address);
+      // -- arm the dispute (evidence_operator = the daemon's key) + draw -----
+      const armed = await armDispute(
+        fx,
+        BigInt(Date.now()),
+        undefined,
+        undefined,
+        evidenceHash,
+      );
+      const memberships = await resolveDistinctPanel(fx, armed);
+      const roundPda = await submitDraw(fx, armed, memberships);
+      const round = await readRound(fx.env, roundPda);
+      expect(round).not.toBeNull();
+      const drawn = round!.jurors.filter(
+        (j) => j !== ("11111111111111111111111111111111" as Address),
+      );
+      expect(drawn.length).toBeGreaterThanOrEqual(1);
 
-    // -- create Subaccord (evidence_operator = operator) ---------------------
-    const { instruction: createSubIx, subaccord } =
-      await accord.methods.createSubaccord(payer.address, {
-        domainRef: crypto.getRandomValues(new Uint8Array(32)),
-        evidenceSpec: crypto.getRandomValues(new Uint8Array(32)),
-        stakingToken,
-        minStake: MIN_STAKE,
-        alphaBps: 1_000,
-        reviewWindow: 604_800n,
-        commitWindow: 172_800n,
-        revealWindow: 172_800n,
-        maxAppeals: 3,
-        minJurySize: 3,
-        aggregation: sdk.Aggregation.Plurality,
-        feePerJuror: 0n,
-        authority: address("11111111111111111111111111111111"), // Pubkey::default → immutable
-        evidenceOperator: address(operatorAddr),
+      // The drawn juror: its wallet `signMessage` == kit's signMessages (no
+      // raw secret needed — exactly the browser-wallet shape ADR-0034 targets).
+      const drawnJuror = fx.jurors.find((j) => j.signer.address === drawn[0])!;
+      expect(drawnJuror).toBeDefined();
+      const signMessage = async (msg: Uint8Array): Promise<Uint8Array> => {
+        const [dict] = await drawnJuror.signer.signMessages([
+          { content: msg, signatures: {} },
+        ]);
+        if (dict === undefined) throw new Error("wallet produced no signature dict");
+        const sig = dict[drawnJuror.signer.address];
+        if (sig === undefined) throw new Error("wallet produced no signature");
+        return new Uint8Array(sig);
+      };
+      // -- claimant POSTs encrypted evidence to the daemon ------------------
+      const bundle = await claimantEncryptEvidence(plaintext, operatorPub);
+      const postRes = await fetch(
+        `${daemonUrl}/evidence/${fx.subaccord}/${armed.dispute}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ct: b64(bundle.ct),
+            claimant_ephem_pub: b64(bundle.claimantEphemPub),
+            wrapped: b64(bundle.wrapped),
+            plaintext_hash: b64(bundle.plaintextHash),
+          }),
+        },
+      );
+      expect([200, 201, 409].includes(postRes.status)).toBe(true);
+
+      // -- STRICT: drawn juror without a registered Delivery Key → 404 ------
+      const strictRes = await fetchDelivery({
+        endpoint: daemonUrl,
+        dispute: armed.dispute,
+        juror: drawnJuror.signer.address,
       });
-    await sendIx(createSubIx);
+      expect(strictRes).toBeNull();
 
-    const vault = await ataFor(subaccord);
-    const accordState = (await findAccordStatePda(ACCORD_PROGRAM_ID)).address;
-
-    // -- stake jurors --------------------------------------------------------
-    for (const juror of jurors) {
-      const signer = await kit.createKeyPairSignerFromBytes(juror.secret);
-      const jurorAta = await ataFor(juror.address);
-      await mintTo(
-        rpc,
-        payer,
-        stakingToken,
-        jurorAta,
-        payer,
-        MIN_STAKE * 4n,
-        [],
-        {
-          programId: TOKEN_PROGRAM_ID,
-        },
-      );
-      const jurorStake = (
-        await findJurorStakePda(ACCORD_PROGRAM_ID, subaccord, juror.address)
-      ).address;
-      const stakeIx = accord.methods.stake(
-        {
-          juror: signer,
-          subaccord,
-          accordState,
-          jurorStake,
-          stakingToken,
-          jurorTokenAccount: jurorAta,
-          vault,
-        },
-        MIN_STAKE,
-      );
-      // stake requires the juror signature; collect it as an extra signer.
-      const { value: bh } = await rpc.getLatestBlockhash().send();
-      const msg = pipe(
-        kit.createTransactionMessage({ version: 0 }),
-        (tx: unknown) => kit.setTransactionMessageFeePayerSigner(payer, tx),
-        (tx: unknown) =>
-          kit.setTransactionMessageLifetimeUsingBlockhash(bh, tx),
-        (tx: unknown) =>
-          kit.appendTransactionMessageInstructions([stakeIx], tx),
-      );
-      const signed = await kit.signTransactionMessageWithSigners(msg);
-      kit.assertIsTransactionWithBlockhashLifetime(signed);
-      await sendAndConfirm(signed, { commitment: "confirmed" });
-    }
-
-    // -- create_dispute (evidence_hash = sha256(plaintext)) ------------------
-    const plaintext = new TextEncoder().encode(
-      "evidence-for-dispute-" + Math.random().toString(36).slice(2),
-    );
-    const evidenceHash = sha256(plaintext);
-    const filerAta = await ataFor(payer.address);
-    const { instruction: createDispIx, dispute } =
-      await accord.methods.createDispute(
-        {
-          filer: payer.address,
-          rentPayer: payer.address,
-          subaccord,
-          stakingToken,
-          filerTokenAccount: filerAta,
-          vault,
-          accordState,
-        },
-        {
-          options: [
-            crypto.getRandomValues(new Uint8Array(32)),
-            crypto.getRandomValues(new Uint8Array(32)),
-          ],
-          evidenceHash,
-          nonce: BigInt(Date.now()),
-          fee: 0n,
-        },
-      );
-    await sendIx(createDispIx);
-
-    // -- post_snapshot (build MST over the staked juror set) -----------------
-    const tree = await buildMst(
-      jurors.map((j) => ({ juror: b58d(j.address), stake: MIN_STAKE })),
-    );
-    const roundIdx = 0;
-    const snapshot = (
-      await findSnapshotPda(ACCORD_PROGRAM_ID, dispute, roundIdx)
-    ).address;
-    await sendIx(
-      accord.methods.postSnapshot(
-        {
-          signer: payer.address,
-          subaccord,
-          dispute,
-          snapshot,
-          stakingToken,
-          vault,
-          posterTokenAccount: filerAta,
-        },
-        { rootHash: tree.rootHash, rootSum: tree.rootSum },
-      ),
-    );
-
-    // -- request_vrf → await committed_vrf → resolve panel → draw ------------
-    const vrfAccounts = { caller: payer.address, subaccord, dispute, snapshot };
-    await sendIx(
-      accord.methods.requestVrf(vrfAccounts, {
-        oracleQueue: address(VRF_ORACLE_QUEUE),
-        programIdentity: address(VRF_PROGRAM_IDENTITY),
-      }),
-    );
-    const committedVrf = await accord.methods.awaitCommittedVrf(dispute, {
-      timeoutMs: 60_000,
-    });
-
-    const { drawAttempt, memberships } = await resolvePanel(
-      committedVrf,
-      b58d(dispute),
-      roundIdx,
-      3,
-      tree,
-    );
-    const roundPda = (await findRoundPda(ACCORD_PROGRAM_ID, dispute, roundIdx))
-      .address;
-    const jurorStakeAccounts = await Promise.all(
-      memberships.map(
-        async (m: { leaf: { juror: Uint8Array } }) =>
-          (
-            await findJurorStakePda(
-              ACCORD_PROGRAM_ID,
-              subaccord,
-              b58e(m.leaf.juror),
-            )
-          ).address,
-      ),
-    );
-    await sendIx(
-      accord.methods.draw(
-        vrfAccounts,
-        roundPda,
-        drawAttempt,
-        memberships,
-        jurorStakeAccounts,
-      ),
-    );
-
-    // confirm the dispute advanced to Drawn; read the authoritative juror set
-    const disputeAcc = await fetchDispute(accord.rpc, dispute);
-    expect(disputeAcc).not.toBeNull();
-    expect(disputeAcc.state as number).toBeGreaterThanOrEqual(
-      DisputeState.Drawn as number,
-    );
-    const round = await fetchRound(accord.rpc, roundPda);
-    expect(round).not.toBeNull();
-    const ZERO = address("11111111111111111111111111111111");
-    const drawn = (round.jurors as string[]).filter((j) => j !== ZERO);
-    expect(drawn.length).toBeGreaterThanOrEqual(1);
-
-    // -- claimant POSTs encrypted evidence to the daemon --------------------
-    const bundle = await claimantEncryptEvidence(plaintext, operatorPub);
-    const postRes = await fetch(
-      `${DAEMON_URL}/evidence/${subaccord}/${dispute}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ct: Buffer.from(bundle.ct).toString("base64"),
-          claimant_ephem_pub: Buffer.from(bundle.claimantEphemPub).toString(
-            "base64",
-          ),
-          wrapped: Buffer.from(bundle.wrapped).toString("base64"),
-          plaintext_hash: Buffer.from(bundle.plaintextHash).toString("base64"),
-          ingested_at: Date.now(),
+      // -- wrong wallet: registration signed by a different Ed25519 key ----
+      await expect(
+        registerDeliveryKey({
+          endpoint: daemonUrl,
+          juror: drawnJuror.signer.address,
+          encPub: generateDeliveryKey().publicKey,
+          signMessage: async (msg) =>
+            ed25519.sign(msg, ed25519.utils.randomPrivateKey()),
         }),
-      },
-    );
-    expect([200, 201, 409].includes(postRes.status)).toBe(true); // 409 = idempotent re-post
+      ).rejects.toThrow(/400/);
 
-    // -- drawn juror GETs + decrypts → GREEN RULE ---------------------------
-    const drawnJuror = drawn[0]!;
-    const getRes = await fetch(
-      `${DAEMON_URL}/evidence/${dispute}/for/${drawnJuror}`,
-    );
-    expect(getRes.status).toBe(200);
-    const body = (await getRes.json()) as {
-      out: string;
-      operator_ephem_pub: string;
-    };
-    const delivered: DeliveredEvidence = {
-      out: new Uint8Array(Buffer.from(body.out, "base64")),
-      operatorEphemPub: new Uint8Array(
-        Buffer.from(body.operator_ephem_pub, "base64"),
-      ),
-    };
-    const jurorSecret = jurors.find((j) => j.address === drawnJuror)?.secret;
-    expect(jurorSecret).toBeDefined();
-    const cleartext = await jurorDecryptDelivered(delivered, jurorSecret!);
+      // -- happy register (wallet signMessage) → 201 ------------------------
+      const localKey = generateDeliveryKey();
+      const reg = await registerDeliveryKey({
+        endpoint: daemonUrl,
+        juror: drawnJuror.signer.address,
+        encPub: localKey.publicKey,
+        signMessage,
+      });
+      expect(reg.registeredAt).toBeGreaterThan(0);
 
-    // GREEN RULE: sha256(decrypted) == on-chain evidence_hash
-    expect(eqBytes(sha256(cleartext), evidenceHash)).toBe(true);
-    expect(eqBytes(cleartext, plaintext)).toBe(true);
-  }, 180_000);
+      // -- stale registered_at (≤ stored) → 409, even sig-valid -------------
+      const stored = await getRegisteredDeliveryKey({
+        endpoint: daemonUrl,
+        juror: drawnJuror.signer.address,
+      });
+      expect(stored).not.toBeNull();
+      const staleRes = await fetch(
+        `${daemonUrl}/jurors/${drawnJuror.signer.address}/delivery-key`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            enc_pub: b64(localKey.publicKey),
+            registered_at: stored!.registeredAt,
+            sig: b64(
+              await signMessage(
+                buildDeliveryKeyMessage(localKey.publicKey, stored!.registeredAt),
+              ),
+            ),
+          }),
+        },
+      );
+      expect(staleRes.status).toBe(409);
+
+      // -- registered: GET → decrypt with the Delivery Key secret ----------
+      const delivered = await fetchDelivery({
+        endpoint: daemonUrl,
+        dispute: armed.dispute,
+        juror: drawnJuror.signer.address,
+      });
+      expect(delivered).not.toBeNull();
+      const round0 = delivered!.find((r) => r.round === 0);
+      expect(round0).toBeDefined();
+      const cleartext = await jurorDecryptDelivery(round0!, localKey.secretKey);
+
+      // GREEN RULE: sha256(decrypted) == on-chain evidence_hash
+      expect(eqBytes(sha256(cleartext), evidenceHash)).toBe(true);
+      expect(eqBytes(cleartext, plaintext)).toBe(true);
+
+      // -- non-juror Delivery Key cannot decrypt ----------------------------
+      await expect(
+        jurorDecryptDelivery(round0!, generateDeliveryKey().secretKey),
+      ).rejects.toBeDefined();
+
+      // -- multi-origin self-heal: another origin rotates; local re-binds ----
+      const otherOrigin = generateDeliveryKey();
+      const rotateRes = await fetch(
+        `${daemonUrl}/jurors/${drawnJuror.signer.address}/delivery-key`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            enc_pub: b64(otherOrigin.publicKey),
+            registered_at: stored!.registeredAt + 1,
+            sig: b64(
+              await signMessage(
+                buildDeliveryKeyMessage(
+                  otherOrigin.publicKey,
+                  stored!.registeredAt + 1,
+                ),
+              ),
+            ),
+          }),
+        },
+      );
+      expect(rotateRes.status).toBe(201);
+
+      // local origin detects the mismatch (GET ≠ local pub) and re-registers
+      // with one signMessage — then re-pulls and decrypts again.
+      const healed = await ensureRegisteredDeliveryKey({
+        endpoint: daemonUrl,
+        juror: drawnJuror.signer.address,
+        encPub: localKey.publicKey,
+        signMessage,
+      });
+      expect(healed).toBe("re-registered");
+
+      const rePulled = await fetchDelivery({
+        endpoint: daemonUrl,
+        dispute: armed.dispute,
+        juror: drawnJuror.signer.address,
+      });
+      const round0b = rePulled!.find((r) => r.round === 0);
+      const cleartext2 = await jurorDecryptDelivery(round0b!, localKey.secretKey);
+      expect(eqBytes(cleartext2, plaintext)).toBe(true);
+    },
+    240_000,
+  );
 });

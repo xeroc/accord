@@ -45,7 +45,7 @@ PROJECT.md          Accord rationale + roadmap (v2/v3)
 meta -> Obsidian vault  SYMLINK (committed; target outside repo) — design specs (meta/specs/PROG-*.md)
 Cargo.toml          Rust workspace (programs/*)
 Anchor.toml         Anchor workspace + provider + test script
-Makefile            Build/test orchestration (root package.json has NO scripts by design)
+Makefile            Build/test orchestration (root package.json carries only release:* scripts by design)
 pnpm-workspace.yaml TS workspace globs (apps/*, packages/*, tests)
 tsconfig.base.json  Shared TS compiler options
 ```
@@ -72,7 +72,7 @@ tsconfig.base.json  Shared TS compiler options
 
 ## Build / Test Commands
 
-> The root `package.json` has no `scripts` block by design — the Makefile orchestrates builds, and lint/test fan out via pnpm's recursive filter. Don't add root scripts; they'd duplicate the Makefile.
+> The root `package.json` carries only the `release:*` scripts (changesets release flow — see **Releases** below) plus workspace devDependencies. Build/test orchestration lives in the Makefile; lint/test fan out via pnpm's recursive filter. Don't add other root scripts; they'd duplicate the Makefile.
 
 - `make prep` — install Solana (3.1.10) + Anchor (1.2.0) via avm, `pnpm install`, and `poetry install` for the docs site
 - `make build` — `anchor build` with `ANCHOR_BUILD_FLAGS` (`--ignore-keys --arch v3 --tools-version v1.57`, sBPFv3) → `make verify-sbf` (e_flags check) → `pnpm -r run build` (packages/apps) → docs build → `make codegen`
@@ -95,6 +95,15 @@ The GitHub pipeline runs these and requires them to succeed (`.github/workflows/
         pnpm --filter @useaccord/ui build-storybook
 
 plus `anchor test` per program (`program-tests.yml`).
+
+### Releases
+
+Versioning is [changesets](https://github.com/changesets/changesets), lockstep across the whole workspace (`.changeset/config.json` `fixed` group): any release bumps every package/app AND `[workspace.package].version` in the root `Cargo.toml` (all three programs inherit it; Anchor stamps it into the IDL `metadata.version`). `@useaccord/sdk` is the only package published (everything else is `private: true`); CI publishes via npm **trusted publishing** (OIDC, `id-token: write` — no `NPM_TOKEN` secret; requires npm ≥ 11.5.1, which the `Release` workflow installs, because pnpm 9 delegates `pnpm publish` to the npm CLI on PATH).
+
+- Every PR that changes shipped behavior adds a changeset in the same change: `pnpm changeset` at the root.
+- On push to `main`, `changesets/action` opens/updates the "chore(release): version packages" PR; merging it triggers `pnpm run release:version` (bump package.jsons + Cargo workspace + lockfile, write CHANGELOGs) → `pnpm run release:publish` (build + publish `@useaccord/sdk` with provenance) → tags `@useaccord/sdk@X.Y.Z` and `vX.Y.Z`.
+- Local release outside CI: `pnpm release` (needs `gh auth token` for the changelog formatter and an `npm login` for the publish step; local publishes have no provenance — that's CI-only). Afterwards `git push --follow-tags`.
+- One-time npm setup: add a trusted publisher for `@useaccord/sdk` on npmjs.com (repo `xeroc/accord`, workflow `release.yml`).
 
 ## Code Style
 

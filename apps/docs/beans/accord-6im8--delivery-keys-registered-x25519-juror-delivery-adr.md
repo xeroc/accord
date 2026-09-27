@@ -1,11 +1,11 @@
 ---
 # accord-6im8
 title: Delivery Keys — registered X25519 juror delivery (ADR-0034)
-status: todo
+status: completed
 type: milestone
 priority: normal
 created_at: 2026-09-25T08:59:29Z
-updated_at: 2026-09-25T09:00:45Z
+updated_at: 2026-09-25T10:25:12Z
 ---
 
 Delivery Keys — browser-held X25519 keys, registered at the evidence daemon under a wallet `signMessage` binding, replace juror-side Ed↔X25519 dual-use delivery. STRICT: no registered key ⇒ no delivery (404). Authority: ADR-0034 (amends 0015, 0011); glossary term `CONTEXT.md` Delivery Key; daemon SPEC §Crypto model / §HTTP API updated in-repo.

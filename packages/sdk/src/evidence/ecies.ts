@@ -1,13 +1,15 @@
 /**
- * evidence/ecies.ts — the Accord evidence encryption protocol (ADR-0006).
+ * evidence/ecies.ts — the Accord evidence encryption protocol (ADR-0006,
+ * delivery amended by ADR-0034).
  *
  * One ECIES-style envelope, two roles:
  *
  *   Ingest (claimant → operator): the claimant encrypts plaintext to the
  *   operator's Ed25519→X25519 key and posts the bundle; the operator decrypts.
  *
- *   Deliver (operator → drawn juror): the operator re-encrypts plaintext to the
- *   juror's Ed25519→X25519 key; only that juror's key decrypts.
+ *   Deliver (operator → drawn juror): the operator re-encrypts plaintext to
+ *   the juror's registered Delivery Key (a raw X25519 key, ADR-0034); only
+ *   that juror's Delivery Key secret decrypts. No Ed→X dual-use here.
  *
  * This is the single byte-exact implementation all three parties import — the
  * claimant and juror run it off-daemon (they are SDK consumers), so the protocol
@@ -19,7 +21,7 @@
  * Plaintext exists only ephemerally between decrypt and re-encrypt on the
  * operator side; nothing persisted is ever plaintext (SPEC §Encrypted-at-rest).
  *
- * Authority: apps/evidence-daemon/SPEC.md §Crypto model; ADR-0006.
+ * Authority: apps/evidence-daemon/SPEC.md §Crypto model; ADR-0006, ADR-0034.
  */
 import { randomBytes } from "@noble/hashes/utils";
 import { aesGcmDecrypt, aesGcmEncrypt, hkdfSha256, sha256 } from "./crypto.js";
@@ -47,15 +49,13 @@ export interface IngestBundle {
   /** sha256(plaintext); matches the dispute's on-chain `evidence_hash`. */
   plaintext_hash: Uint8Array;
 }
-
-/** A bundle re-encrypted to a single drawn juror. */
+/** A bundle re-encrypted to a single drawn juror's Delivery Key (ADR-0034). */
 export interface JurorBundle {
   /** AES-GCM(k_out, plaintext) — nonce(12) prepended. */
   out: Uint8Array;
   /** Operator's ephemeral X25519 public key for this delivery (32 bytes). */
   operator_ephem_pub: Uint8Array;
 }
-
 /**
  * Claimant-side ingest encryption. Produces the bundle posted to the operator.
  * Claimants run this off-daemon; the operator never calls it in production (it
@@ -99,26 +99,24 @@ export async function operatorDecrypt(
   return aesGcmDecrypt(dek, bundle.ct);
 }
 
-/** Operator re-encrypts plaintext to a drawn juror's Ed25519 pubkey. */
-export async function deliverToJuror(
+/** Operator re-encrypts plaintext to the juror's registered Delivery Key (ADR-0034). */
+export async function deliverToDeliveryKey(
   plaintext: Uint8Array,
-  jurorEd25519Pub: Uint8Array,
+  deliveryEncPub: Uint8Array,
 ): Promise<JurorBundle> {
   const ephem = newX25519KeyPair();
-  const jurorX25519Pub = ed25519ToX25519PublicKey(jurorEd25519Pub);
-  const shared = x25519SharedSecret(ephem.secret, jurorX25519Pub);
+  const shared = x25519SharedSecret(ephem.secret, deliveryEncPub);
   const kOut = await hkdfSha256(shared, te.encode(DELIVER_INFO));
   const out = await aesGcmEncrypt(kOut, plaintext);
   return { out, operator_ephem_pub: ephem.publicKey };
 }
 
-/** Juror-side decrypt of a delivered bundle → plaintext. */
-export async function jurorDecrypt(
+/** Juror-side decrypt of a delivered bundle with the Delivery Key secret (ADR-0034). */
+export async function jurorDecryptDelivery(
   delivered: JurorBundle,
-  jurorEd25519SecretSeed: Uint8Array,
+  deliverySecret: Uint8Array,
 ): Promise<Uint8Array> {
-  const jurorX25519Sk = ed25519SecretToX25519(jurorEd25519SecretSeed);
-  const shared = x25519SharedSecret(jurorX25519Sk, delivered.operator_ephem_pub);
+  const shared = x25519SharedSecret(deliverySecret, delivered.operator_ephem_pub);
   const kOut = await hkdfSha256(shared, te.encode(DELIVER_INFO));
   return aesGcmDecrypt(kOut, delivered.out);
 }

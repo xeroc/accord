@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # npm trusted publishing (OIDC) — no NPM_TOKEN secret
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  release:
+    name: Version & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # pnpm 9 delegates `pnpm publish` to the npm CLI on PATH; npm >= 11.5.1
+      # speaks OIDC trusted publishing natively. Upgrade in place so the
+      # delegated publish authenticates via the job's id-token — no npm token.
+      - name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@^11
+          npm --version
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-edit (workspace version bump)
+        run: cargo install cargo-edit --locked
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: changesets/action@v1
+        with:
+          version: pnpm run release:version
+          publish: pnpm run release:publish
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+
+      - name: Tag umbrella version
+        run: |
+          V=$(node -p 'require("./packages/sdk/package.json").version')
+          git tag "v$V" 2>/dev/null || true
+          git push origin "v$V" 2>/dev/null || true

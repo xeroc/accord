@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/remotion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "@useaccord/remotion \u2014 Remotion 4 video framework rendering brand-obedient videos from @useaccord/ui. Videos under videos/ are local-only (gitignored).",
   "type": "module",

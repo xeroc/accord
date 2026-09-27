@@ -15,5 +15,8 @@ export default {
   testTimeout: 120000,
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
+    // The evidence subpath lives only in the package `exports` map (no `main`
+    // fallback), which jest's CJS resolver does not consult.
+    "^@useaccord/sdk/evidence$": "<rootDir>/../packages/sdk/dist/evidence/index.js",
   },
 };

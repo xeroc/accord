@@ -39,6 +39,15 @@ export function resolveKeypairPath(flagValue: string | undefined): string {
  * keypair does everything; CLI.md §7 Q5.)
  */
 export async function loadKeypair(path: string): Promise<KeyPairSigner> {
+  return createKeyPairSignerFromBytes(readKeypairBytes(path));
+}
+
+/**
+ * Read + validate a Solana keypair JSON file and return the raw 64 bytes
+ * (`seed(32) ‖ pub(32)`). For callers that need the raw material beyond a
+ * Kit signer — e.g. building an Ed25519 `signMessage` seam (ADR-0034).
+ */
+export function readKeypairBytes(path: string): Uint8Array {
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
@@ -73,8 +82,7 @@ export async function loadKeypair(path: string): Promise<KeyPairSigner> {
       }).`,
     );
   }
-
-  return createKeyPairSignerFromBytes(new Uint8Array(bytes as number[]));
+  return new Uint8Array(bytes as number[]);
 }
 
 /**

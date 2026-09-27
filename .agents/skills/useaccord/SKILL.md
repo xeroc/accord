@@ -1,7 +1,7 @@
 ---
 name: useaccord
 description: Work with the Accord arbitration protocol — create Subaccords, stake jurors, file disputes, draw panels, vote, appeal, and settle rulings via the `useaccord` CLI and `@useaccord/sdk`. Covers the full dispute lifecycle, the two-phase withdraw, MST accumulator proofs, the cranker service, and the domain rules-doc registry (domain:put / domain:get, ADR-0027).
-when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point or scalar (median) voting, attestation-gated / credential-gated juror pools, the useaccord CLI, domain rules documents / rules_hash / domain_ref publishing, or any instruction in the Accord program (create_subaccord, stake, prune_juror, reclaim_slot, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
+when_to_use: When the user asks about Accord, disputes, jurors, staking, arbitration, Schelling point or scalar (median) voting, attestation-gated / credential-gated juror pools, the useaccord CLI, domain rules documents / rules_hash / domain_ref publishing, juror Delivery Keys / evidence delivery (evidence:register-key, ADR-0034), or any instruction in the Accord program (create_subaccord, stake, prune_juror, reclaim_slot, create_dispute, draw_seat, commit, reveal, appeal, finalize, settle_round, cancel_dispute, redraw, withdraw_fees).
 version: 0.1.0
 ---
 
@@ -29,6 +29,7 @@ commit-reveal votes, and emits a Ruling.
 | Build MST proofs offline           | `useaccord accumulator:*`                            | [03-accumulator.md](references/03-accumulator.md) |
 | Publish / fetch a domain rules doc | `useaccord domain:put` / `domain:get`                | [10-domains.md](references/10-domains.md)         |
 | Curate a Canon list (create, submit, challenge, withdraw, retune params, read) | `useaccord canon:*`                                     | [11-canon.md](references/11-canon.md)             |
+| Register a juror Delivery Key (strict delivery, ADR-0034) | `useaccord evidence:register-key`                | [12-evidence.md](references/12-evidence.md)       |
 
 ## Key concepts
 

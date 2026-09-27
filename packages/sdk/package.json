@@ -1,7 +1,10 @@
 {
   "name": "@useaccord/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript SDK for the Accord program on Solana",
+  "repository": { "type": "git", "url": "git+https://github.com/xeroc/accord.git", "directory": "packages/sdk" },
+  "license": "MIT",
+  "publishConfig": { "access": "public" },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
