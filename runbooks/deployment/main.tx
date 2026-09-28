@@ -15,21 +15,23 @@ action "deploy_accord" "svm::deploy_program" {
     # Instant cheatcode deploy: writes program data directly to the program
     # account (deviates from devnet/mainnet tx-based deploy, but is what makes
     # the local Surfnet harness deterministic + fast for `make run_surfpool`).
-    instant_surfnet_deployment = true
+    instant_surfnet_deployment = input.network_id == "localnet"
 }
 
 action "deploy_canon" "svm::deploy_program" {
+    when = input.network_id == "localnet" || input.network_id == "devnet"
     description = "Deploy canon program"
     program = svm::get_program_from_anchor_project("canon")
     authority = signer.authority
     payer = signer.payer
-    instant_surfnet_deployment = true
+    instant_surfnet_deployment = input.network_id == "localnet"
 }
 
 action "deploy_synod" "svm::deploy_program" {
+    when = input.network_id == "localnet" || input.network_id == "devnet"
     description = "Deploy synod program"
     program = svm::get_program_from_anchor_project("synod")
     authority = signer.authority
     payer = signer.payer
-    instant_surfnet_deployment = true
+    instant_surfnet_deployment = input.network_id == "localnet"
 }

@@ -82,6 +82,6 @@ clean: ## Remove build artifacts and node_modules
 	$(ANCHOR_COMMAND) clean
 	rm -rf node_modules
 
-devnet_deploy:
-	$(ANCHOR_COMMAND) program deploy --provider.cluster $(SOLANA_API)
+deploy:
+	$(ANCHOR_COMMAND) program deploy --provider.cluster $(SOLANA_API) --provider.wallet $(ACCORD_DEPLOY_KEY_PATH)
 	# solana program write-buffer --keypair $(DEPLOY_KEY_PATH) --ws $(SOLANA_WS) ./target/deploy/accord.so

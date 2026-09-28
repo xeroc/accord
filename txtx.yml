@@ -7,10 +7,12 @@ runbooks:
     location: runbooks/deployment
 environments:
   localnet:
-      network_id: localnet
-      rpc_api_url: http://127.0.0.1:8899
+    network_id: localnet
+    rpc_api_url: http://127.0.0.1:8899
   devnet:
-      network_id: devnet
-      rpc_api_url: https://api.devnet.solana.com
-      payer_keypair_json: ~/.config/solana/id.json
-      authority_keypair_json: ~/.config/solana/id.json
+    network_id: devnet
+    rpc_api_url: https://api.devnet.solana.com
+  mainnet:
+    network_id: mainnet
+    rpc_api_url: https://api.mainnet-beta.solana.com
+    deploy_key_path: ~/.config/solana/ADmSd9uYBRbLGa9rN1NtFv5LXtwLPdtVwGT5xhAYY4xZ.json
