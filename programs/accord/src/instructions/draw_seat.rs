@@ -203,14 +203,19 @@ impl<'info> DrawSeat<'info> {
             require!(js.juror == leaf.juror, AccordError::InvalidMembershipProof);
             // ADR-0012 inflation guard: live staked must cover the frozen leaf.
             require!(js.staked >= leaf.stake, AccordError::InflatedStake);
-            // REVIEW #5: free stake must cover this draw's slash + min_stake.
+            // Draw eligibility (2026-09-28, revised from REVIEW #5's
+            // min + α·min): free stake ≥ min_stake — a juror holding exactly
+            // min_stake is drawable; this draw's α·min_stake bond (reserved
+            // just below) comes out of the floor, not on top of it. The
+            // reservation still guarantees staked ≥ Σα_pending, so every
+            // pending slash stays covered (the settle cap stays a no-op). An
+            // incoherent juror's fold now lands below the floor and
+            // reconcile ejects them (zero-weight leaf — ADR for 2026-09-28).
             let free_stake = js.staked.saturating_sub(js.slash_reserve);
-            let required = dispute
-                .terms
-                .min_stake
-                .checked_add(slash_per_juror)
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            require!(free_stake >= required, AccordError::InsufficientStake);
+            require!(
+                free_stake >= dispute.terms.min_stake,
+                AccordError::InsufficientStake
+            );
             js.slash_reserve = js
                 .slash_reserve
                 .checked_add(slash_per_juror)

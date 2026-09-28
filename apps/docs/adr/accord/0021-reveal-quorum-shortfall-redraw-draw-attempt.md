@@ -63,9 +63,11 @@ round k. `round_idx` is the only thing that grows the panel or consumes the appe
   free until cancel.
 - **Slash per-redraw into `stake_delta` (chosen).** Bleeds no-shows each round; because the slash is
   pending (not `staked`), the frozen-root inflation guard still passes → no dead zones, no
-  re-freeze, no root recompute during the draw. Lazy `reconcile_stake` then drops `staked` until
-  the free-stake gate (`free_stake >= min_stake + slash_per_juror`) excludes repeat offenders from
-  later redraws.
+  re-freeze, no root recompute during the draw. Lazy `reconcile_stake` then drops `staked`;
+  a fold landing below `min_stake` **ejects** the repeat offender outright — zero-weight
+  leaf, remainder returned on the two-phase rail (ADR-0035; amended 2026-09-28 — the
+  original `free_stake ≥ min_stake + slash_per_juror` gate was retired with it), and a
+  fold that stays at or above the floor leaves the juror drawable.
 
 **Terminal on `max_draw_attempts`.**
 

@@ -50,6 +50,7 @@ status banner is annotated.
 | [0032](0032-remaining-accounts-full-anchor-deserialization.md)                | `remaining_accounts` use full Anchor deserialization (drop the manual layout offsets)                                              | Accepted             |
 | [0033](0033-failed-path-no-participation-no-ruling-no-pay.md)                  | Failed-path participation removed — no ruling, no pay (amends 0029 D3)                                                              | Accepted             |
 | [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md)        | Delivery Keys — registered X25519 keys for juror delivery; strict mode drops juror-side dual-use (amends 0015, 0011)               | Accepted             |
+| [0035](0035-minimum-position-min-stake-reconcile-ejection.md)               | Minimum juror position = min_stake; reconcile ejects below-floor jurors (retires the REVIEW #5 min+α draw gate)                                                    | Accepted             |
 
 ### Supersession map
 

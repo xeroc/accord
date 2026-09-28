@@ -68,8 +68,8 @@ const MIN_STAKE = 1_000n;
 const STAKE_FUND = 10_000n; // juror ATA balance before staking
 const STAKE_AMT = 5_000n;
 const ALPHA_BPS = 1_000n; // mirrors defaultSubaccordArgs (10%)
-/** Draw-eligibility floor on the first deposit = min_stake + α·min_stake (REVIEW #5). */
-const MIN_INITIAL = MIN_STAKE + (ALPHA_BPS * MIN_STAKE) / 10_000n;
+/** Opening floor = min_stake (2026-09-28; was min + α·min — b72fb0c1). */
+const MIN_INITIAL = MIN_STAKE;
 const DEPTH = 4;
 const WITHDRAWAL_DELAY_SECS = 3 * 24 * 60 * 60; // constants.rs: PRE_DRAW_CANCEL_TIMEOUT_SECS
 
@@ -340,23 +340,23 @@ describe("e2e: staking (requires Surfpool)", () => {
       stake(facade.adapter, env.programId, accounts, 0n, path),
     ).toThrow(/InvalidAmount/);
   }, 60_000);
-  it("first stake below min_stake + α·min_stake reverts (InsufficientStake)", async () => {
+  it("first stake below min_stake reverts (InsufficientStake)", async () => {
     if (!env.up) return;
     const { accounts, facade } = await armJuror();
     const before = tree.nextIndex;
     const path = await tree.pathForNext();
-    // MIN_STAKE alone passes the leaf-size gate but not the draw-eligibility
-    // floor: draw_seat reserves α·min_stake and requires min_stake free, so a
-    // juror staking exactly min_stake can never be drawn. The first deposit
-    // must clear min_stake + α·min_stake.
+    // A below-floor first deposit is born sortition dust (positive weight,
+    // undrawable), so the opening gate rejects it. Exactly min_stake is the
+    // minimum position — drawable as-is since 2026-09-28 (the draw bond
+    // α·min_stake comes out of the floor at draw time, not on top here).
     await expect(
-      env.sendIx(stake(facade.adapter, env.programId, accounts, MIN_STAKE, path)),
+      env.sendIx(stake(facade.adapter, env.programId, accounts, MIN_STAKE - 100n, path)),
     ).rejects.toThrow();
     // Atomic revert: no accumulator leaf consumed (no hole in the tree).
     expect(tree.nextIndex).toBe(before);
   }, 60_000);
 
-  it("first stake at exactly min_stake + α·min_stake succeeds", async () => {
+  it("first stake at exactly min_stake succeeds", async () => {
     if (!env.up) return;
     const { juror, jurorStake, accounts, facade } = await armJuror();
     const path = await tree.pathForNext();
