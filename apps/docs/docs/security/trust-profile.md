@@ -41,16 +41,17 @@ mitigation. "Residual" is what remains true after the mitigation.
 | 8   | **Integrating application** ([0004](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0004-accord-party-agnostic-permissionless-appeal.md))                                                                      | Whether the Ruling is honored                                                         | Ignores/refuses the Ruling                       | n/a — out of protocol scope                                                                                               | Accord is an **oracle output**, not self-enforcing.                                                                                                |
 | 9   | **Juror admission**                                                                                                                                                   | One key = one seat weight                                                             | Sybil (many keys, one human)                     | Stake anti-sybil + stake-weighting                                                                                        | Admission is **key-level pseudonymous**, not identity-verified independent humans ([0001](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0001-schelling-accord-replaces-hired-judges.md)). |
 
-> **Snapshot-poster role (shipped code).** The current program still exposes
-> `post_snapshot` / `challenge_snapshot` / `finalize_snapshot` with a bonded
-> 1-day window ([0008](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md)).
+> **Snapshot-poster role (deleted, ADR-0012).** The first-generation design
+> exposed `post_snapshot` / `challenge_snapshot` / `finalize_snapshot` with a
+> bonded 1-day window
+> ([0008](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md)).
 > That role was a correctness trust dependency (proven insufficient —
-> CONCEPT-REVIEW Bad 4/5). [ADR-0012](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) **deletes it**: the on-chain accumulator makes the juror-set root canonical,
-> so there is no poster, no bond, and no challenge window. The trust surface
-> above describes the post-0012 state; the snapshot-poster row is intentionally
-> absent.
+> CONCEPT-REVIEW Bad 4/5) and is **removed from the shipped program**: the
+> on-chain accumulator makes the juror-set root canonical, so there is no
+> poster, no bond, and no challenge window. The trust surface above describes
+> the post-0012 state; the snapshot-poster row is intentionally absent.
 >
-> **Synod (Arbitrable — specced, not yet built).** Synod moves value in-house:
+> **Synod (Arbitrable — built, e2e-green).** Synod moves value in-house:
 > unlike a generic integrating application (row 8 — an ignored Ruling costs only
 > off-chain honor), a Synod Case escrows party stakes (`N·S` in the Subaccord's
 > `fee_token`) and self-enforces payouts on-chain. A captured panel (row 6) or a

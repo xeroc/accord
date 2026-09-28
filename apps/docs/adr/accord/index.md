@@ -14,43 +14,43 @@ status banner is annotated.
 
 ## Index
 
-| #                                                                             | Title                                                                                               | Status               |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------- |
-| [0001](0001-schelling-accord-replaces-hired-judges.md)                        | Schelling-point Accord replaces hired-judge committee                                               | Accepted             |
-| [0002](0002-per-subaccord-staking-token-no-accord-token-v1.md)                | Per-Subaccord staking token, no Accord token in v1                                                  | Accepted             |
-| [0003](0003-accord-draw-merkle-snapshot-distinct-vrf.md)                      | Draw — Merkle Snapshot, off-chain sortition, distinct Jurors                                        | Partially superseded |
-| [0004](0004-accord-party-agnostic-permissionless-appeal.md)                   | Party-agnostic; appeal is permissionless                                                            | Accepted             |
-| [0005](0005-subaccord-authority-pubkey-timelock.md)                           | Subaccord authority — pubkey-gated, 48h timelock                                                    | Accepted             |
-| [0006](0006-evidence-onchain-hash-trusted-re-encryption-operator.md)          | Evidence — on-chain hash, trusted re-encryption operator                                            | Accepted             |
-| [0007](0007-upgrade-authority-multisig-then-freeze.md)                        | Upgrade authority — Squads multisig, then post-audit freeze                                         | Accepted             |
-| [0008](0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md) | Snapshot trust hardening — anchor-slot pattern, fraud predicates, sortition                         | Partially superseded |
-| [0009](0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md)         | Stake-weighted verifiable sortition — MST, committed VRF                                            | Partially superseded |
-| [0010](0010-sdk-codama-solana-kit-facade.md)                                  | `@accord/sdk` — Codama codegen + Solana Kit + custom facade                                         | Accepted             |
-| [0011](0011-evidence-operator-daemon-offchain-service.md)                     | Evidence Operator Daemon — off-chain decrypt-re-encryption service                                  | Accepted             |
-| [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)       | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5)                | Proposed             |
-| [0013](0013-vrf-authentication-via-oracle-callback.md)                        | VRF authentication via oracle callback — supersedes the ADR-0009 caller-commit VRF                  | Accepted             |
-| [0014](0014-failed-state-cancel-dispute-escape-hatch.md)                      | Failed state + `cancel_dispute` liveness-escape crank                                               | Accepted             |
-| [0015](0015-evidence-crypto-protocol-in-sdk.md)                               | Evidence crypto protocol lives in `@accord/sdk` — shared by claimant, operator, juror (amends 0011) | Partially superseded |
-| [0016](0016-pause-scope-split-contains-new-exposure-never-adjudication.md)    | Pause scope — split: pause contains new exposure, never adjudication (amends 0007)                  | Accepted             |
-| [0017](0017-evidence-data-format-manifest-yaml.md)                            | Evidence data format — `manifest.yaml` Merkle root, salted option labels                            | Accepted             |
-| [0018](0018-multi-round-settlement-against-final-ruling.md)                   | Multi-round settlement against the final ruling                                                     | Accepted             |
-| [0019](0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md)     | Subaccord dispute-kit — aggregation enum; round-1 panel fixed at `INITIAL_NUM_JURORS` (=3)          | Accepted             |
-| [0020](0020-two-mint-two-vault-stake-token-fee-token.md)                      | Two-mint/two-vault economics — `stake_token` (collateral) + `fee_token` (compensation)              | Accepted             |
-| [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md)                   | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx`                         | Accepted             |
-| [0022](0022-per-subaccord-configurable-appeal-window.md)                      | Per-Subaccord configurable appeal window                                                            | Accepted             |
-| [0023](0023-per-round-evidence-hashes.md)                                     | Per-round evidence hashes — evidence-on-appeal                                                      | Accepted             |
-| [0024](0024-attestation-gated-subaccords.md)                                  | Attestation-gated Subaccords — optional SAS credential gate, `prune_juror` crank                    | Accepted             |
-| [0025](0025-scalar-voting.md)                                                 | Scalar voting — u64 votes, Median aggregation, bps coherence band                                   | Accepted             |
-| [0026](0026-plurality-tie-non-decisive-redraw.md)                             | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner         | Accepted             |
-| [0027](0027-domain-document-registry-public-cas.md)                           | Domain document registry — public content-addressed CAS on the evidence daemon (amends 0011)        | Accepted             |
-| [0028](0028-pda-authorities-rent-payer-split-retunable-court-params.md)      | PDA update authorities — rent-payer split + retunable court params (amends 0005)                    | Proposed             |
-| [0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md)   | Juror fees settle at finality vs the final ruling; same-mint slash-dominance guard (supersedes 0018 §1) | Accepted (impl pending) |
-| [0030](0030-flip-bounty-finality-settled-appellant-reward.md)               | Flip-bounty — finality-settled reward for verdict-flipping appellants (blocked by 0029 plumbing)     | Accepted (impl pending) |
-| [0031](0031-evidence-v2-loose-per-file-transport.md)                        | Evidence v2 — loose per-file transport: manifest-first PUTs, split juror delivery, derived completeness (no index) | Accepted |
-| [0032](0032-remaining-accounts-full-anchor-deserialization.md)                | `remaining_accounts` use full Anchor deserialization (drop the manual layout offsets)                                              | Accepted             |
-| [0033](0033-failed-path-no-participation-no-ruling-no-pay.md)                  | Failed-path participation removed — no ruling, no pay (amends 0029 D3)                                                              | Accepted             |
-| [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md)        | Delivery Keys — registered X25519 keys for juror delivery; strict mode drops juror-side dual-use (amends 0015, 0011)               | Accepted             |
-| [0035](0035-minimum-position-min-stake-reconcile-ejection.md)               | Minimum juror position = min_stake; reconcile ejects below-floor jurors (retires the REVIEW #5 min+α draw gate)                                                    | Accepted             |
+| # | Title | Status | Superseded / amended by |
+| --- | --- | --- | --- |
+| [0001](0001-schelling-accord-replaces-hired-judges.md) | Schelling-point Accord replaces hired-judge committee | Accepted | — |
+| [0002](0002-per-subaccord-staking-token-no-accord-token-v1.md) | Per-Subaccord staking token, no Accord token in v1 | Accepted | single-token economics → [0020](0020-two-mint-two-vault-stake-token-fee-token.md) |
+| [0003](0003-accord-draw-merkle-snapshot-distinct-vrf.md) | Draw — Merkle Snapshot, off-chain sortition, distinct Jurors | Partially superseded | snapshot layer → [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) |
+| [0004](0004-accord-party-agnostic-permissionless-appeal.md) | Party-agnostic; appeal is permissionless | Accepted | — |
+| [0005](0005-subaccord-authority-pubkey-timelock.md) | Subaccord authority — pubkey-gated, 48h timelock | Accepted | amended by [0024](0024-attestation-gated-subaccords.md), [0028](0028-pda-authorities-rent-payer-split-retunable-court-params.md) |
+| [0006](0006-evidence-onchain-hash-trusted-re-encryption-operator.md) | Evidence — on-chain hash, trusted re-encryption operator | Accepted | evidence surface → per-round by [0023](0023-per-round-evidence-hashes.md) |
+| [0007](0007-upgrade-authority-multisig-then-freeze.md) | Upgrade authority — Squads multisig, then post-audit freeze | Accepted | pause scope amended by [0016](0016-pause-scope-split-contains-new-exposure-never-adjudication.md) |
+| [0008](0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md) | Snapshot trust hardening — anchor-slot pattern, fraud predicates, sortition | Partially superseded | snapshot layer → [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) |
+| [0009](0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md) | Stake-weighted verifiable sortition — MST, committed VRF | Partially superseded | snapshot layer → [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md); VRF delivery → [0013](0013-vrf-authentication-via-oracle-callback.md) |
+| [0010](0010-sdk-codama-solana-kit-facade.md) | `@accord/sdk` — Codama codegen + Solana Kit + custom facade | Accepted | — |
+| [0011](0011-evidence-operator-daemon-offchain-service.md) | Evidence Operator Daemon — off-chain decrypt-re-encryption service | Accepted | amended by [0015](0015-evidence-crypto-protocol-in-sdk.md), [0027](0027-domain-document-registry-public-cas.md), [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md) |
+| [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) | On-chain stake accumulator replaces the optimistic snapshot (resolves Bad 4 + Bad 5) | Proposed | — |
+| [0013](0013-vrf-authentication-via-oracle-callback.md) | VRF authentication via oracle callback — supersedes the ADR-0009 caller-commit VRF | Accepted | — |
+| [0014](0014-failed-state-cancel-dispute-escape-hatch.md) | Failed state + `cancel_dispute` liveness-escape crank | Accepted | — |
+| [0015](0015-evidence-crypto-protocol-in-sdk.md) | Evidence crypto protocol lives in `@accord/sdk` — shared by claimant, operator, juror | Partially superseded | juror dual-use → [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md) |
+| [0016](0016-pause-scope-split-contains-new-exposure-never-adjudication.md) | Pause scope — split: pause contains new exposure, never adjudication | Accepted | — |
+| [0017](0017-evidence-data-format-manifest-yaml.md) | Evidence data format — `manifest.yaml` Merkle root, salted option labels | Accepted | per-round by [0023](0023-per-round-evidence-hashes.md) |
+| [0018](0018-multi-round-settlement-against-final-ruling.md) | Multi-round settlement against the final ruling | Accepted | §1 → [0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md) |
+| [0019](0019-subaccord-dispute-kit-aggregation-enum-fixed-panel-ladder.md) | Subaccord dispute-kit — aggregation enum; round-1 panel fixed at `INITIAL_NUM_JURORS` (=3) | Accepted | `Median` variant shipped by [0025](0025-scalar-voting.md) |
+| [0020](0020-two-mint-two-vault-stake-token-fee-token.md) | Two-mint/two-vault economics — `stake_token` (collateral) + `fee_token` (compensation) | Accepted | layout-offset consequences → [0032](0032-remaining-accounts-full-anchor-deserialization.md) |
+| [0021](0021-reveal-quorum-shortfall-redraw-draw-attempt.md) | Reveal quorum + shortfall redraw — `draw_attempt` orthogonal to `round_idx` | Accepted | — |
+| [0022](0022-per-subaccord-configurable-appeal-window.md) | Per-Subaccord configurable appeal window | Accepted | layout-offset consequences → [0032](0032-remaining-accounts-full-anchor-deserialization.md) |
+| [0023](0023-per-round-evidence-hashes.md) | Per-round evidence hashes — evidence-on-appeal | Accepted | layout-offset consequences → [0032](0032-remaining-accounts-full-anchor-deserialization.md) |
+| [0024](0024-attestation-gated-subaccords.md) | Attestation-gated Subaccords — optional SAS credential gate, `prune_juror` crank | Accepted | layout-offset consequences → [0032](0032-remaining-accounts-full-anchor-deserialization.md) |
+| [0025](0025-scalar-voting.md) | Scalar voting — u64 votes, Median aggregation, bps coherence band | Accepted | — |
+| [0026](0026-plurality-tie-non-decisive-redraw.md) | Plurality top-count tie is a non-decisive round — `RedrawEligible`, not an arbitrary winner | Accepted | — |
+| [0027](0027-domain-document-registry-public-cas.md) | Domain document registry — public content-addressed CAS on the evidence daemon | Accepted | — |
+| [0028](0028-pda-authorities-rent-payer-split-retunable-court-params.md) | PDA update authorities — rent-payer split + retunable court params | Proposed | — |
+| [0029](0029-finality-conditional-juror-fees-same-mint-slash-dominance.md) | Juror fees settle at finality vs the final ruling; same-mint slash-dominance guard | Accepted — implemented | D3 (Failed path) amended by [0033](0033-failed-path-no-participation-no-ruling-no-pay.md) |
+| [0030](0030-flip-bounty-finality-settled-appellant-reward.md) | Flip-bounty — finality-settled reward for verdict-flipping appellants | Implemented | — |
+| [0031](0031-evidence-v2-loose-per-file-transport.md) | Evidence v2 — loose per-file transport: manifest-first PUTs, split juror delivery, derived completeness | Accepted | — |
+| [0032](0032-remaining-accounts-full-anchor-deserialization.md) | `remaining_accounts` use full Anchor deserialization (drop the manual layout offsets) | Accepted | — |
+| [0033](0033-failed-path-no-participation-no-ruling-no-pay.md) | Failed-path participation removed — no ruling, no pay | Accepted | — |
+| [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md) | Delivery Keys — registered X25519 keys for juror delivery; strict mode drops juror-side dual-use | Accepted | — |
+| [0035](0035-minimum-position-min-stake-reconcile-ejection.md) | Minimum juror position = min_stake; reconcile ejects below-floor jurors | Accepted | — |
 
 ### Supersession map
 
@@ -103,16 +103,17 @@ status banner is annotated.
 ## How to read them
 
 - **New to the project**: start with [0001](0001-schelling-accord-replaces-hired-judges.md)
-  (why Schelling-point), then [0003](0003-accord-draw-merkle-snapshot-distinct-vrf.md)
-  (how the draw works), then [0008](0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md)
-  and [0009](0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md) (how
-  the snapshot trust model was hardened, then superseded by 0012).
+  (why Schelling-point), then [0012](0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md)
+  (how the draw works today — the accumulator). The history of how it got
+  there is [0003](0003-accord-draw-merkle-snapshot-distinct-vrf.md) →
+  [0008](0008-snapshot-trust-hardening-anchor-slot-and-verifiable-sortition.md) →
+  [0009](0009-stake-weighted-verifiable-sortition-mst-committed-vrf.md) → 0012.
 - **Integrating**: 0001 + 0004 (party-agnostic) + 0005 (Subaccord authority) are
   the most relevant to your integration surface.
 - **Auditing**: 0008 + 0009 + 0012 are the security-critical ADRs (snapshot fraud
   proofs → canonical accumulator, sortition enforcement, VRF integration).
 
-1. Number = next sequential (currently **0034**).
+1. Number = next sequential (currently **0035**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

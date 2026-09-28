@@ -21,7 +21,7 @@ DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
 SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
 SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
-.PHONY: prep build codegen sdk docs test test_unit lint verify-sbf clean help
+.PHONY: prep build codegen sdk docs test test_unit lint verify-sbf coverage clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -60,6 +60,9 @@ docs: ## Build the MkDocs site into apps/docs/site/
 
 docs-serve: ## Live-reload MkDocs dev server
 	$(MAKE) -C apps/docs serve
+
+coverage: ## Regenerate apps/docs/docs/reference/coverage.md (instruction × suite matrix)
+	sh scripts/gen-coverage.sh
 
 test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Surfpool)
 	$(ANCHOR_COMMAND) build $(ANCHOR_BUILD_FLAGS)
