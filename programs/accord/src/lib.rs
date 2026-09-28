@@ -141,6 +141,11 @@ pub mod accord {
     /// the vault received (fee-on-transfer safe), and recomputes the path to a
     /// new canonical root — O(log N). A wrong (stale/fabricated) path reverts,
     /// leaving the root untouched. Reverts while the circuit breaker is paused.
+    ///
+    /// Opening gate (2026-09-28, ADR-0035): the leaf-creating deposit must be
+    /// ≥ `min_stake` — a below-floor leaf is born sortition dust (positive
+    /// weight, undrawable). Exactly `min_stake` is the minimum position and is
+    /// drawable as-is. Top-ups are ungated.
     pub fn stake(ctx: Context<Stake>, amount: u64, path: Vec<MSTNode>) -> Result<()> {
         Stake::handler_stake(ctx, amount, path)
     }
@@ -185,10 +190,19 @@ pub mod accord {
     /// into their canonical `staked` and updates the accumulator root via a
     /// Merkle proof. After reconcile, the ledger and accumulator agree again.
     ///
+    /// **Clean ejection** (2026-09-28, ADR-0035): a fold that lands strictly
+    /// between 0 and `min_stake` ejects the juror — the leaf is written at
+    /// ZERO weight (never sub-min sortition dust), the remainder is banked
+    /// into `pending_withdrawal` on the two-phase rail (withdrawable after
+    /// `WITHDRAWAL_DELAY` + `active_draws == 0`), `staker_count` decrements,
+    /// and `Unstaked` is emitted. A fold to exactly 0 or ≥ `min_stake` keeps
+    /// the plain fold.
+    ///
     /// Any caller may trigger this — no tokens move, it's pure ledger + root
-    /// accounting. The cranker supplies the juror's Merkle path (same format as
-    /// `stake`/`request_withdraw`), which authenticates the old leaf against
-    /// the stored root and recomputes a new root for the adjusted amount.
+    /// accounting. The cranker supplies the juror's Merkle path (same format
+    /// as `stake`/`request_withdraw`), which authenticates the old leaf
+    /// against the stored root and recomputes a new root for the adjusted
+    /// amount.
     pub fn reconcile_stake(ctx: Context<ReconcileStake>, path: Vec<MSTNode>) -> Result<()> {
         ReconcileStake::handler_reconcile_stake(ctx, path)
     }
@@ -318,7 +332,11 @@ pub mod accord {
     /// (`prefix ≤ r_i < prefix + stake`, where `r_i` is deterministically
     /// derived from the frozen VRF + seat index + retry counter), the inflation
     /// guard (`JurorStake.staked ≥ leaf.stake`), and distinctness vs already-drawn
-    /// seats.
+    /// seats. Draw eligibility (2026-09-28, ADR-0035): free stake
+    /// (`staked − slash_reserve`) ≥ `min_stake` — the per-draw α·min_stake bond
+    /// is reserved out of the floor, so a juror holding exactly `min_stake` is
+    /// drawable; an incoherent fold lands below the floor and reconcile
+    /// ejects.
     ///
     /// **Deterministic collision re-roll** (bean accord-tzo0): the cranker
     /// supplies `retries` — how many times the deterministic `r_i` landed on an

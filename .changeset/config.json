@@ -1,28 +1,39 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.1.0/schema.json",
   "baseBranch": "main",
-  "changelog": ["@changesets/changelog-github", { "repo": "xeroc/accord" }],
-  "packages": ["packages/*", "apps/*", "tests"],
-  "fixed": [[
-    "@useaccord/sdk",
-    "@useaccord/canon",
-    "@useaccord/synod",
-    "@useaccord/ui",
-    "@useaccord/app",
-    "@useaccord/canon-app",
-    "@useaccord/cli",
-    "@useaccord/cranker",
-    "@useaccord/evidence-daemon",
-    "@useaccord/hanse",
-    "@useaccord/landing",
-    "@useaccord/pitch",
-    "@useaccord/remotion",
-    "@useaccord/synod-app",
-    "@useaccord/tests"
-  ]],
+  "changelog": [
+    "@changesets/changelog-github",
+    {
+      "repo": "xeroc/accord"
+    }
+  ],
+  "packages": [
+    "packages/*",
+    "apps/*",
+    "tests"
+  ],
+  "fixed": [
+    [
+      "@useaccord/sdk",
+      "@useaccord/canon",
+      "@useaccord/synod",
+      "@useaccord/ui",
+      "@useaccord/app",
+      "@useaccord/canon-app",
+      "@useaccord/cli",
+      "@useaccord/cranker",
+      "@useaccord/evidence-daemon",
+      "@useaccord/hanse",
+      "@useaccord/landing",
+      "@useaccord/pitch",
+      "@useaccord/remotion",
+      "@useaccord/synod-app",
+      "@useaccord/tests"
+    ]
+  ],
   "updateInternalDependencies": "patch",
   "privatePackages": {
     "version": true,
-    "tag": false
+    "tag": true
   }
 }

@@ -179,13 +179,13 @@ function InitialStakeForm({
 
   if (!subaccord || !signer || !crpc) return null;
   const minStake = subaccord.data.minStake;
-  // Draw-eligibility floor: draw_seat requires free stake ≥ min_stake + α·min_stake
-  // (each draw reserves α·min_stake and needs min_stake free afterwards). Staking
-  // exactly min_stake can never be drawn — the on-chain `stake` ix enforces this
-  // same floor on the first deposit; this mirrors it client-side. Top-ups
-  // (StakeActions) are not gated.
-  const minInitial =
-    minStake + (BigInt(subaccord.data.alphaBps) * minStake) / 10_000n;
+  // Opening floor (ADR-0035, 2026-09-28): the leaf-creating deposit must be
+  // ≥ min_stake — exactly min_stake is the minimum position and drawable
+  // (the draw bond α·min_stake comes out of the floor at draw time, not on
+  // top here). The on-chain `stake` ix enforces the same floor on the first
+  // deposit; this mirrors it client-side. Top-ups (StakeActions) are not
+  // gated.
+  const minInitial = minStake;
   const meetsMin = amount && BigInt(amount) >= minInitial;
   const proofLoading = proof.isLoading;
   const ready = !!amount && meetsMin && proof.data && !sending;
@@ -262,7 +262,7 @@ function InitialStakeForm({
         </FieldControl>
         <FieldDescription>
           Minimum to be draw-eligible: {formatTokenAmount(minInitial)} (min
-          stake + α·min stake; staking token{" "}
+          stake; staking token{" "}
           <Copyable value={subaccord.data.stakingToken} />)
         </FieldDescription>
         <FieldError>

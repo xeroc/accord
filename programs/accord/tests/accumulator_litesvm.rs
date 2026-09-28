@@ -633,8 +633,9 @@ fn off_chain_rebuild_matches_on_chain_root() {
     for i in 0..4u8 {
         let juror = Keypair::new();
         arm_juror(&mut env, &juror, 10_000);
-        // Stakes must clear the initial-stake floor (min_stake + α·min_stake = 1_100,
-        // the REVIEW #5 backstop). Varying amounts still exercise the rebuild.
+        // Stakes must clear the initial-stake floor (min_stake = 1_000; the
+        // opening gate, moved from min+α on 2026-09-28). Varying amounts
+        // still exercise the rebuild.
         let stake_amt = (i as u64 + 2) * 1_000;
 
         // Path for index `i` against the current tree (leaves so far).
@@ -4117,29 +4118,48 @@ fn settle_round_zero_reveals_traps_surplus() {
 #[test]
 fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
     let mut env = setup_accumulator();
-    // Stake 3 jurors (panel gate). Juror 0 stakes the 1_100 floor then partially
-    // withdraws 100 → free stake 1_000, below the draw-time min+slash (1_100).
-    // (A bare 1_000 stake is now rejected by the REVIEW #5 initial-stake gate.)
+    // Stake 3 jurors (panel gate). Juror 0 stakes 1_500 (a legal minimum-area
+    // position — the opening gate is min_stake = 1_000) and carries an
+    // injected slash_reserve of 600 from active draws → free stake 900,
+    // below the draw-time floor min_stake = 1_000.
     let j0 = Keypair::new();
     arm_juror(&mut env, &j0, 10_000);
     let (_, _, p0) = build_root_and_path(&[], TEST_DEPTH, 0);
-    do_stake(&mut env, &j0, 1_100, p0).assert_success();
-    // Drop free stake to 1_000 (< 1_100) via a partial request_withdraw.
-    let (_, _, pw) = build_root_and_path(&[(j0.pubkey(), 1_100)], TEST_DEPTH, 0);
-    do_request_withdraw(&mut env, &j0, 100, pw).assert_success();
+    do_stake(&mut env, &j0, 1_500, p0).assert_success();
+    // Inject slash_reserve = 600 (simulating active draws).
+    {
+        let js_pda = juror_stake_pda(&env.subaccord, &j0.pubkey());
+        let acc = env.ctx.svm.get_account(&js_pda).unwrap();
+        let mut data = acc.data.clone();
+        const SLASH_RESERVE_OFFSET: usize = 8 + 32 + 32 + 8 + 4 + 1 + 4 + 8;
+        data[SLASH_RESERVE_OFFSET..SLASH_RESERVE_OFFSET + 8].copy_from_slice(&600u64.to_le_bytes());
+        env.ctx
+            .svm
+            .set_account(
+                js_pda,
+                SvmAccount {
+                    lamports: acc.lamports,
+                    data,
+                    owner: ID,
+                    executable: false,
+                    rent_epoch: 0,
+                },
+            )
+            .unwrap();
+    }
     let j1 = Keypair::new();
     arm_juror(&mut env, &j1, 10_000);
-    let (_, _, p1) = build_root_and_path(&[(j0.pubkey(), 1_000)], TEST_DEPTH, 1);
+    let (_, _, p1) = build_root_and_path(&[(j0.pubkey(), 1_500)], TEST_DEPTH, 1);
     do_stake(&mut env, &j1, 5_000, p1).assert_success();
     let j2 = Keypair::new();
     arm_juror(&mut env, &j2, 10_000);
     let (_, _, p2) =
-        build_root_and_path(&[(j0.pubkey(), 1_000), (j1.pubkey(), 5_000)], TEST_DEPTH, 2);
+        build_root_and_path(&[(j0.pubkey(), 1_500), (j1.pubkey(), 5_000)], TEST_DEPTH, 2);
     do_stake(&mut env, &j2, 5_000, p2).assert_success();
 
     let sub = read_subaccord(&env);
     let leaves = vec![
-        (j0.pubkey(), 1_000),
+        (j0.pubkey(), 1_500),
         (j1.pubkey(), 5_000),
         (j2.pubkey(), 5_000),
     ];
@@ -4216,79 +4236,154 @@ fn slash_reserve_blocks_draw_when_insufficient_free_stake() {
     inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
     let rnd = round_pda(&dispute, 0);
 
-    // free_stake = 1000; required = 1000 + 100 = 1100 → fail.
+    // free_stake = 1500 − 600 = 900 < min_stake (1_000) → fail.
     let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves);
     assert!(
         !r.is_success(),
-        "draw must fail: free stake < min + slash; logs={:?}",
+        "draw must fail: free stake < min_stake; logs={:?}",
         r.logs()
     );
 
-    // Top up juror 0 to 2000.
+    // Top up juror 0 by 600 (staked 2_100, free 1_500).
     let (_, _, pt) = build_root_and_path(&leaves, TEST_DEPTH, 0);
-    do_stake(&mut env, &j0, 1_000, pt).assert_success();
+    do_stake(&mut env, &j0, 600, pt).assert_success();
     let js = read_juror_stake(&env, &env.subaccord, &j0.pubkey());
-    assert_eq!(js.staked, 2_000);
+    assert_eq!(js.staked, 2_100);
 
-    // Draw should succeed now (2000 >= 1100).
-    // Use a different caller to avoid LiteSVM AlreadyProcessed (same tx hash).
-    let caller2 = Keypair::new();
-    env.ctx
-        .svm
-        .airdrop(&caller2.pubkey(), 10 * LAMPORTS_PER_SOL)
-        .unwrap();
-    {
-        let (juror_pub, stake) = leaves[0];
-        let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
-        let js_pda = juror_stake_pda(&env.subaccord, &juror_pub);
-        let membership = accord::state::JurorMembership {
-            leaf: LeafClaim {
-                juror: juror_pub,
-                stake,
-            },
-            proof,
-            index: 0,
-        };
-        let ix = env
-            .ctx
-            .program()
-            .accounts(accounts::DrawSeat {
-                caller: caller2.pubkey(),
-                dispute,
-                subaccord: env.subaccord,
-                round: rnd,
-                system_program: system_program::ID,
-            })
-            .args(instruction::DrawSeat {
-                seat: 0,
-                retries: 0,
-                membership,
-            })
-            .instruction()
-            .unwrap();
-        let ix_meta = solana_program::instruction::Instruction {
-            program_id: ix.program_id,
-            accounts: {
-                let mut a = ix.accounts;
-                a.push(solana_program::instruction::AccountMeta {
-                    pubkey: js_pda,
-                    is_signer: false,
-                    is_writable: true,
-                });
-                a
-            },
-            data: ix.data,
-        };
-        let r = env.ctx.execute_instruction(ix_meta, &[&caller2]).unwrap();
-        assert!(
-            r.is_success(),
-            "draw must succeed after top-up; logs={:?}",
-            r.logs()
-        );
-    }
+    // Draw should succeed now (free 1_500 ≥ min_stake 1_000).
+    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves);
+    assert!(
+        r.is_success(),
+        "draw must succeed after top-up; logs={:?}",
+        r.logs()
+    );
     let js = read_juror_stake(&env, &env.subaccord, &j0.pubkey());
     assert_eq!(js.active_draws, 1);
-    assert_eq!(js.slash_reserve, 100);
+    assert_eq!(
+        js.slash_reserve, 700,
+        "600 injected + 100 reserved by the draw"
+    );
+}
+
+#[test]
+fn minimal_stake_juror_is_drawable() {
+    // The 2026-09-28 requirement, made structural: a juror holding exactly
+    // min_stake (no α headroom) passes the opening gate AND the draw gate —
+    // the draw bond (α·min_stake, reserved below) comes out of the floor,
+    // not on top of it.
+    let mut env = setup_accumulator();
+    let stakes = [1_000u64, 5_000, 3_000];
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    let mut jurors: Vec<Keypair> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    let sub = read_subaccord(&env);
+    let total = sub.total_stake;
+
+    // Dispute + brute-forced VRF so seat 0 selects juror 0 (leaf 0).
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let dispute = dispute_pda(&filer.pubkey(), 1u64);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
+            subaccord: env.subaccord,
+            accord_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce: 1,
+            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+    let vrf = {
+        let mut c = [0u8; 32];
+        loop {
+            c[0] = c[0].wrapping_add(1);
+            if c[0] == 0 {
+                c[1] = c[1].wrapping_add(1);
+            }
+            let seed = hashv(&[
+                &c,
+                dispute.as_ref(),
+                &0u32.to_le_bytes(),
+                &0u32.to_le_bytes(),
+            ])
+            .to_bytes();
+            let rh = hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+            let ri = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+            if ri < leaves[0].1 {
+                break c;
+            }
+        }
+    };
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+
+    let rnd = round_pda(&dispute, 0);
+    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &leaves);
+    assert!(
+        r.is_success(),
+        "exactly-min_stake juror must be drawable; logs={:?}",
+        r.logs()
+    );
+    let js = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
+    assert_eq!(js.staked, 1_000, "the draw is ledger-only for staked");
+    assert_eq!(
+        js.slash_reserve, 100,
+        "the draw's α·min_stake bond reserved out of the floor"
+    );
+}
+
+#[test]
+fn first_stake_below_min_stake_reverts() {
+    // The opening gate stays (moved from min+α, b72fb0c1 → min): a below-floor
+    // first deposit is born sortition dust — positive weight, undrawable —
+    // so it reverts and consumes no leaf.
+    let mut env = setup_accumulator();
+    let juror = Keypair::new();
+    arm_juror(&mut env, &juror, 10_000);
+    let before = read_subaccord(&env).next_index;
+    let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
+    let r = do_stake(&mut env, &juror, 900, path);
+    assert!(
+        !r.is_success(),
+        "opening below min_stake must revert; logs={:?}",
+        r.logs()
+    );
+    assert!(
+        r.logs().iter().any(|l| l.contains("InsufficientStake")),
+        "expected InsufficientStake; logs={:?}",
+        r.logs()
+    );
+    let after = read_subaccord(&env);
+    assert_eq!(after.next_index, before, "atomic revert: no leaf consumed");
 }
 
 // ─── ADR-0021: reveal quorum + shortfall redraw (TDD) ────────────────────────
@@ -4961,34 +5056,40 @@ fn tie_redraw_cycle_reseats_then_decisive_round_resolves() {
 }
 
 #[test]
-fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
-    // A minimal-stake juror (stake = min_stake + slash_per_juror = 1_100) passes
-    // the initial draw gate, but ONE redraw slash folded in by reconcile drops
-    // its free stake below the gate → a subsequent draw excludes it.
+fn reconciled_slash_below_min_ejects_juror() {
+    // A minimal-stake juror (stake = min_stake = 1_000 — drawable since the
+    // 2026-09-28 gate change: the draw bond comes out of the floor, not on
+    // top) takes ONE redraw slash (−α·min_stake = −100). Reconcile folds
+    // 1_000 → 900, strictly below min_stake: the juror is EJECTED — a
+    // zero-weight leaf (never sub-min sortition dust, SR3-H-1 class), the
+    // 900 remainder banked into pending_withdrawal on the two-phase rail,
+    // staker_count decremented (request_withdraw mirror).
     let mut env = setup_accumulator_with(10_000, 3, 3);
 
     // 3 jurors so create_dispute's staker_count gate passes; juror 0 is minimal.
-    let stakes = [1_100u64, 5_000, 3_000];
+    let stakes = [1_000u64, 5_000, 3_000];
     let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
-    let jurors: Vec<Keypair> = Vec::new();
-    let jurors = {
-        let mut js: Vec<Keypair> = jurors;
-        for (i, &stake) in stakes.iter().enumerate() {
-            let juror = Keypair::new();
-            arm_juror(&mut env, &juror, 10_000);
-            let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
-            do_stake(&mut env, &juror, stake, path).assert_success();
-            leaves.push((juror.pubkey(), stake));
-            js.push(juror);
-        }
-        js
-    };
+    let mut jurors: Vec<Keypair> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    let pre_total = read_subaccord(&env).total_stake;
+    assert_eq!(pre_total, 9_000);
 
-    // Simulate a redraw slash on juror 0, then reconcile (1_100 → 1_000).
+    // Simulate a redraw slash on juror 0, then reconcile (1_000 → 900 < min).
     inject_settlement_delta(&mut env, &jurors[0].pubkey(), -100);
     let js_pda = juror_stake_pda(&env.subaccord, &jurors[0].pubkey());
-    // The path authenticates juror 0's OLD leaf (1_100) against the stored root.
+    // The path authenticates juror 0's OLD leaf (1_000) against the stored root.
     let (_, _, proof) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    // The redraw slash arrives after the review window — advance the clock so
+    // the ejection's withdraw_requested_at stamp is nonzero (LiteSVM starts
+    // the Clock at 0).
+    warp_seconds(&mut env, 24 * 60 * 60);
     let ix = env
         .ctx
         .program()
@@ -5006,97 +5107,55 @@ fn reconciled_noshow_excluded_from_redraw_by_free_stake() {
         "reconcile must succeed; logs={:?}",
         r.logs()
     );
-    let js = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
-    assert_eq!(js.staked, 1_000, "reconcile folded the slash into staked");
-    assert_eq!(js.stake_delta, 0, "stake_delta cleared by reconcile");
 
-    // Open a dispute; freeze the reconciled root (juror 0 now @ 1_000).
-    let filer = Keypair::new();
-    env.ctx
-        .svm
-        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
-        .unwrap();
-    let fata = juror_ata(&filer.pubkey(), &env.mint);
-    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
-    let nonce = 1u64;
-    let dispute = dispute_pda(&filer.pubkey(), nonce);
-    let ix = env
-        .ctx
-        .program()
-        .accounts(accounts::CreateDispute {
-            filer: filer.pubkey(),
-            rent_payer: filer.pubkey(),
-            subaccord: env.subaccord,
-            accord_state: pause_pda(),
-            dispute,
-            fee_token: env.mint,
-            filer_token_account: fata,
-            fee_vault: vault_ata(&env.subaccord, &env.mint),
-            token_program: TOKEN_PROGRAM_ID,
-            associated_token_program: spl_associated_token_account::ID,
-            system_program: system_program::ID,
-        })
-        .args(instruction::CreateDispute {
-            options: vec![[0u8; 32], [1u8; 32]],
-            evidence_hash: [0u8; 32],
-            nonce,
-            fee: 4 * TEST_FPJ, /* ADR-0030: (J+1)·fpj tender */
-        })
-        .instruction()
-        .unwrap();
-    env.ctx
-        .execute_instruction(ix, &[&filer])
-        .unwrap()
-        .assert_success();
+    let js = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
+    assert_eq!(js.staked, 0, "ejected: canonical stake zeroed");
+    assert_eq!(js.stake_delta, 0, "stake_delta cleared by reconcile");
+    assert_eq!(
+        js.pending_withdrawal, 900,
+        "remainder banked on the two-phase rail"
+    );
+    assert!(
+        js.withdraw_requested_at > 0,
+        "withdrawal delay clock started"
+    );
+
     let sub = read_subaccord(&env);
-    // Post-reconcile prefix table + total (the frozen root reflects juror 0 @ 1_000).
-    let reconciled_leaves = vec![
-        (jurors[0].pubkey(), 1_000u64),
+    assert_eq!(
+        sub.total_stake, 8_000,
+        "zero-weight leaf drops the full old stake from the total"
+    );
+    assert_eq!(
+        sub.staker_count, 2,
+        "ejection decrements staker_count (request_withdraw mirror)"
+    );
+    // The on-chain root now carries (juror0, 0): a zero-weight leaf has an
+    // EMPTY sortition range — selection is structurally impossible, which is
+    // the exclusion from every later redraw (no VRF brute-force needed to
+    // prove it; the empty range is the proof).
+
+    // The ejected juror exits through the two-phase rail: after the delay the
+    // vault pays the remainder.
+    warp_seconds(&mut env, WITHDRAWAL_DELAY);
+    do_withdraw(&mut env, &jurors[0]).assert_success();
+    let js = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
+    assert_eq!(js.pending_withdrawal, 0);
+
+    // Re-stake re-enters through the plain top-up branch: leaf (juror, 0) →
+    // (juror, 1_000) — old_leaf_stake 0 against the ejected root — and the
+    // juror is counted again.
+    let leaves_after = vec![
+        (jurors[0].pubkey(), 0u64),
         (jurors[1].pubkey(), 5_000),
         (jurors[2].pubkey(), 3_000),
     ];
-    let rec_total = sub.total_stake;
-    let rec_prefixes: Vec<u64> = {
-        let mut p = Vec::new();
-        let mut a = 0u64;
-        for (_, s) in &reconciled_leaves {
-            p.push(a);
-            a += s;
-        }
-        p
-    };
-    // Brute-force a VRF whose seat-0 sortition lands on juror 0's range
-    // [rec_prefixes[0], rec_prefixes[0]+1_000) so draw_seat passes the sortition
-    // check and reaches the free_stake gate (which must then reject juror 0).
-    let vrf = {
-        let mut c = [0u8; 32];
-        loop {
-            c[0] = c[0].wrapping_add(1);
-            if c[0] == 0 {
-                c[1] = c[1].wrapping_add(1);
-            }
-            let seed = vrf_seed(&c, &dispute, 0, 0);
-            if seat_leaf(&seed, 0, 0, rec_total, &rec_prefixes, &reconciled_leaves) == 0 {
-                break c;
-            }
-        }
-    };
-    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
-
-    let rnd = round_pda(&dispute, 0);
-    let r = submit_draw_seat(&mut env, dispute, rnd, 0, 0, 0, &reconciled_leaves);
-    assert!(
-        !r.is_success(),
-        "draw must reject the reconciled no-show (free_stake gate); logs={:?}",
-        r.logs()
-    );
-    assert!(
-        r.logs()
-            .iter()
-            .any(|l| l.contains("InsufficientStake") || l.contains("InsufficientBalance")),
-        "expected a free-stake error; logs={:?}",
-        r.logs()
-    );
+    let (_, _, path) = build_root_and_path(&leaves_after, TEST_DEPTH, 0);
+    do_stake(&mut env, &jurors[0], 1_000, path).assert_success();
+    let js = read_juror_stake(&env, &env.subaccord, &jurors[0].pubkey());
+    assert_eq!(js.staked, 1_000);
+    let sub = read_subaccord(&env);
+    assert_eq!(sub.total_stake, 9_000);
+    assert_eq!(sub.staker_count, 3, "re-stake re-counts the juror");
 }
 
 /// L-5 (security review 2026-09-23): `MAX_SORTITION_RETRIES` must be a bound a
@@ -5114,7 +5173,7 @@ fn draw_seat_rejects_retries_above_cu_bounded_cap() {
     const CU_BOUNDED_RETRIES: u32 = 128;
     let mut env = setup_accumulator(); // panel 3, min_stake 1_000, alpha 10%
 
-    // Whale + two dust jurors at the draw floor (min_stake + slash = 1_100).
+    // Whale + two dust jurors at the draw floor (min_stake = 1_000; 1_100 clears it).
     let stakes = [1_000_000u64, 1_100, 1_100];
     let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
     for (i, &stake) in stakes.iter().enumerate() {
@@ -7080,7 +7139,6 @@ fn redraw_exhaustion_after_appeal_pays_nothing_refunds_full() {
         4 * TEST_FPJ,
         "filer refunded the full fee + bounty unit (ADR-0033)"
     );
-
 
     // The bond stays claimable — WHOLE deposit + unit (ADR-0033: the appeal
     // fee has no destination on the Failed path).

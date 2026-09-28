@@ -355,22 +355,14 @@ impl<'info> Stake<'info> {
             .checked_add(delta)
             .ok_or(AccordError::ArithmeticOverflow)?;
 
-        // REVIEW #5 backstop: the position-opening deposit must clear the
-        // draw-time free-stake threshold — min_stake + α·min_stake — or the
-        // juror can never be drawn (each draw_seat reserves α·min_stake and
-        // requires free stake ≥ min_stake + α·min_stake). Staking exactly
-        // min_stake is the footgun this closes. Top-ups are NOT gated: only the
-        // first deposit that opens (or, after a reclaim, re-opens) the leaf.
+        // Opening gate (b72fb0c1's backstop, moved from min + α·min to
+        // min on 2026-09-28 — the draw gate it mirrors moved with it): a
+        // below-floor first deposit is born sortition dust (positive weight,
+        // undrawable), so it reverts. Exactly min_stake is the minimum
+        // position and is drawable as-is. Top-ups are NOT gated: only the
+        // deposit that opens (or, after a reclaim/ejection, re-opens) the leaf.
         if is_new_leaf || on_blank_leaf {
-            let slash_per_juror = (sub.alpha_bps as u64)
-                .checked_mul(sub.min_stake)
-                .and_then(|v| v.checked_div(10_000))
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            let min_initial = sub
-                .min_stake
-                .checked_add(slash_per_juror)
-                .ok_or(AccordError::ArithmeticOverflow)?;
-            require!(new_stake >= min_initial, AccordError::InsufficientStake);
+            require!(new_stake >= sub.min_stake, AccordError::InsufficientStake);
         }
 
         // Verify the supplied path against the stored root, then recompute the
