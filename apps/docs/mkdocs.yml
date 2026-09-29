@@ -43,7 +43,9 @@ theme:
 
 nav:
   - Overview: index.md
+  - Evaluating Accord: evaluating.md
   - Quickstart: quickstart.md
+  - Prior Art: prior-art.md
   - Integration Guide:
       - integration/index.md
       - The Arbitrable Interface: integration/arbitrable-interface.md
@@ -60,9 +62,12 @@ nav:
       - State Machine: reference/state-machine.md
       - Error Codes: reference/errors.md
       - Constants: reference/constants.md
+      - Test Coverage: reference/coverage.md
   - Security:
       - security/index.md
-      - Snapshot Fraud Proofs: security/fraud-proofs.md
+      - Trust Profile: security/trust-profile.md
+      - Threat Model: security/threat-model.md
+      - Stake Accumulator: security/fraud-proofs.md
       - Sortition & VRF: security/sortition-vrf.md
       - Circuit Breaker: security/circuit-breaker.md
   - SDK: sdk.md

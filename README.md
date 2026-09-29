@@ -1,6 +1,8 @@
 # Accord
 
 > **Mechanize the verdict.**
+[![CI](https://github.com/xeroc/accord/actions/workflows/release.yml/badge.svg)](https://github.com/xeroc/accord/actions/workflows/release.yml)
+[![Docs](https://img.shields.io/badge/docs-docs.useaccord.xyz-cyan)](https://docs.useaccord.xyz)
 
 Accord is a general-purpose, **capital-weighted Schelling arbitration oracle on
 Solana** — an on-chain dispute-resolution primitive inspired by Kleros. Any
@@ -50,12 +52,11 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
   (3 → 7 → 15 → 31), making bribery more expensive (deterred, not impossible —
   see the security-value ceiling).
 
-> [!IMPORTANT] > **Project status.** The on-chain program (`programs/accord`) implements the
-> full v1 instruction set with a LiteSVM unit-test per instruction. The
-> TypeScript SDK (`packages/sdk`) and the jest/ Surfpool integration suite
-> (`tests/`) are scaffolded and under active development (Codama codegen —
-> ADR-0010). See [Project Status](#project-status). This is pre-mainnet,
-> unaudited software — do not secure real value with it yet.
+> [!IMPORTANT] > **Project status.** All three on-chain programs (`accord`, `canon`, `synod`)
+> are implemented with LiteSVM unit contracts and a green jest/Surfpool e2e
+> suite (`make test`). External audit has not happened — internal security
+> reviews live in [`reports/`](reports/). This is pre-mainnet software — do
+> not secure real value with it yet. See [Project Status](#project-status).
 
 ---
 
@@ -87,10 +88,10 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 ## Tech Stack
 
 - **Program language**: Rust (Anchor framework)
-- **Framework**: Anchor `1.0.2`
-- **Runtime**: Solana `3.1.10` (BPF; host Rust via `rust-toolchain.toml` = stable)
-- **Randomness**: Magicblock / Solana VRF (`ephemeral-rollups-sdk 0.16.2`, scoped per-program identity via `ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity`)
-- **Token layer**: SPL Token + Associated Token (`anchor-spl 1.0.2`)
+- **Framework**: Anchor `1.2.0`
+- **Runtime**: Solana `3.1.10` — programs compile to **sBPFv3** (`--arch v3 --tools-version v1.57`, SIMD-0178/0189/0377; verified by `make verify-sbf`)
+- **Randomness**: Magicblock / Solana VRF (`ephemeral-rollups-sdk 0.17.2`, scoped per-program identity via `ephemeral_rollups_sdk::vrf::consts::scoped_vrf_identity`)
+- **Token layer**: SPL Token + Associated Token (`anchor-spl 1.2.0`)
 - **SDK**: TypeScript (`@solana/web3.js`, `@anchor-lang/core`) — Codama +
   Solana Kit codegen pipeline (ADR-0010)
 - **Docs**: MkDocs Material (`apps/docs/`)
@@ -106,7 +107,7 @@ your program ──create_dispute()──► Accord ──draws jurors, runs com
 - **Poetry** (only for the docs site) — `curl -sSL https://install.python-poetry.dev | python3 -`
 
 > [!TIP] > `make prep` installs Solana `3.1.10` (via `solana-install`) and Anchor
-> `1.0.2` (via `avm`) for you — you do not need to pin them manually.
+> `1.2.0` (via `avm`) for you — you do not need to pin them manually.
 
 ## Getting Started
 
@@ -123,7 +124,7 @@ cd accord
 make prep
 ```
 
-This runs `solana-install init 3.1.10`, installs Anchor `1.0.2` through `avm`,
+This runs `solana-install init 3.1.10`, installs Anchor `1.2.0` through `avm`,
 and runs `pnpm install` across the workspace. Re-run only when toolchain
 versions change.
 
@@ -192,28 +193,34 @@ See [Testing](#testing) for the two-harness philosophy.
 │   │   │   ├── tests.rs        # Host unit tests (layout pins, MST math)
 │   │   │   ├── errors.rs       # AccordError codes
 │   │   │   └── events.rs       # Emitted events for off-chain indexers
-│   │   ├── tests/              # LiteSVM unit tests (one file per instruction)
+│   │   ├── tests/              # LiteSVM unit tests (grouped per area: accumulator, attestation, …)
 │   │   ├── accord.qedspec      # Formal-verification spec (qedgen)
 │   │   ├── SPEC.md             # v1 build spec (account model, state machine)
 │   │   └── security-checklist.md
 │   ├── canon/                  # Canon — curated-list registry Arbitrable (Anchor)
-│   └── synod/                  # Synod — N-party dispute-escrow Arbitrable (stub; SPEC + ADRs)
+│   └── synod/                  # Synod — N-party dispute-escrow Arbitrable (built; SPEC + ADRs)
 ├── packages/
 │   ├── sdk/                    # @useaccord/sdk — TypeScript SDK (Codama client, facades, evidence crypto)
-│   └── canon/                  # @useaccord/canon — Canon SDK facade (Codama client + PDA helpers)
-├── tests/                      # jest + Surfpool integration suite (accord + canon e2e)
+│   ├── canon/                  # @useaccord/canon — Canon SDK facade (Codama client + PDA helpers)
+│   ├── synod/                  # @useaccord/synod — Synod SDK facade
+│   └── ui/                     # @useaccord/ui — shared design tokens + React UI modules
+├── tests/                      # jest + Surfpool e2e suite (accord, canon, synod)
 ├── apps/
 │   ├── cli/                    # useaccord — operator CLI over the SDK
-│   ├── cranker/                # Lifecycle cranker (permissionless cranks, accord + canon)
+│   ├── cranker/                # Lifecycle cranker (permissionless cranks: accord, canon, synod)
 │   ├── evidence-daemon/        # Evidence Operator daemon (ADR-0011)
 │   ├── app/                    # Accord dApp (React + Vite)
 │   ├── canon/                  # Canon Registry dApp (React + Vite)
 │   ├── synod/                  # Synod dApp (React + Vite)
-│   ├── landing/                # Landing page
+│   ├── landing/                # Landing page (useaccord.xyz)
+│   ├── hanse/                  # Hanse — the protocol for mutuals (hanse.useaccord.xyz)
+│   ├── pitch/                  # Demo-day deck
 │   └── docs/                   # Documentation hub
 │       ├── docs/               # MkDocs site content (integration, reference, security)
 │       └── adr/                # ADRs — repo-only, per-program series (accord/, canon/, synod/)
-├── formal_verification/        # Lean / qedgen harness
+├── reports/                    # Security review reports (accord, canon)
+├── runbooks/                   # Surfpool deployment runbooks (txtx.yml + anchor test)
+├── formal_verification/        # Lean / qedgen harness (generated from programs/*/*.qedspec)
 ├── CONTEXT.md                  # Domain language (ubiquitous-language glossary)
 ├── PROJECT.md                  # Project rationale (the "why")
 ├── BRAND.md                    # Brand model
@@ -225,9 +232,10 @@ See [Testing](#testing) for the two-harness philosophy.
 ```
 
 > [!NOTE]
-> The root `package.json` intentionally has **no `scripts`** block. The Makefile
-> orchestrates builds; lint/test fan out via pnpm's recursive filter. Don't add
-> root scripts — they'd duplicate the Makefile.
+> The root `package.json` carries only the `release:*` scripts (changesets
+> release flow) and workspace devDependencies. The Makefile orchestrates
+> build/test; lint fans out via pnpm's recursive filter. Don't add other root
+> scripts — they'd duplicate the Makefile.
 
 ### How a Dispute Is Resolved
 
@@ -303,12 +311,12 @@ The draw is the security-critical path (ADR-0012; supersedes ADR-0003/0008/0009)
 Inherited from Kleros (live since 2019, 1000+ disputes):
 
 - **Fee:** filer tenders `(N + 1) · fee_per_juror` (juror pot + one flip-bounty unit, ADR-0030); appellant tenders `(2 · N_new + 1) · fee_per_juror` (fee + bond + one bounty unit).
-- **Slash:** each Incoherent Juror loses `α · min_stake` (flat; ADR-0003).
-- **Redistribution:** forfeited fees + slashed stake → Coherent Jurors, equal split.
-- **Non-reveal penalty:** ≥ the Incoherent penalty (forces reveal).
-- **Appeal bond:** forfeited to Coherent Jurors of the _final_ round if the
-  appeal does not flip the prior Ruling; returned if it flips.
-- **Cross-round settlement:** every round is re-settled against the final Ruling.
+- **Slash:** each Incoherent Juror loses `α · min_stake` of staked collateral (`alpha_bps`, per-Subaccord; ADR-0020).
+- **Redistribution:** slashed stake and forfeited fees settle to Coherent Jurors against the **final** ruling (ADR-0029).
+- **No-show:** a drawn Juror who never reveals is slashed `α · min_stake` per seat per draw attempt (ADR-0021) — silence never decides the round.
+- **Appeal bond:** forfeited into the final round's settlement if the appeal
+  does not flip the prior Ruling; returned (plus a flip-bounty share, ADR-0030) if it flips.
+- **Cross-round settlement:** every round is re-settled against the final Ruling (ADR-0018); on the Failed paths the filer refund is exactly the booked filing fee (ADR-0033).
 
 ### Evidence Flow
 
@@ -339,7 +347,7 @@ let dispute = accord::create_dispute(
     vec![option_a_hash, option_b_hash], // 2..=8 option hashes (Plurality); scalar Median pools file none
     evidence_hash,                       // commitment to the evidence
     nonce,                               // caller-chosen, for PDA uniqueness
-    fee,                                 // INITIAL_NUM_JURORS (3) * fee_per_juror
+    fee,                                 // (min_jury_size + 1) * fee_per_juror — juror pot + one flip-bounty unit
 )?;
 
 // 2. Read the ruling (lazy — call whenever, after finalization)
@@ -364,8 +372,8 @@ const ruling = await accord.getRuling(dispute);
 ```
 
 > [!NOTE]
-> The full instruction surface (24 instructions) is documented in the
-> [Protocol Reference](https://example.com/TBD/reference/instructions/) and
+> The full instruction surface (30 instructions) is documented in the
+> [Protocol Reference](https://docs.useaccord.xyz/reference/instructions/) and
 > `programs/accord/SPEC.md`. Integrators normally only need `create_dispute`
 > and `get_ruling`; the rest are permissionless cranks.
 
@@ -393,19 +401,20 @@ wallet = "~/.config/solana/id.json"
 
 ## Available Commands
 
-All orchestration lives in the root `Makefile`. The root `package.json` has no
-scripts by design.
+All orchestration lives in the root `Makefile`; the root `package.json` carries
+only the `release:*` scripts.
 
 | Command                                   | Description                                                               |
 | ----------------------------------------- | ------------------------------------------------------------------------- |
-| `make prep`                               | Install Solana `3.1.10` + Anchor `1.0.2` (via `avm`), then `pnpm install` |
-| `make build`                              | `anchor build` (programs) then `pnpm -r run build` (packages/apps)        |
+| `make prep`                               | Install Solana `3.1.10` + Anchor `1.2.0` (via `avm`), then `pnpm install` |
+| `make build`                              | `anchor build` (sBPFv3, verified) then `pnpm -r run build` (packages/apps) |
 | `make test`                               | Full suite: Rust unit + LiteSVM + jest e2e (`anchor test` auto-starts Surfpool) |
 | `make test_unit`                          | LiteSVM Rust unit/TDD tests (fast, no validator)                          |
 | `make run_surfpool`                       | Start a Surfpool Surfnet manually (for isolated e2e debugging)            |
 | `make test_surfpool`                      | Run jest e2e suite only (needs a running Surfpool/validator)             |
 | `make lint`                               | Lint every workspace that declares a lint script                          |
 | `make clean`                              | Remove build artifacts and `node_modules`                                 |
+| `make coverage`                           | Regenerate the instruction × test-suite matrix (docs/reference/coverage.md) |
 | `cd programs/accord && cargo test`        | Rust unit tests in isolation                                              |
 | `cd packages/sdk && pnpm run build`       | Build the SDK                                                             |
 | `cd tests && npx jest -t "<name>"`        | Run a single integration test by name                                     |
@@ -425,16 +434,20 @@ The project uses **two complementary harnesses** (decision `veridao-8ys4`):
 
 ### LiteSVM — fast in-process unit tests
 
-- **Location:** `programs/accord/tests/*_litesvm.rs`
+- **Location:** `programs/<p>/tests/*_litesvm.rs` — files grouped per area
+  (accumulator, attestation, pause, reclaim, update, …), each covering the
+  happy-path, authority, reinit-guard, timelock, arithmetic, and closure
+  cases of the instructions it owns
 - **Run:** `make test_unit`
-- **What it is:** `anchor-litesvm` `0.4.x` runs the real compiled `.so`
-  in-process — no validator. One fresh `AnchorLiteSVM` context per test. Each
-  instruction has a test file covering happy-path, authority, reinit guard,
-  timelock, arithmetic, and closure cases.
+- **What it is:** `anchor-litesvm` (xeroc fork carrying the litesvm 0.16 /
+  agave 4.2 bump, branch `litesvm-0.16-sbpfv3` — required to load sBPFv3
+  ELFs) runs the real compiled `.so` in-process — no validator. One fresh
+  context per test. Host unit tests (`src/tests.rs`) pin cross-cutting
+  invariants (MST accumulator math, scoped VRF identity).
 
 ### jest + Surfpool — full end-to-end
 
-- **Location:** `tests/*.spec.ts`
+- **Location:** `tests/src/*.spec.ts`
 - **Run:** `make test` (runs the full suite including e2e; `anchor test`
   auto-starts Surfpool, deploys the program, and runs jest). For isolated e2e
   iteration: `make run_surfpool` then `make test_surfpool`.
@@ -463,16 +476,17 @@ tests are green.
 
 | Component                              | Status         | Notes                                                              |
 | -------------------------------------- | -------------- | ------------------------------------------------------------------ |
-| `programs/accord` (on-chain)           | ✅ Implemented | Full v1 instruction set + per-instruction LiteSVM tests            |
+| `programs/accord` (on-chain)           | ✅ Implemented | Full v1 instruction set (30); LiteSVM + e2e green                     |
 | `programs/canon` (on-chain)            | ✅ Implemented | Curated-list Arbitrable (ADR `canon/0001`) + LiteSVM & e2e specs   |
-| `programs/synod` (on-chain)            | 🚧 Specced     | Stub crate — SPEC + ADRs `synod/0001`–`0002`; e2e blocked on the Accord tie fix (`accord-n3vw`) |
-| Formal verification (`accord.qedspec`) | ⚠️ Declared    | Four economic invariants modeled; pending VRF/param-bounds binding |
+| `programs/synod` (on-chain)            | ✅ Implemented | N-party escrow Arbitrable; ADRs `synod/0001`–`0002`; LiteSVM + e2e specs |
+| Formal verification (`*.qedspec`)      | ⚠️ Declared    | Economic invariants modeled; pending VRF/param-bounds binding      |
 | `@useaccord/sdk` (TypeScript)          | ✅ Implemented | Codama codegen (ADR-0010) + facades, PDAs, `sdk/evidence` crypto   |
-| `@useaccord/canon` (TypeScript)        | ✅ Implemented | Canon facade over its own Codama client                            |
-| `tests/` (jest/Surfpool)               | ✅ Implemented | Per-instruction-group e2e specs (accord + canon), green via `make test` |
-| Apps (CLI, cranker, evidence-daemon, dApps, landing) | ✅ Built | Consume the SDKs; lint/build/test green in CI        |
-| `apps/docs` (MkDocs)                   | ✅ Live        | Full integration guide, protocol reference, security docs, ADRs    |
-| Security audit                         | ❌ Not started | Pre-mainnet; do not secure real value yet                          |
+| `@useaccord/canon`, `synod` (TypeScript) | ✅ Implemented | Facades over their own Codama clients                              |
+| `@useaccord/ui`                        | ✅ Implemented | Shared design tokens + React modules (Storybook)                   |
+| `tests/` (jest/Surfpool)               | ✅ Implemented | Per-instruction-group e2e specs (accord + canon + synod), green via `make test` |
+| Apps (CLI, cranker, evidence-daemon, dApps, landing, hanse, pitch) | ✅ Built | Consume the SDKs; lint/build/test green in CI      |
+| `apps/docs` (MkDocs)                   | ✅ Live        | Integration guide, protocol reference, security, evaluator on-ramp |
+| Security audit                         | ⚠️ Internal only | Reviews in `reports/`; external audit not started — pre-mainnet  |
 
 ---
 
@@ -534,11 +548,10 @@ layout decisions are one-way doors; walk this list (and the open findings in
   re-stake. Any seed change after the first mainnet deploy means new PDAs +
   state migration — treat seeds as frozen from that point on.
 - **Program IDs + deploy keypairs.** `declare_id!` (accord
-  `cordhVosh…`, canon `can5Zhfg…`) is immutable once deployed. **Synod's
-  `declare_id!` is still the `anchor new` placeholder** — generate and
-  provision its canonical keypair (multisig-controlled, per AGENTS.md
-  §Gotchas) before the first build, and keep
-  `anchor build --ignore-keys` discipline until then.
+  `cordhVosh…`, canon `can5Zhfg…`, synod `GdV5rbRd…`) is immutable once
+  deployed; all three canonical IDs are pinned in AGENTS.md §Gotchas. Keep
+  `anchor build --ignore-keys` discipline — the canonical keypairs are
+  operator-provisioned and multisig-controlled.
 - **Account data layouts.** `InitSpace`, field order, Anchor discriminators,
   and the zero-copy `Round` offset consts — any post-deploy change requires a
   state migration. Freeze layouts in review before deploy.
@@ -555,7 +568,7 @@ layout decisions are one-way doors; walk this list (and the open findings in
   `MIN_APPEAL_WINDOW_SECS`, fee/bond shapes. Per-Subaccord economics stay
   retunable; these constants do not.
 - **VRF provider identity.** The Magicblock scoped-VRF identity and oracle
-  trust assumptions (ADR-0012) — confirm the production configuration.
+  trust assumptions (ADR-0013) — confirm the production configuration.
 - **Audit sign-off.** Resolve the open L-/M-/REVIEW findings cited in
   `security-checklist.md` and re-baseline the trust-profile
   security-value ceiling for mainnet stakes.
@@ -570,9 +583,9 @@ layout decisions are one-way doors; walk this list (and the open findings in
 can't parse `edition2024` manifests.
 
 **Fix:** `make prep` installs Solana `3.1.10`, which drops the flag. If you
-must invoke `cargo build-sbf` directly on an older CLI, pass
-`--tools-version v1.52`. (`anchor build` manages its own toolchain and is
-unaffected.)
+must invoke `cargo build-sbf` directly, pass `--arch v3 --tools-version v1.57`
+(the Makefile pins both; older platform-tools silently emit non-v3 bytecode —
+see `make verify-sbf`).
 
 ### LiteSVM test fails: `read …/accord.so — run cargo build-sbf first`
 
@@ -601,7 +614,7 @@ tests, and Codama client. The canonical keypair is provisioned by the operator
 
 ### `anchor build` IDL generation blocked
 
-On Anchor `1.0.2` + Solana `3.x` deps, IDL generation is unblocked end-to-end
+On Anchor `1.2.0` + Solana `3.x` deps, IDL generation is unblocked end-to-end
 via the `idl-build` feature (see `programs/accord/Cargo.toml`). If you hit an
 older Anchor, ensure the crate declares `idl-build` in `[features]`.
 
@@ -656,8 +669,17 @@ pre-commit install
 
 ## Further Reading
 
-- **Docs site:** [docs (domain TBD)](https://example.com/TBD) — Quickstart,
-  Integration Guide, Protocol Reference, Security, ADRs
+**Evaluating the project?** Start at
+[docs.useaccord.xyz/evaluating](https://docs.useaccord.xyz/evaluating/) — the
+reviewer's evidence map (claims → design doc → code → test), the
+[threat model](https://docs.useaccord.xyz/security/threat-model/), a
+[prior-art comparison](https://docs.useaccord.xyz/prior-art/) (Kleros · UMA ·
+Kourt), and the generated
+[test-coverage matrix](https://docs.useaccord.xyz/reference/coverage/).
+
+- **Docs site:** [docs.useaccord.xyz](https://docs.useaccord.xyz) — Quickstart,
+  Integration Guide, Protocol Reference, Security (Trust Profile, Threat
+  Model), Test Coverage
 - **[Trust Profile](apps/docs/docs/security/trust-profile.md)** — who holds
   power, what's trusted, the security-value ceiling
 - **`CONTEXT.md`** — domain language / ubiquitous-language glossary
@@ -667,34 +689,11 @@ pre-commit install
   economics, edge cases)
 - **`programs/accord/security-checklist.md`** — security audit authority
   (findings cite `file:line`)
-- **ADRs** (`apps/docs/adr/`):
-  - [0001](https://example.com/TBD/adr/0001) Schelling-point Accord replaces
-    hired-judge committee
-  - [0002](https://example.com/TBD/adr/0002) Per-Subaccord staking token, no
-    Accord token in v1
-  - [0003](https://example.com/TBD/adr/0003) Draw — Merkle snapshot,
-    off-chain sortition, distinct Jurors _(partially superseded by 0012)_
-  - [0004](https://example.com/TBD/adr/0004) Party-agnostic; appeal is
-    permissionless
-  - [0005](https://example.com/TBD/adr/0005) Subaccord authority — pubkey,
-    48h timelock
-  - [0006](https://example.com/TBD/adr/0006) Evidence — on-chain hash,
-    trusted re-encryption operator
-  - [0007](https://example.com/TBD/adr/0007) Upgrade authority — Squads
-    multisig, then freeze
-  - [0008](https://example.com/TBD/adr/0008) Snapshot trust hardening —
-    anchor-slot, fraud predicates, sortition _(partially superseded by 0012)_
-  - [0009](https://example.com/TBD/adr/0009) Stake-weighted verifiable
-    sortition — MST, committed VRF _(partially superseded by 0012)_
-  - [0010](https://example.com/TBD/adr/0010) SDK — Codama codegen + Solana Kit
-    facade
-  - [0011](apps/docs/adr/accord/0011-evidence-operator-daemon-offchain-service.md) Evidence Operator Daemon —
-    off-chain decrypt-re-encryption service
-  - [0012](apps/docs/adr/accord/0012-on-chain-stake-accumulator-replaces-optimistic-snapshot.md) On-chain stake
-    accumulator replaces the optimistic snapshot (current draw mechanism)
-
-  Per-program ADR indexes: [Accord](apps/docs/adr/accord/index.md) ·
-  [Canon](apps/docs/adr/canon/index.md) · [Synod](apps/docs/adr/synod/index.md)
+- **ADRs** (`apps/docs/adr/`, repo-only, per-program series — 35 accord, 3+ canon, 2 synod;
+  superseded decisions stay readable with reasons):
+  [Accord index](apps/docs/adr/accord/index.md) ·
+  [Canon index](apps/docs/adr/canon/index.md) ·
+  [Synod index](apps/docs/adr/synod/index.md)
 
 ---
 

@@ -3,23 +3,107 @@ name: Release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write # npm trusted publishing (OIDC) — no NPM_TOKEN secret
+# Least privilege: nothing is granted unless a job declares it.
+permissions: {}
 
 env:
   NODE_VERSION: "22"
 
 jobs:
+  landingpage:
+    name: Update Landing Page
+    secrets: inherit
+    permissions:
+      contents: write # gh-pages push (deploy step is gated to main inside the called workflow)
+    uses: ./.github/workflows/landing-page.yaml
+
+  program-tests:
+    name: Program Tests
+    secrets: inherit
+    permissions:
+      contents: read
+    uses: ./.github/workflows/program-tests.yml
+    with:
+      program: accord
+
+  tests:
+    name: Tests
+    permissions:
+      contents: read
+    uses: ./.github/workflows/tests.yml
+
+  changeset-status:
+    name: Changeset present
+    # The auto-generated version PR (changeset-release/*) never carries changesets — skip it.
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # status diffs packages against the merge base
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fails when packages changed since main but no changeset was added.
+      # `origin/main`, not `main`: PR checkouts have no local main branch for
+      # merge-base to resolve. Escape hatch for CI-only changes: `pnpm changeset --empty`.
+      - name: Check for changeset
+        run: pnpm changeset status --since origin/main
+
+  build-evidence-docker:
+    name: Build Evidence Daemon Image
+    needs: [tests]
+    permissions:
+      packages: write
+      contents: read
+    uses: ./.github/workflows/build-docker-image.yaml
+    with:
+      registry: ghcr.io
+      package: evidence-daemon
+      version: "${{ github.ref_name }}.${{ github.run_number }}"
+      push: ${{ github.event_name != 'pull_request' }}
+
+  build-cranker-docker:
+    name: Build Cranker Image
+    needs: [tests]
+    permissions:
+      packages: write
+      contents: read
+    uses: ./.github/workflows/build-docker-image.yaml
+    with:
+      registry: ghcr.io
+      package: cranker
+      version: "${{ github.ref_name }}.${{ github.run_number }}"
+      push: ${{ github.event_name != 'pull_request' }}
+
   release:
     name: Version & Publish
+    needs: [tests, program-tests]
+    # Version/Publish runs on main only (push, or manual dispatch to retry a
+    # failed publish) and never before the test pipeline is green.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit version changes + push tags
+      pull-requests: write # version PR
+      id-token: write # npm trusted publishing (OIDC) — no NPM_TOKEN secret
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,18 +135,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - uses: changesets/action@v1
+      # v2 renamed its inputs (v1: version/publish/commit/title) — the old
+      # names silently no-op here and would fall back to plain `changeset version`.
+      - uses: changesets/action@v2
+        id: changesets
         with:
-          version: pnpm run release:version
-          publish: pnpm run release:publish
-          commit: "chore(release): version packages"
-          title: "chore(release): version packages"
+          version-script: pnpm run release:version
+          publish-script: pnpm run release:publish
+          commit-message: "chore(release): version packages"
+          pr-title: "chore(release): version packages"
+          create-github-releases: false # npm with provenance only; flip on for GitHub Releases
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # changelog-github inside release:version
           NPM_CONFIG_PROVENANCE: "true"
 
       - name: Tag umbrella version
+        if: steps.changesets.outputs.published == 'true'
         run: |
           V=$(node -p 'require("./packages/sdk/package.json").version')
-          git tag "v$V" 2>/dev/null || true
-          git push origin "v$V" 2>/dev/null || true
+          git tag "v$V"
+          git push origin "v$V"

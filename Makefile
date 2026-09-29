@@ -21,7 +21,7 @@ DEPLOY_KEY_PATH := $(or $(ACCORD_DEPLOY_KEY_PATH),~/.config/solana/id.json)
 SOLANA_API := $(or $(SOLANA_API),https://api.mainnet-beta.solana.com)
 SOLANA_WS := $(subst https://,wss://,$(SOLANA_API))
 
-.PHONY: prep build codegen sdk docs test test_unit lint verify-sbf clean help
+.PHONY: prep build codegen sdk docs test test_unit lint verify-sbf coverage clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -61,6 +61,9 @@ docs: ## Build the MkDocs site into apps/docs/site/
 docs-serve: ## Live-reload MkDocs dev server
 	$(MAKE) -C apps/docs serve
 
+coverage: ## Regenerate apps/docs/docs/reference/coverage.md (instruction × suite matrix)
+	sh scripts/gen-coverage.sh
+
 test: ## Full suite: Rust unit + LiteSVM + jest e2e (anchor test auto-starts Surfpool)
 	$(ANCHOR_COMMAND) build $(ANCHOR_BUILD_FLAGS)
 	$(MAKE) verify-sbf
@@ -82,6 +85,6 @@ clean: ## Remove build artifacts and node_modules
 	$(ANCHOR_COMMAND) clean
 	rm -rf node_modules
 
-devnet_deploy:
-	$(ANCHOR_COMMAND) program deploy --provider.cluster $(SOLANA_API)
+deploy:
+	$(ANCHOR_COMMAND) program deploy --provider.cluster $(SOLANA_API) --provider.wallet $(ACCORD_DEPLOY_KEY_PATH)
 	# solana program write-buffer --keypair $(DEPLOY_KEY_PATH) --ws $(SOLANA_WS) ./target/deploy/accord.so
