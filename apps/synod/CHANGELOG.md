@@ -1,5 +1,18 @@
 # @useaccord/synod-app
 
+## 0.4.0
+
+### Minor Changes
+
+- [#12](https://github.com/xeroc/accord/pull/12) [`895cf9d`](https://github.com/xeroc/accord/commit/895cf9dcb67cbad3c3c1eeb9530a07b6837c49a4) Thanks [@xeroc](https://github.com/xeroc)! - evidence: daemon URL and operator pubkey follow the selected cluster, configurable per cluster via Vite env — `VITE_EVIDENCE_DAEMON_URL_{DEVNET,MAINNET,LOCALNET}` (defaults: `api.devnet.useaccord.xyz` for devnet, `api.useaccord.xyz` for mainnet, devnet's value for localnet) and `VITE_EVIDENCE_OPERATOR[_ADDRESS]_{DEVNET,MAINNET,LOCALNET}` (default: unset = no operator, localnet falls back to devnet's); replaces the single build-time `VITE_EVIDENCE_DAEMON_URL` / `VITE_EVIDENCE_OPERATOR[_ADDRESS]`
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.4.0
+  - @useaccord/synod@0.4.0
+  - @useaccord/ui@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
