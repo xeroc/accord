@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/canon",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "TypeScript SDK for the Accord Canon curated-list Arbitrable on Solana",
   "type": "module",

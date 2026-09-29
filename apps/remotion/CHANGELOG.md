@@ -1,5 +1,13 @@
 # @useaccord/remotion
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.4.0
+  - @useaccord/ui@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
