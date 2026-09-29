@@ -9,7 +9,9 @@ interface ImportMetaEnv {
   readonly VITE_ACCORD_APP_URL: string;
   readonly VITE_EXPLORER_ACCOUNT_URL: string;
   readonly VITE_FEATURED_LIST: string;
-  readonly VITE_EVIDENCE_OPERATOR_ADDRESS: string;
+  readonly VITE_EVIDENCE_OPERATOR_ADDRESS_DEVNET?: string;
+  readonly VITE_EVIDENCE_OPERATOR_ADDRESS_MAINNET?: string;
+  readonly VITE_EVIDENCE_OPERATOR_ADDRESS_LOCALNET?: string;
 }
 
 interface ImportMeta {

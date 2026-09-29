@@ -22,7 +22,7 @@
  * The creator IS the connected wallet — the SDK adapter wires `creator: signer`.
  * Canon canonical defaults fill the backing Subaccord; the user does not
  * configure Accord params except the evidence operator, which is
- * deployment-configured — see EVIDENCE_OPERATOR below.
+ * deployment-configured — the cluster-resolved VITE_EVIDENCE_OPERATOR_ADDRESS_*
  *
  * Signer seam: `useSigner()` resolves the connected wallet via ConnectorKit.
  * When no wallet is connected the form renders a connect-wallet gate.
@@ -65,18 +65,21 @@ import {
   type PublishState,
 } from "./createForm";
 
-import { useEvidenceDaemonUrl } from "@/shared/useEvidenceDaemonUrl";
+import {
+  useEvidenceDaemonUrl,
+  useEvidenceOperator,
+} from "@/shared/useEvidenceDaemonUrl";
 
-/** Deployment-configured evidence operator — the evidence daemon's Ed25519
- * pubkey (must match a key in the daemon's keyring). Static per .env, not a
- * form field — same pattern as the VITE_EVIDENCE_DAEMON_URL_* vars. The program rejects
- * the default pubkey: a zero operator key can never be an ECIES target. */
-const EVIDENCE_OPERATOR = import.meta.env.VITE_EVIDENCE_OPERATOR_ADDRESS ?? "";
+/** Evidence operator is cluster-resolved at runtime (useEvidenceOperator) —
+ * the pubkey must match the ACTIVE cluster's daemon keyring. The program
+ * rejects the default pubkey: a zero operator key can never be an ECIES
+ * target. */
 
 export function CreateListPage() {
   const { signer } = useSigner();
   const crpc = useClusterRpc();
   const evidenceDaemonUrl = useEvidenceDaemonUrl();
+  const evidenceOperator = useEvidenceOperator();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [error, setError] = useState<string | null>(null);
@@ -125,8 +128,8 @@ export function CreateListPage() {
           ...args,
           court: buildCourt(form), // parsed + client-guarded; program stays authority
           evidenceOperator: requireAddress(
-            EVIDENCE_OPERATOR,
-            "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS in .env)",
+            evidenceOperator,
+            "Evidence operator (set VITE_EVIDENCE_OPERATOR_ADDRESS_{DEVNET,MAINNET,LOCALNET} in .env)",
           ),
         },
       );

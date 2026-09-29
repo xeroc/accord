@@ -17,16 +17,19 @@ import { DOMAIN_DOC_TEMPLATE } from "@useaccord/ui";
 
 import {
   DEFAULT_POOL_DEPTH,
-  EVIDENCE_OPERATOR,
   ZERO_ADDRESS,
   buildArgs,
   defaultFormState,
   domainRefHex,
   nextPublish,
+  type FormState,
   type PublishState,
 } from "./createForm";
 
 const SIGNER = "9WzDXwBjmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" as never;
+const OPERATOR = "OperAtOr1Pubkey111111111111111111111111111111" as never;
+/** buildArgs with SIGNER + OPERATOR pre-bound (operator is a param). */
+const buildArgsOp = (form: FormState) => buildArgs(form, SIGNER, OPERATOR);
 
 const IDENTITY_ARGS = (form: ReturnType<typeof defaultFormState>) => ({
   ...form,
@@ -53,8 +56,16 @@ test("defaultFormState: pool capacity defaults to 4,096 seats (depth 12)", () =>
   assert.equal(defaultFormState(SIGNER).depth, "12");
 });
 
-test("EVIDENCE_OPERATOR: env constant (unset in node → no operator)", () => {
-  assert.equal(EVIDENCE_OPERATOR, ZERO_ADDRESS);
+test("evidenceOperator: caller param (ZERO_ADDRESS = no operator)", () => {
+  assert.equal(
+    buildArgsOp(IDENTITY_ARGS(defaultFormState(SIGNER))).evidenceOperator,
+    OPERATOR,
+  );
+  assert.equal(
+    buildArgs(IDENTITY_ARGS(defaultFormState(SIGNER)), SIGNER, ZERO_ADDRESS)
+      .evidenceOperator,
+    ZERO_ADDRESS,
+  );
 });
 
 test("doc→hash→args: author mode derives domain_ref = sha256(doc)", () => {
@@ -62,7 +73,7 @@ test("doc→hash→args: author mode derives domain_ref = sha256(doc)", () => {
   form.domainDoc = "---\ntitle: Test rules\n---\n\nBody.";
   const hash = hashDomainDoc(new TextEncoder().encode(form.domainDoc));
   assert.equal(domainRefHex(form), hash);
-  const args = buildArgs(IDENTITY_ARGS(form), SIGNER);
+  const args = buildArgsOp(IDENTITY_ARGS(form));
   // buildArgs passes the same 32 bytes as the on-chain domain_ref
   assert.deepEqual(
     args.domainRef,
@@ -76,7 +87,7 @@ test("reference mode: pasted hex is the domain_ref", () => {
   form.domainRef = "ab".repeat(32);
   assert.equal(domainRefHex(form), "ab".repeat(32));
   assert.deepEqual(
-    buildArgs(IDENTITY_ARGS(form), SIGNER).domainRef,
+    buildArgsOp(IDENTITY_ARGS(form)).domainRef,
     new Uint8Array(32).fill(0xab),
   );
 });
@@ -85,13 +96,13 @@ test("buildArgs: bad pasted hash throws with the field label", () => {
   const form = defaultFormState(SIGNER);
   form.domainMode = "reference";
   form.domainRef = "zz";
-  assert.throws(() => buildArgs(IDENTITY_ARGS(form), SIGNER), /Domain Ref/);
+  assert.throws(() => buildArgsOp(IDENTITY_ARGS(form)), /Domain Ref/);
 });
 
 test("buildArgs: defaults produce a valid CreateSubaccordArgs", () => {
-  const args = buildArgs(IDENTITY_ARGS(defaultFormState(SIGNER)), SIGNER);
+  const args = buildArgsOp(IDENTITY_ARGS(defaultFormState(SIGNER)));
   assert.equal(args.authority, SIGNER);
-  assert.equal(args.evidenceOperator, EVIDENCE_OPERATOR);
+  assert.equal(args.evidenceOperator, OPERATOR);
   assert.equal(args.depth, 12);
   assert.equal(args.domainRef.length, 32);
 });
@@ -99,7 +110,7 @@ test("buildArgs: defaults produce a valid CreateSubaccordArgs", () => {
 test("buildArgs: aggregation=median maps to Aggregation.Median + coherence tol", () => {
   const form = defaultFormState(SIGNER);
   form.aggregation = "median";
-  const args = buildArgs(IDENTITY_ARGS(form), SIGNER);
+  const args = buildArgsOp(IDENTITY_ARGS(form));
   assert.equal(args.aggregation, Aggregation.Median);
   assert.equal(args.coherenceTolBps, Number(DEFAULT_COHERENCE_TOL_BPS));
 });
@@ -108,13 +119,13 @@ test("buildArgs: authority — explicit value wins, immutable → zero key", () 
   const form = defaultFormState(SIGNER);
   form.authority = "Another1PublicKey1111111111111111111111111111111";
   assert.equal(
-    buildArgs(IDENTITY_ARGS(form), SIGNER).authority,
+    buildArgsOp(IDENTITY_ARGS(form)).authority,
     form.authority,
   );
   form.authority = "";
-  assert.equal(buildArgs(IDENTITY_ARGS(form), SIGNER).authority, SIGNER);
+  assert.equal(buildArgsOp(IDENTITY_ARGS(form)).authority, SIGNER);
   form.immutable = true;
-  assert.equal(buildArgs(IDENTITY_ARGS(form), SIGNER).authority, ZERO_ADDRESS);
+  assert.equal(buildArgsOp(IDENTITY_ARGS(form)).authority, ZERO_ADDRESS);
 });
 
 // --- publish state machine ---------------------------------------------------

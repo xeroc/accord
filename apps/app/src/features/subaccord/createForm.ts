@@ -38,11 +38,11 @@ import { DOMAIN_DOC_TEMPLATE } from "@useaccord/ui";
 export const ZERO_ADDRESS = "11111111111111111111111111111111" as Address;
 
 /**
- * Evidence operator — deployment CONSTANT (ADR-0006/0011), not a form input.
- * `VITE_EVIDENCE_OPERATOR` in the app .env; unset/empty → no operator.
+ * Evidence operator — deployment config (ADR-0006/0011), NOT a form input.
+ * Cluster-dependent (VITE_EVIDENCE_OPERATOR_{DEVNET,MAINNET,LOCALNET}); the
+ * page resolves it via `useEvidenceOperator()` and passes it to `buildArgs`.
+ * ""/zero → no operator.
  */
-export const EVIDENCE_OPERATOR: Address = (import.meta.env
-  ?.VITE_EVIDENCE_OPERATOR || ZERO_ADDRESS) as Address;
 
 /** Pool capacity default: 4,096 juror seats (2^12). */
 export const DEFAULT_POOL_DEPTH = 12;
@@ -120,10 +120,12 @@ export function defaultFormState(signerAddress: Address): FormState {
 }
 
 /** Build the typed `CreateSubaccordArgs` from string inputs. Throws on bad
- * input — the submit handler surfaces the message. */
+ * input — the submit handler surfaces the message. `evidenceOperator` is the
+ * cluster-resolved operator (ZERO_ADDRESS = no operator). */
 export function buildArgs(
   form: FormState,
   signerAddress: Address,
+  evidenceOperator: Address,
 ): CreateSubaccordArgs {
   return {
     domainRef: parseHex32(domainRefHex(form), "Domain Ref"),
@@ -167,7 +169,7 @@ export function buildArgs(
     authority: form.immutable
       ? ZERO_ADDRESS
       : (form.authority as Address) || signerAddress,
-    evidenceOperator: EVIDENCE_OPERATOR,
+    evidenceOperator,
     depth: parseBoundedInt(form.depth, "Tree depth", 1, 32),
   };
 }
