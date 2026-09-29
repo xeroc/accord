@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/pitch",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Mutuals-as-protocol demo-day deck (meta/PITCH-MUTUAL.md) — ui-kit mechanism animations on the shared Backdrop.",
   "type": "module",
