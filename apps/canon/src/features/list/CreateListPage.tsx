@@ -65,18 +65,18 @@ import {
   type PublishState,
 } from "./createForm";
 
-const EVIDENCE_DAEMON_URL =
-  import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
+import { useEvidenceDaemonUrl } from "@/shared/useEvidenceDaemonUrl";
 
 /** Deployment-configured evidence operator — the evidence daemon's Ed25519
  * pubkey (must match a key in the daemon's keyring). Static per .env, not a
- * form field — same pattern as VITE_EVIDENCE_DAEMON_URL. The program rejects
+ * form field — same pattern as the VITE_EVIDENCE_DAEMON_URL_* vars. The program rejects
  * the default pubkey: a zero operator key can never be an ECIES target. */
 const EVIDENCE_OPERATOR = import.meta.env.VITE_EVIDENCE_OPERATOR_ADDRESS ?? "";
 
 export function CreateListPage() {
   const { signer } = useSigner();
   const crpc = useClusterRpc();
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +144,7 @@ export function CreateListPage() {
         setOnChainRef(refHex);
         setPublish((s) => nextPublish(s, { type: "tx-confirmed" }));
         try {
-          await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+          await putDomainDoc(evidenceDaemonUrl, docBytes(form), {
             subaccord,
           });
           setPublish((s) => nextPublish(s, { type: "published" }));
@@ -180,7 +180,7 @@ export function CreateListPage() {
     }
     setPublish((s) => nextPublish(s, { type: "retry" }));
     try {
-      await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+      await putDomainDoc(evidenceDaemonUrl, docBytes(form), {
         subaccord: subaccordAddr,
       });
       setPublish((s) => nextPublish(s, { type: "published" }));

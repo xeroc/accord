@@ -21,7 +21,7 @@ export {
   optionLabels,
   type ParsedManifest,
 } from "@useaccord/sdk/evidence";
-export { EVIDENCE_DAEMON_URL } from "./config";
+export { useEvidenceDaemonUrl } from "./useEvidenceDaemonUrl";
 export { useManifest } from "./useManifest";
 export {
   EvidenceEditor,

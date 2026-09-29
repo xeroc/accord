@@ -38,7 +38,7 @@ import {
   deriveOptionHashes,
   verifyOptionHashes,
   publishEvidence,
-  EVIDENCE_DAEMON_URL,
+  useEvidenceDaemonUrl,
   type EvidenceEditorOutput,
   type ManifestCtx,
 } from "./evidence";
@@ -70,6 +70,7 @@ const MIN_OPTIONS = 2;
 export function CreateDispute() {
   const { signer } = useSigner();
   const crpc = useClusterRpc();
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -361,7 +362,7 @@ export function CreateDispute() {
         );
         try {
           await publishEvidence({
-            endpoint: EVIDENCE_DAEMON_URL,
+            endpoint: evidenceDaemonUrl,
             subaccord: subaccord.address,
             dispute,
             manifest,
@@ -394,7 +395,7 @@ export function CreateDispute() {
         getAddressEncoder().encode(subaccord.data.evidenceOperator),
       );
       await publishEvidence({
-        endpoint: EVIDENCE_DAEMON_URL,
+        endpoint: evidenceDaemonUrl,
         subaccord: subaccord.address,
         dispute: publishFail.dispute,
         manifest: publishFail.manifest,

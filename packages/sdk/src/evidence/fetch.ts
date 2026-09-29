@@ -16,7 +16,7 @@ import type { JurorBundle } from "./ecies.js";
 // ---------------------------------------------------------------------------
 
 export interface FetchDeliveryParams {
-  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
+  /** Daemon base URL (app-side `useEvidenceDaemonUrl()`). */
   endpoint: string;
   /** Dispute address, base58. */
   dispute: string;

@@ -1,12 +1,10 @@
 /**
- * config.ts — app-side evidence daemon URL selection (ADR-0011).
+ * evidenceDaemon.ts — evidence daemon URL selection (canon side, ADR-0011).
  *
  * Three Vite env vars pick the daemon per cluster (empty/unset → default):
  *   VITE_EVIDENCE_DAEMON_URL_DEVNET   default https://api.devnet.useaccord.xyz
  *   VITE_EVIDENCE_DAEMON_URL_MAINNET  default https://api.useaccord.xyz
  *   VITE_EVIDENCE_DAEMON_URL_LOCALNET default <the resolved devnet value>
- * Kept here rather than in @useaccord/sdk/evidence so the SDK carries no
- * environment coupling (ADR-0011 transport, ADR-0015 crypto→SDK).
  */
 
 export interface EvidenceDaemonUrls {
@@ -22,7 +20,8 @@ export type EvidenceDaemonEnv = {
   VITE_EVIDENCE_DAEMON_URL_LOCALNET?: string;
 };
 
-/** Resolve per-cluster daemon URLs from env (unit-tested in config.test.ts). */
+/** Resolve per-cluster daemon URLs from env (unit-tested in
+ * evidenceDaemon.test.ts). */
 export function evidenceDaemonUrlsFromEnv(
   env: EvidenceDaemonEnv,
 ): EvidenceDaemonUrls {
@@ -36,7 +35,8 @@ export function evidenceDaemonUrlsFromEnv(
   };
 }
 
-/** Pure cluster-id → daemon-URL mapping (unit-tested in config.test.ts). */
+/** Pure cluster-id → daemon-URL mapping (unit-tested in
+ * evidenceDaemon.test.ts). */
 export function evidenceDaemonUrlForCluster(
   clusterId: string | undefined,
   urls: EvidenceDaemonUrls,

@@ -4,7 +4,7 @@
  *
  * The daemon base URL is deployment-specific (Vite env on the app side) and is
  * NOT held here — `publishEvidence` takes `endpoint` as a parameter. App
- * consumers keep their own `EVIDENCE_DAEMON_URL` config (ADR-0011).
+ * consumers keep their own daemon-URL config (`useEvidenceDaemonUrl()`, ADR-0011).
  *
  * Authority: ADR-0011 (daemon transport), EVIDENCE-FORMAT.md §2 (root hash),
  * milestone accord-ebel §1 (happy path step 7, recovery).
@@ -19,7 +19,7 @@ function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 export interface PublishParams {
-  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
+  /** Daemon base URL (app-side `useEvidenceDaemonUrl()`). */
   endpoint: string;
   subaccord: string;
   dispute: string;
@@ -64,7 +64,7 @@ export async function publishEvidence(params: PublishParams): Promise<void> {
 }
 
 export interface PublishSynodParams {
-  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
+  /** Daemon base URL (app-side `useEvidenceDaemonUrl()`). */
   endpoint: string;
   /** The SynodCase PDA — the pre-dispute grouping key. */
   casePda: string;

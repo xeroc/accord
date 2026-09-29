@@ -28,8 +28,7 @@ import {
   buildJoinInstruction,
 } from "./joinFlow";
 
-const EVIDENCE_DAEMON_URL =
-  import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
+import { useEvidenceDaemonUrl } from "@/shared/useEvidenceDaemonUrl";
 
 import {
   Field,
@@ -53,6 +52,7 @@ export function JoinCard({
   slot: number;
 }) {
   const env = useSynod();
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -111,7 +111,7 @@ export function JoinCard({
         { title, description, entries },
         ctx,
         slot,
-        { evidenceDaemonUrl: EVIDENCE_DAEMON_URL },
+        { evidenceDaemonUrl },
       );
       const ix = await buildJoinInstruction(
         { ...ctx, feeMint: subData.feeToken },

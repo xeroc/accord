@@ -78,7 +78,7 @@ import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { useSigner } from "../../shared/wallet";
 import { useDomainDoc } from "../domain/DomainDocPanel";
-import { EVIDENCE_DAEMON_URL } from "../dispute/evidence/config";
+import { useEvidenceDaemonUrl } from "../dispute/evidence/useEvidenceDaemonUrl";
 import {
   buildArgs,
   defaultFormState,
@@ -124,6 +124,7 @@ export function SubaccordCreatePage() {
 
 export function CreateForm({ signer }: { signer: TransactionSigner }) {
   const crpc = useClusterRpc();
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() =>
     defaultFormState(signer.address),
@@ -176,7 +177,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
         setOnChainRef(refHex);
         setPublish((s) => nextPublish(s, { type: "tx-confirmed" }));
         try {
-          await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+          await putDomainDoc(evidenceDaemonUrl, docBytes(form), {
             subaccord,
           });
           setPublish((s) => nextPublish(s, { type: "published" }));
@@ -212,7 +213,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
     }
     setPublish((s) => nextPublish(s, { type: "retry" }));
     try {
-      await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+      await putDomainDoc(evidenceDaemonUrl, docBytes(form), {
         subaccord: subaccordAddr,
       });
       setPublish((s) => nextPublish(s, { type: "published" }));
