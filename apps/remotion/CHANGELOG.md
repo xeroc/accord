@@ -1,5 +1,14 @@
 # @useaccord/remotion
 
+## 0.3.1
+
+### Patch Changes
+
+- [#10](https://github.com/xeroc/accord/pull/10) [`b15d559`](https://github.com/xeroc/accord/commit/b15d55995a9f457be4945a6bc047d8177e6634f8) Thanks [@xeroc](https://github.com/xeroc)! - bump version number
+- Updated dependencies [[`b15d559`](https://github.com/xeroc/accord/commit/b15d55995a9f457be4945a6bc047d8177e6634f8)]:
+  - @useaccord/sdk@0.3.1
+  - @useaccord/ui@0.3.1
+
 ## 0.3.0
 
 ### Patch Changes

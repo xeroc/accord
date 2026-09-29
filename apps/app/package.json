@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/app",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Accord dApp — React + Vite frontend for the Schelling-point arbitration primitive",
   "type": "module",
