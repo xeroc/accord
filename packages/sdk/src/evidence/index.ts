@@ -9,7 +9,7 @@
  * Kept behind a sub-path export so Arbitrables that only do `create_dispute`
  * CPI don't pull the `@noble` crypto stack.
  *
- * The daemon base URL (`EVIDENCE_DAEMON_URL`) is deployment-specific and stays
+ * The daemon base URL (app `useEvidenceDaemonUrl()`) is deployment-specific and stays
  * app-side; `publishEvidence` takes `endpoint` as a parameter (ADR-0011).
  *
  * Authority: ADR-0006 (evidence model), ADR-0011 (evidence-daemon),

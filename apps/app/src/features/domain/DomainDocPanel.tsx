@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { Button, DomainDocCard, type DomainDoc } from "@useaccord/ui";
 
 import { describeError } from "../../shared/errors";
-import { EVIDENCE_DAEMON_URL } from "../dispute/evidence/config";
+import { useEvidenceDaemonUrl } from "../dispute/evidence/useEvidenceDaemonUrl";
 
 /** Lowercase 64-hex of a 32-byte ref; undefined when the ref is all-zero. */
 export function hexIfSet(
@@ -32,9 +32,10 @@ export function useDomainDoc(hash: string | undefined): {
   doc: DomainDoc | undefined;
   refetch: () => void;
 } {
+  const endpoint = useEvidenceDaemonUrl();
   const q = useQuery({
-    queryKey: ["domain-doc", hash],
-    queryFn: () => fetchDomainDoc(EVIDENCE_DAEMON_URL, hash!),
+    queryKey: ["domain-doc", hash, endpoint],
+    queryFn: () => fetchDomainDoc(endpoint, hash!),
     enabled: Boolean(hash),
     retry: false,
     staleTime: Infinity,
@@ -75,6 +76,7 @@ export function DomainDocPanel({
 }) {
   const { doc, refetch } = useDomainDoc(hash);
   const [publishing, setPublishing] = useState(false);
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
 
   /** Recovery upload (ADR-0027 create-first): client-checks
    * sha256(bytes) == on-chain ref before the PUT — fails closed. */
@@ -91,7 +93,7 @@ export function DomainDocPanel({
     }
     setPublishing(true);
     try {
-      await putDomainDoc(EVIDENCE_DAEMON_URL, bytes, { subaccord });
+      await putDomainDoc(evidenceDaemonUrl, bytes, { subaccord });
       toast.success("Domain document published.");
       refetch();
     } catch (err) {

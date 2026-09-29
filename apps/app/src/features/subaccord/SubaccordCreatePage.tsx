@@ -10,8 +10,8 @@
  * aggregation, authority — pre-filled with the wallet, with the immutable
  * toggle inline). Everything else (evidence spec, windows, panel, slashing)
  * hides behind "Advanced settings". The evidence operator is NOT a form
- * input — it is the deployment constant `VITE_EVIDENCE_OPERATOR`
- * (createForm.ts).
+ * input — it is the cluster-resolved `VITE_EVIDENCE_OPERATOR_*` env config
+ * (useEvidenceOperator → buildArgs).
  *
  * CREATE-FIRST publish (ADR-0027 amendment): build args from plain string
  * inputs (decision #8: no zod, no react-hook-form), derive the Subaccord PDA
@@ -42,7 +42,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import { ChevronRightIcon } from "lucide-react";
 import { toast } from "sonner";
-import type { TransactionSigner } from "@solana/kit";
+import type { Address, TransactionSigner } from "@solana/kit";
 import { Accord, putDomainDoc, verifyDomainDoc } from "@useaccord/sdk";
 import {
   DEFAULT_ALPHA_BPS,
@@ -78,7 +78,10 @@ import { sendInstruction } from "../../shared/transaction";
 import { describeError } from "../../shared/errors";
 import { useSigner } from "../../shared/wallet";
 import { useDomainDoc } from "../domain/DomainDocPanel";
-import { EVIDENCE_DAEMON_URL } from "../dispute/evidence/config";
+import {
+  useEvidenceDaemonUrl,
+  useEvidenceOperator,
+} from "../dispute/evidence/useEvidenceDaemonUrl";
 import {
   buildArgs,
   defaultFormState,
@@ -124,6 +127,8 @@ export function SubaccordCreatePage() {
 
 export function CreateForm({ signer }: { signer: TransactionSigner }) {
   const crpc = useClusterRpc();
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
+  const evidenceOperator = useEvidenceOperator();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() =>
     defaultFormState(signer.address),
@@ -158,7 +163,11 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
     }
     setSending(true);
     try {
-      const args = buildArgs(form, signer.address);
+      const args = buildArgs(
+        form,
+        signer.address,
+        (evidenceOperator || ZERO_ADDRESS) as Address,
+      );
       const accord = new Accord({ endpoint: crpc.endpoint, signer });
       const { instruction, subaccord } = await accord.methods.createSubaccord(
         signer.address,
@@ -176,7 +185,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
         setOnChainRef(refHex);
         setPublish((s) => nextPublish(s, { type: "tx-confirmed" }));
         try {
-          await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+          await putDomainDoc(evidenceDaemonUrl, docBytes(form), {
             subaccord,
           });
           setPublish((s) => nextPublish(s, { type: "published" }));
@@ -212,7 +221,7 @@ export function CreateForm({ signer }: { signer: TransactionSigner }) {
     }
     setPublish((s) => nextPublish(s, { type: "retry" }));
     try {
-      await putDomainDoc(EVIDENCE_DAEMON_URL, docBytes(form), {
+      await putDomainDoc(evidenceDaemonUrl, docBytes(form), {
         subaccord: subaccordAddr,
       });
       setPublish((s) => nextPublish(s, { type: "published" }));

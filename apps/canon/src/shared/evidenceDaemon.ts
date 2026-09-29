@@ -1,16 +1,14 @@
 /**
- * config.ts — app-side evidence service config (ADR-0011).
+ * evidenceDaemon.ts — evidence service config (canon side, ADR-0011).
  *
  * Daemon URLs and operator pubkeys resolve per cluster from Vite env
  * (empty/unset → default):
  *   VITE_EVIDENCE_DAEMON_URL_DEVNET   default https://api.devnet.useaccord.xyz
  *   VITE_EVIDENCE_DAEMON_URL_MAINNET  default https://api.useaccord.xyz
  *   VITE_EVIDENCE_DAEMON_URL_LOCALNET default <the resolved devnet value>
- *   VITE_EVIDENCE_OPERATOR_DEVNET   default "" (no operator)
- *   VITE_EVIDENCE_OPERATOR_MAINNET  default "" (no operator)
- *   VITE_EVIDENCE_OPERATOR_LOCALNET default <the resolved devnet value>
- * Kept here rather than in @useaccord/sdk/evidence so the SDK carries no
- * environment coupling (ADR-0011 transport, ADR-0015 crypto→SDK).
+ *   VITE_EVIDENCE_OPERATOR_ADDRESS_DEVNET   default "" (no operator)
+ *   VITE_EVIDENCE_OPERATOR_ADDRESS_MAINNET  default "" (no operator)
+ *   VITE_EVIDENCE_OPERATOR_ADDRESS_LOCALNET default <the resolved devnet value>
  */
 
 /** One value per selectable cluster. */
@@ -21,7 +19,8 @@ export type PerCluster<T> = {
 };
 
 /** Cluster-id → value. Devnet is the default for unknown ids and the
- * no-cluster-yet boot frame (ConnectorKit). Unit-tested in config.test.ts. */
+ * no-cluster-yet boot frame (ConnectorKit). Unit-tested in
+ * evidenceDaemon.test.ts. */
 export function valueForCluster<T>(
   clusterId: string | undefined,
   values: PerCluster<T>,
@@ -42,7 +41,8 @@ export type EvidenceDaemonEnv = {
   VITE_EVIDENCE_DAEMON_URL_LOCALNET?: string;
 };
 
-/** Resolve per-cluster daemon URLs from env (unit-tested in config.test.ts). */
+/** Resolve per-cluster daemon URLs from env (unit-tested in
+ * evidenceDaemon.test.ts). */
 export function evidenceDaemonUrlsFromEnv(
   env: EvidenceDaemonEnv,
 ): PerCluster<string> {
@@ -57,9 +57,9 @@ export function evidenceDaemonUrlsFromEnv(
 }
 
 export type EvidenceOperatorEnv = {
-  VITE_EVIDENCE_OPERATOR_DEVNET?: string;
-  VITE_EVIDENCE_OPERATOR_MAINNET?: string;
-  VITE_EVIDENCE_OPERATOR_LOCALNET?: string;
+  VITE_EVIDENCE_OPERATOR_ADDRESS_DEVNET?: string;
+  VITE_EVIDENCE_OPERATOR_ADDRESS_MAINNET?: string;
+  VITE_EVIDENCE_OPERATOR_ADDRESS_LOCALNET?: string;
 };
 
 /**
@@ -71,10 +71,10 @@ export type EvidenceOperatorEnv = {
 export function evidenceOperatorsFromEnv(
   env: EvidenceOperatorEnv,
 ): PerCluster<string> {
-  const devnet = env.VITE_EVIDENCE_OPERATOR_DEVNET || "";
+  const devnet = env.VITE_EVIDENCE_OPERATOR_ADDRESS_DEVNET || "";
   return {
     devnet,
-    mainnet: env.VITE_EVIDENCE_OPERATOR_MAINNET || "",
-    localnet: env.VITE_EVIDENCE_OPERATOR_LOCALNET || devnet,
+    mainnet: env.VITE_EVIDENCE_OPERATOR_ADDRESS_MAINNET || "",
+    localnet: env.VITE_EVIDENCE_OPERATOR_ADDRESS_LOCALNET || devnet,
   };
 }

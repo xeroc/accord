@@ -96,7 +96,7 @@ export function verifyDeliveryKeyRegistration(
 export type SignMessage = (message: Uint8Array) => Promise<Uint8Array>;
 
 export interface RegisterDeliveryKeyParams {
-  /** Daemon base URL (app-side `EVIDENCE_DAEMON_URL`). */
+  /** Daemon base URL (app-side `useEvidenceDaemonUrl()`). */
   endpoint: string;
   /** Juror's Solana address, base58. */
   juror: string;

@@ -26,8 +26,7 @@ import { Button, DomainDocCard, type DomainDoc } from "@useaccord/ui";
 import { toast } from "sonner";
 
 import { describeError } from "@/shared/errors";
-const EVIDENCE_DAEMON_URL =
-  import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
+import { useEvidenceDaemonUrl } from "@/shared/useEvidenceDaemonUrl";
 
 /** Lowercase 64-hex of a 32-byte ref; undefined when the ref is all-zero. */
 export function hexIfSet(
@@ -44,9 +43,10 @@ export function useDomainDoc(hash: string | undefined): {
   doc: DomainDoc | undefined;
   refetch: () => void;
 } {
+  const endpoint = useEvidenceDaemonUrl();
   const q = useQuery({
-    queryKey: ["domain-doc", hash],
-    queryFn: () => fetchDomainDoc(EVIDENCE_DAEMON_URL, hash!),
+    queryKey: ["domain-doc", hash, endpoint],
+    queryFn: () => fetchDomainDoc(endpoint, hash!),
     enabled: Boolean(hash),
     retry: false,
     staleTime: Infinity,
@@ -86,6 +86,7 @@ export function DomainDocPanel({
   subaccord?: Address;
 }) {
   const { doc, refetch } = useDomainDoc(hash);
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
   const queryClient = useQueryClient();
   const [publishing, setPublishing] = useState(false);
 
@@ -104,7 +105,7 @@ export function DomainDocPanel({
     }
     setPublishing(true);
     try {
-      await putDomainDoc(EVIDENCE_DAEMON_URL, bytes, { subaccord });
+      await putDomainDoc(evidenceDaemonUrl, bytes, { subaccord });
       toast.success("Rules document published.");
       await queryClient.invalidateQueries({ queryKey: ["domain-doc", hash] });
     } catch (err) {

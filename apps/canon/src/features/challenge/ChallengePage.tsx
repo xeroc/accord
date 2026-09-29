@@ -47,13 +47,13 @@ import { DomainDocPanel, hexIfSet } from "../domain/DomainDocPanel";
 import { explorerAccountUrl } from "../../shared/explorer";
 import { formatBps, formatTokenAmount } from "../../shared/format";
 
-const EVIDENCE_DAEMON_URL =
-  import.meta.env.VITE_EVIDENCE_DAEMON_URL ?? "http://localhost:8080";
+import { useEvidenceDaemonUrl } from "../../shared/useEvidenceDaemonUrl";
 
 export function ChallengePage() {
   const { address } = useParams<{ address: string }>();
   const { signer, ready } = useSigner();
   const clusterRpc = useClusterRpc();
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -203,7 +203,7 @@ export function ChallengePage() {
       // 5. Publish the encrypted manifest — the dispute now exists on-chain.
       try {
         await publishChallengeEvidence(manifest, dispute, ctx, {
-          evidenceDaemonUrl: EVIDENCE_DAEMON_URL,
+          evidenceDaemonUrl,
         });
         setPublishFail(null);
         toast.success(`Challenge filed! Signature: ${sig.slice(0, 8)}…`);
@@ -240,7 +240,7 @@ export function ChallengePage() {
         publishFail.manifest,
         publishFail.dispute,
         publishFail.ctx,
-        { evidenceDaemonUrl: EVIDENCE_DAEMON_URL },
+      { evidenceDaemonUrl },
       );
       setPublishFail(null);
       toast.success("Evidence published — challenge complete.");

@@ -47,7 +47,7 @@ reason).
    Signature: `create_list(list_program, rules_hash, submit_deposit,
    challenge_pct, listing_window, withdrawal_timelock, evidence_operator,
    court: CourtParams)`. `evidence_operator` stays its own arg — it is a
-   deployment-supplied key (dApp: `VITE_EVIDENCE_OPERATOR_ADDRESS`), not a court
+   deployment-supplied key (DApp: per-cluster `VITE_EVIDENCE_OPERATOR_ADDRESS_*`), not a court
    parameter.
 
 2. **Pinned in the handler, never creator-settable:** the handler maps

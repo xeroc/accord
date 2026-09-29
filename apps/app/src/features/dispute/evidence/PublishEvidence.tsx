@@ -32,7 +32,7 @@ import {
   verifyManifestHash,
 } from "@useaccord/sdk/evidence";
 
-import { EVIDENCE_DAEMON_URL } from "./config";
+import { useEvidenceDaemonUrl } from "./useEvidenceDaemonUrl";
  import { queryClient } from "../../../shared/queryClient";
 
 function isZeroHash(h: ReadonlyUint8Array): boolean {
@@ -54,6 +54,7 @@ export function PublishEvidence({
   // means no evidence manifest was filed (create_dispute got [0u8;32]).
   const round0Hash = dispute.data.evidenceHashes[0];
   const [publishing, setPublishing] = useState(false);
+  const evidenceDaemonUrl = useEvidenceDaemonUrl();
   const [result, setResult] = useState<
     { kind: "ok"; fileName: string } | { kind: "err"; msg: string } | null
   >(null);
@@ -72,7 +73,7 @@ export function PublishEvidence({
       // Fails closed: a tampered / wrong manifest throws before any POST.
       await verifyManifestHash(manifest, new Uint8Array(evidenceHash));
       await publishEvidence({
-        endpoint: EVIDENCE_DAEMON_URL,
+        endpoint: evidenceDaemonUrl,
         subaccord: subaccord.address,
         dispute: dispute.address,
         manifest,
