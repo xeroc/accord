@@ -1,5 +1,12 @@
 # @useaccord/pitch
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/ui@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes
