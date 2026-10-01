@@ -1,5 +1,18 @@
 # @useaccord/landing
 
+## 0.5.0
+
+### Minor Changes
+
+- [#14](https://github.com/xeroc/accord/pull/14) [`958eb11`](https://github.com/xeroc/accord/commit/958eb113cdb40ef26ed07573c05a8cbb0b3b0cdd) Thanks [@xeroc](https://github.com/xeroc)! - add the unlisted /blurb route — copyable words (one-liner, short + standard blurb), a forwardable intro email, the founder's Accord explainer tweets with videos, team + track record, brand kit (mark SVGs, palette, type), and contact. Ported from the riprap blurb page structure, restyled onto the Accord tokens.
+
+- [#14](https://github.com/xeroc/accord/pull/14) [`958eb11`](https://github.com/xeroc/accord/commit/958eb113cdb40ef26ed07573c05a8cbb0b3b0cdd) Thanks [@xeroc](https://github.com/xeroc)! - refactor the landing router to react-router HashRouter (the workspace convention for GH Pages): hash routes (#/, #/how-it-rules/:slug, #/blurb), Link-based internal nav, scroll-to-top and per-route document titles, unknown routes fall back home; legacy path URLs bounce to their hash route via 404.html.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/ui@0.5.0
+
 ## 0.4.0
 
 ### Patch Changes
