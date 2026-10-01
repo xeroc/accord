@@ -1,4 +1,5 @@
 import { AmberRule } from "@useaccord/ui";
+import { Link } from "react-router-dom";
 
 import { Footer } from "../components/Footer";
 import { Nav } from "../components/Nav";
@@ -17,12 +18,12 @@ export function ChapterPage({ chapter }: { chapter: Chapter }) {
       <Nav />
       <main>
         <article className="mx-auto max-w-5xl px-6 pt-24 pb-16">
-          <a
-            href="/how-it-rules"
+          <Link
+            to="/how-it-rules"
             className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground transition-colors hover:text-nearwhite"
           >
             ← How it Rules
-          </a>
+          </Link>
           <p className="mt-8 font-mono text-xs uppercase tracking-[0.3em] text-amber">
             How it Rules · Chapter {index + 1} of {CHAPTERS.length} · {chapter.duration}
           </p>
@@ -91,28 +92,28 @@ export function ChapterPage({ chapter }: { chapter: Chapter }) {
           className="mx-auto max-w-5xl px-6 grid gap-4 border-t border-border/60 py-10 sm:grid-cols-2"
         >
           {prev ? (
-            <a
-              href={`/how-it-rules/${prev.slug}`}
+            <Link
+              to={`/how-it-rules/${prev.slug}`}
               className="rounded-lg border border-border/60 bg-raised p-5 transition-colors hover:border-amber/50"
             >
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
                 ← Previous
               </p>
               <p className="mt-2 font-heading text-xl font-bold text-nearwhite">{prev.title}</p>
-            </a>
+            </Link>
           ) : (
             <span aria-hidden />
           )}
           {next ? (
-            <a
-              href={`/how-it-rules/${next.slug}`}
+            <Link
+              to={`/how-it-rules/${next.slug}`}
               className="rounded-lg border border-border/60 bg-raised p-5 text-right transition-colors hover:border-amber/50 sm:col-start-2"
             >
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
                 Next →
               </p>
               <p className="mt-2 font-heading text-xl font-bold text-nearwhite">{next.title}</p>
-            </a>
+            </Link>
           ) : (
             <a
               href="https://docs.useaccord.xyz/quickstart/"

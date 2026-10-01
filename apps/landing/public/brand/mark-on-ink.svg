@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Accord mark on the ink surface">
+  <rect width="256" height="256" rx="16" fill="#0A0E14"/>
+  <g transform="translate(64,64) scale(4)" stroke="#F0A830" stroke-width="2.4" stroke-linecap="square" fill="none">
+    <line x1="7.5" y1="8.5" x2="16" y2="16"/>
+    <line x1="24.5" y1="8.5" x2="16" y2="16"/>
+    <line x1="16" y1="25" x2="16" y2="16"/>
+  </g>
+</svg>

@@ -34,16 +34,13 @@
       <a class="link" href="/">← Back to useaccord.xyz</a>
     </section>
   <script>
-    // GitHub Pages SPA recovery for the How it Rules routes: bank the
-    // attempted path and bounce to / — the app restores it from
-    // sessionStorage before first render (see src/App.tsx). Every other
-    // path keeps this styled 404.
+    // GitHub Pages has no SPA fallback, but the app hash-routes: bounce
+    // legacy path URLs (/how-it-rules…, /blurb) to their hash route,
+    // where the router picks them up. Every other path keeps this 404.
     (function () {
-      if (window.location.pathname.indexOf("/how-it-rules") === 0) {
-        try {
-          window.sessionStorage.setItem("how-it-rules-path", window.location.pathname);
-        } catch (e) {}
-        window.location.replace("/");
+      var p = window.location.pathname;
+      if (p.indexOf("/how-it-rules") === 0 || p.indexOf("/blurb") === 0) {
+        window.location.replace("/#" + p);
       }
     })();
   </script>
