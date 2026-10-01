@@ -20,7 +20,7 @@ export function Nav() {
           <AccordMark size={20} />
           <span className="font-mono text-sm font-medium tracking-tight text-nearwhite">Accord</span>
           <span className="ml-2 hidden items-center gap-1.5 font-mono text-xs text-muted-foreground sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber"></span>v1 · build target
+            <span className="h-1.5 w-1.5 rounded-full bg-amber"></span>live on mainnet
           </span>
         </Link>
         <nav className="flex items-center gap-5 font-mono text-sm text-muted-foreground">

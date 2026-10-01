@@ -1,8 +1,9 @@
 /**
  * content.test.ts — checks the blurb copy contract: the email composes
  * from its parts, every explainer is fully wired (permalink + local
- * media), the brand hexes are the canonical tokens, and the integrity law
- * holds (the HANSE/riprap-only post stays out of the Accord explainers).
+ * media when present), the brand hexes are the canonical tokens, and the
+ * integrity law holds (the HANSE/riprap-only post stays out of the
+ * Accord explainers).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -28,14 +29,15 @@ test("words: every copyable block names the domain and stays honest about status
   for (const block of [ONE_LINE, SHORT_BLURB, STANDARD_BLURB]) {
     assert.ok(block.includes("useaccord.xyz"), "carries the domain");
   }
-  assert.match(STATUS, /build target/);
+  assert.match(STATUS, /live on mainnet/);
+  assert.match(STATUS, /unaudited/);
 });
 
-test("explainers: every entry has a permalink, a local poster frame, and a kicker", () => {
+test("explainers: every entry has a permalink, local media when present, and a kicker", () => {
   assert.ok(EXPLAINERS.length >= 5);
   for (const tweet of EXPLAINERS) {
     assert.match(tweet.url, /^https:\/\/x\.com\/xer0c\/status\/\d+$/);
-    assert.match(tweet.media, /^\/blurb\/.+\.jpg$/);
+    if (tweet.media) assert.match(tweet.media, /^\/blurb\/.+\.jpg$/);
     assert.match(tweet.kicker, /^\d\d · /);
     if (tweet.video) assert.match(tweet.video, /^\/blurb\/.+\.mp4$/);
     if (tweet.youtubeEmbed) assert.ok(tweet.youtubeUrl, "embed implies a visible link too");
@@ -43,7 +45,7 @@ test("explainers: every entry has a permalink, a local poster frame, and a kicke
 });
 
 test("explainers: the riprap-only HANSE post is not presented as Accord's", () => {
-  assert.ok(!EXPLAINERS.some((t) => t.media.includes("hanse")));
+  assert.ok(!EXPLAINERS.some((t) => t.media?.includes("hanse")));
 });
 
 test("brand: assets served as svg, colors carry canonical token hexes", () => {

@@ -47,7 +47,7 @@ test("submitWaitlist: ok response reports success, requests reset, posts the n8n
     fetchImpl,
   );
   assert.equal(res.ok, true);
-  assert.equal(res.message, "On the list. One email when v1 ships on mainnet.");
+  assert.equal(res.message, "On the list. One email when there's news worth one.");
   assert.equal(res.reset, true);
   assert.equal(seenUrl, "https://n8n.example.com/webhook");
   assert.equal(seenInit?.method, "POST");
