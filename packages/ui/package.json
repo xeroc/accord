@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/ui",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Shared design tokens and React UI modules for Accord applications",
   "type": "module",
