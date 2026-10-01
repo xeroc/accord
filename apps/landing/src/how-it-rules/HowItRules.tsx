@@ -1,4 +1,5 @@
 import { AccordMark, AmberRule } from "@useaccord/ui";
+import { Link } from "react-router-dom";
 
 import { Footer } from "../components/Footer";
 import { Nav } from "../components/Nav";
@@ -34,8 +35,8 @@ export function HowItRules() {
           <ol className="grid gap-6 sm:grid-cols-2">
             {CHAPTERS.map((c, i) => (
               <li key={c.slug}>
-                <a
-                  href={`/how-it-rules/${c.slug}`}
+                <Link
+                  to={`/how-it-rules/${c.slug}`}
                   className="group flex h-full flex-col overflow-hidden rounded-lg border border-border/60 bg-raised transition-colors hover:border-amber/50"
                 >
                   <div className="relative aspect-video overflow-hidden border-b border-border/60">
@@ -64,7 +65,7 @@ export function HowItRules() {
                       {c.blurb}
                     </p>
                   </div>
-                </a>
+                </Link>
               </li>
             ))}
           </ol>
