@@ -1,5 +1,12 @@
 # @useaccord/synod
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

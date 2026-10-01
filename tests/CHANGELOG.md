@@ -1,5 +1,14 @@
 # @useaccord/tests
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/canon@0.5.1
+  - @useaccord/sdk@0.5.1
+  - @useaccord/synod@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

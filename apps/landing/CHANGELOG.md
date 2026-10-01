@@ -1,5 +1,13 @@
 # @useaccord/landing
 
+## 0.5.1
+
+### Patch Changes
+
+- [#16](https://github.com/xeroc/accord/pull/16) [`a45d64e`](https://github.com/xeroc/accord/commit/a45d64ed73dbeeac26e6e9989d31244d043f0075) Thanks [@xeroc](https://github.com/xeroc)! - Landing + blurb: launch the copy — Accord is live on mainnet (unaudited). Adds the mainnet launch thread to the blurb explainers; replaces every pre-launch / "v1 is the build target" claim across Nav, Audience, Heritage, Footer, the waitlist, and the blurb status line. No traction claims added.
+- Updated dependencies []:
+  - @useaccord/ui@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes

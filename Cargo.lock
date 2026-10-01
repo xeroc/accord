@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "accord"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anchor-lang",
  "anchor-litesvm",
@@ -945,7 +945,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "canon"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "accord",
  "anchor-lang",
@@ -6294,7 +6294,7 @@ dependencies = [
 
 [[package]]
 name = "synod"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "accord",
  "anchor-lang",
