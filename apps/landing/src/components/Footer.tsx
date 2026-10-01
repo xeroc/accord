@@ -26,7 +26,7 @@ export function Footer() {
           </nav>
         </div>
         <div className="mt-10 flex flex-col gap-1 border-t border-border/60 pt-6 font-mono text-xs text-muted-foreground/60 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {year} Accord · pre-launch · v1 is the build target</p>
+          <p>© {year} Accord · live on mainnet · unaudited</p>
           <p>useaccord.xyz</p>
         </div>
       </div>

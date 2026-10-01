@@ -1,4 +1,4 @@
-// §5 — Heritage, not hype. Credibility without traction claims (pre-launch integrity).
+// §5 — Heritage, not hype. Credibility without traction claims.
 const lineage = [
   { year: "1960", name: "Schelling", body: "Independent agents converge on the obvious answer without communication." },
   { year: "~500 BCE", name: "Athenian sortition", body: "Draw the judges by lot. A committee can be captured; a random sample can't be bought in advance." },
@@ -31,7 +31,7 @@ export function Heritage() {
           Truth doesn't need a referee — it needs a mechanism that rewards it.
         </p>
         <p className="mt-3 font-mono text-xs text-muted-foreground">
-          We claim the mechanism. We don't claim traction — v1 is the build target.
+          We claim the mechanism. We don't claim traction. Live on mainnet, unaudited.
         </p>
       </div>
     </section>

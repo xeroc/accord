@@ -9,7 +9,7 @@ export function FinalCTA() {
           Who's right?
         </h2>
         <p className="mx-auto mt-5 max-w-md text-base text-muted-foreground">
-          One email when v1 ships on mainnet. That's the whole list.
+          One email when there's news worth one. That's the whole list.
         </p>
 
         <div className="mt-9 flex justify-center">

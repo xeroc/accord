@@ -146,9 +146,10 @@ function WordsBand() {
 
 /** The explainers — the founder's short videos and talks, ordered by
  * what they explain (kicker ordinals), two per row. Each card quotes the
- * post with its native video embedded (poster frame + local mp4) and an
- * engagement stamp; the X glyph links to the source post. The demo-day
- * card carries the YouTube talk from its thread, embedded inline. */
+ * post with its native video embedded (poster frame + local mp4) when it
+ * has one, plus an engagement stamp; the X glyph links to the source
+ * post. The demo-day card carries the YouTube talk from its thread,
+ * embedded inline. */
 function ExplainerBand() {
   return (
     <Band label="the explainers">
@@ -171,7 +172,11 @@ function ExplainerBand() {
               text={tweet.text}
               date={tweet.date}
               meta={tweet.meta}
-              media={{ src: tweet.media, alt: tweet.mediaAlt, video: tweet.video, autoPlay: true }}
+              media={
+                tweet.media && tweet.mediaAlt
+                  ? { src: tweet.media, alt: tweet.mediaAlt, video: tweet.video, autoPlay: true }
+                  : undefined
+              }
               maxChars={640}
               href={tweet.url}
             />

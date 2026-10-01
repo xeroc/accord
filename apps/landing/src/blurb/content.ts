@@ -4,15 +4,15 @@
 // README.md, the landing sections (Hero/Mechanism/Heritage/Footer), the
 // pitch deck (apps/pitch/src/deck/slides.tsx), and the design tokens
 // (packages/ui/src/styles/tokens.css). Integrity law from the landing:
-// pre-launch — no traction claims, "v1 is the build target" is the status.
+// no traction claims; the status is "live on mainnet, unaudited".
 
 /** Page intro — what this page is and why it is unlisted. */
 export const INTRO =
   "Everything on this page is meant to be copied: an explainer when you write about Accord, the logo files, and an email that introduces us to someone you know.";
 
 /** Status line — the build state without traction claims (integrity law,
- * Heritage.tsx: "We don't claim traction — v1 is the build target"). */
-export const STATUS = "on devnet · pre-launch · v1 mainnet is the build target";
+ * Heritage.tsx: "We don't claim traction"). */
+export const STATUS = "live on mainnet · unaudited";
 
 /** One-liner for chats — Footer.tsx line set ("Schelling-point arbitration
  * as a composable Solana primitive") + domain. */
@@ -48,7 +48,7 @@ The mechanism is proven — Kleros settled 1,000+ disputes on Ethereum. Accord i
 
 Built by Dr.-Ing. Fabian Schuh — full-time crypto since 2014 — with Corinna, an AI agent on shift 24/7.
 
-On devnet now; v1 mainnet is the build target. useaccord.xyz`;
+Live on mainnet, unaudited. useaccord.xyz`;
 
 /** Forwardable email — written in the introducer's voice ("Meet Fabian"),
  * plain text, no links except the blurb page (hash route — GH Pages needs
@@ -68,7 +68,7 @@ The mechanism is proven: Kleros settled 1,000+ disputes on Ethereum. Accord pack
 
 Why Fabian: full-time in crypto since 2014. He was the first hire ever paid directly by a blockchain, and he built BitShares' escrow and worker-proposal treasury. He ships with Corinna, an AI agent on shift 24/7.
 
-On devnet now; v1 mainnet is the build target.
+Live on mainnet, unaudited.
 
 Worth 20 minutes? → https://useaccord.xyz/#/blurb`;
 
@@ -275,10 +275,10 @@ export interface ExplainerTweet {
   date: string;
   /** engagement stamp beside the date */
   meta: string;
-  /** local poster-frame path under /blurb/ */
-  media: string;
+  /** local poster-frame path under /blurb/ (omitted on text-only posts) */
+  media?: string;
   /** alt text describing the frame */
-  mediaAlt: string;
+  mediaAlt?: string;
   /** local mp4 of the tweet's native video (720p variant) */
   video?: string;
   /** x.com permalink */
@@ -354,8 +354,17 @@ export const EXPLAINERS: ExplainerTweet[] = [
     youtubeUrl: "https://www.youtube.com/watch?v=W816NeczDx8",
     youtubeEmbed: "https://www.youtube-nocookie.com/embed/W816NeczDx8",
   },
+  {
+    // x.com/xer0c/status/2105645963394294010 — mainnet launch thread (the why)
+    kicker: "06 · the launch",
+    note: "The mainnet launch thread: why Accord exists — disputes between people and agents, settled permissionlessly, p2p.",
+    text: "Disputes are at the heart of human 👱interactions, and growingly, also between agents 🤖.\n\nI am using @solana as a tool to solve them, on a global scale, permissionlessly, p2p\n\nbecause I believe people can do more together than apart, without surrendering control.\n\n🧵",
+    date: "Oct 1, 2026",
+    meta: "8 views · 0 likes",
+    url: "https://x.com/xer0c/status/2105645963394294010",
+  },
 ];
 
 /** Explainer band intro — mirrors the riprap band intro, Accord-only. */
 export const EXPLAINERS_INTRO =
-  "Short cuts and talks from the founder's build log, ordered by what they explain: the verdict layer, the court — how the explainers got made — and the full mtnDAO demo-day pitch.";
+  "Short cuts and talks from the founder's build log, ordered by what they explain: the verdict layer, the court — how the explainers got made — the full mtnDAO demo-day pitch, and the mainnet launch thread.";

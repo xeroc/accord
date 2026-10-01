@@ -23,7 +23,7 @@ export async function submitWaitlist(
       body: JSON.stringify({ email, type: "waitlist", timestamp: new Date().toISOString() }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return { ok: true, message: "On the list. One email when v1 ships on mainnet.", reset: true };
+    return { ok: true, message: "On the list. One email when there's news worth one.", reset: true };
   } catch {
     return { ok: false, message: "Couldn't reach the list — try Telegram.", reset: false };
   }
