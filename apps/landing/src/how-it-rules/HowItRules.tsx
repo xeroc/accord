@@ -24,10 +24,9 @@ export function HowItRules() {
           </h1>
           <AmberRule enter={1} className="mt-8 w-56" />
           <p className="mt-8 max-w-2xl text-lg text-text-secondary">
-            Six short films, one per primitive — the draw, the vote, the
-            economics, the evidence, and the failure modes. No narration, no
-            jargon walls: each chapter is the mechanism itself, in motion.
-            When a film ends, the prose picks up where it stopped.
+            Six short films, from the system map to the failure modes. No
+            narration: each chapter is the mechanism in motion, and the prose
+            picks up where the film stops.
           </p>
         </section>
 

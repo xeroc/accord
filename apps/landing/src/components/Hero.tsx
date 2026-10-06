@@ -144,12 +144,12 @@ export function Hero() {
         <h1 className="max-w-xl font-sans text-5xl font-semibold leading-[1.05] tracking-[-0.02em] text-nearwhite sm:text-6xl md:text-7xl">
           Mechanize the verdict.
         </h1>
-        <p className="mt-5 max-w-xl text-base text-muted-foreground">Justice is infrastructure.</p>
+        <p className="mt-5 max-w-xl text-base text-muted-foreground">A court any program can call.</p>
         <p className="mt-7 max-w-2xl text-lg leading-relaxed text-body sm:text-xl">
           Two CPI calls — <code className="font-mono text-amber">create_dispute()</code> →
-          <code className="font-mono text-amber">get_ruling()</code>. Any Solana program gets trustless
-          dispute resolution. Jurors are secret, drawn by VRF, slashed for incoherence. Capture is
-          structurally impossible.
+          <code className="font-mono text-amber">get_ruling()</code>. Any Solana program gets
+          trust-minimized dispute resolution. Jurors are secret, drawn by VRF, slashed for
+          incoherence.
         </p>
 
         <div className="mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center">

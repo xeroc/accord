@@ -19,9 +19,9 @@ export const STATUS = "live on mainnet · unaudited";
 export const ONE_LINE =
   "Accord — Schelling-point arbitration as a composable Solana primitive. useaccord.xyz";
 
-/** Short blurb, ~70 words — the Mechanism.tsx hook ("a primitive — not a
- * product you integrate, a call you make"), the one-sentence mechanism
- * (README), the FinalCTA campaign question, founder. */
+/** Short blurb, ~70 words — the Mechanism.tsx hook ("a primitive: a call
+ * you make"), the one-sentence mechanism (README), the FinalCTA campaign
+ * question, founder. */
 export const SHORT_BLURB = `Who's right? On Solana, that question now has a primitive.
 
 Accord is a Schelling-point arbitration oracle: any program files a dispute with two CPI calls, jurors drawn by verifiable stake-weighted sortition vote commit-reveal, and coherence with the majority pays. Honesty is the profitable strategy — no multisig, no hired judges.
@@ -32,7 +32,7 @@ Mechanize the verdict. useaccord.xyz`;
 
 /** Standard blurb, ~170 words — README platform paragraph + Mechanism.tsx
  * lifecycle + Heritage.tsx Kleros lineage + arbitrables + founder. */
-export const STANDARD_BLURB = `Dispute resolution is a primitive — not a product you integrate, a call you make.
+export const STANDARD_BLURB = `Dispute resolution is a primitive: a call you make.
 
 Accord is a general-purpose, capital-weighted Schelling arbitration oracle on Solana. Any program (the Arbitrable) files a subjective dispute via two CPI calls; Accord draws stake-weighted jurors (VRF over a live on-chain stake accumulator), collects commit-reveal votes, and emits a Ruling governed by game-theoretic incentives instead of a hired-judge committee.
 
@@ -44,7 +44,7 @@ How it works:
  - Voting coherently with the majority pays; incoherence is slashed.
  - The filer reads the ruling lazily via get_ruling(dispute_id).
 
-The mechanism is proven — Kleros settled 1,000+ disputes on Ethereum. Accord is the same economics packaged as composable Solana infrastructure: the precedent, not the template. Arbitrables already built: Canon (curated-list registry) and Synod (N-party escrow).
+The mechanism is proven — Kleros settled 1,000+ disputes on Ethereum. Accord is the same economics packaged as composable Solana infrastructure. Arbitrables already built: Canon (curated-list registry) and Synod (N-party escrow).
 
 Built by Dr.-Ing. Fabian Schuh — full-time crypto since 2014 — with Corinna, an AI agent on shift 24/7.
 
@@ -62,7 +62,7 @@ export const EMAIL_BODY = `Hi [name],
 
 Meet Fabian. He's building Accord — dispute resolution as a composable Solana primitive.
 
-Any program can file a subjective dispute with two CPI calls: create_dispute() → get_ruling(). Jurors are drawn by verifiable stake-weighted sortition, vote commit-reveal, and honesty is the profitable strategy — no multisig, no hired judges, just aligned incentives.
+Any program can file a subjective dispute with two CPI calls: create_dispute() → get_ruling(). Jurors are drawn by verifiable stake-weighted sortition, vote commit-reveal, and honesty is the profitable strategy.
 
 The mechanism is proven: Kleros settled 1,000+ disputes on Ethereum. Accord packages the same economics as a Solana primitive, and the first Arbitrables are already built — Canon (curated-list registry) and Synod (N-party escrow). Tributary and riprap consume the verdict for recurring payments and mutual risk pools.
 
@@ -367,4 +367,4 @@ export const EXPLAINERS: ExplainerTweet[] = [
 
 /** Explainer band intro — mirrors the riprap band intro, Accord-only. */
 export const EXPLAINERS_INTRO =
-  "Short cuts and talks from the founder's build log, ordered by what they explain: the verdict layer, the court — how the explainers got made — the full mtnDAO demo-day pitch, and the mainnet launch thread.";
+  "Short cuts and talks from the founder's build log, ordered by what they explain: the verdict layer, the court, how the explainers got made, the full mtnDAO demo-day pitch, and the mainnet launch thread.";

@@ -3,17 +3,17 @@ const pillars = [
   {
     n: "01",
     h: "Secret. Drawn by VRF. Slashed.",
-    p: "Jurors don't exist until the dispute. Drawn by verifiable random function, secret through commit-reveal, slashed for incoherent votes. No standing committee to bribe. No token stash buys the verdict.",
+    p: "Jurors don't exist until the dispute. Drawn by verifiable random function, secret through commit-reveal, slashed for incoherent votes. There's no standing committee to bribe, and no token stash buys the verdict.",
   },
   {
     n: "02",
     h: "Honesty is the profitable strategy.",
-    p: "The Schelling Point for a subjective question is truth. Vote your honest belief and it pays. Lie and you bet against everyone's incentive to be obvious.",
+    p: "The Schelling point for a subjective question is truth. Vote honestly and the majority pays you; vote against it and you're slashed.",
   },
   {
     n: "03",
     h: "Two CPI calls. One commit.",
-    p: "Any Solana program. No SDK to learn, no governance token to acquire, no committee to brief. The cost of switching to Accord is roughly zero.",
+    p: "Any Solana program. Integration is the CPI itself — no governance token to acquire, no committee to brief. The cost of switching is roughly zero.",
   },
 ];
 
@@ -22,7 +22,7 @@ export function Capture() {
     <section id="capture" className="border-t border-border/60 py-24 sm:py-32">
       <div className="mx-auto max-w-5xl px-6">
         <h2 className="max-w-3xl font-sans text-3xl font-medium tracking-[-0.01em] text-nearwhite sm:text-4xl">
-          Capture is structurally impossible.
+          Hard to capture.
         </h2>
 
         <div className="mt-12 border-t border-border/70">
@@ -45,8 +45,8 @@ export function Capture() {
           <p className="font-mono text-xs uppercase tracking-[0.08em] text-slash">The failure mode, named</p>
           <p className="mt-2 text-sm leading-relaxed text-body sm:text-base">
             March 2025 — one actor with <span className="font-mono text-nearwhite">25%</span> of UMA tokens
-            flipped a <span className="font-mono text-nearwhite">$7M</span> Polymarket contract. Token-weighted
-            voting is plutocracy. Accord removes the attack surface.
+            flipped a <span className="font-mono text-nearwhite">$7M</span> Polymarket contract with his
+            own votes. Accord draws its jurors per dispute — there is no standing position to buy.
           </p>
         </div>
       </div>

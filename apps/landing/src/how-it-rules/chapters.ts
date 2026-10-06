@@ -76,7 +76,7 @@ export const CHAPTERS: Chapter[] = [
     kicker: "Two mints, one verdict",
     title: "The economics",
     blurb:
-      "Stake is collateral, fees are pay — and slashing is a ledger entry, not a transfer. Then the appeal ladder that makes bribery exponential.",
+      "Stake is collateral, fees are pay, and slashing is a ledger entry rather than a transfer. Then the appeal ladder that makes bribery exponentially expensive.",
     duration: "63s",
     takeaways: [
       "Collateral and compensation are different tokens in different vaults; slashing moves numbers, never coins.",
@@ -110,12 +110,12 @@ export const CHAPTERS: Chapter[] = [
     kicker: "What is trusted, exactly",
     title: "Failure modes & trust",
     blurb:
-      "The capstone: every stall has a priced exit, the pause switch can never pick winners, and the trust map is stated in three colors.",
+      "Every stall has a priced exit, the pause switch can never pick winners, and the trust map is stated in three colors.",
     duration: "86s",
     takeaways: [
-      "Silent oracles, ghosting jurors, dead crankers — every stall ends in a refund, never a locked fund.",
+      "Silent oracles, ghosting jurors, dead crankers: every stall ends in a refund.",
       "Pausing stops new disputes and new stake; adjudication has no valve to close.",
-      "Verified on-chain, trusted-but-attributed, one stated assumption — the whole trust surface, mapped.",
+      "The trust map in three colors: verified on-chain, trusted-but-attributed, one stated assumption.",
     ],
     reading: [
       { href: "/security/trust-profile/", label: "The trust profile" },
