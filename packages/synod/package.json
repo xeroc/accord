@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/synod",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "TypeScript SDK for the Accord Synod N-party dispute-escrow Arbitrable on Solana",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/hanse",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Hanse landing page — The protocol for mutuals.",
   "type": "module",

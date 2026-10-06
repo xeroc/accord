@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/landing",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Accord landing page — Mechanize the verdict.",
   "type": "module",

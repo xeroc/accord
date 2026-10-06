@@ -1,5 +1,14 @@
 # @useaccord/app
 
+## 0.5.2
+
+### Patch Changes
+
+- [#18](https://github.com/xeroc/accord/pull/18) [`94db86a`](https://github.com/xeroc/accord/commit/94db86ad4775dfe3afd0eed49c2a699eb1e7c9df) Thanks [@xeroc](https://github.com/xeroc)! - Wire Plausible analytics (self-hosted at p.chainsquad.com, defer-loaded, domain-scoped) to the app and landing pages.
+- Updated dependencies []:
+  - @useaccord/sdk@0.5.2
+  - @useaccord/ui@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes
