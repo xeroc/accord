@@ -9,8 +9,8 @@ export function Audience() {
 
         <p className="mt-7 max-w-2xl text-lg leading-relaxed text-body">
           The protocol builder who'd rather replace human judgment with aligned incentives than staff a
-          multisig. The Mechanist — who reads the program before the pitch and adopts a primitive by
-          committing a CPI call, not by signing up.
+          multisig. The Mechanist — who reads the program before the pitch and adopts the primitive
+          by committing a CPI call.
         </p>
 
         <p className="mt-6 max-w-2xl text-base text-muted-foreground">
@@ -23,8 +23,8 @@ export function Audience() {
         <div className="mt-12 max-w-2xl rounded-lg border border-border bg-raised px-6 py-5">
           <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">Honest scope</p>
           <p className="mt-2 text-sm leading-relaxed text-body">
-            Accord is live on mainnet, unaudited. No dispute counts, no TVL, no "trusted by" logos —
-            none exist yet. Read the spec. File a dispute.
+            Accord is live on mainnet, unaudited. There are no dispute counts, no TVL, no "trusted
+            by" logos — none exist yet. Read the spec. File a dispute.
           </p>
         </div>
       </div>

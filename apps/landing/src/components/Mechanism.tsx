@@ -17,7 +17,7 @@ export function Mechanism() {
         </div>
 
         <p className="mt-8 max-w-2xl text-lg text-body">
-          Dispute resolution is a primitive — not a product you integrate, a call you make.
+          Dispute resolution is a primitive: a call you make.
         </p>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
           The full lifecycle —{" "}
