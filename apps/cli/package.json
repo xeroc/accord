@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/cli",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Accord CLI — operator tooling for the Accord arbitration program",
   "type": "module",

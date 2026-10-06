@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/canon-app",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Canon Registry dApp — React + Vite frontend for the Accord Canon curated-list Arbitrable",
   "type": "module",

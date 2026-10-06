@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/synod-app",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Synod dApp — React + Vite frontend for the Accord Synod N-party dispute-escrow Arbitrable",
   "type": "module",

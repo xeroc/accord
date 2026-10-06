@@ -1,5 +1,15 @@
 # @useaccord/landing
 
+## 0.5.2
+
+### Patch Changes
+
+- [#18](https://github.com/xeroc/accord/pull/18) [`85be9db`](https://github.com/xeroc/accord/commit/85be9dbe22d3ed0427df2549eb21f754a01c2a43) Thanks [@xeroc](https://github.com/xeroc)! - Landing copy rewrite: removed the repeated generated-text patterns ("X — not Y" parallelism, "No X, no Y, no Z" stacks, orphan aphorisms) and fixed trust overclaims ("trustless" → "trust-minimized", "capture is structurally impossible" softened). Blurb-page and How-it-Rules copy aligned.
+
+- [#18](https://github.com/xeroc/accord/pull/18) [`94db86a`](https://github.com/xeroc/accord/commit/94db86ad4775dfe3afd0eed49c2a699eb1e7c9df) Thanks [@xeroc](https://github.com/xeroc)! - Wire Plausible analytics (self-hosted at p.chainsquad.com, defer-loaded, domain-scoped) to the app and landing pages.
+- Updated dependencies []:
+  - @useaccord/ui@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes

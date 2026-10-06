@@ -1,5 +1,14 @@
 # @useaccord/synod-app
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.5.2
+  - @useaccord/synod@0.5.2
+  - @useaccord/ui@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes
