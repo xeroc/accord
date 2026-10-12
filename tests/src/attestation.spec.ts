@@ -19,9 +19,18 @@ import {
   stake,
   pruneJuror,
   createSubaccord,
+  Aggregation,
+  createDispute,
+  drawSeat,
+  findRoundPda,
+  resolveSeat,
+  requiredFee,
+  findSasAttestation,
   initializePause,
   getJurorStakeDecoder,
   getSubaccordDecoder,
+  getDisputeDecoder,
+  MAX_SORTITION_RETRIES,
   buildAccumulator,
   proofFor,
   emptyRoot,
@@ -32,6 +41,7 @@ import {
 } from "@useaccord/sdk";
 import {
   getProgramDerivedAddress,
+  getAddressDecoder,
   getAddressEncoder,
   type Address,
   type KeyPairSigner,
@@ -46,6 +56,7 @@ import {
 } from "./setup/tokens.js";
 import { defaultSubaccordArgs } from "./setup/fixtures.js";
 import { fetchDecoded } from "./setup/assertions.js";
+import { injectCommittedVrf } from "./setup/vrf.js";
 
 /** SPL Associated Token Account program (`ATokenGPvbd…`). */
 const ATA_PROGRAM_ID =
@@ -199,6 +210,9 @@ class TreeTracker {
   get rootHash(): Uint8Array {
     return this.tree.rootHash;
   }
+  get rootSum(): bigint {
+    return this.tree.rootSum;
+  }
 }
 
 describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
@@ -238,6 +252,75 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
     return { juror, jurorAta, jurorStake, accounts, facade };
   }
 
+  /** Fixed VRF the draw tests inject + resolve against. */
+  const DRAW_VRF = new Uint8Array(32).fill(42);
+
+  /** 32 raw bytes → Address (a resolved juror leaf back to a typed address). */
+  function toAddress(bytes: Uint8Array): Address {
+    return getAddressDecoder().decode(bytes) as Address;
+  }
+  /** File + VRF-arm one dispute (filer = payer — the facade signer) against
+   * the tracker's live root. Distinct nonces keep the PDA unique per call. */
+  let drawNonce = 4711n;
+  async function armDrawDispute(): Promise<Address> {
+    await setTokenBalance(env, env.payer.address, mint, 1_000_000n);
+    const filerAta = await ata(mint, env.payer.address);
+    const sub = await fetchDecoded(env, subaccord, getSubaccordDecoder());
+    const fee = requiredFee(sub!.feePerJuror, sub!.minJurySize);
+    if (fee === null) throw new Error("fee overflow");
+
+    const { instruction, dispute } = await createDispute(
+      env.accord.adapter,
+      {
+        filer: env.payer.address,
+        rentPayer: env.payer.address,
+        subaccord,
+        feeToken: mint,
+        filerTokenAccount: filerAta,
+        feeVault: vault,
+        accordState,
+      },
+      {
+        options: [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)],
+        evidenceHash: new Uint8Array(32),
+        nonce: drawNonce++,
+        fee,
+        aggregation: Aggregation.Plurality,
+      },
+      env.programId,
+    );
+    await env.sendIx(instruction);
+    await injectCommittedVrf(env, dispute, DRAW_VRF, tree.rootHash, tree.rootSum);
+    return dispute;
+  }
+
+  /** Resolve seat 0 against the injected VRF (retry-0 membership). */
+  async function resolveSeat0(dispute: Address) {
+    const r = await resolveSeat(
+      DRAW_VRF,
+      addrBytes(dispute),
+      0,
+      0,
+      tree.tree,
+      [],
+      MAX_SORTITION_RETRIES,
+      0,
+    );
+    const juror = toAddress(r.leaf.juror);
+    return {
+      leaf: r.leaf,
+      index: r.index,
+      proof: r.proof,
+      jurorStake: await jurorStakePda(programId, subaccord, juror),
+      retries: r.retries,
+    };
+  }
+
+  async function roundPdaOf(dispute: Address): Promise<Address> {
+    const [roundPda] = await findRoundPda({ dispute, roundIdx: 0 });
+    return roundPda;
+  }
+
   beforeAll(async () => {
     env = await createTestEnv();
     if (!env.up) return;
@@ -252,6 +335,7 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
     const existing = await env.rpc
       .getAccountInfo(accordState, { encoding: "base64" })
       .send();
+
     if (!existing.value) await env.sendIx(pause.instruction);
 
     mint = (await createMint(env, 6)).mint;
@@ -314,6 +398,80 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
     }
     expect(reverted).toBe(true);
   }, 60_000);
+
+  it("gated draw_seat without an attestation reverts (AttestationMissing, not InvalidPanelSize)", async () => {
+    if (!env.up) return;
+    // Two more gated jurors (test 1's juror is the first) so staker_count
+    // reaches min_jury_size=3 and create_dispute's InsufficientJurors gate
+    // passes; the pool then also has sortable weight beyond one leaf.
+    for (let i = 0; i < 2; i++) {
+      const { juror, accounts, facade } = await armJuror();
+      const att = await deriveAddr(`att-draw-${i}`);
+      await setSasAttestation(env, att, credential, schema, juror.address, 0);
+      const path = await tree.pathForNext();
+      await env.sendIx(
+        stake(facade.adapter, programId, accounts, STAKE_AMT, path, att),
+      );
+      await tree.setLeaf(juror.address, STAKE_AMT);
+    }
+
+    const dispute = await armDrawDispute();
+    const m = await resolveSeat0(dispute);
+
+    let reverted = false;
+    try {
+      await env.sendIx(
+        drawSeat(
+          env.accord.adapter,
+          programId,
+          { caller: env.payer.address, subaccord, dispute },
+          await roundPdaOf(dispute),
+          0,
+          m,
+        ),
+      );
+    } catch (e) {
+      reverted = true;
+      // #6057 = AttestationMissing (the meaningful gate error — previously
+      // this path threw the red-herring #6027 InvalidPanelSize).
+      expect(errorText(e)).toMatch(/#6057\b/);
+      expect(errorText(e)).not.toMatch(/#6027\b/);
+    }
+    expect(reverted).toBe(true);
+  }, 90_000);
+
+  it("gated draw_seat with a discovered attestation draws the seat", async () => {
+    if (!env.up) return;
+    const dispute = await armDrawDispute();
+    const m = await resolveSeat0(dispute);
+    const drawnJuror = toAddress(m.leaf.juror);
+
+    // The new SDK discovery: find the attestation by content (credential +
+    // schema + subject wallet memcmp) — this is what the cranker and
+    // draw:submit-panel use on gated pools.
+    const found = await findSasAttestation(env.rpc, {
+      credential,
+      schema,
+      juror: drawnJuror,
+    });
+    expect(found).not.toBeNull();
+
+    await env.sendIx(
+      drawSeat(
+        env.accord.adapter,
+        programId,
+        { caller: env.payer.address, subaccord, dispute },
+        await roundPdaOf(dispute),
+        0,
+        m,
+        found ?? undefined,
+      ),
+    );
+
+    const d = await fetchDecoded(env, dispute, getDisputeDecoder());
+    expect(d).not.toBeNull();
+    expect(d!.drawnSeats).toBe(1);
+  }, 90_000);
 
   it("prune_juror evicts an expired-credential juror (leaf zeroed)", async () => {
     if (!env.up) return;

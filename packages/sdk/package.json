@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsup && tsc -p tsconfig.json --emitDeclarationOnly",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsc -p tsconfig.json --noEmit && node --import tsx --test src/**/*.test.ts",
+    "test": "tsc -p tsconfig.json --noEmit && node --import tsx --test 'src/**/*.test.ts'",
     "clean": "rm -rf dist"
   },
   "dependencies": {

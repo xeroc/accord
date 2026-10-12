@@ -65,8 +65,9 @@ describe("output renderers", () => {
 
 describe("toCliError", () => {
   it("maps a known Anchor custom code to its AccordError name", () => {
-    // AlreadyPaused = BASE(6000) + 5 = 6005
-    const err = new Error("Custom program error: #6005");
+    // AlreadyPaused = BASE(6000) + 6 = 6006 (6005 is NotPauseAuthority —
+    // the pre-fix map was drifted 4 short and misnamed these)
+    const err = new Error("Custom program error: #6006");
     const mapped = toCliError(err);
     expect(mapped.error).toBe("AlreadyPaused");
     expect(mapped.exitCode).toBe(1);
@@ -108,10 +109,10 @@ describe("toCliError — simulation failure logs (kit v7 preflight shape)", () =
     const logs = [
       "Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed invoke [1]",
       "Program log: Instruction: RequestVrf",
-      "Program log: AnchorError occurred. Error Code: 6005.",
-      "Program failed: custom program error 0x1775",
+      "Program log: AnchorError occurred. Error Code: 6006.",
+      "Program failed: custom program error 0x1776",
     ];
-    const mapped = toCliError(preflightError({ code: 6005, logs }));
+    const mapped = toCliError(preflightError({ code: 6006, logs }));
     expect(mapped.error).toBe("AlreadyPaused");
     expect(mapped.logs).toEqual(logs);
   });

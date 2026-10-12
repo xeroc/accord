@@ -51,12 +51,17 @@ export default class DrawSeat extends ChainCommand {
       char: "s",
       required: true,
     }),
+    attestation: Flags.string({
+      description:
+        "PROG-ATTESTTION: the drawn juror's SAS attestation account. " +
+        "Required on credential-gated Subaccords; forwarded as " +
+        "remaining_accounts[1] (read-only).",
+    }),
     membership: Flags.string({
       description: "SeatMembership JSON from resolve-seat (`-` = stdin, or a file)",
       required: true,
     }),
   };
-
   async run(): Promise<void> {
     const { flags } = await this.parse(DrawSeat);
     this.applyOutput(flags);
@@ -78,6 +83,7 @@ export default class DrawSeat extends ChainCommand {
       roundPda,
       flags.seat,
       membership,
+      flags.attestation ? parseAddress(flags.attestation, "attestation") : undefined,
     );
 
     if (flags["dry-run"]) {

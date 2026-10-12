@@ -95,7 +95,16 @@ useaccord draw:resolve-seat --dispute cordh…yKed --round 0 --seat 2 --json \
   | useaccord draw:seat --dispute cordh…yKed --membership -
 ```
 
-SDK: `drawSeat(client, programId, accounts, roundPda, seat, membership)`
+**Credential-gated pools (PROG-ATTESTTION):** pass the drawn juror's SAS
+attestation — `remaining_accounts[1]` (read-only). Without it the draw reverts
+`AttestationMissing` (#6057):
+
+```bash
+useaccord draw:seat --dispute cordh…yKed --membership seat0.json \
+  --attestation 22zo…4BdG-owned-attestation-account
+```
+
+SDK: `drawSeat(client, programId, accounts, roundPda, seat, membership, attestation?)`
 
 ### `draw:resolve-panel` — composite, read-only
 
@@ -111,7 +120,12 @@ useaccord draw:resolve-panel --dispute cordh…yKed --round 0 --out panel.json
 ### `draw:submit-panel` — composite
 
 Send all `draw_seat` txs for the panel. Reads memberships from `--membership
-<file|->`, or runs `resolve-panel` inline if omitted.
+<file|->`, or runs `resolve-panel` inline if omitted. On credential-gated
+pools each seat's juror SAS attestation is **discovered automatically** via
+`findSasAttestation` (one `getProgramAccounts` scan per seat over the SAS
+program, memcmp on credential+schema+wallet); a juror without an attestation
+under the pool's binding aborts with a clear error (remediate via
+`staking:prune-juror`).
 
 ```bash
 # Resolve once, then submit (inspect panel.json between the two steps):
@@ -120,6 +134,10 @@ useaccord draw:submit-panel --dispute cordh…yKed --membership panel.json
 
 # One-shot (resolve + submit inline):
 useaccord draw:submit-panel --dispute cordh…yKed --round 0
+
+# Resume a PARTIALLY-drawn panel (seat 0 already landed — draw_seat requires
+# sequential seats; check dispute:show drawnSeats first):
+useaccord draw:submit-panel --dispute cordh…yKed --membership panel.json --from-seat 1
 ```
 
 ## Sortition math (what `resolve-seat` computes)

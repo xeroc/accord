@@ -19,6 +19,7 @@ const B = "SysvarRent111111111111111111111111111111111" as Address;
 
 test("JurorStake address offsets match the encoded struct layout", () => {
   const encoded = getJurorStakeEncoder().encode({
+    discriminator: new Uint8Array(8),
     subaccord: A,
     juror: B,
     staked: 1n,
@@ -30,6 +31,9 @@ test("JurorStake address offsets match the encoded struct layout", () => {
     withdrawRequestedAt: 0n,
     pendingWithdrawal: 0n,
     feesEarned: 0n,
+    nextFree: 0xffff_ffff,
+    prevFree: 0xffff_ffff,
+    padding: new Uint8Array(60),
   });
   const addrEnc = getAddressEncoder();
   // subaccord (first field after discriminator) lands at offset 8.

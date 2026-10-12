@@ -22,6 +22,21 @@ describe("useaccord draw:seat", () => {
     expect(stdout).toContain("--dispute");
   });
 
+  it("--help documents the gated-pool --attestation flag", async () => {
+    const { stdout, exitCode } = await run(["draw:seat", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("--attestation");
+    expect(stdout).toContain("credential-gated");
+  });
+
+  it("draw:submit-panel --help documents --from-seat resume flag", async () => {
+    const res = await $`bun run bin/dev.js draw:submit-panel --help`.cwd(cliRoot);
+    const stdout = res.stdout.toString();
+    expect(res.exitCode).toBe(0);
+    expect(stdout).toContain("--from-seat");
+    expect(stdout).toContain("Resume from this seat");
+  });
+
   it("errors clearly when --membership file is missing (before loadChain)", async () => {
     // readInput runs before loadChain, so no wallet is needed to exercise this
     // path — a behavior assertion that doesn't depend on a running validator.

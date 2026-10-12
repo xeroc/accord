@@ -42,6 +42,7 @@ import {
 import type { CrankContext, CrankDispatch, CrankHandler } from "../../dispatch.js";
 import { SimulationError } from "../../send.js";
 import { TreeCache } from "../../tree-cache.js";
+import { fetchMaybeSubaccord, findSasAttestation } from "@useaccord/sdk";
 
 /** A resolved seat: sortition result + the seat number it maps to. */
 export interface ResolvedSeat {
@@ -174,6 +175,16 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
 
   // 5. Resolve each remaining seat + send one tx per seat.
   const drawn: Uint8Array[] = [...alreadyDrawn];
+
+  // PROG-ATTESTTION: gated pools need each drawn juror's SAS attestation as
+  // remaining_accounts[1]. Resolve the gate once from the Subaccord binding.
+  const ZERO = "11111111111111111111111111111111" as Address;
+  const sub = await fetchMaybeSubaccord(ctx.accord.rpc, d.subaccord);
+  const gated = sub.exists && sub.data.jurorCredential !== ZERO;
+  const binding = sub.exists
+    ? { credential: sub.data.jurorCredential, schema: sub.data.jurorSchema }
+    : null;
+
   for (let seat = action.seat; seat < panel; seat++) {
     const r = await resolveSeat(
       committedVrf,
@@ -207,7 +218,33 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
       subaccord: d.subaccord,
       dispute: dispute.address,
     };
-    const ix = drawSeat(ctx.accord.adapter, ctx.programId, accounts, roundPda, seat, membership);
+    let attestation: Address | undefined;
+    if (gated && binding) {
+      const found = await findSasAttestation(ctx.accord.rpc, {
+        ...binding,
+        juror: jurorAddr,
+      });
+      if (found === null) {
+        // No attestation under the pool's binding: the prune crank is the
+        // remediation path — drawing this juror would revert forever.
+        ctx.log(
+          "draw_seat",
+          dispute.address,
+          `skip: seat ${seat} juror has no SAS attestation under the pool binding (prune_juror is the remediation)`,
+        );
+        return;
+      }
+      attestation = found;
+    }
+    const ix = drawSeat(
+      ctx.accord.adapter,
+      ctx.programId,
+      accounts,
+      roundPda,
+      seat,
+      membership,
+      attestation,
+    );
     try {
       await ctx.sendIx(ix);
     } catch (e) {

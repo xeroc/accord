@@ -197,7 +197,9 @@ export {
 export {
   findAllDisputes,
   findAllPendingUpdates,
+  findSasAttestation,
   type QueryConfig,
+  SAS_PROGRAM_ID,
 } from "./queries.js";
 
 // Domain document convention (ADR-0027, milestone accord-lgof): sha256-CAS
