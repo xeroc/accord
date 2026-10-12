@@ -45,9 +45,10 @@ export class Canon {
   constructor(config: CanonConfig) {
     this.rpc = createSolanaRpc(config.endpoint);
     this.signer = config.signer;
-    this.client = canonProgram()(
-      this.rpc as unknown as CanonPluginRequirements,
-    );
+    // ClientWithRpc shell (kit program-client contract: fetchers read
+    // `client.rpc`), not the raw RPC proxy — see packages/sdk accord.ts for
+    // why the planning/sending halves are deliberately unwired.
+    this.client = canonProgram()({ rpc: this.rpc } as unknown as CanonPluginRequirements);
   }
 }
 
