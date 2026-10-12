@@ -385,7 +385,8 @@ useaccord canon:challenge --item <pda>
 Every command extends one of two base classes in `src/lib/base-command.ts`:
 
 - **`BaseCommand`** — output modes (`--json`/`--quiet`) + error mapping
-  (`AccordErrors` → `{ error, message, hint }`). For pure/offline commands
+  (`AccordErrors` → `{ error, message, hint, logs? }`; `logs` carries the full
+  validator log lines whenever a transaction fails simulation). For pure/offline commands
   (`accumulator:*`, `commit-hash`, `required-fee`).
 - **`ChainCommand extends BaseCommand`** — adds chain flags, loads the `Accord`
   facade (`loadChain`), and runs the build→sign→send pipeline (`sendInstruction`)

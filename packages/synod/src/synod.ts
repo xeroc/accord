@@ -49,9 +49,10 @@ export class Synod {
   constructor(config: SynodConfig) {
     this.rpc = createSolanaRpc(config.endpoint);
     this.signer = config.signer;
-    this.client = synodProgram()(
-      this.rpc as unknown as SynodPluginRequirements,
-    );
+    // ClientWithRpc shell (kit program-client contract: fetchers read
+    // `client.rpc`), not the raw RPC proxy — see packages/sdk accord.ts for
+    // why the planning/sending halves are deliberately unwired.
+    this.client = synodProgram()({ rpc: this.rpc } as unknown as SynodPluginRequirements);
   }
 }
 

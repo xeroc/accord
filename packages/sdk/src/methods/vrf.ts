@@ -273,6 +273,9 @@ export interface AccordVrfClient {
     proof: MSTNode[];
     index: number;
     jurorStake: Address;
+    /** PROG-ATTESTTION: juror SAS attestation (required on credential-gated
+     * Subaccords; appended read-only as remaining_accounts[1]). */
+    attestation?: Address;
   }): Instruction;
   /** Read `committed_vrf` from a Dispute; `null` until the oracle callback lands. */
   fetchCommittedVrf(dispute: Address): Promise<Uint8Array | null>;
@@ -312,12 +315,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/**
- * Build `draw_seat` for one seat (lib.rs). Pass the pre-resolved `seat` +
- * membership (from {@link resolveSeat}) and the juror's `JurorStake` PDA. The
- * round is `init_if_needed` on-chain and persists across the N seat txs.
- * `membership.retries` carries the deterministic collision re-roll count.
- */
 export function drawSeat(
   client: AccordVrfClient,
   programId: Address,
@@ -325,6 +322,9 @@ export function drawSeat(
   roundPda: Address,
   seat: number,
   membership: SeatMembership,
+  /** PROG-ATTESTTION: juror SAS attestation (required on credential-gated
+   * Subaccords; appended read-only as remaining_accounts[1]). */
+  attestation?: Address,
 ): Instruction {
   return client.buildDrawSeat({
     programId,
@@ -336,5 +336,6 @@ export function drawSeat(
     proof: membership.proof,
     index: membership.index,
     jurorStake: membership.jurorStake,
+    attestation,
   });
 }

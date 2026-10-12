@@ -1033,3 +1033,254 @@ fn gated_stake_pops_recycled_slot_with_attestation_at_distinct_indices() {
         "freed slot account should be closed (drained)"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  draw_seat gate (defense-in-depth re-check, PROG-ATTESTTION)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A gated pool with `stakes.len()` staked jurors (never-expiry
+/// attestations installed), plus a filed + VRF-armed dispute. Seat 0's
+/// sortition slot is resolved client-side so a single `draw_seat` proves the
+/// gate without filling the whole panel.
+struct DrawEnv {
+    env: Env,
+    leaves: Vec<(Pubkey, u64)>,
+    atts: Vec<Pubkey>,
+    dispute: Pubkey,
+    total: u64,
+    /// Leaf index seat 0 selects at retry 0 for the fixed injected VRF.
+    seat0_leaf: usize,
+}
+
+fn arm_gated_draw(stakes: &[u64]) -> DrawEnv {
+    let mut env = setup(true);
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    let mut atts: Vec<Pubkey> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(&mut env, &juror, 10_000);
+        let att = Pubkey::new_unique();
+        set_sas_attestation(
+            &mut env.ctx,
+            &att,
+            &env.credential,
+            &env.schema,
+            &juror.pubkey(),
+            0,
+        );
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(&mut env, &juror, stake, path, Some(att)).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        atts.push(att);
+    }
+    let total: u64 = leaves.iter().map(|(_, s)| s).sum();
+
+    // File the dispute (fee = (min_jury_size + 1) · fee_per_juror = 4·50).
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let nonce = 1u64;
+    let dispute = accord::dispute_pda(&filer.pubkey(), nonce).0;
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
+            subaccord: env.subaccord,
+            accord_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee: 4 * 50,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+
+    // Freeze the accumulator root against a fixed VRF, then resolve seat 0.
+    let (root, _, _) = build_root_and_path(&leaves, TEST_DEPTH, 0);
+    let vrf = [9u8; 32];
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, root, total);
+    let seed = solana_program::hash::hashv(&[
+        &vrf,
+        dispute.as_ref(),
+        &0u32.to_le_bytes(),
+        &0u32.to_le_bytes(),
+    ])
+    .to_bytes();
+    let rh =
+        solana_program::hash::hashv(&[&seed, &0u32.to_le_bytes(), &0u32.to_le_bytes()]).to_bytes();
+    let r0 = u64::from_le_bytes(rh[0..8].try_into().unwrap()) % total;
+    let mut acc = 0u64;
+    let mut seat0_leaf = 0usize;
+    for (i, (_, s)) in leaves.iter().enumerate() {
+        if r0 >= acc && r0 - acc < *s {
+            seat0_leaf = i;
+            break;
+        }
+        acc += s;
+    }
+
+    DrawEnv {
+        env,
+        leaves,
+        atts,
+        dispute,
+        total,
+        seat0_leaf,
+    }
+}
+
+/// Submit `draw_seat` for seat 0 with the JurorStake as remaining_accounts[0]
+/// and — on gated pools — the juror's SAS attestation as [1] (read-only).
+fn do_draw_seat(d: &mut DrawEnv, attestation: Option<Pubkey>) -> TransactionResult {
+    let (juror_pub, stake) = d.leaves[d.seat0_leaf];
+    let (_, _, proof) = build_root_and_path(&d.leaves, TEST_DEPTH, d.seat0_leaf as u32);
+    let round =
+        Pubkey::find_program_address(&[b"round", d.dispute.as_ref(), &0u32.to_le_bytes()], &ID).0;
+    let js = juror_stake_pda(&d.env.subaccord, &juror_pub);
+    let cranker = Keypair::new();
+    d.env
+        .ctx
+        .svm
+        .airdrop(&cranker.pubkey(), 10 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let membership = accord::state::JurorMembership {
+        leaf: accord::state::LeafClaim {
+            juror: juror_pub,
+            stake,
+        },
+        proof,
+        index: d.seat0_leaf as u32,
+    };
+    let ix = d
+        .env
+        .ctx
+        .program()
+        .accounts(accounts::DrawSeat {
+            caller: cranker.pubkey(),
+            dispute: d.dispute,
+            subaccord: d.env.subaccord,
+            round,
+            system_program: system_program::ID,
+        })
+        .args(instruction::DrawSeat {
+            seat: 0,
+            retries: 0,
+            membership,
+        })
+        .instruction()
+        .unwrap();
+    let mut accts = ix.accounts;
+    accts.push(AccountMeta {
+        pubkey: js,
+        is_signer: false,
+        is_writable: true,
+    });
+    if let Some(att) = attestation {
+        accts.push(AccountMeta {
+            pubkey: att,
+            is_signer: false,
+            is_writable: false,
+        });
+    }
+    let ix = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: accts,
+        data: ix.data,
+    };
+    d.env.ctx.execute_instruction(ix, &[&cranker]).unwrap()
+}
+
+/// Rewrite the Dispute account in the SVM (read → mutate → set).
+fn with_dispute<R>(
+    env: &mut Env,
+    dispute: &Pubkey,
+    f: impl FnOnce(&mut accord::state::Dispute) -> R,
+) -> R {
+    let acc = env.ctx.svm.get_account(dispute).expect("dispute");
+    let mut d = accord::state::Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+    let out = f(&mut d);
+    let mut data = acc.data[..8].to_vec();
+    anchor_lang::AnchorSerialize::serialize(&d, &mut data).unwrap();
+    env.ctx
+        .svm
+        .set_account(
+            *dispute,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+    out
+}
+
+/// LiteSVM-friendly VRF freeze: set committed_vrf + frozen accumulator state.
+fn inject_vrf_freeze(
+    ctx: &mut anchor_litesvm::AnchorContext,
+    dispute: &Pubkey,
+    vrf: [u8; 32],
+    frozen_root: [u8; 32],
+    frozen_total_stake: u64,
+) {
+    let acc = ctx.svm.get_account(dispute).expect("dispute exists");
+    let mut d = accord::state::Dispute::try_deserialize(&mut &acc.data[..]).unwrap();
+    d.committed_vrf = Some(vrf);
+    d.frozen_root = frozen_root;
+    d.frozen_total_stake = frozen_total_stake;
+    let mut data = acc.data[..8].to_vec();
+    anchor_lang::AnchorSerialize::serialize(&d, &mut data).unwrap();
+    ctx.svm
+        .set_account(
+            *dispute,
+            SvmAccount {
+                lamports: acc.lamports,
+                data,
+                owner: ID,
+                executable: false,
+                rent_epoch: 0,
+            },
+        )
+        .unwrap();
+}
+
+#[test]
+fn gated_draw_seat_without_attestation_reverts_attestationmissing() {
+    let mut d = arm_gated_draw(&[5_000, 3_000, 2_000]);
+    // Gated pool + only the JurorStake appended: the defense-in-depth gate
+    // must name the actual miss (the attestation), not a panel-size red
+    // herring.
+    let r = do_draw_seat(&mut d, None);
+    assert_failed(&r, "AttestationMissing");
+}
+
+#[test]
+fn gated_draw_seat_with_valid_attestation_draws_the_seat() {
+    let mut d = arm_gated_draw(&[5_000, 3_000, 2_000]);
+    let att = d.atts[d.seat0_leaf];
+    let r = do_draw_seat(&mut d, Some(att));
+    r.assert_success();
+    let drawn = with_dispute(&mut d.env, &d.dispute, |dis| dis.drawn_seats);
+    assert_eq!(drawn, 1, "seat 0 landed — H-2 mirror advanced");
+}

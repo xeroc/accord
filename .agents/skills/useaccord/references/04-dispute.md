@@ -90,7 +90,29 @@ useaccord dispute:ruling RokL…HEef
 #                … or "123450000" = 123.45 @ 6 decimals (Median scalar, ADR-0025)
 ```
 
-Read-only. SDK: `getRuling(dispute)` (methods/dispute.ts).
+### `dispute:show` — full on-chain detail view
+
+Fetch a Dispute and render its **complete interpreted state** — the operator
+companion to `read:dispute`'s raw JSON dump. Interprets the wire sentinels:
+`DisputeState` enum → name, `u64::MAX` ruling → null ("not final yet"),
+`[0u8;32]` evidence hashes → dropped, unix-seconds → ISO-8601, `Option` VRF →
+hex. Prints subaccord/filer/nonce, current round + drawn seats vs panel size,
+option hashes, per-round evidence hashes, committed VRF + frozen accumulator
+root + frozen total stake, fee paid + bounty pool, the entire frozen
+`CaseTerms` snapshot, and the final ruling labeled by aggregation (option
+index for `Plurality`, median scalar for `Median`, ADR-0025).
+
+```bash
+useaccord dispute:show BTkdQfTDXLmp158vTyBMCJ9EGjTHDrrX2LbMBVnrH9v1 --rpc $RPC
+# state: Created · committedVrf: ed639baf… · finalRuling: — (not final yet)
+
+useaccord dispute:show <dispute-pda> --json   # jq-safe payload (bigints as strings)
+useaccord dispute:show <dispute-pda> --out dispute.json
+```
+
+Missing account ⇒ `{ "dispute": "…", "exists": false }`, exit 0 (same contract
+as `read:dispute`). Read-only. SDK: `fetchMaybeDispute` (generated fetcher);
+rendering: CLI `lib/dispute-view.ts` (`disputeView` + `renderDisputeHuman`).
 
 ### `dispute:cancel` — permissionless liveness escape
 
@@ -173,6 +195,7 @@ Branch/terminal states: `RedrawEligible` (quorum shortfall → `redraw`),
 | CLI command | SDK fn | Source |
 |---|---|---|
 | `dispute:create` | `createDispute` | dispute.ts:203 |
+| `dispute:show` | `fetchMaybeDispute` (generated) | generated/accounts/dispute.ts |
 | `dispute:ruling` | `getRuling` | dispute.ts:232 |
 | `dispute:required-fee` | `requiredFee` | dispute.ts:113 |
 | `dispute:cancel` | `cancelDispute` | settlement.ts:89 |

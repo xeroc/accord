@@ -48,11 +48,16 @@ export class Accord {
   constructor(config: AccordConfig) {
     this.rpc = createSolanaRpc(config.endpoint);
     this.signer = config.signer;
-    // Extend the RPC with the Accord plugin (accounts, instructions, PDAs).
-    // The RPC satisfies AccordPluginRequirements at runtime; the type assertion
-    // bridges Kit's generic client interface for the shell.
+    // Extend a ClientWithRpc shell with the Accord plugin (accounts,
+    // instructions, PDAs). The plugin's generated fetchers read `client.rpc`
+    // (kit program-client contract) — passing the raw RPC proxy here left
+    // every facade fetch dead ("rpc.getAccountInfo is not a function").
+    // Deliberately partial: planTransaction/sendAndConfirmTransaction are
+    // NOT wired — no consumer uses the plugin's plan/send wrappers (the
+    // adapter builds instructions via the generated free builders); calling
+    // them would throw. Extend with a ws endpoint if that ever changes.
     this.client = accordProgram()(
-      this.rpc as unknown as AccordPluginRequirements,
+      { rpc: this.rpc } as unknown as AccordPluginRequirements,
     );
   }
 

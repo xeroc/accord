@@ -19,7 +19,7 @@ commit-reveal votes, and emits a Ruling.
 | Stake juror capital                | `useaccord staking:stake`                            | [02-staking.md](references/02-staking.md)         |
 | Evict an attestation-expired juror | `useaccord staking:prune-juror`                      | [02-staking.md](references/02-staking.md)         |
 | Recycle a drained juror slot       | `useaccord staking:reclaim-slot`                     | [02-staking.md](references/02-staking.md)         |
-| File a dispute                     | `useaccord dispute:create`                           | [04-dispute.md](references/04-dispute.md)         |
+| Inspect a dispute's full state     | `useaccord dispute:show`                             | [04-dispute.md](references/04-dispute.md)         |
 | Draw jurors (VRF + per-seat)       | `useaccord draw:resolve-panel` + `draw:submit-panel` | [05-vrf-draw.md](references/05-vrf-draw.md)       |
 | Commit / reveal votes              | `useaccord vote:commit` + `vote:reveal`              | [06-voting.md](references/06-voting.md)           |
 | Appeal a ruling                    | `useaccord appeal:open`                              | [07-appeal.md](references/07-appeal.md)           |

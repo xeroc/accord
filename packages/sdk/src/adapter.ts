@@ -402,8 +402,15 @@ export function createAccordAdapter(accord: Accord): AccordAdapter {
         },
         { programAddress: input.programId },
       );
-      // remaining_accounts[0] = the drawn juror's JurorStake PDA (writable).
-      return appendRemaining(ix, [input.jurorStake]);
+      // remaining_accounts[0] = the drawn juror's JurorStake PDA (writable);
+      // [1] = the juror's SAS attestation (read-only, gated pools only —
+      // PROG-ATTESTTION defense-in-depth re-check).
+      return appendRemaining(ix, [
+        input.jurorStake,
+        ...(input.attestation
+          ? [{ address: input.attestation, isWritable: false }]
+          : []),
+      ]);
     },
     async fetchCommittedVrf(dispute): Promise<Uint8Array | null> {
       const m = await accord.client.accord.accounts.dispute.fetchMaybe(dispute);

@@ -169,10 +169,19 @@ impl<'info> DrawSeat<'info> {
         // PROG-ATTESTTION: gated pools also carry the juror's SAS attestation
         // as remaining_accounts[1] (defense-in-depth draw-time re-check below).
         let gated = ctx.accounts.subaccord.juror_credential != Pubkey::default();
-        require!(
-            ctx.remaining_accounts.len() == if gated { 2 } else { 1 },
-            AccordError::InvalidPanelSize
-        );
+        // PROG-ATTESTTION: name the actual miss on gated pools — a missing
+        // attestation is an AttestationMissing, not a panel-size problem.
+        if gated {
+            require!(
+                ctx.remaining_accounts.len() == 2,
+                AccordError::AttestationMissing
+            );
+        } else {
+            require!(
+                ctx.remaining_accounts.len() == 1,
+                AccordError::InvalidPanelSize
+            );
+        }
         let js_info = &ctx.remaining_accounts[0];
         let expected_pda = Pubkey::find_program_address(
             &[

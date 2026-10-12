@@ -59,8 +59,9 @@ function discriminatorFilter(
   };
 }
 
-/** A 32-byte `Address` field at a fixed byte offset (base58-encoded). */
-function addressFilter(
+/** A 32-byte `Address` field at a fixed byte offset (base58-encoded).
+ * Exported for `sas.ts` — foreign-program (SAS) fixed-offset filters. */
+export function addressFilter(
   offset: bigint,
   address: Address,
 ): GetProgramAccountsMemcmpFilter {

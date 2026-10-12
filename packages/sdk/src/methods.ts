@@ -155,6 +155,8 @@ export interface AccordMethods {
     roundPda: Address,
     seat: number,
     membership: SeatMembership,
+    /** PROG-ATTESTTION: juror SAS attestation (credential-gated Subaccords). */
+    attestation?: Address,
   ): Instruction;
 
   // voting
@@ -261,8 +263,8 @@ export function createAccordMethods(
       pureRequestVrf(adapter, programId, accounts, extras),
     awaitCommittedVrf: (dispute, opts) =>
       pureAwaitCommittedVrf(adapter, dispute, opts),
-    drawSeat: (accounts, roundPda, seat, membership) =>
-      pureDrawSeat(adapter, programId, accounts, roundPda, seat, membership),
+    drawSeat: (accounts, roundPda, seat, membership, attestation) =>
+      pureDrawSeat(adapter, programId, accounts, roundPda, seat, membership, attestation),
 
     // voting
     commit: (accounts, args) => pureCommit(adapter, programId, accounts, args),

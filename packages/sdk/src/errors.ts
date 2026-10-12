@@ -1,7 +1,86 @@
+import {
+  ACCORD_ERROR__UNAUTHORIZED,
+  ACCORD_ERROR__SUBACCORD_MISMATCH,
+  ACCORD_ERROR__IMMUTABLE_SUBACCORD,
+  ACCORD_ERROR__TIMELOCK_NOT_ELAPSED,
+  ACCORD_ERROR__NO_PENDING_UPDATE,
+  ACCORD_ERROR__NOT_PAUSE_AUTHORITY,
+  ACCORD_ERROR__ALREADY_PAUSED,
+  ACCORD_ERROR__NOT_PAUSED,
+  ACCORD_ERROR__NO_PENDING_UNPAUSE,
+  ACCORD_ERROR__UNPAUSE_TIMELOCK_NOT_ELAPSED,
+  ACCORD_ERROR__PROGRAM_PAUSED,
+  ACCORD_ERROR__INSUFFICIENT_STAKE,
+  ACCORD_ERROR__STAKE_LOCKED,
+  ACCORD_ERROR__INVALID_AMOUNT,
+  ACCORD_ERROR__WITHDRAWAL_TOO_EARLY,
+  ACCORD_ERROR__NO_PENDING_WITHDRAWAL,
+  ACCORD_ERROR__INSUFFICIENT_BALANCE,
+  ACCORD_ERROR__PENDING_SETTLEMENT,
+  ACCORD_ERROR__WITHDRAWAL_PENDING,
+  ACCORD_ERROR__INSUFFICIENT_JURORS,
+  ACCORD_ERROR__INVALID_OPTIONS,
+  ACCORD_ERROR__INVALID_STATE,
+  ACCORD_ERROR__FEE_MISMATCH,
+  ACCORD_ERROR__INVALID_MERKLE_PATH,
+  ACCORD_ERROR__TREE_FULL,
+  ACCORD_ERROR__DUPLICATE_JUROR,
+  ACCORD_ERROR__INVALID_MEMBERSHIP_PROOF,
+  ACCORD_ERROR__INVALID_PANEL_SIZE,
+  ACCORD_ERROR__INFLATED_STAKE,
+  ACCORD_ERROR__SORTITION_MISMATCH,
+  ACCORD_ERROR__VRF_ALREADY_COMMITTED,
+  ACCORD_ERROR__VRF_NOT_COMMITTED,
+  ACCORD_ERROR__COMMIT_ALREADY_EXISTS,
+  ACCORD_ERROR__COMMIT_MISSING,
+  ACCORD_ERROR__REVEAL_MISMATCH,
+  ACCORD_ERROR__COMMIT_WINDOW_CLOSED,
+  ACCORD_ERROR__REVEAL_WINDOW_CLOSED,
+  ACCORD_ERROR__NOT_DRAWN_JUROR,
+  ACCORD_ERROR__INVALID_VOTE,
+  ACCORD_ERROR__ALREADY_REVEALED,
+  ACCORD_ERROR__APPEAL_WINDOW_OPEN,
+  ACCORD_ERROR__MAX_APPEALS_REACHED,
+  ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED,
+  ACCORD_ERROR__APPEAL_WINDOW_CLOSED,
+  ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT,
+  ACCORD_ERROR__ROUND_NOT_FINALIZABLE,
+  ACCORD_ERROR__DISPUTE_NOT_FINAL,
+  ACCORD_ERROR__ARITHMETIC_OVERFLOW,
+  ACCORD_ERROR__ROUND_ALREADY_SETTLED,
+  ACCORD_ERROR__ROUND_NOT_SETTLABLE,
+  ACCORD_ERROR__DISPUTE_FAILED,
+  ACCORD_ERROR__CANCEL_TOO_EARLY,
+  ACCORD_ERROR__MAX_RETRIES_EXCEEDED,
+  ACCORD_ERROR__NO_FEES_EARNED,
+  ACCORD_ERROR__NOT_REDRAW_ELIGIBLE,
+  ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED,
+  ACCORD_ERROR__INVALID_THRESHOLD,
+  ACCORD_ERROR__ATTESTATION_MISSING,
+  ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL,
+  ACCORD_ERROR__ATTESTATION_MALFORMED,
+  ACCORD_ERROR__ATTESTATION_MISMATCH,
+  ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH,
+  ACCORD_ERROR__ATTESTATION_EXPIRED,
+  ACCORD_ERROR__ATTESTATION_NOT_EXPIRED,
+  ACCORD_ERROR__SLOT_NOT_DRAINED,
+  ACCORD_ERROR__SLOT_ALREADY_RECLAIMED,
+  ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH,
+  ACCORD_ERROR__SLOT_AWAITING_RECYCLE,
+  ACCORD_ERROR__EVEN_JURY_SIZE,
+  ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS,
+  ACCORD_ERROR__FEE_DOMINATES_SLASH,
+} from "./generated/errors/accord.js";
+
 /**
  * Typed mapping of AccordError codes.
  *
- * Anchor assigns sequential codes starting at 6000 (the `ERROR_CODE_OFFSET`).
+ * Codes are bound to the Codama-generated constants (regenerated from the
+ * IDL on every `make codegen`), so the map can never drift from the
+ * on-chain enum again — it once ran 24 variants short and silently renamed
+ * every later error (6027 InvalidPanelSize surfaced as "CommitAlreadyExists"
+ * on devnet, 2026-10-12). errors.test.ts pins the binding.
+ *
  * The order matches the `#[error_code]` enum declaration in
  * `programs/accord/src/errors.rs`.
  */
@@ -18,263 +97,78 @@ function err(code: number, name: string, message: string): AccordErrorCode {
   return { code, name, message } as const;
 }
 
-const BASE = ACCORD_ERROR_CODE_OFFSET;
-
 export const AccordErrors = {
-  // --- authority / timelock (ADR-0005) ---
-  Unauthorized: err(
-    BASE + 0,
-    "Unauthorized",
-    "Signer is not the Subaccord authority.",
-  ),
-  ImmutableSubaccord: err(
-    BASE + 1,
-    "ImmutableSubaccord",
-    "Subaccord is immutable (authority == default).",
-  ),
-  TimelockNotElapsed: err(
-    BASE + 2,
-    "TimelockNotElapsed",
-    "Timelock has not elapsed yet.",
-  ),
-  NoPendingUpdate: err(
-    BASE + 3,
-    "NoPendingUpdate",
-    "No pending update to execute.",
-  ),
-
-  // --- circuit breaker (ADR-0007) ---
-  NotPauseAuthority: err(
-    BASE + 4,
-    "NotPauseAuthority",
-    "Signer is not the pause authority.",
-  ),
-  AlreadyPaused: err(BASE + 5, "AlreadyPaused", "Program is already paused."),
-  NotPaused: err(BASE + 6, "NotPaused", "Program is not paused."),
-  NoPendingUnpause: err(
-    BASE + 7,
-    "NoPendingUnpause",
-    "No pending unpause to execute.",
-  ),
-  UnpauseTimelockNotElapsed: err(
-    BASE + 8,
-    "UnpauseTimelockNotElapsed",
-    "Unpause timelock has not elapsed yet.",
-  ),
-  ProgramPaused: err(
-    BASE + 9,
-    "ProgramPaused",
-    "Program is paused; this instruction is halted.",
-  ),
-
-  // --- staking ---
-  InsufficientStake: err(
-    BASE + 10,
-    "InsufficientStake",
-    "Staked amount is below the Subaccord minimum.",
-  ),
-  StakeLocked: err(
-    BASE + 11,
-    "StakeLocked",
-    "Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle).",
-  ),
-  InvalidAmount: err(
-    BASE + 12,
-    "InvalidAmount",
-    "Amount must be greater than zero.",
-  ),
-  InsufficientBalance: err(
-    BASE + 13,
-    "InsufficientBalance",
-    "Withdrawal exceeds the Juror's staked balance.",
-  ),
-
-  // --- dispute intake ---
-  InsufficientJurors: err(
-    BASE + 14,
-    "InsufficientJurors",
-    "Subaccord has fewer active distinct stakers than the required panel size.",
-  ),
-  InvalidOptions: err(
-    BASE + 15,
-    "InvalidOptions",
-    "Dispute options are invalid (need 2..=MAX_OPTIONS).",
-  ),
-  InvalidState: err(
-    BASE + 16,
-    "InvalidState",
-    "Dispute is not in the required state for this instruction.",
-  ),
-  FeeMismatch: err(
-    BASE + 17,
-    "FeeMismatch",
-    "Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror).",
-  ),
-
-  // --- accumulator (ADR-0012) ---
-  InvalidMerklePath: err(
-    BASE + 18,
-    "InvalidMerklePath",
-    "Accumulator Merkle path does not authenticate against the stored root.",
-  ),
-  TreeFull: err(
-    BASE + 19,
-    "TreeFull",
-    "Accumulator tree is full (no free leaf within the configured depth).",
-  ),
-
-  // --- draw ---
-  DuplicateJuror: err(
-    BASE + 20,
-    "DuplicateJuror",
-    "Draw selected a duplicate Juror.",
-  ),
-  InvalidMembershipProof: err(
-    BASE + 21,
-    "InvalidMembershipProof",
-    "Juror Merkle membership/weight proof is invalid.",
-  ),
-  InvalidPanelSize: err(
-    BASE + 22,
-    "InvalidPanelSize",
-    "Number of juror memberships does not match the required panel size.",
-  ),
-  InflatedStake: err(
-    BASE + 23,
-    "InflatedStake",
-    "Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012).",
-  ),
-  SortitionMismatch: err(
-    BASE + 24,
-    "SortitionMismatch",
-    "Submitted membership does not match the VRF-derived sortition selection (ADR-0009).",
-  ),
-  VrfAlreadyCommitted: err(
-    BASE + 25,
-    "VrfAlreadyCommitted",
-    "VRF result already committed for this dispute.",
-  ),
-  VrfNotCommitted: err(
-    BASE + 26,
-    "VrfNotCommitted",
-    "No VRF result committed for this dispute; the root is not yet frozen.",
-  ),
-
-  // --- voting ---
-  CommitAlreadyExists: err(
-    BASE + 27,
-    "CommitAlreadyExists",
-    "Juror has already committed.",
-  ),
-  CommitMissing: err(
-    BASE + 28,
-    "CommitMissing",
-    "No commit to reveal for this Juror.",
-  ),
-  RevealMismatch: err(
-    BASE + 29,
-    "RevealMismatch",
-    "Reveal does not match the committed hash.",
-  ),
-  CommitWindowClosed: err(
-    BASE + 30,
-    "CommitWindowClosed",
-    "Commit window is closed.",
-  ),
-  RevealWindowClosed: err(
-    BASE + 31,
-    "RevealWindowClosed",
-    "Reveal window is closed.",
-  ),
-  NotDrawnJuror: err(
-    BASE + 32,
-    "NotDrawnJuror",
-    "Signer is not a drawn Juror for this round.",
-  ),
-  InvalidVote: err(
-    BASE + 33,
-    "InvalidVote",
-    "Revealed vote index is out of range.",
-  ),
-  AlreadyRevealed: err(
-    BASE + 34,
-    "AlreadyRevealed",
-    "Juror has already revealed.",
-  ),
-
-  // --- finalization ---
-  AppealWindowOpen: err(
-    BASE + 35,
-    "AppealWindowOpen",
-    "Appeal window has not elapsed yet.",
-  ),
-
-  // --- appeals (ADR-0004) ---
-  MaxAppealsReached: err(
-    BASE + 36,
-    "MaxAppealsReached",
-    "Maximum appeals reached for this dispute.",
-  ),
-  MaxAppealsLimitExceeded: err(
-    BASE + 37,
-    "MaxAppealsLimitExceeded",
-    "Subaccord max_appeals exceeds the program ceiling.",
-  ),
-  AppealWindowClosed: err(
-    BASE + 38,
-    "AppealWindowClosed",
-    "Appeal window has closed; the dispute can only be finalized.",
-  ),
-
-  // --- finalization ---
-  RoundNotFinalizable: err(
-    BASE + 39,
-    "RoundNotFinalizable",
-    "Round cannot be finalized yet (window not elapsed).",
-  ),
-  DisputeNotFinal: err(
-    BASE + 40,
-    "DisputeNotFinal",
-    "Dispute is not in a finalizable state.",
-  ),
-
-  // --- arithmetic ---
-  ArithmeticOverflow: err(
-    BASE + 41,
-    "ArithmeticOverflow",
-    "Arithmetic overflow.",
-  ),
-
-  // --- multi-round settlement (CONCEPT-REVIEW Ugly 5 / accord-r6ti) ---
-  RoundAlreadySettled: err(
-    BASE + 42,
-    "RoundAlreadySettled",
-    "Round has already been settled.",
-  ),
-  RoundNotSettlable: err(
-    BASE + 43,
-    "RoundNotSettlable",
-    "Round index out of range for settlement (must be < current_round).",
-  ),
-
-  // --- cancel / Failed state (Ugly 4) ---
-  DisputeFailed: err(
-    BASE + 44,
-    "DisputeFailed",
-    "Dispute is in terminal Failed state.",
-  ),
-  CancelTooEarly: err(
-    BASE + 45,
-    "CancelTooEarly",
-    "Dispute has not exceeded its stage timeout; cancel_dispute is not yet available.",
-  ),
-
-  // --- draw (bean accord-tzo0) ---
-  MaxRetriesExceeded: err(
-    BASE + 46,
-    "MaxRetriesExceeded",
-    "Sortition retries exceeded the on-chain bound; the pool may be too concentrated.",
-  ),
+  Unauthorized: err(ACCORD_ERROR__UNAUTHORIZED, "Unauthorized", "Signer is not the Subaccord authority."),
+  SubaccordMismatch: err(ACCORD_ERROR__SUBACCORD_MISMATCH, "SubaccordMismatch", "Dispute does not belong to this Subaccord (cross-pool substitution rejected)."),
+  ImmutableSubaccord: err(ACCORD_ERROR__IMMUTABLE_SUBACCORD, "ImmutableSubaccord", "Subaccord is immutable (authority == default)."),
+  TimelockNotElapsed: err(ACCORD_ERROR__TIMELOCK_NOT_ELAPSED, "TimelockNotElapsed", "Timelock has not elapsed yet."),
+  NoPendingUpdate: err(ACCORD_ERROR__NO_PENDING_UPDATE, "NoPendingUpdate", "No pending update to execute."),
+  NotPauseAuthority: err(ACCORD_ERROR__NOT_PAUSE_AUTHORITY, "NotPauseAuthority", "Signer is not the pause authority."),
+  AlreadyPaused: err(ACCORD_ERROR__ALREADY_PAUSED, "AlreadyPaused", "Program is already paused."),
+  NotPaused: err(ACCORD_ERROR__NOT_PAUSED, "NotPaused", "Program is not paused."),
+  NoPendingUnpause: err(ACCORD_ERROR__NO_PENDING_UNPAUSE, "NoPendingUnpause", "No pending unpause to execute."),
+  UnpauseTimelockNotElapsed: err(ACCORD_ERROR__UNPAUSE_TIMELOCK_NOT_ELAPSED, "UnpauseTimelockNotElapsed", "Unpause timelock has not elapsed yet."),
+  ProgramPaused: err(ACCORD_ERROR__PROGRAM_PAUSED, "ProgramPaused", "Program is paused; this instruction is halted."),
+  InsufficientStake: err(ACCORD_ERROR__INSUFFICIENT_STAKE, "InsufficientStake", "Staked amount is below the Subaccord minimum."),
+  StakeLocked: err(ACCORD_ERROR__STAKE_LOCKED, "StakeLocked", "Cannot unstake while active_draws > 0 (stake is frozen until drawn disputes settle)."),
+  InvalidAmount: err(ACCORD_ERROR__INVALID_AMOUNT, "InvalidAmount", "Amount must be greater than zero."),
+  WithdrawalTooEarly: err(ACCORD_ERROR__WITHDRAWAL_TOO_EARLY, "WithdrawalTooEarly", "Withdrawal timelock has not elapsed yet."),
+  NoPendingWithdrawal: err(ACCORD_ERROR__NO_PENDING_WITHDRAWAL, "NoPendingWithdrawal", "No pending withdrawal to execute."),
+  InsufficientBalance: err(ACCORD_ERROR__INSUFFICIENT_BALANCE, "InsufficientBalance", "Withdrawal exceeds the Juror's free stake (amount - slash_reserve)."),
+  PendingSettlement: err(ACCORD_ERROR__PENDING_SETTLEMENT, "PendingSettlement", "Settle pending reward/slash first: call reconcile_stake before request_withdraw."),
+  WithdrawalPending: err(ACCORD_ERROR__WITHDRAWAL_PENDING, "WithdrawalPending", "A withdrawal is already pending — complete it via withdraw before requesting another."),
+  InsufficientJurors: err(ACCORD_ERROR__INSUFFICIENT_JURORS, "InsufficientJurors", "Subaccord has fewer active distinct stakers than the required panel size."),
+  InvalidOptions: err(ACCORD_ERROR__INVALID_OPTIONS, "InvalidOptions", "Dispute options are invalid (need 2..=MAX_OPTIONS)."),
+  InvalidState: err(ACCORD_ERROR__INVALID_STATE, "InvalidState", "Dispute is not in the required state for this instruction."),
+  FeeMismatch: err(ACCORD_ERROR__FEE_MISMATCH, "FeeMismatch", "Tendered fee does not match the required round-1 dispute fee (min_jury_size * fee_per_juror)."),
+  InvalidMerklePath: err(ACCORD_ERROR__INVALID_MERKLE_PATH, "InvalidMerklePath", "Accumulator Merkle path does not authenticate against the stored root."),
+  TreeFull: err(ACCORD_ERROR__TREE_FULL, "TreeFull", "Accumulator tree is full (no free leaf within the configured depth)."),
+  DuplicateJuror: err(ACCORD_ERROR__DUPLICATE_JUROR, "DuplicateJuror", "Draw selected a duplicate Juror."),
+  InvalidMembershipProof: err(ACCORD_ERROR__INVALID_MEMBERSHIP_PROOF, "InvalidMembershipProof", "Juror Merkle membership/weight proof is invalid."),
+  InvalidPanelSize: err(ACCORD_ERROR__INVALID_PANEL_SIZE, "InvalidPanelSize", "Number of juror memberships does not match the required panel size."),
+  InflatedStake: err(ACCORD_ERROR__INFLATED_STAKE, "InflatedStake", "Drawn juror's live stake is below the accumulator leaf's claim (inflation guard, ADR-0012)."),
+  SortitionMismatch: err(ACCORD_ERROR__SORTITION_MISMATCH, "SortitionMismatch", "Submitted membership does not match the VRF-derived sortition selection (ADR-0009)."),
+  VrfAlreadyCommitted: err(ACCORD_ERROR__VRF_ALREADY_COMMITTED, "VrfAlreadyCommitted", "VRF result already committed for this dispute."),
+  VrfNotCommitted: err(ACCORD_ERROR__VRF_NOT_COMMITTED, "VrfNotCommitted", "No VRF result committed for this dispute; the root is not yet frozen."),
+  CommitAlreadyExists: err(ACCORD_ERROR__COMMIT_ALREADY_EXISTS, "CommitAlreadyExists", "Juror has already committed."),
+  CommitMissing: err(ACCORD_ERROR__COMMIT_MISSING, "CommitMissing", "No commit to reveal for this Juror."),
+  RevealMismatch: err(ACCORD_ERROR__REVEAL_MISMATCH, "RevealMismatch", "Reveal does not match the committed hash."),
+  CommitWindowClosed: err(ACCORD_ERROR__COMMIT_WINDOW_CLOSED, "CommitWindowClosed", "Commit window is closed."),
+  RevealWindowClosed: err(ACCORD_ERROR__REVEAL_WINDOW_CLOSED, "RevealWindowClosed", "Reveal window is closed."),
+  NotDrawnJuror: err(ACCORD_ERROR__NOT_DRAWN_JUROR, "NotDrawnJuror", "Signer is not a drawn Juror for this round."),
+  InvalidVote: err(ACCORD_ERROR__INVALID_VOTE, "InvalidVote", "Revealed vote index is out of range."),
+  AlreadyRevealed: err(ACCORD_ERROR__ALREADY_REVEALED, "AlreadyRevealed", "Juror has already revealed."),
+  AppealWindowOpen: err(ACCORD_ERROR__APPEAL_WINDOW_OPEN, "AppealWindowOpen", "Appeal window has not elapsed yet."),
+  MaxAppealsReached: err(ACCORD_ERROR__MAX_APPEALS_REACHED, "MaxAppealsReached", "Maximum appeals reached for this dispute."),
+  MaxAppealsLimitExceeded: err(ACCORD_ERROR__MAX_APPEALS_LIMIT_EXCEEDED, "MaxAppealsLimitExceeded", "Subaccord max_appeals exceeds the program ceiling."),
+  AppealWindowClosed: err(ACCORD_ERROR__APPEAL_WINDOW_CLOSED, "AppealWindowClosed", "Appeal window has closed; the dispute can only be finalized."),
+  AppealWindowTooShort: err(ACCORD_ERROR__APPEAL_WINDOW_TOO_SHORT, "AppealWindowTooShort", "Appeal window is below the per-Subaccord floor (MIN_APPEAL_WINDOW_SECS)."),
+  RoundNotFinalizable: err(ACCORD_ERROR__ROUND_NOT_FINALIZABLE, "RoundNotFinalizable", "Round cannot be finalized yet (window not elapsed)."),
+  DisputeNotFinal: err(ACCORD_ERROR__DISPUTE_NOT_FINAL, "DisputeNotFinal", "Dispute is not in a finalizable state."),
+  ArithmeticOverflow: err(ACCORD_ERROR__ARITHMETIC_OVERFLOW, "ArithmeticOverflow", "Arithmetic overflow."),
+  RoundAlreadySettled: err(ACCORD_ERROR__ROUND_ALREADY_SETTLED, "RoundAlreadySettled", "Round has already been settled."),
+  RoundNotSettlable: err(ACCORD_ERROR__ROUND_NOT_SETTLABLE, "RoundNotSettlable", "Round index out of range for settlement (must be < current_round)."),
+  DisputeFailed: err(ACCORD_ERROR__DISPUTE_FAILED, "DisputeFailed", "Dispute is in terminal Failed state."),
+  CancelTooEarly: err(ACCORD_ERROR__CANCEL_TOO_EARLY, "CancelTooEarly", "Dispute has not exceeded its stage timeout; cancel_dispute is not yet available."),
+  MaxRetriesExceeded: err(ACCORD_ERROR__MAX_RETRIES_EXCEEDED, "MaxRetriesExceeded", "Sortition retries exceeded the on-chain bound; the pool may be too concentrated."),
+  NoFeesEarned: err(ACCORD_ERROR__NO_FEES_EARNED, "NoFeesEarned", "Juror has no earned fees to withdraw."),
+  NotRedrawEligible: err(ACCORD_ERROR__NOT_REDRAW_ELIGIBLE, "NotRedrawEligible", "Dispute is not in RedrawEligible state; redraw is not available."),
+  MaxDrawAttemptsLimitExceeded: err(ACCORD_ERROR__MAX_DRAW_ATTEMPTS_LIMIT_EXCEEDED, "MaxDrawAttemptsLimitExceeded", "Subaccord max_draw_attempts exceeds the program ceiling."),
+  InvalidThreshold: err(ACCORD_ERROR__INVALID_THRESHOLD, "InvalidThreshold", "Basis-point value out of range (must be <= 10_000; reveal threshold or alpha)."),
+  AttestationMissing: err(ACCORD_ERROR__ATTESTATION_MISSING, "AttestationMissing", "Subaccord is credential-gated but no attestation account was provided."),
+  AttestationBindingPartial: err(ACCORD_ERROR__ATTESTATION_BINDING_PARTIAL, "AttestationBindingPartial", "Credential and schema must be set together (both-or-neither)."),
+  AttestationMalformed: err(ACCORD_ERROR__ATTESTATION_MALFORMED, "AttestationMalformed", "Attestation account is malformed (wrong owner, discriminator, or too short)."),
+  AttestationMismatch: err(ACCORD_ERROR__ATTESTATION_MISMATCH, "AttestationMismatch", "Attestation credential or schema does not match the Subaccord binding."),
+  AttestationSubjectMismatch: err(ACCORD_ERROR__ATTESTATION_SUBJECT_MISMATCH, "AttestationSubjectMismatch", "Attestation subject wallet does not match the juror."),
+  AttestationExpired: err(ACCORD_ERROR__ATTESTATION_EXPIRED, "AttestationExpired", "Attestation has expired or will expire before the dispute lifecycle completes."),
+  AttestationNotExpired: err(ACCORD_ERROR__ATTESTATION_NOT_EXPIRED, "AttestationNotExpired", "Attestation has not expired; prune_juror requires an actually-expired credential."),
+  SlotNotDrained: err(ACCORD_ERROR__SLOT_NOT_DRAINED, "SlotNotDrained", "JurorStake is not fully drained (staked, active_draws, stake_delta, or fees_earned > 0)."),
+  SlotAlreadyReclaimed: err(ACCORD_ERROR__SLOT_ALREADY_RECLAIMED, "SlotAlreadyReclaimed", "JurorStake slot is already on the free list (next_free != MAX)."),
+  FreeListHeadMismatch: err(ACCORD_ERROR__FREE_LIST_HEAD_MISMATCH, "FreeListHeadMismatch", "Provided freed-slot account does not match the free-list head."),
+  SlotAwaitingRecycle: err(ACCORD_ERROR__SLOT_AWAITING_RECYCLE, "SlotAwaitingRecycle", "Juror's tree slot was reclaimed and sits mid-free-list; retry once the slots ahead of it are recycled."),
+  EvenJurySize: err(ACCORD_ERROR__EVEN_JURY_SIZE, "EvenJurySize", "Round-1 jury size (min_jury_size) must be odd (tie avoidance)."),
+  LadderExceedsMaxJurors: err(ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS, "LadderExceedsMaxJurors", "The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round."),
+  FeeDominatesSlash: err(ACCORD_ERROR__FEE_DOMINATES_SLASH, "FeeDominatesSlash", "Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror."),
 } as const;
 
 export type AccordErrorName = keyof typeof AccordErrors;
