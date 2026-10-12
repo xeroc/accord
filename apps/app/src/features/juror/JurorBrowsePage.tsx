@@ -1,14 +1,19 @@
 /**
  * JurorBrowsePage — `/juror/browse` route.
  *
- * Lists every active juror (staked > 0) across all Subaccords. Fetches all
- * Subaccords + all JurorStakes, joins them to resolve per-mint amounts, and
- * groups by juror wallet. Shows cross-subaccord count, active draws, and
- * per-mint staked/fees breakdowns.
+ * Simple table of every active juror (staked > 0) across all Subaccords.
+ * Fetches all Subaccords + all JurorStakes + all SAS attestations, joins them
+ * to resolve per-mint amounts, and groups by juror wallet. Rows link to the
+ * per-juror detail page (`/juror/:address`); jurors holding an SAS attestation
+ * that satisfies the gate of a subaccord they stake in carry the 🛡️ shield
+ * (ADR-0024) — full attestation details live on the detail page.
  *
  * Different Subaccords may use different collateral and fee mints (ADR-0020),
  * so raw amounts are grouped by mint — never summed across mints. Each mint
  * line shows the mint address (copyable) alongside the raw token amount.
+ *
+ * The SAS scan is non-fatal: on clusters where it errors the shield column
+ * renders empty rather than failing the whole table.
  */
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -16,21 +21,28 @@ import { type Account, type Address } from "@solana/kit";
 import {
   findAllJurorStakes,
   findAllSubaccords,
+  findSasAttestations,
   type JurorStake,
+  type SasAttestation,
   type Subaccord,
 } from "@useaccord/sdk";
 
 import { useClusterRpc } from "../../shared/rpc";
 import { formatTokenAmount } from "../../shared/format";
+import { isShieldedJuror, type AttestationRef } from "./sas";
 import {
   Button,
   Copyable,
   EmptyState,
   ErrorState,
-  Skeleton,
-  StaggerGroup,
-  StaggerItem,
   Reveal,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@useaccord/ui";
 
 // --- aggregation types ---
@@ -46,6 +58,7 @@ interface JurorSummary {
   activeDraws: number;
   stakedByMint: MintAmount[];
   feesByMint: MintAmount[];
+  shielded: boolean;
 }
 
 // --- pure aggregation ---
@@ -53,16 +66,24 @@ interface JurorSummary {
 function aggregateJurors(
   stakes: Account<JurorStake>[],
   subaccords: Account<Subaccord>[],
+  attestations: AttestationRef[],
 ): JurorSummary[] {
-  // subaccord → { staking mint, fee mint }
-  const mintsBySub = new Map<
+  // subaccord → { staking mint, fee mint, gate binding }
+  const subByAddress = new Map<
     Address,
-    { staking: Address; fee: Address }
+    {
+      staking: Address;
+      fee: Address;
+      jurorCredential: Address;
+      jurorSchema: Address;
+    }
   >();
   for (const sub of subaccords) {
-    mintsBySub.set(sub.address, {
+    subByAddress.set(sub.address, {
       staking: sub.data.stakingToken,
       fee: sub.data.feeToken,
+      jurorCredential: sub.data.jurorCredential,
+      jurorSchema: sub.data.jurorSchema,
     });
   }
 
@@ -81,21 +102,24 @@ function aggregateJurors(
     let activeDraws = 0;
     const stakedMap = new Map<Address, bigint>();
     const feesMap = new Map<Address, bigint>();
+    const stakeBindings: { jurorCredential: Address; jurorSchema: Address }[] =
+      [];
 
     for (const s of jurorStakes) {
       subaccordSet.add(s.data.subaccord);
       activeDraws += s.data.activeDraws;
 
-      const mints = mintsBySub.get(s.data.subaccord);
-      if (mints) {
+      const sub = subByAddress.get(s.data.subaccord);
+      if (sub) {
+        stakeBindings.push(sub);
         stakedMap.set(
-          mints.staking,
-          (stakedMap.get(mints.staking) ?? 0n) + s.data.staked,
+          sub.staking,
+          (stakedMap.get(sub.staking) ?? 0n) + s.data.staked,
         );
         if (s.data.feesEarned > 0n) {
           feesMap.set(
-            mints.fee,
-            (feesMap.get(mints.fee) ?? 0n) + s.data.feesEarned,
+            sub.fee,
+            (feesMap.get(sub.fee) ?? 0n) + s.data.feesEarned,
           );
         }
       }
@@ -113,6 +137,7 @@ function aggregateJurors(
         mint,
         amount,
       })),
+      shielded: isShieldedJuror(juror, attestations, stakeBindings),
     });
   }
 
@@ -145,13 +170,20 @@ export function JurorBrowsePage() {
     staleTime: 20_000,
   });
 
+  const attsQ = useQuery({
+    queryKey: ["sas-attestations-all", rpc],
+    queryFn: () => findSasAttestations(rpc!),
+    enabled: Boolean(rpc),
+    staleTime: 30_000,
+  });
+
   const isLoading = subaccordsQ.isLoading || stakesQ.isLoading;
   const isError = subaccordsQ.isError || stakesQ.isError;
   const error = subaccordsQ.error ?? stakesQ.error;
 
   const jurors =
     subaccordsQ.data && stakesQ.data
-      ? aggregateJurors(stakesQ.data, subaccordsQ.data)
+      ? aggregateJurors(stakesQ.data, subaccordsQ.data, attsQ.data ?? [])
       : [];
 
   return (
@@ -163,13 +195,15 @@ export function JurorBrowsePage() {
         <h1 className="text-2xl font-semibold tracking-[-0.01em]">Jurors.</h1>
         <p className="mb-4 text-muted-foreground">
           Every active juror across all subaccords. Staked amounts are grouped
-          by mint — different pools may use different collateral.
+          by mint — different pools may use different collateral. The shield 🛡️
+          marks jurors holding an SAS attestation for a gated pool they stake
+          in.
         </p>
       </header>
 
       <Reveal state={isLoading ? "skeleton" : isError ? "error" : jurors.length > 0 ? "content" : "empty"}>
         {isLoading ? (
-          <JurorGridSkeleton />
+          <JurorTableSkeleton />
         ) : isError ? (
           <ErrorState
             message={
@@ -181,11 +215,25 @@ export function JurorBrowsePage() {
             }}
           />
         ) : jurors.length > 0 ? (
-          <StaggerGroup className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-label="Jurors">
-            {jurors.map((juror) => (
-              <JurorCard key={juror.address} juror={juror} />
-            ))}
-          </StaggerGroup>
+          <div className="overflow-hidden rounded-lg bg-card ring-1 ring-foreground/10">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Juror</TableHead>
+                  <TableHead className="w-24 text-center">Credential</TableHead>
+                  <TableHead className="w-24 text-right">Subaccords</TableHead>
+                  <TableHead className="w-28 text-right">Active draws</TableHead>
+                  <TableHead className="text-right">Staked</TableHead>
+                  <TableHead className="text-right">Fees earned</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jurors.map((juror) => (
+                  <JurorRow key={juror.address} juror={juror} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         ) : (
           <EmptyState
             title="No active jurors."
@@ -198,92 +246,98 @@ export function JurorBrowsePage() {
           />
         )}
       </Reveal>
+      {attsQ.isError && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          SAS attestations unavailable on this cluster — shields hidden.
+        </p>
+      )}
     </>
   );
 }
 
-function JurorCard({ juror }: { juror: JurorSummary }) {
+function JurorRow({ juror }: { juror: JurorSummary }) {
   return (
-    <StaggerItem className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.4)] hover:ring-amber/40">
-      <span className="mb-3.5 block">
-        <Copyable value={juror.address} />
+    <TableRow className="transition-colors hover:bg-muted/40">
+      <TableCell>
+        <Link
+          to={`/juror/${juror.address}`}
+          className="font-medium underline-offset-4 hover:underline"
+        >
+          <Copyable value={juror.address} />
+        </Link>
+      </TableCell>
+      <TableCell className="text-center">
+        {juror.shielded ? (
+          <span title="Holds an SAS attestation for a gated subaccord">
+            <span aria-hidden>🛡️</span>
+            <span className="sr-only">SAS attested</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground" aria-hidden>
+            —
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="text-right font-mono">
+        {juror.subaccords.length}
+      </TableCell>
+      <TableCell className="text-right font-mono">
+        {juror.activeDraws}
+      </TableCell>
+      <TableCell className="text-right">
+        <MintAmounts amounts={juror.stakedByMint} />
+      </TableCell>
+      <TableCell className="text-right">
+        <MintAmounts amounts={juror.feesByMint} />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function MintAmounts({ amounts }: { amounts: MintAmount[] }) {
+  if (amounts.length === 0) {
+    return (
+      <span className="text-muted-foreground" aria-hidden>
+        —
       </span>
-      <dl className="gap-1.5 grid">
-        <Stat
-          label="Subaccords"
-          value={juror.subaccords.length.toString()}
-        />
-        <Stat label="Active draws" value={juror.activeDraws.toString()} />
-      </dl>
-      {juror.stakedByMint.length > 0 && (
-        <div style={{ marginTop: "0.75rem" }}>
-          <p className="font-mono text-xs text-muted-foreground">Staked</p>
-          {juror.stakedByMint.map((s) => (
-            <div key={s.mint} className="flex items-center justify-between gap-3 text-sm">
-              <dt className="text-muted-foreground">
-                <Copyable value={s.mint} />
-              </dt>
-              <dd className="text-right font-mono text-sm text-foreground">{formatTokenAmount(s.amount)}</dd>
-            </div>
-          ))}
-        </div>
-      )}
-      {juror.feesByMint.length > 0 && (
-        <div style={{ marginTop: "0.5rem" }}>
-          <p className="font-mono text-xs text-muted-foreground">
-            Fees earned
-          </p>
-          {juror.feesByMint.map((f) => (
-            <div key={f.mint} className="flex items-center justify-between gap-3 text-sm">
-              <dt className="text-muted-foreground">
-                <Copyable value={f.mint} />
-              </dt>
-              <dd className="text-right font-mono text-sm text-foreground">{formatTokenAmount(f.amount)}</dd>
-            </div>
-          ))}
-        </div>
-      )}
-    </StaggerItem>
-  );
-}
-
-function Stat({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+    );
+  }
   return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <dt className="text-muted-foreground">{label}.</dt>
-      <dd className="text-right">{value}</dd>
-    </div>
-  );
-}
-
-function JurorGridSkeleton() {
-  return (
-    <ul className="list-none grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]" aria-busy aria-label="Loading jurors">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <li key={i} className="block rounded-lg bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:ring-amber/40 flex flex-col">
-          <Skeleton
-            className="rounded-sm bg-border"
-            style={{ width: "60%", height: "1rem" }}
-            aria-hidden
-          />
-          <Skeleton
-            className="rounded-sm bg-border"
-            style={{ width: "80%", height: "0.85rem", marginTop: "0.75rem" }}
-            aria-hidden
-          />
-          <Skeleton
-            className="rounded-sm bg-border"
-            style={{ width: "50%", height: "0.85rem", marginTop: "0.4rem" }}
-            aria-hidden
-          />
-        </li>
+    <span className="grid gap-0.5">
+      {amounts.map((entry) => (
+        <span
+          key={entry.mint}
+          className="flex items-center justify-end gap-2"
+        >
+          <span className="text-muted-foreground">
+            <Copyable value={entry.mint} />
+          </span>
+          <span className="font-mono">{formatTokenAmount(entry.amount)}</span>
+        </span>
       ))}
-    </ul>
+    </span>
+  );
+}
+
+function JurorTableSkeleton() {
+  return (
+    <div
+      className="rounded-lg bg-card p-4 ring-1 ring-foreground/10"
+      aria-busy
+      aria-label="Loading jurors"
+    >
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton
+          key={i}
+          className="rounded-sm bg-border"
+          style={{
+            width: `${90 - i * 8}%`,
+            height: "0.85rem",
+            marginBottom: "0.9rem",
+          }}
+          aria-hidden
+        />
+      ))}
+    </div>
   );
 }

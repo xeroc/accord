@@ -69,6 +69,18 @@ export {
   findJurorStakesByJuror,
   findJurorStakesBySubaccord,
 } from "./query";
+
+// SAS (Solana Attestation Service) reads — foreign-program decoder + gpa
+// wrapper for the ADR-0024 credential gate (juror browse/detail UIs).
+export {
+  SAS_PROGRAM_ID,
+  SAS_ATTESTATION_DISCRIMINATOR,
+  SAS_ATTESTATION_MIN_LEN,
+  decodeSasAttestation,
+  findSasAttestations,
+  type SasAttestation,
+  type SasAttestationFilters,
+} from "./sas.js";
 export {
   AccordErrors,
   ACCORD_ERROR_CODE_OFFSET,
@@ -199,7 +211,6 @@ export {
   findAllPendingUpdates,
   findSasAttestation,
   type QueryConfig,
-  SAS_PROGRAM_ID,
 } from "./queries.js";
 
 // Domain document convention (ADR-0027, milestone accord-lgof): sha256-CAS
