@@ -117,8 +117,9 @@ export abstract class BaseCommand extends Command {
 
   /**
    * oclif error hook. Maps any thrown value via {@link toCliError} and prints in
-   * the active output mode: `--json` ⇒ `{ error, message, hint? }` on stderr;
-   * human ⇒ the message + hint on stderr. Exits non-zero.
+   * the active output mode: `--json` ⇒ `{ error, message, hint?, logs? }` on
+   * stderr; human ⇒ the message + hint + (for simulation failures) the full
+   * validator log lines on stderr. Exits non-zero.
    */
   protected async catch(err: Error & { oclif?: { exit?: number } }): Promise<unknown> {
     if (err?.oclif?.exit !== undefined) {
@@ -128,12 +129,20 @@ export abstract class BaseCommand extends Command {
     const cliError = toCliError(err);
     if (this.out.json) {
       process.stderr.write(
-        JSON.stringify({ error: cliError.error, message: cliError.message, hint: cliError.hint }) +
-          "\n",
+        JSON.stringify({
+          error: cliError.error,
+          message: cliError.message,
+          hint: cliError.hint,
+          logs: cliError.logs,
+        }) + "\n",
       );
     } else {
       process.stderr.write(`✗ ${cliError.error}: ${cliError.message}\n`);
       if (cliError.hint) process.stderr.write(`  hint: ${cliError.hint}\n`);
+      if (cliError.logs?.length) {
+        process.stderr.write("  transaction logs:\n");
+        for (const line of cliError.logs) process.stderr.write(`    ${line}\n`);
+      }
     }
     this.exit(cliError.exitCode);
   }

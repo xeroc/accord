@@ -88,3 +88,55 @@ describe("toCliError", () => {
     expect(mapped.message).toBe("boom");
   });
 });
+
+describe("toCliError — simulation failure logs (kit v7 preflight shape)", () => {
+  // Runtime shape of a kit v7 sendTransaction preflight failure:
+  // SolanaError(context={logs, ...}, cause=SolanaError(context={code: <program code>, index}))
+  function preflightError({ code, logs }: { code?: number; logs: string[] }): Error {
+    const cause = Object.assign(new Error("Transaction failed to simulate"), {
+      name: "SolanaError",
+      context: { __code: 4615026, code, index: 0 },
+    });
+    return Object.assign(new Error("Transaction simulation failed"), {
+      name: "SolanaError",
+      context: { __code: -32002, logs },
+      cause,
+    });
+  }
+
+  it("extracts full logs and the nested custom program code", () => {
+    const logs = [
+      "Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed invoke [1]",
+      "Program log: Instruction: RequestVrf",
+      "Program log: AnchorError occurred. Error Code: 6005.",
+      "Program failed: custom program error 0x1775",
+    ];
+    const mapped = toCliError(preflightError({ code: 6005, logs }));
+    expect(mapped.error).toBe("AlreadyPaused");
+    expect(mapped.logs).toEqual(logs);
+  });
+
+  it("attaches logs for an unknown program code", () => {
+    const mapped = toCliError(preflightError({ code: 999999, logs: ["l1", "l2"] }));
+    expect(mapped.error).toBe("Custom_999999");
+    expect(mapped.logs).toEqual(["l1", "l2"]);
+  });
+
+  it("attaches logs even with no program code at all", () => {
+    const mapped = toCliError(preflightError({ logs: ["only logs"] }));
+    expect(mapped.error).toBe("SolanaError");
+    expect(mapped.logs).toEqual(["only logs"]);
+  });
+
+  it("finds logs nested behind a plain cause chain", () => {
+    const inner = Object.assign(new Error("rpc blew up"), {
+      data: { logs: ["deep"] },
+    });
+    const mapped = toCliError(new Error("Transaction simulation failed", { cause: inner }));
+    expect(mapped.logs).toEqual(["deep"]);
+  });
+
+  it("leaves logs undefined when the error carries none", () => {
+    expect(toCliError(new Error("boom")).logs).toBeUndefined();
+  });
+});

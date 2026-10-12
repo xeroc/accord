@@ -2,11 +2,14 @@
  * Error mapping for the Accord CLI.
  *
  * On-chain program failures arrive as generic JS errors whose message embeds an
- * Anchor custom code (`Custom program error: #0xNN`, base 6000). This module
- * decodes that code against {@link AccordErrors} so the CLI can emit a stable
- * `{ error, message }` shape (CLI.md §4) and a human hint.
+ * Anchor custom code (`Custom program error: #0xNN`, base 6000) — or, with Kit
+ * ≥7, as a preflight-failure `SolanaError` carrying the code on a nested cause
+ * and the full validator `logs`. This module decodes both so the CLI can emit a
+ * stable `{ error, message, logs? }` shape (CLI.md §4) and a human hint.
  */
 import { AccordErrors, ACCORD_ERROR_CODE_OFFSET, type AccordErrorCode } from "@useaccord/sdk";
+
+import { SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM } from "@solana/kit";
 
 export interface CliError {
   exitCode: number;
@@ -14,6 +17,8 @@ export interface CliError {
   error: string;
   message: string;
   hint?: string;
+  /** Full validator log lines when the failure came from transaction simulation. */
+  logs?: string[];
 }
 
 /** Reverse index: Anchor code → typed {@link AccordErrorCode}. Built once. */
@@ -43,13 +48,32 @@ function readCodeFromObject(err: unknown): number | null {
   // NOT match bare numbers — Solana runtime codes like 4615026 would false-match.)
   return findCustomCode(err, 0);
 }
-
 function findCustomCode(value: unknown, depth: number): number | null {
   if (depth > 5) return null; // bounded — also breaks circular refs.
   if (!isRecord(value)) return null;
   if ("Custom" in value && typeof value.Custom === "number") return value.Custom;
-  for (const v of Object.values(value)) {
+  // Kit ≥7 converts the RPC instruction error into a cause `SolanaError` whose
+  // context carries the program code directly — the `{ Custom: n }` shape never
+  // survives on the thrown error.
+  if (value.__code === SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM && typeof value.code === "number") {
+    return value.code;
+  }
+  for (const v of [...Object.values(value), value.cause]) {
     const found = findCustomCode(v, depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/** Find the `logs: string[]` a failed simulation attached to the error graph. */
+function findLogs(value: unknown, depth: number): string[] | null {
+  if (depth > 5) return null;
+  if (!isRecord(value)) return null;
+  const { logs } = value;
+  if (Array.isArray(logs) && logs.every((l) => typeof l === "string")) return logs;
+  // `cause` is a non-enumerable own prop for plain `Error`s — follow it explicitly.
+  for (const v of [...Object.values(value), value.cause]) {
+    const found = findLogs(v, depth + 1);
     if (found !== null) return found;
   }
   return null;
@@ -69,9 +93,10 @@ function messageOf(err: unknown): string {
 export function toCliError(err: unknown): CliError {
   const code = extractProgramCode(err);
   const known = code !== null ? codeIndex[String(code)] : undefined;
+  const logs = findLogs(err, 0) ?? undefined;
 
   if (known) {
-    return { exitCode: 1, error: known.name, message: known.message };
+    return { exitCode: 1, error: known.name, message: known.message, logs };
   }
 
   const msg = messageOf(err);
@@ -82,6 +107,7 @@ export function toCliError(err: unknown): CliError {
       error: "RpcUnreachable",
       message: msg,
       hint: "Is a validator/Surfpool running at the configured --rpc / $ACCORD_RPC_URL?",
+      logs,
     };
   }
 
@@ -91,8 +117,9 @@ export function toCliError(err: unknown): CliError {
       error: `Custom_${code}`,
       message: msg,
       hint: `Program error code ${code} (base ${ACCORD_ERROR_CODE_OFFSET}). Not in the known AccordErrors map.`,
+      logs,
     };
   }
 
-  return { exitCode: 1, error: err instanceof Error ? err.name : "Error", message: msg };
+  return { exitCode: 1, error: err instanceof Error ? err.name : "Error", message: msg, logs };
 }
