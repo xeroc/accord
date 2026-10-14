@@ -23,11 +23,6 @@ export function HowItRules() {
             Here is how it rules.
           </h1>
           <AmberRule enter={1} className="mt-8 w-56" />
-          <p className="mt-8 max-w-2xl text-lg text-text-secondary">
-            Six short films, from the system map to the failure modes. No
-            narration: each chapter is the mechanism in motion, and the prose
-            picks up where the film stops.
-          </p>
         </section>
 
         <section
@@ -77,9 +72,14 @@ export function HowItRules() {
         </section>
 
         <section aria-label="Explainers" className="mx-auto max-w-5xl px-6 pb-24">
-          <h2 className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
+          <h2 className="font-mono text-md uppercase tracking-[0.25em] text-muted-foreground">
             Explainers
           </h2>
+          <p className="mt-8 max-w-2xl text-lg text-text-secondary">
+            Six short films, from the system map to the failure modes. No
+            narration: each chapter is the mechanism in motion, and the prose
+            picks up where the film stops.
+          </p>
           <ol className="mt-8 grid gap-6 sm:grid-cols-2">
             {CHAPTERS.map((c, i) => (
               <li key={c.slug}>
