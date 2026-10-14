@@ -1,5 +1,17 @@
 # @useaccord/app
 
+## 0.6.0
+
+### Minor Changes
+
+- [#20](https://github.com/xeroc/accord/pull/20) [`a23b1d2`](https://github.com/xeroc/accord/commit/a23b1d20aa7a8de469594546b8e9a60cf86977f5) Thanks [@xeroc](https://github.com/xeroc)! - SAS jurors: juror browse is now a simple table with a 🛡️ shield marking jurors whose SAS attestation satisfies a gated subaccord they stake in, plus a new `/juror/:address` juror detail page (per-subaccord stakes table, full SAS attestation cards: credential, schema, signer, nonce, expiry state, unlocked subaccords). The SDK gains a `sas` module — `SAS_PROGRAM_ID`, the ADR-0024 attestation decoder (byte-mirror of the on-chain `sas_layout`), and `findSasAttestations` (getProgramAccounts over the SAS program with fixed-offset credential/schema/wallet memcmp filters).
+
+### Patch Changes
+
+- Updated dependencies [[`71dafcb`](https://github.com/xeroc/accord/commit/71dafcb4f42fba11cb5629226baee99f3ea43fdd), [`1e4ad2e`](https://github.com/xeroc/accord/commit/1e4ad2ee4c7b08516392d84100bc9317c8728b79), [`a23b1d2`](https://github.com/xeroc/accord/commit/a23b1d20aa7a8de469594546b8e9a60cf86977f5)]:
+  - @useaccord/sdk@0.6.0
+  - @useaccord/ui@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes
