@@ -1,5 +1,14 @@
 # @useaccord/tests
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [[`71dafcb`](https://github.com/xeroc/accord/commit/71dafcb4f42fba11cb5629226baee99f3ea43fdd), [`1e4ad2e`](https://github.com/xeroc/accord/commit/1e4ad2ee4c7b08516392d84100bc9317c8728b79), [`a23b1d2`](https://github.com/xeroc/accord/commit/a23b1d20aa7a8de469594546b8e9a60cf86977f5)]:
+  - @useaccord/sdk@0.6.0
+  - @useaccord/canon@0.6.0
+  - @useaccord/synod@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes
