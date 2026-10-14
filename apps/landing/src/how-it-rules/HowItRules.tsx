@@ -30,8 +30,57 @@ export function HowItRules() {
           </p>
         </section>
 
-        <section aria-label="Chapters" className="mx-auto max-w-5xl px-6 pb-24">
-          <ol className="grid gap-6 sm:grid-cols-2">
+        <section
+          aria-label="Whitepaper"
+          className="mx-auto max-w-5xl px-6 pb-16"
+        >
+          <a
+            href="/whitepaper.pdf"
+            className="group flex items-stretch overflow-hidden rounded-lg border border-border/60 bg-raised transition-colors hover:border-amber/50"
+          >
+            <div className="w-36 shrink-0 border-r border-border/60 sm:w-48 lg:w-56">
+              <img
+                src="/whitepaper-shot.png"
+                alt="First page of the Accord whitepaper"
+                width={635}
+                height={897}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-3 p-6 sm:p-8">
+              <p className="font-mono text-xs uppercase tracking-[0.25em] text-amber">
+                Whitepaper
+              </p>
+              <h2 className="font-heading text-2xl font-bold leading-tight text-nearwhite sm:text-3xl">
+                Accord: Schelling-Point Arbitration as a Composable Solana
+                Primitive
+              </h2>
+              <p className="text-sm leading-relaxed text-text-secondary">
+                Accord is an arbitration oracle on Solana. Any Solana program
+                can create an application specific court (i.e. subaccord) and
+                file disputes. A random jury of a specialized, stake-weighted
+                juror pool reviews encrypted evidence and votes under
+                commit–reveal. Jurors that vote with the final ruling earn
+                fees and slashed stake. Jurors that vote against it lose
+                stake. Appeals grow the panel stepwise from 3 to 31 jurors,
+                which raises both the cost of maintaining a captured verdict
+                and, under certain conditions, the probability of a correct
+                majority.{" "}
+                <span className="text-amber underline-offset-4 group-hover:underline">
+                  Read on →
+                </span>
+              </p>
+            </div>
+          </a>
+        </section>
+
+        <section aria-label="Explainers" className="mx-auto max-w-5xl px-6 pb-24">
+          <h2 className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
+            Explainers
+          </h2>
+          <ol className="mt-8 grid gap-6 sm:grid-cols-2">
             {CHAPTERS.map((c, i) => (
               <li key={c.slug}>
                 <Link
