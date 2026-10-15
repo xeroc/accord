@@ -10,7 +10,7 @@
     "lint:fix": "eslint . --fix",
     "start": "bun run src/main.ts",
     "dev": "bun --watch run src/main.ts",
-    "clean": "rm -rf dist"
+    "test": "bun test"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
