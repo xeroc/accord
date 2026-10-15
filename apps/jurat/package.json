@@ -11,11 +11,14 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "^2",
     "@solana/kit": "^7.0.0",
-    "@useaccord/sdk": "workspace:*"
+    "@useaccord/sdk": "workspace:*",
+    "ai": "^7",
+    "zod": "^4"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.20.1",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
   }
