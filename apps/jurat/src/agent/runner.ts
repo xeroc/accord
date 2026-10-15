@@ -92,6 +92,9 @@ export function makeAgentRunner(
       try {
         result = await generateText({
           model,
+          // The provider ladder (accord-ot16) owns retries — the SDK's
+          // internal ones would multiply every ladder attempt.
+          maxRetries: 0,
           system: systemPrompt,
           prompt:
             `Judge dispute ${context.dispute} in subaccord ${context.subaccord}. ` +
