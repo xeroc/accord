@@ -32,8 +32,7 @@ function stubFetch(status = 200): { calls: Captured[]; fetch: FetchLike } {
 
 /** Type-safe single-call accessor. */
 function theCall(calls: Captured[]): Captured {
-  if (calls.length !== 1)
-    throw new Error(`expected exactly 1 call, got ${calls.length}`);
+  if (calls.length !== 1) throw new Error(`expected exactly 1 call, got ${calls.length}`);
   return calls[0]!;
 }
 

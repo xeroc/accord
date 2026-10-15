@@ -15,10 +15,7 @@ export const RATIONALE_CAP = 3500;
 export const SEND_TIMEOUT_MS = 10_000;
 
 /** Minimal fetch shape the channel needs — injectable without the whole DOM type. */
-export type FetchLike = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface TelegramChannelConfig {
   botToken: string;
@@ -32,17 +29,13 @@ export interface TelegramChannelConfig {
 }
 
 function capRationale(rationale: string): string {
-  return rationale.length > RATIONALE_CAP
-    ? `${rationale.slice(0, RATIONALE_CAP)}…`
-    : rationale;
+  return rationale.length > RATIONALE_CAP ? `${rationale.slice(0, RATIONALE_CAP)}…` : rationale;
 }
 
 /** Plain-text verdict message: dispute, option, confidence, dry-run flag, rationale. */
 export function formatVerdictMessage(notice: VerdictNotice): string {
   const confidence = `${Math.round(notice.confidence * 100)}%`;
-  const voteLine = notice.dryRun
-    ? "DRY RUN — no vote cast"
-    : "LIVE — vote cast";
+  const voteLine = notice.dryRun ? "DRY RUN — no vote cast" : "LIVE — vote cast";
   return [
     `JURAT verdict — dispute ${notice.dispute}`,
     `option ${notice.option} · confidence ${confidence}`,
@@ -51,9 +44,7 @@ export function formatVerdictMessage(notice: VerdictNotice): string {
   ].join("\n");
 }
 
-export function createTelegramChannel(
-  config: TelegramChannelConfig,
-): NotifyChannel {
+export function createTelegramChannel(config: TelegramChannelConfig): NotifyChannel {
   const doFetch = config.fetch ?? fetch;
   const onError = config.onError ?? console.error;
   const sendTimeoutMs = config.sendTimeoutMs ?? SEND_TIMEOUT_MS;
@@ -61,13 +52,9 @@ export function createTelegramChannel(
   async function send(text: string): Promise<void> {
     // Race, not AbortSignal: an injected (or hung) fetch may ignore signals —
     // the timer is the only guard that always fires.
-    const { promise: timeout, reject: rejectTimeout } =
-      Promise.withResolvers<never>();
+    const { promise: timeout, reject: rejectTimeout } = Promise.withResolvers<never>();
     const timer = setTimeout(
-      () =>
-        rejectTimeout(
-          new Error(`telegram send timed out after ${sendTimeoutMs}ms`),
-        ),
+      () => rejectTimeout(new Error(`telegram send timed out after ${sendTimeoutMs}ms`)),
       sendTimeoutMs,
     );
     try {

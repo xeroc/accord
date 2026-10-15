@@ -94,9 +94,7 @@ describe("mock LLM server — happy paths", () => {
   });
 
   it("refusal shape — text instead of a tool call — surfaces as plain text", async () => {
-    const { model } = rig([
-      { kind: "text", text: "I cannot rule on this dispute." },
-    ]);
+    const { model } = rig([{ kind: "text", text: "I cannot rule on this dispute." }]);
     const result = await generateText({
       model,
       prompt: "Judge dispute W",
@@ -114,18 +112,12 @@ describe("mock LLM server — failure paths", () => {
   // agent runner's concern; the rig serves each failure exactly once.
   it("malformed 200 body rejects the client", async () => {
     const { model } = rig([{ kind: "malformed", body: "<<not-json>>" }]);
-    await expect(
-      generateText({ model, prompt: "x", maxRetries: 0 }),
-    ).rejects.toThrow();
+    await expect(generateText({ model, prompt: "x", maxRetries: 0 })).rejects.toThrow();
   });
 
   it("HTTP error (429) rejects the client", async () => {
-    const { model } = rig([
-      { kind: "httpError", status: 429, body: "rate limited" },
-    ]);
-    await expect(
-      generateText({ model, prompt: "x", maxRetries: 0 }),
-    ).rejects.toThrow();
+    const { model } = rig([{ kind: "httpError", status: 429, body: "rate limited" }]);
+    await expect(generateText({ model, prompt: "x", maxRetries: 0 })).rejects.toThrow();
   });
 
   it("hanging turn hits the client abort signal, not the test timeout", async () => {
@@ -143,9 +135,9 @@ describe("mock LLM server — failure paths", () => {
   it("exhausted script is a loud 500, not a silent repeat", async () => {
     const { server, model } = rig([{ kind: "text", text: "only turn" }]);
     await generateText({ model, prompt: "x", maxRetries: 0 });
-    await expect(
-      generateText({ model, prompt: "y", maxRetries: 0 }),
-    ).rejects.toThrow(/script exhausted/);
+    await expect(generateText({ model, prompt: "y", maxRetries: 0 })).rejects.toThrow(
+      /script exhausted/,
+    );
     expect(server.requests.length).toBe(2);
   });
 });

@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.69",
+    "@solana/kit": "^7.0.0",
+    "@useaccord/sdk": "workspace:*",
     "ai": "^7.0.141",
     "zod": "^4.6.7"
   },

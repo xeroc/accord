@@ -57,12 +57,7 @@ export interface CapturedLlmRequest {
 
 /** Fixed clock + per-server id counter keep responses byte-deterministic. */
 const CREATED = 1_700_000_000;
-function chunk(
-  id: string,
-  model: string,
-  delta: unknown,
-  finishReason: string | null,
-): unknown {
+function chunk(id: string, model: string, delta: unknown, finishReason: string | null): unknown {
   return {
     id,
     object: "chat.completion.chunk",
@@ -77,9 +72,7 @@ function sseResponse(payloads: readonly unknown[]): Response {
   const stream = new ReadableStream({
     start(controller) {
       for (const payload of payloads) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-        );
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
@@ -114,9 +107,7 @@ function completionResponse(
 
 /** Encode a happy turn as (id, model) → both wire shapes. */
 function encodeTurn(
-  turn:
-    | { kind: "text"; text: string }
-    | { kind: "toolCalls"; toolCalls: readonly MockToolCall[] },
+  turn: { kind: "text"; text: string } | { kind: "toolCalls"; toolCalls: readonly MockToolCall[] },
   id: string,
   model: string,
 ) {
@@ -142,8 +133,7 @@ function encodeTurn(
       chunk(id, model, { tool_calls: wireCalls }, null),
       chunk(id, model, {}, "tool_calls"),
     ],
-    json: () =>
-      completionResponse(id, model, { tool_calls: wireCalls }, "tool_calls"),
+    json: () => completionResponse(id, model, { tool_calls: wireCalls }, "tool_calls"),
   };
 }
 
@@ -191,9 +181,7 @@ export function startMockLlm(turns: readonly MockTurn[]): MockLlmServer {
       const id = `chatcmpl-mock-${counter}`;
       // The provider stamps its model id into the request; echo it back.
       const model =
-        typeof body === "object" && typeof body.model === "string"
-          ? body.model
-          : "mock-model";
+        typeof body === "object" && typeof body.model === "string" ? body.model : "mock-model";
       if (turn.kind === "malformed") {
         return new Response(turn.body, {
           headers: { "content-type": "application/json" },

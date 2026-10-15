@@ -365,6 +365,12 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.69
         version: 3.0.69(zod@4.6.7)
+      '@solana/kit':
+        specifier: ^7.0.0
+        version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@useaccord/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       ai:
         specifier: ^7.0.141
         version: 7.0.141(zod@4.6.7)
