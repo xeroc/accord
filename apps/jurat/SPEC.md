@@ -41,7 +41,8 @@ vote — a fake Schelling signal is worse than silence.
 | Join evaluator + executor | `src/join/` | Not yet built |
 | Duty tracker (Round.jurors[] membership) | `src/duty/` | Not yet built |
 | Evidence intake (Delivery Key registration + fetch) | `src/evidence/` | Not yet built |
-| Agent runner (`runVerdict(inputs) → Verdict`) | `src/agent/` | Not yet built |
+| Agent runner (`runVerdict(inputs) → Verdict`) | `src/agent/` | Not yet built (mock rig landed) |
+| Mock LLM test rig (openai-compatible stub server) | `src/agent/testing/mock-llm.ts` | Landed (bean `accord-f3ir`) |
 | Vote executor (commit/reveal, salts) | `src/vote/` | Not yet built |
 | Local state store (duties, salts, cursor, joins) | `src/state/` | Not yet built |
 | Entry point / loop | `src/main.ts` | Not yet built |
@@ -191,9 +192,10 @@ Epic 1); this table is the design contract.
 
 ## Verification
 
-- **Unit (bun test, colocated):** notify (landed), config parsing, join
-  evaluator gate table, agent runner against a **mock openai-compatible HTTP
-  server** (deterministic responses, retry-ladder paths), vote executor
+- **Unit (bun test, colocated):** notify (landed), mock LLM rig (landed —
+  `src/agent/testing/`, proven against the real `@ai-sdk/openai-compatible`
+  client), config parsing, join evaluator gate table, agent runner against
+  the rig (deterministic responses, retry-ladder paths), vote executor
   salt/commit/reveal building.
 - **e2e (Surfpool, dryRun OFF):** join → dispute → draw → verdict → commit →
   reveal, green (the milestone's non-negotiable).
