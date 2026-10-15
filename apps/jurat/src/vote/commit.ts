@@ -43,6 +43,8 @@ export interface VoteRecord {
   committed: boolean;
   /** True if the last pass ran under DRY_RUN (logged + notified, no tx). */
   dryRun: boolean;
+  /** Unix seconds of the reveal tx landing (reveal path, accord-qk0q). */
+  revealedAt?: number;
   /** Unix seconds of the last write. */
   updatedAt: number;
 }
