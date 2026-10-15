@@ -24,6 +24,7 @@
       "@useaccord/cranker",
       "@useaccord/evidence-daemon",
       "@useaccord/hanse",
+      "@useaccord/jurat",
       "@useaccord/landing",
       "@useaccord/pitch",
       "@useaccord/remotion",

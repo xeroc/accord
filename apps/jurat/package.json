@@ -1,0 +1,22 @@
+{
+  "name": "@useaccord/jurat",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Jurat — agentic juror daemon for the Accord arbitration protocol",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json --noEmit && node --import tsx --test 'src/**/*.test.ts'",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@solana/kit": "^7.0.0",
+    "@useaccord/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}
