@@ -1,0 +1,25 @@
+{
+  "name": "@useaccord/jurat",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Jurat — agentic juror daemon for Accord: stakes, watches for drawn seats, runs an LLM agent over evidence, votes commit/reveal (milestone accord-g69g)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/bun": "^1.3.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
