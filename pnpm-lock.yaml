@@ -368,6 +368,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3
         version: 3.0.69(zod@4.4.3)
+      '@noble/curves':
+        specifier: ^1.9.7
+        version: 1.9.7
       '@solana/kit':
         specifier: ^7.0.0
         version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)

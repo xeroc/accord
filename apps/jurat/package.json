@@ -13,6 +13,7 @@
   "dependencies": {
     "@ai-sdk/mcp": "^2",
     "@ai-sdk/openai-compatible": "^3",
+    "@noble/curves": "^1.9.7",
     "@solana/kit": "^7.0.0",
     "@useaccord/sdk": "workspace:*",
     "ai": "^7",
