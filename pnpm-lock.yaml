@@ -360,6 +360,22 @@ importers:
         specifier: ^6.4.3
         version: 6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
 
+  apps/jurat:
+    dependencies:
+      '@solana/kit':
+        specifier: ^7.0.0
+        version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@useaccord/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.0
+        version: 1.3.14
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
   apps/landing:
     dependencies:
       '@useaccord/ui':
@@ -514,7 +530,7 @@ importers:
         version: 8.5.25
       postcss-loader:
         specifier: ^8.2.0
-        version: 8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
+        version: 8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -11386,13 +11402,13 @@ snapshots:
       '@remotion/timeline-utils': 4.0.514
       '@rspack/core': 1.7.11(@swc/helpers@0.5.23)
       '@rspack/plugin-react-refresh': 1.6.1(react-refresh@0.18.0)
-      css-loader: 7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
+      css-loader: 7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
       esbuild: 0.28.1
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       react-refresh: 0.18.0
       remotion: 4.0.514(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      style-loader: 4.0.0(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
+      style-loader: 4.0.0(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
       webpack: 5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)
     transitivePeerDependencies:
       - '@minify-html/node'
@@ -14681,7 +14697,7 @@ snapshots:
       shebang-command: 2.0.0
       which: 2.0.2
 
-  css-loader@7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
+  css-loader@7.1.4(@rspack/core@1.7.11(@swc/helpers@0.5.23))(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       icss-utils: 5.1.0(postcss@8.5.25)
       postcss: 8.5.25
@@ -17011,7 +17027,7 @@ snapshots:
       tsx: 4.23.11
       yaml: 2.9.0
 
-  postcss-loader@8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
+  postcss-loader@8.2.1(@rspack/core@1.7.11(@swc/helpers@0.5.23))(postcss@8.5.25)(typescript@5.9.3)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       cosmiconfig: 9.0.2(typescript@5.9.3)
       jiti: 2.7.0
@@ -17684,7 +17700,7 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  style-loader@4.0.0(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
+  style-loader@4.0.0(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       webpack: 5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)
 
@@ -17743,7 +17759,7 @@ snapshots:
 
   tapable@2.3.3: {}
 
-  terser-webpack-plugin@5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25)):
+  terser-webpack-plugin@5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
@@ -18332,7 +18348,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(lightningcss@1.32.0)(postcss@8.5.25))
+      terser-webpack-plugin: 5.6.1(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25)(webpack@5.105.0(esbuild@0.28.1)(lightningcss@1.32.0)(postcss@8.5.25))
       watchpack: 2.5.2
       webpack-sources: 3.5.1
     transitivePeerDependencies:
