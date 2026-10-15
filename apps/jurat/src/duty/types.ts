@@ -33,6 +33,8 @@ export const FAILURE_KINDS = [
   "window-closed",
   /** Reveal path found no readable persisted salt (used by reveal, accord-qk0q). */
   "salt-lost",
+  /** Seat lost to an ADR-0021 redraw — bookkeeping closure by the tracker, not alerted. */
+  "redrawn-out",
 ] as const;
 
 export type FailureKind = (typeof FAILURE_KINDS)[number];
@@ -55,6 +57,18 @@ export interface DutyRecord {
   failure?: DutyFailure;
   /** Unix seconds of the last write. */
   updatedAt: number;
+  /** Seat index in `Round.jurors[0..juror_count)` — set by the tracker. */
+  seat?: number;
+  /**
+   * `Round.drawAttempt` at tracking time. A bump means ADR-0021 redraw
+   * reconvened the panel: the tracker supersedes the old record (fresh
+   * duty if drawn again, `redrawn-out` closure if not).
+   */
+  drawAttempt?: number;
+  /** Chain-clock deadlines, unix seconds (decoded Round.review/commit/revealEnd). */
+  reviewEnd?: number;
+  commitEnd?: number;
+  revealEnd?: number;
 }
 
 /**
