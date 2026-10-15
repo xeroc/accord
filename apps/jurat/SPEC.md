@@ -197,5 +197,8 @@ Epic 1); this table is the design contract.
   client), config parsing, join evaluator gate table, agent runner against
   the rig (deterministic responses, retry-ladder paths), vote executor
   salt/commit/reveal building.
-- **e2e (Surfpool, dryRun OFF):** join → dispute → draw → verdict → commit →
-  reveal, green (the milestone's non-negotiable).
+- **e2e (Surfpool, dryRun OFF):** `tests/src/jurat.spec.ts` — the full duty
+  loop green (auto-join → dispute → VRF draw → mock-LLM verdict → commit →
+  reveal; `Round.reveals` + the verdict notice asserted) plus the failing-LLM
+  twin (ladder exhausted → abstain + alert, no vote) (the milestone's
+  non-negotiable).

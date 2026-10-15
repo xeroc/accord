@@ -42,7 +42,10 @@ export async function loadBook(stateDir: string): Promise<JoinedBook> {
   try {
     raw = await readFile(join(stateDir, FILE), "utf8");
   } catch (e) {
-    if (e instanceof Error && (e as NodeJS.ErrnoException).code === "ENOENT") {
+    // Duck-type `code`: `instanceof Error` breaks on cross-realm errors
+    // (jest ESM vm contexts, workers) — a missing book on first run must
+    // always read as the empty book, never crash the join path.
+    if ((e as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
       return { entries: [] };
     }
     throw e;

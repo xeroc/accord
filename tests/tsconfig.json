@@ -1,6 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
+    "lib": ["ES2020", "ES2024.Promise", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
