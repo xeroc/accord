@@ -1,10 +1,11 @@
 ---
 # accord-7f6j
 title: Jurat notifications, docs & verification
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-10-15T07:31:56Z
-updated_at: 2026-10-15T07:31:56Z
+updated_at: 2026-10-15T14:25:43Z
 parent: accord-g69g
 ---
 
