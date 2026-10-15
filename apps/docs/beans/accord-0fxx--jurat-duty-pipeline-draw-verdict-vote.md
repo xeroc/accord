@@ -1,10 +1,11 @@
 ---
 # accord-0fxx
 title: Jurat duty pipeline — draw → verdict → vote
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-10-15T07:31:56Z
-updated_at: 2026-10-15T07:31:56Z
+updated_at: 2026-10-15T09:03:25Z
 parent: accord-g69g
 ---
 
