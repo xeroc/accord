@@ -1,10 +1,11 @@
 ---
 # accord-wryi
 title: Duty detection & evidence intake
-status: todo
+status: completed
 type: feature
+priority: normal
 created_at: 2026-10-15T07:32:41Z
-updated_at: 2026-10-15T07:32:41Z
+updated_at: 2026-10-15T09:03:24Z
 parent: accord-0fxx
 ---
 

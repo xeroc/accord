@@ -5,8 +5,9 @@
     "outDir": "./dist",
     "lib": ["ES2020"],
     "types": ["bun"],
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": ["src/**/*.test.ts", "dist", "node_modules"]
 }
