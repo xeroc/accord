@@ -51,6 +51,7 @@ status banner is annotated.
 | [0033](0033-failed-path-no-participation-no-ruling-no-pay.md) | Failed-path participation removed — no ruling, no pay | Accepted | — |
 | [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md) | Delivery Keys — registered X25519 keys for juror delivery; strict mode drops juror-side dual-use | Accepted | — |
 | [0035](0035-minimum-position-min-stake-reconcile-ejection.md) | Minimum juror position = min_stake; reconcile ejects below-floor jurors | Accepted | — |
+| [0036](0036-jurat-agentic-juror-daemon.md) | Jurat — agentic juror daemon: full-auto pipeline behind DRY_RUN, evidence-fed agent, conservative join gates | Accepted | — |
 
 ### Supersession map
 
@@ -113,7 +114,7 @@ status banner is annotated.
 - **Auditing**: 0008 + 0009 + 0012 are the security-critical ADRs (snapshot fraud
   proofs → canonical accumulator, sortition enforcement, VRF integration).
 
-1. Number = next sequential (currently **0035**).
+1. Number = next sequential (currently **0036**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at
