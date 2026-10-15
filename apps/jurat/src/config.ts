@@ -47,6 +47,8 @@ export interface TelegramConfig {
 
 export interface Config {
   readonly rpcUrl: string;
+  /** WS endpoint: JURAT_WS_URL or derived from rpcUrl (http→ws, port+1). */
+  readonly wsUrl: string;
   readonly keypairPath: string;
   readonly llm: LlmEndpointConfig;
   /** Retry-ladder rung 2; all three vars together or none. */
@@ -75,8 +77,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error("JURAT_TELEGRAM_TOKEN and JURAT_TELEGRAM_CHAT_ID must be set together");
   }
 
+  const rpcUrl = required(env, "JURAT_RPC_URL");
+
   return {
-    rpcUrl: required(env, "JURAT_RPC_URL"),
+    rpcUrl,
+    wsUrl: optional(env.JURAT_WS_URL) ?? deriveWsUrl(rpcUrl),
     keypairPath: required(env, "JURAT_KEYPAIR_PATH"),
     llm,
     llmFallback,
@@ -198,4 +203,18 @@ function bigIntFlag(v: string | undefined, def: bigint, name: string): bigint {
 function optionalBigInt(v: string | undefined, name: string): bigint | undefined {
   if (v === undefined || v.trim().length === 0) return undefined;
   return parseBigUint(v, name);
+}
+
+/**
+ * Derive a WS endpoint from an RPC URL: scheme http→ws / https→wss, port +1
+ * (the validator/Surfpool convention, 8899→8900). Hosts without a port keep
+ * theirs untouched. Providers with a distinct WS host must set JURAT_WS_URL.
+ */
+export function deriveWsUrl(rpcUrl: string): string {
+  const url = new URL(rpcUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (url.port !== "") {
+    url.port = String(Number(url.port) + 1);
+  }
+  return url.toString().replace(/\/$/, "");
 }

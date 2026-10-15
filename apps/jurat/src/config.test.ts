@@ -157,3 +157,13 @@ test("malformed integers and bigints throw with their var name", () => {
   expect(() => load({ ...VALID_ENV, JURAT_STAKE_BUDGET: "10_000" })).toThrow("JURAT_STAKE_BUDGET");
   expect(() => load({ ...VALID_ENV, JURAT_RESERVE_FLOOR: "-5" })).toThrow("JURAT_RESERVE_FLOOR");
 });
+
+test("wsUrl: JURAT_WS_URL wins; otherwise derived from rpcUrl (http→ws, port+1)", () => {
+  expect(load().wsUrl).toBe("ws://127.0.0.1:8900");
+  expect(load({ ...VALID_ENV, JURAT_WS_URL: "wss://ws.provider.io" }).wsUrl).toBe(
+    "wss://ws.provider.io",
+  );
+  expect(load({ ...VALID_ENV, JURAT_RPC_URL: "https://api.mainnet-beta.solana.com" }).wsUrl).toBe(
+    "wss://api.mainnet-beta.solana.com",
+  );
+});

@@ -361,6 +361,13 @@ importers:
         version: 6.4.3(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.2)(tsx@4.23.11)(yaml@2.9.0)
 
   apps/jurat:
+    dependencies:
+      '@solana/kit':
+        specifier: ^7.0.0
+        version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@useaccord/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
     devDependencies:
       '@eslint/js':
         specifier: ^9.35.0

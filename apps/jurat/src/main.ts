@@ -5,15 +5,18 @@
  * attractive Subaccords, watches for its own seats being drawn, runs an LLM
  * agent over the dispute evidence, and votes commit/reveal.
  *
- * Wired so far: env config (accord-jxpn). The chain client (accord-lii9) and
- * the duty pipeline mount here as their beans land.
+ * Wired so far: env config (accord-jxpn), chain client (accord-lii9). The
+ * watch/join/duty pipeline mounts here as its beans land.
  */
 import { loadConfig } from "./config";
+import { createChainClient } from "./chain/client";
 
 export async function main(): Promise<void> {
   const config = loadConfig();
+  const chain = await createChainClient(config);
   console.log(
-    `jurat: booted rpc=${config.rpcUrl} state=${config.stateDir} dryRun=${config.dryRun}`,
+    `jurat: booted rpc=${config.rpcUrl} operator=${chain.address} ` +
+      `state=${config.stateDir} dryRun=${config.dryRun}`,
   );
 }
 
