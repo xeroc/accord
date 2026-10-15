@@ -365,6 +365,9 @@ importers:
       '@ai-sdk/mcp':
         specifier: ^2
         version: 2.0.76(zod@4.4.3)
+      '@ai-sdk/openai-compatible':
+        specifier: ^3
+        version: 3.0.69(zod@4.4.3)
       '@solana/kit':
         specifier: ^7.0.0
         version: 7.0.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@6.0.6)
@@ -884,6 +887,12 @@ packages:
 
   '@ai-sdk/mcp@2.0.76':
     resolution: {integrity: sha512-StErhVSLw/9r8sGPk5iuy+l9lLpgJifBagmHPdHwC3moiO/fdBsxHs3bOM/ewkZVoDeLoP7NY/2tXt0oZ2tS/w==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai-compatible@3.0.69':
+    resolution: {integrity: sha512-ZPlhJrmmaOTsOvHbiM34FNC9f3tovn6vDZHNzsFOUHOKFlXh3nk+0k4lOe43Yb0Di7MdAyi70wkDPfzfP2lodw==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -9108,6 +9117,12 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.60(zod@4.4.3)
       cross-spawn: 7.0.6
       pkce-challenge: 5.0.1
+      zod: 4.4.3
+
+  '@ai-sdk/openai-compatible@3.0.69(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.27
+      '@ai-sdk/provider-utils': 5.0.60(zod@4.4.3)
       zod: 4.4.3
 
   '@ai-sdk/provider-utils@5.0.60(zod@4.4.3)':
