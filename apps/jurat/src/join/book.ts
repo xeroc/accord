@@ -95,9 +95,14 @@ export async function saveBook(stateDir: string, book: JoinedBook): Promise<void
   await rename(tmp, file);
 }
 
-/** Total staked across all joined Subaccords (the budget-consumed number). */
-export function totalStaked(book: JoinedBook): bigint {
-  return book.entries.reduce((sum, e) => sum + e.staked, 0n);
+/** Total staked across all joined Subaccords, optionally in one staking token
+ * (the budget-consumed number — budgets are per-mint). */
+export function totalStaked(book: JoinedBook, stakingToken?: Address): bigint {
+  return book.entries.reduce(
+    (sum, e) =>
+      sum + (stakingToken === undefined || e.stakingToken === stakingToken ? e.staked : 0n),
+    0n,
+  );
 }
 
 /** Insert or replace the entry for `subaccord` (idempotent upsert). */

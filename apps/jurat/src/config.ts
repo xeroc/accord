@@ -22,8 +22,6 @@ export interface JoinGatesConfig {
   readonly stakingTokens: readonly string[];
   /** Base58 mint allowlist for the Subaccord's fee_token. */
   readonly feeTokens: readonly string[];
-  /** Amount staked per join (raw base units of the pool's staking token). */
-  readonly stakeAmount: bigint;
   /** Accept pools whose configured min_stake is within [min, max]. */
   readonly minStakeMin: bigint;
   readonly minStakeMax?: bigint;
@@ -98,15 +96,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if ((evidenceUrl === undefined) !== (evidenceKey === undefined)) {
     throw new Error("JURAT_EVIDENCE_URL and JURAT_DELIVERY_KEY_PATH must be set together");
   }
+  const joinGates = parseJoinGates(env);
 
   const rpcUrl = required(env, "JURAT_RPC_URL");
-  const joinGates = parseJoinGates(env);
-  if (joinGates.stakeAmount > joinGates.subaccordCap) {
-    throw new Error(
-      `JURAT_STAKE_AMOUNT ${joinGates.stakeAmount} exceeds JURAT_SUBACCORD_CAP ` +
-        `${joinGates.subaccordCap} — every join would be rejected on-chain`,
-    );
-  }
 
   return {
     rpcUrl,
@@ -160,7 +152,6 @@ function parseJoinGates(env: Record<string, string | undefined>): JoinGatesConfi
   return {
     stakingTokens: tokenList(env, "JURAT_STAKING_TOKENS"),
     feeTokens: tokenList(env, "JURAT_FEE_TOKENS"),
-    stakeAmount: requiredBigInt(env, "JURAT_STAKE_AMOUNT"),
     minStakeMin,
     minStakeMax,
     feePerJurorMin: feeMin,

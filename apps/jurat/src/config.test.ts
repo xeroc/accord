@@ -15,7 +15,6 @@ const VALID_ENV: Record<string, string> = {
   JURAT_LLM_MODEL: "test-model",
   JURAT_STAKING_TOKENS: USDC,
   JURAT_FEE_TOKENS: USDC,
-  JURAT_STAKE_AMOUNT: "5000000",
   JURAT_STAKE_BUDGET: "1000000000",
   JURAT_SUBACCORD_CAP: "500000000",
   JURAT_RESERVE_FLOOR: "100000000",
@@ -61,7 +60,6 @@ test("parses a full env with every optional group set", () => {
     stakingTokens: [USDC],
     feeTokens: [USDC],
     minStakeMin: 1000n,
-    stakeAmount: 5000000n,
     minStakeMax: 9000n,
     feePerJurorMin: 10n,
     feePerJurorMax: 90n,
@@ -111,24 +109,11 @@ test("missing required var throws with its name", () => {
     "JURAT_FEE_TOKENS",
     "JURAT_STAKE_BUDGET",
     "JURAT_SUBACCORD_CAP",
-    "JURAT_STAKE_AMOUNT",
   ]) {
     const env = { ...VALID_ENV };
     delete env[key];
     expect(() => load(env)).toThrow(key);
   }
-});
-
-test("missing JURAT_STAKE_AMOUNT throws with its name", () => {
-  const env = { ...VALID_ENV };
-  delete env.JURAT_STAKE_AMOUNT;
-  expect(() => loadConfig(env)).toThrow("JURAT_STAKE_AMOUNT");
-});
-
-test("JURAT_STAKE_AMOUNT over the per-subaccord cap throws at boot", () => {
-  expect(() => load({ ...VALID_ENV, JURAT_STAKE_AMOUNT: "600000000" })).toThrow(
-    /JURAT_STAKE_AMOUNT.*JURAT_SUBACCORD_CAP/,
-  );
 });
 
 test("partial evidence pair throws", () => {

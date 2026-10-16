@@ -53,9 +53,7 @@ import { loadBook, saveBook, totalStaked, upsertEntry } from "./book.js";
  * accord-jxpn); values are staking-token base units resp. lamports.
  */
 export interface JoinBudget {
-  /** Amount staked per join. */
-  readonly stakeAmount: bigint;
-  /** Max total staked across all joined Subaccords (book sum). */
+  /** Max total staked across all joined Subaccords (book sum, per staking token). */
   readonly globalStakeBudget: bigint;
   /** Max staked in any single Subaccord. */
   readonly perSubaccordCap: bigint;
@@ -94,7 +92,6 @@ export interface JoinChain {
 }
 
 export type JoinRejectReason =
-  | "BelowMinStake"
   | "OverGlobalBudget"
   | "OverSubaccordCap"
   | "InsufficientTokenBalance"
@@ -149,7 +146,6 @@ export async function joinSubaccord(
   },
 ): Promise<JoinOutcome> {
   const { juror, subaccord: subAddr, budget, stateDir } = opts;
-  const amount = budget.stakeAmount;
   const reject = (reason: JoinRejectReason, detail: string): JoinOutcome => ({
     status: "rejected",
     subaccord: subAddr,
@@ -161,11 +157,15 @@ export async function joinSubaccord(
   if (!sub) {
     throw new Error(`SubaccordNotFound: ${subAddr}`);
   }
+  // The join amount IS the pool's own minimum — the least stake that carries
+  // draw weight. Upstaking is manual (milestone decision 9); there is no
+  // configured per-join amount (it could not be unit-correct across mints).
+  const amount = sub.minStake;
 
   // --- Subaccord-local guards (no chain reads beyond `sub`) -----------------
 
   if (amount <= 0n) {
-    throw new Error(`InvalidAmount: stakeAmount must be > 0, got ${amount}`);
+    throw new Error(`InvalidAmount: min_stake must be > 0, got ${amount}`);
   }
   if (sub.jurorCredential !== DEFAULT_PUBKEY || sub.jurorSchema !== DEFAULT_PUBKEY) {
     return reject(
@@ -173,16 +173,10 @@ export async function joinSubaccord(
       `${subAddr} requires a SAS attestation (juror_credential set); v1 jurat holds none`,
     );
   }
-  if (amount < sub.minStake) {
-    return reject(
-      "BelowMinStake",
-      `stakeAmount ${amount} < min_stake ${sub.minStake} — stake could never be drawn`,
-    );
-  }
   if (amount > budget.perSubaccordCap) {
     return reject(
       "OverSubaccordCap",
-      `stakeAmount ${amount} > per-subaccord cap ${budget.perSubaccordCap}`,
+      `min_stake ${amount} > per-subaccord cap ${budget.perSubaccordCap}`,
     );
   }
 
@@ -190,9 +184,13 @@ export async function joinSubaccord(
   // This pool's own entry is excluded: a re-stake replaces it rather than
   // double-counting (the on-chain stake is the truth the book records).
 
+  // Budgets are per staking token: only entries in THIS pool's mint count
+  // (a single global sum would add USDC against a house token).
   const book = await loadBook(stateDir);
   const others = {
-    entries: book.entries.filter((e) => e.subaccord !== subAddr),
+    entries: book.entries.filter(
+      (e) => e.subaccord !== subAddr && e.stakingToken === sub.stakingToken,
+    ),
   };
   const stakedElsewhere = totalStaked(others);
   if (stakedElsewhere + amount > budget.globalStakeBudget) {

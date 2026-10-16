@@ -140,7 +140,6 @@ async function fakeSubaccord(
 }
 
 const DEFAULT_BUDGET: JoinBudget = {
-  stakeAmount: 200n,
   globalStakeBudget: 1_000n,
   perSubaccordCap: 500n,
   reserveFloor: 50n,
@@ -268,14 +267,14 @@ describe("joinSubaccord", () => {
     expect(out).toEqual({
       status: "joined",
       subaccord: SUBACCORD,
-      amount: 200n,
+      amount: 100n,
       signature: "sig1",
     });
     expect(chain.sent).toHaveLength(1);
 
     // The instruction was built for the full canonical account set.
     const b = chain.built[0]!;
-    expect(b.amount).toBe(200n);
+    expect(b.amount).toBe(100n);
     expect(b.attestation).toBeUndefined();
     expect(b.accounts.juror).toBe(JUROR);
     expect(b.accounts.subaccord).toBe(SUBACCORD);
@@ -308,7 +307,7 @@ describe("joinSubaccord", () => {
     const book = await loadBook(stateDir);
     expect(book.entries).toHaveLength(1);
     expect(book.entries[0]!.subaccord).toBe(SUBACCORD);
-    expect(book.entries[0]!.staked).toBe(200n);
+    expect(book.entries[0]!.staked).toBe(100n);
     expect(book.entries[0]!.signature).toBe("sig1");
     await cleanup();
   });
@@ -333,7 +332,7 @@ describe("joinSubaccord", () => {
     expect(second).toEqual({
       status: "already-joined",
       subaccord: SUBACCORD,
-      staked: 200n,
+      staked: 100n,
     });
     expect(chain.sent).toHaveLength(1);
     expect((await loadBook(stateDir)).entries).toHaveLength(1);
@@ -341,7 +340,7 @@ describe("joinSubaccord", () => {
   });
 
   test("crash recovery: on-chain stake without book entry reconciles the book", async () => {
-    const alreadyStaked = [stakeRow(JUROR, 0, 200n)];
+    const alreadyStaked = [stakeRow(JUROR, 0, 100n)];
     const chain = new FakeChain(await fakeSubaccord(alreadyStaked), alreadyStaked);
     // (fresh stateDir, chain already shows the juror staked).
     const out = await joinSubaccord(chain, {
@@ -356,23 +355,24 @@ describe("joinSubaccord", () => {
     expect(out).toEqual({
       status: "already-joined",
       subaccord: SUBACCORD,
-      staked: 200n,
+      staked: 100n,
     });
     expect(chain.sent).toHaveLength(0);
     expect(book.entries).toHaveLength(1);
-    expect(book.entries[0]!.staked).toBe(200n);
+    expect(book.entries[0]!.staked).toBe(100n);
   });
 
-  test("rejects BelowMinStake when the configured amount cannot be drawn", async () => {
-    const chain = new FakeChain(await fakeSubaccord([], { minStake: 500n }));
-    const out = await joinSubaccord(chain, {
-      juror: JUROR,
-      subaccord: SUBACCORD,
-      budget: DEFAULT_BUDGET,
-      stateDir,
-    });
+  test("throws InvalidAmount on a zero-minimum pool (no draw weight)", async () => {
+    const chain = new FakeChain(await fakeSubaccord([], { minStake: 0n }));
+    await expect(
+      joinSubaccord(chain, {
+        juror: JUROR,
+        subaccord: SUBACCORD,
+        budget: DEFAULT_BUDGET,
+        stateDir,
+      }),
+    ).rejects.toThrow(/InvalidAmount/);
     await cleanup();
-    expect(out).toMatchObject({ status: "rejected", reason: "BelowMinStake" });
     expect(chain.sent).toHaveLength(0);
   });
 
@@ -381,7 +381,7 @@ describe("joinSubaccord", () => {
     const out = await joinSubaccord(chain, {
       juror: JUROR,
       subaccord: SUBACCORD,
-      budget: { ...DEFAULT_BUDGET, perSubaccordCap: 100n },
+      budget: { ...DEFAULT_BUDGET, perSubaccordCap: 99n }, // below the pool min 100n
       stateDir,
     });
     await cleanup();
@@ -393,9 +393,9 @@ describe("joinSubaccord", () => {
   });
 
   test("rejects OverGlobalBudget against the book sum", async () => {
-    // Book already carries 900n elsewhere; budget 1_000n, joining 200n
-    // exceeds the 100n headroom.
-    await seedBookEntry(stateDir, addr("9"), 900n);
+    // Book already carries 901n elsewhere; budget 1_000n, joining the min
+    // 100n exceeds the 99n headroom.
+    await seedBookEntry(stateDir, addr("9"), 901n);
     const chain = new FakeChain(await fakeSubaccord());
     const out = await joinSubaccord(chain, {
       juror: JUROR,
@@ -411,7 +411,7 @@ describe("joinSubaccord", () => {
 
   test("rejects InsufficientTokenBalance below reserve floor", async () => {
     const chain = new FakeChain(await fakeSubaccord());
-    chain.token = 200n + 50n - 1n; // amount + reserveFloor - 1
+    chain.token = 100n + 50n - 1n; // amount + reserveFloor - 1
     const out = await joinSubaccord(chain, {
       juror: JUROR,
       subaccord: SUBACCORD,
@@ -507,7 +507,7 @@ describe("joinSubaccord", () => {
     });
     await cleanup();
 
-    expect(out).toMatchObject({ status: "joined", amount: 200n });
+    expect(out).toMatchObject({ status: "joined", amount: 100n });
 
     // Proof authenticates the blank head slot (index 1), not nextIndex (2).
     const { rootHash, rootSum } = await rootFor([a, b], DEPTH, 1);
@@ -540,7 +540,7 @@ describe("joinSubaccord", () => {
     });
     await cleanup();
 
-    expect(out).toMatchObject({ status: "joined", amount: 200n });
+    expect(out).toMatchObject({ status: "joined", amount: 100n });
 
     // Proof authenticates own (blanked) slot 2.
     const { rootHash, rootSum } = await rootFor([a, b, own], DEPTH, 1);
@@ -568,7 +568,7 @@ describe("joinSubaccord", () => {
     });
     await cleanup();
 
-    expect(out).toMatchObject({ status: "joined", amount: 200n });
+    expect(out).toMatchObject({ status: "joined", amount: 100n });
     expect(chain.sent[0]!.accounts).toEqual([]);
   });
 });

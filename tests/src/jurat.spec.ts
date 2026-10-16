@@ -37,6 +37,7 @@ import {
   findJurorStakePda,
   findJurorStakesBySubaccord,
   findRoundPda,
+  stake as sdkStake,
   getDisputeDecoder,
   getRoundDecoder,
   getSubaccordDecoder,
@@ -142,6 +143,8 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
   let juratAddr: Address;
   let juratAccord: Accord;
   let stateDir: string;
+  /** The pool's min_stake — the amount each jurat join stakes (accord-fwl7). */
+  let poolMin: bigint;
   let dutyStore: DutyStore;
   let voteStore: VoteStore;
   let channel: RecordingChannel;
@@ -179,7 +182,6 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
       juror: juratAddr,
       subaccord: fx.subaccord,
       budget: {
-        stakeAmount: STAKE_AMOUNT,
         globalStakeBudget: 100_000n,
         perSubaccordCap: 50_000n,
         reserveFloor: RESERVE,
@@ -187,14 +189,16 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
       },
       stateDir,
     });
-    expect(outcome.status).toBe("joined");
+    // The join stakes exactly the pool minimum (bean accord-fwl7).
+    poolMin = candidate!.data.minStake;
+    expect(outcome).toMatchObject({ status: "joined", amount: poolMin });
 
     // --- sync the harness tree with jurat's on-chain leaf (slot 2) ---
     const [juratStakePda] = await findJurorStakePda({
       subaccord: fx.subaccord,
       juror: juratAddr,
     });
-    await fx.tree.setLeaf(2, juratAddr, STAKE_AMOUNT);
+    await fx.tree.setLeaf(2, juratAddr, candidate!.data.minStake);
     fx.jurorPdaByHex.set(toHex(addressBytes(juratAddr)), juratStakePda);
     dutyStore = memDutyStore();
     voteStore = memVoteStore();
@@ -211,7 +215,6 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
       feePerJurorRange: { min: 1n, max: 10_000n },
       alphaBpsCap: 2_000,
       commitWindowFloorSecs: 86_400n,
-      stakeAmount: STAKE_AMOUNT,
       globalStakeBudget: 100_000n,
       perSubaccordCap: 50_000n,
       reserveFloor: RESERVE,
@@ -452,6 +455,30 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
 
   it("failing LLM: ladder exhausts → abstain + alert, no vote", async () => {
     if (!env.up) return;
+
+    // Manual upstake — the documented operator flow (accord-fwl7). The happy
+    // loop's draw reserved its α-bond out of jurat's floor (draw_seat.rs:
+    // free_stake = staked − slash_reserve ≥ min_stake), and nothing settles
+    // that dispute in this spec, so an exact-min juror is single-duty until
+    // reconcile releases. Top up one min to restore draw eligibility.
+    const juratStakePda = fx.jurorPdaByHex.get(toHex(addressBytes(juratAddr)))!;
+    const upstake = sdkStake(
+      juratAccord.adapter,
+      env.programId,
+      {
+        juror: juratAddr,
+        subaccord: fx.subaccord,
+        accordState: fx.accordState,
+        jurorStake: juratStakePda,
+        stakingToken: fx.mint,
+        jurorTokenAccount: await ataOf(fx.mint, juratAddr),
+        stakeVault: await ataOf(fx.mint, fx.subaccord),
+      },
+      poolMin,
+      await fx.tree.pathFor(2), // jurat's slot — top-up on the active leaf
+    );
+    await env.sendIx(upstake);
+    await fx.tree.setLeaf(2, juratAddr, poolMin + poolMin);
 
     const { armed, roundPda } = await armAndDraw();
     const round = await decodedRound(roundPda);

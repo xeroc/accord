@@ -72,14 +72,13 @@ const POLICY: JoinPolicy = {
   feePerJurorRange: { min: 0n, max: 1_000n },
   alphaBpsCap: 2_000,
   commitWindowFloorSecs: 86_400n,
-  stakeAmount: 500n,
   globalStakeBudget: 2_000n,
-  perSubaccordCap: 600n,
+  perSubaccordCap: 1_500n,
   reserveFloor: 100n,
 };
 
 /** Default context: nothing staked elsewhere, funded well above the floor. */
-const CTX: JoinContext = { stakedElsewhere: 0n, stakingTokenBalance: 1_000n };
+const CTX: JoinContext = { stakedElsewhere: 0n, stakingTokenBalance: 1_200n }; // min 1_000 + floor 100
 
 // --- the suite ---------------------------------------------------------------
 
@@ -98,8 +97,8 @@ describe("evaluateJoinGate — accept", () => {
       feePerJuror: 1_000n, // == range max
     });
     const ctx: JoinContext = {
-      stakedElsewhere: 1_500n, // 1_500 + 500 == budget exactly
-      stakingTokenBalance: 600n, // 500 + 100 == balance exactly
+      stakedElsewhere: 1_900n, // 1_900 + min 100 == budget exactly
+      stakingTokenBalance: 200n, // min 100 + floor 100 == balance exactly
     };
     expect(evaluateJoinGate(edge, POLICY, ctx)).toEqual({ ok: true });
   });
@@ -163,22 +162,28 @@ describe("evaluateJoinGate — reject table", () => {
       detailMatch: /commit_window 86399 < 86400/,
     },
     {
-      name: "join would exceed the global stake budget",
-      ctx: { stakedElsewhere: 1_501n },
-      reason: "OverGlobalBudget",
-      detailMatch: /1501 \+ 500 > 2000/,
+      name: "pool minimum over the per-subaccord cap",
+      policy: { perSubaccordCap: 999n },
+      reason: "OverSubaccordCap",
+      detailMatch: /stake 1000 > per-subaccord cap 999/,
     },
     {
-      name: "configured stake amount over the per-subaccord cap",
-      policy: { perSubaccordCap: 499n },
-      reason: "OverSubaccordCap",
-      detailMatch: /stake amount 500 > per-subaccord cap 499/,
+      name: "join would exceed the global stake budget",
+      ctx: { stakedElsewhere: 1_001n },
+      reason: "OverGlobalBudget",
+      detailMatch: /1001 \+ 1000 > 2000/,
     },
     {
       name: "balance cannot cover stake plus reserve floor",
-      ctx: { stakingTokenBalance: 599n },
+      ctx: { stakingTokenBalance: 1_099n },
       reason: "InsufficientReserve",
-      detailMatch: /599 < 500 \+ 100/,
+      detailMatch: /1099 < 1000 \+ 100/,
+    },
+    {
+      name: "zero pool minimum (stake would carry no draw weight)",
+      overrides: { minStake: 0n },
+      reason: "MinStakeOutOfRange",
+      detailMatch: /min_stake 0 — staking zero carries no draw weight/,
     },
   ];
 

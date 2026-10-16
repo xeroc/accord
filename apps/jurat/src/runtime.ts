@@ -93,7 +93,6 @@ export function joinPolicyFromConfig(config: Config): JoinPolicy {
     feePerJurorRange: { min: g.feePerJurorMin, max: g.feePerJurorMax ?? UNBOUNDED },
     alphaBpsCap: g.alphaBpsCap,
     commitWindowFloorSecs: BigInt(g.commitWindowFloorSec),
-    stakeAmount: g.stakeAmount,
     globalStakeBudget: g.stakeBudget,
     perSubaccordCap: g.subaccordCap,
     reserveFloor: g.reserveFloor,
@@ -104,7 +103,6 @@ export function joinPolicyFromConfig(config: Config): JoinPolicy {
 export function joinBudgetFromConfig(config: Config): JoinBudget {
   const g = config.joinGates;
   return {
-    stakeAmount: g.stakeAmount,
     globalStakeBudget: g.stakeBudget,
     perSubaccordCap: g.subaccordCap,
     reserveFloor: g.reserveFloor,
@@ -134,7 +132,9 @@ export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Pr
 async function handleJoins(deps: RuntimeDeps, candidates: readonly JoinCandidate[]): Promise<void> {
   const log = deps.log ?? console.log;
   const book = await loadBook(deps.stateDir);
-  let stakedElsewhere = totalStaked(book);
+  // Budgets are per staking token: each candidate is evaluated against what
+  // is already staked in ITS mint, not a cross-mint sum.
+  const stakedByToken = new Map<Address, bigint>();
 
   for (const candidate of candidates) {
     if (findEntry(book, candidate.subaccord)) continue; // already in portfolio
@@ -143,7 +143,9 @@ async function handleJoins(deps: RuntimeDeps, candidates: readonly JoinCandidate
       ? await deps.tokenBalance(deps.juror, candidate.data.stakingToken)
       : undefined;
     const decision = evaluateJoinGate(candidate.data, deps.policy, {
-      stakedElsewhere,
+      stakedElsewhere:
+        stakedByToken.get(candidate.data.stakingToken) ??
+        totalStaked(book, candidate.data.stakingToken),
       stakingTokenBalance: balance,
     });
     if (!decision.ok) {
@@ -153,7 +155,11 @@ async function handleJoins(deps: RuntimeDeps, candidates: readonly JoinCandidate
     try {
       const outcome = await deps.join(candidate);
       if (outcome.status === "joined") {
-        stakedElsewhere += outcome.amount;
+        stakedByToken.set(
+          candidate.data.stakingToken,
+          (stakedByToken.get(candidate.data.stakingToken) ??
+            totalStaked(book, candidate.data.stakingToken)) + outcome.amount,
+        );
         log(
           `join: joined ${outcome.subaccord} — staked ${outcome.amount}, sig ${outcome.signature}`,
         );

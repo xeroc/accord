@@ -140,7 +140,6 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
       feePerJurorRange: { min: 0n, max: 10_000n },
       alphaBpsCap: 2_000,
       commitWindowFloorSecs: 600n,
-      stakeAmount: 1_000n,
       globalStakeBudget: 100_000n,
       perSubaccordCap: 50_000n,
       reserveFloor: 1_000n,
@@ -196,7 +195,6 @@ test("joinPolicyFromConfig / joinBudgetFromConfig carry every config knob", () =
     joinGates: {
       stakingTokens: [MINT],
       feeTokens: [MINT],
-      stakeAmount: 5_000n,
       minStakeMin: 1n,
       minStakeMax: 9n,
       feePerJurorMin: 2n,
@@ -214,10 +212,8 @@ test("joinPolicyFromConfig / joinBudgetFromConfig carry every config knob", () =
   expect(policy.minStakeRange).toEqual({ min: 1n, max: 9n });
   expect(policy.feePerJurorRange).toEqual({ min: 2n, max: 8n });
   expect(policy.commitWindowFloorSecs).toBe(600n);
-  expect(policy.stakeAmount).toBe(5_000n);
   expect(policy.stakingTokenAllowlist.has(MINT)).toBe(true);
   expect(budget).toEqual({
-    stakeAmount: 5_000n,
     globalStakeBudget: 100_000n,
     perSubaccordCap: 50_000n,
     reserveFloor: 1_000n,

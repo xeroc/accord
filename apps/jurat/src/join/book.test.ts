@@ -55,6 +55,32 @@ describe("joined book", () => {
     const replaced = upsertEntry(second, entry(SUB_A, 300n, "sig3"));
     expect(replaced.entries.map((e) => e.subaccord)).toEqual([SUB_B, SUB_A]);
     expect(totalStaked(replaced)).toBe(500n);
+  });
+
+  test("totalStaked filters by staking token — budgets are per-mint", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "jurat-book-"));
+    try {
+      let book = await loadBook(dir);
+      book = upsertEntry(book, {
+        subaccord: SUB_A,
+        stakingToken: address("1".repeat(31) + "2"),
+        staked: 100n,
+        signature: "s1",
+        joinedAt: "t",
+      });
+      book = upsertEntry(book, {
+        subaccord: SUB_B,
+        stakingToken: address("1".repeat(31) + "3"),
+        staked: 400n,
+        signature: "s2",
+        joinedAt: "t",
+      });
+      expect(totalStaked(book, address("1".repeat(31) + "2"))).toBe(100n);
+      expect(totalStaked(book, address("1".repeat(31) + "3"))).toBe(400n);
+      expect(totalStaked(book)).toBe(500n); // no filter: the legacy whole-sum
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
     await rm(stateDir, { recursive: true, force: true });
   });
 });

@@ -33,9 +33,7 @@ export interface JoinPolicy {
   readonly alphaBpsCap: number;
   /** Minimum `commit_window` in seconds — the agent runtime budget. */
   readonly commitWindowFloorSecs: bigint;
-  /** Amount staked per join (shared with the executor's JoinBudget). */
-  readonly stakeAmount: bigint;
-  /** Max total staked across all joined Subaccords. */
+  /** Max total staked across all joined Subaccords (per staking token). */
   readonly globalStakeBudget: bigint;
   /** Max staked in any single Subaccord. */
   readonly perSubaccordCap: bigint;
@@ -68,6 +66,13 @@ export type JoinRejectReason =
   | "OverSubaccordCap"
   | "InsufficientReserve";
 
+/**
+ * The amount a join stakes: always the pool's own `min_stake` — the minimum
+ * that carries draw weight. Upstaking is a manual operator action by design;
+ * there is no configured per-join amount (a single number cannot be
+ * unit-correct across pools with different staking mints).
+ */
+
 export type JoinDecision =
   | { ok: true }
   | {
@@ -94,6 +99,13 @@ export function evaluateJoinGate(
       ok: false,
       reason: "FeeTokenNotAllowed",
       detail: `fee token ${sub.feeToken} not allowlisted`,
+    };
+  }
+  if (sub.minStake === 0n) {
+    return {
+      ok: false,
+      reason: "MinStakeOutOfRange",
+      detail: "min_stake 0 — staking zero carries no draw weight",
     };
   }
   if (sub.minStake < policy.minStakeRange.min) {
@@ -145,29 +157,30 @@ export function evaluateJoinGate(
       detail: `commit_window ${sub.commitWindow} < ${policy.commitWindowFloorSecs} (agent runtime budget)`,
     };
   }
-  if (policy.stakeAmount > policy.perSubaccordCap) {
+  const amount = sub.minStake; // the join amount IS the pool minimum
+  if (amount > policy.perSubaccordCap) {
     return {
       ok: false,
       reason: "OverSubaccordCap",
-      detail: `stake amount ${policy.stakeAmount} > per-subaccord cap ${policy.perSubaccordCap}`,
+      detail: `stake ${amount} > per-subaccord cap ${policy.perSubaccordCap}`,
     };
   }
   const stakedElsewhere = ctx.stakedElsewhere ?? 0n;
-  if (stakedElsewhere + policy.stakeAmount > policy.globalStakeBudget) {
+  if (stakedElsewhere + amount > policy.globalStakeBudget) {
     return {
       ok: false,
       reason: "OverGlobalBudget",
-      detail: `${stakedElsewhere} + ${policy.stakeAmount} > ${policy.globalStakeBudget}`,
+      detail: `${stakedElsewhere} + ${amount} > ${policy.globalStakeBudget}`,
     };
   }
   if (
     ctx.stakingTokenBalance !== undefined &&
-    ctx.stakingTokenBalance < policy.stakeAmount + policy.reserveFloor
+    ctx.stakingTokenBalance < amount + policy.reserveFloor
   ) {
     return {
       ok: false,
       reason: "InsufficientReserve",
-      detail: `${ctx.stakingTokenBalance} < ${policy.stakeAmount} + ${policy.reserveFloor} (reserve floor)`,
+      detail: `${ctx.stakingTokenBalance} < ${amount} + ${policy.reserveFloor} (reserve floor)`,
     };
   }
   return { ok: true };

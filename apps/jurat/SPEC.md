@@ -121,12 +121,12 @@ config):
 | --- | --- |
 | Staking token | `staking_token` ∈ allowlist |
 | Fee token | `fee_token` ∈ allowlist |
-| Min stake | `min_stake` within `[min, max]` configured range |
+| Min stake | `min_stake` within `[min, max]` configured range and > 0 (zero-minimum pools carry no draw weight) |
 | Fee per juror | `fee_per_juror` within configured range |
 | Coherence | `alpha_bps` ≤ configured cap |
 | Aggregation | `aggregation == Plurality` (v1) |
 | Commit window | `commit_window` ≥ configured floor (agent runtime budget) |
-| Budget | global stake budget not exceeded + per-Subaccord cap + reserve floor (never stake below configured remaining balance) |
+| Budget | pool `min_stake` (the join amount) not over the per-Subaccord cap; per-token global stake budget not exceeded; reserve floor retained (never stake below configured remaining balance) |
 
 ## Agent runner
 
@@ -171,12 +171,11 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_LLM_API_KEY` / `JURAT_LLM_MODEL` | Provider credentials / model id | required |
 | `JURAT_STAKING_TOKENS` | Comma-separated collateral mints | required |
 | `JURAT_FEE_TOKENS` | Comma-separated fee mints | required |
-| `JURAT_STAKE_AMOUNT` | Amount staked per join | required |
 | `JURAT_MIN_STAKE_MIN` / `JURAT_MIN_STAKE_MAX` | Acceptable `min_stake` range | `0` / unbounded |
 | `JURAT_FEE_PER_JUROR_MIN` / `JURAT_FEE_PER_JUROR_MAX` | Acceptable `fee_per_juror` range | `0` / unbounded |
 | `JURAT_ALPHA_BPS_CAP` | Coherence cap | `2000` |
 | `JURAT_COMMIT_WINDOW_FLOOR` | Minimum commit window seconds (agent runtime budget) | `600` |
-| `JURAT_STAKE_BUDGET` | Global stake budget (in each staking token) | required |
+| `JURAT_STAKE_BUDGET` | Global stake budget (per staking token) | required |
 | `JURAT_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
 | `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
