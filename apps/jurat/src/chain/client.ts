@@ -7,6 +7,7 @@
  * confirmation, and a poll clock read for window gating. Voting through this
  * client is gated by config.dryRun upstream — the client itself always sends.
  */
+import { ed25519 } from "@noble/curves/ed25519";
 import { readFileSync } from "node:fs";
 
 import {
@@ -117,6 +118,23 @@ export async function createChainClient(
  */
 export function loadOperatorKeyBytes(path: string): Uint8Array {
   return new Uint8Array(JSON.parse(readFileSync(path, "utf-8")) as number[]);
+}
+
+/**
+ * The evidence-registration `signMessage` seam over the operator keypair
+ * (ADR-0034): the daemon verifies the signature against the operator's
+ * Ed25519 PUBLIC key. Noble's `ed25519.sign` takes the 32-byte SEED — a
+ * solana keypair file is 64 bytes (`seed ‖ public`), so sign with the first
+ * half. Throws loudly on any other length (a wrong-size key must fail boot,
+ * not produce signatures against the wrong identity).
+ */
+export function operatorSignMessage(
+  keypairBytes: Uint8Array,
+): (message: Uint8Array) => Promise<Uint8Array> {
+  if (keypairBytes.length !== 64) {
+    throw new Error(`operator keypair must be 64 bytes (seed‖pub), got ${keypairBytes.length}`);
+  }
+  return (message) => Promise.resolve(ed25519.sign(message, keypairBytes.slice(0, 32)));
 }
 
 /**

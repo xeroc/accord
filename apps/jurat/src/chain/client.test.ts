@@ -8,6 +8,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ed25519 } from "@noble/curves/ed25519";
 import {
   createKeyPairSignerFromBytes,
   generateKeyPair,
@@ -17,7 +18,7 @@ import {
 } from "@solana/kit";
 
 import { loadConfig, type Config } from "../config.js";
-import { createChainClient, loadOperatorSigner } from "./client.js";
+import { createChainClient, loadOperatorSigner, operatorSignMessage } from "./client.js";
 
 let dir: string;
 let keypairPath: string;
@@ -100,4 +101,22 @@ test("createChainClient wires signer + facade and polls the clock via rpc", asyn
   expect(client.address).toBe(expected.address);
   expect(client.accord).toBeInstanceOf(Object);
   expect(await client.readClock()).toEqual({ slot: 123_456n, unixTimestamp: 1_763_000_000n });
+});
+
+test("operatorSignMessage signs with the seed half and verifies against the address half", async () => {
+  const seed = ed25519.utils.randomPrivateKey(); // 32 bytes
+  const keypairBytes = new Uint8Array(64); // solana file shape: seed ‖ public
+  keypairBytes.set(seed, 0);
+  keypairBytes.set(ed25519.getPublicKey(seed), 32);
+  const signMessage = operatorSignMessage(keypairBytes);
+  const msg = new TextEncoder().encode("delivery-key registration");
+  const sig = await signMessage(msg);
+  // The daemon verifies against the operator's Ed25519 public key — the
+  // second half of the file (ADR-0034 registration, delivery-key.ts).
+  expect(ed25519.verify(sig, msg, keypairBytes.slice(32))).toBe(true);
+});
+
+test("operatorSignMessage rejects malformed keypair bytes loudly", async () => {
+  expect(() => operatorSignMessage(new Uint8Array(32))).toThrow(/64/);
+  expect(() => operatorSignMessage(new Uint8Array(65))).toThrow(/64/);
 });

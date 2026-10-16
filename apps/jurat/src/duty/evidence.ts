@@ -80,7 +80,16 @@ export function createFileDeliveryKeyStorage(path: string): DeliveryKeyStorage {
   return {
     get: async () => {
       try {
-        return new Uint8Array(await readFile(path));
+        const raw = new Uint8Array(await readFile(path));
+        // The format is fixed 64 bytes; a single trailing \n (or \r\n) is
+        // text-tool contamination (editor/echo), not key material — strip it
+        // rather than forcing a regenerate (generate-once: a fresh key would
+        // orphan the daemon registration).
+        const end =
+          raw.length > 64 && raw.at(-1) === 0x0a
+            ? raw.length - (raw.at(-2) === 0x0d ? 2 : 1)
+            : raw.length;
+        return raw.slice(0, end);
       } catch {
         return null; // absent file — first run
       }

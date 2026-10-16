@@ -11,7 +11,7 @@
 //   pnpm --filter @useaccord/jurat test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519";
@@ -19,6 +19,7 @@ import {
   deliverToDeliveryKey,
   encodeDeliveryKeypair,
   generateDeliveryKey,
+  loadOrCreateDeliveryKey,
   type DeliveryKeypair,
   type SignMessage,
 } from "@useaccord/sdk/evidence";
@@ -117,6 +118,22 @@ function dutyInput() {
 }
 
 // --- delivery-key handling ------------------------------------------------------
+
+test("file storage tolerates a text-tool trailing newline (fixed 64-byte format)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jurat-delkey-nl-"));
+  try {
+    const storage = createFileDeliveryKeyStorage(join(dir, "delivery.key"));
+    const keypair = await loadOrCreateDeliveryKey(storage);
+    // Editor/echo contamination: a single \n (or \r\n) after the 64 bytes.
+    const clean = await storage.get();
+    await writeFile(join(dir, "delivery.key"), new Uint8Array([...clean!, 0x0a]));
+    const reloaded = await loadOrCreateDeliveryKey(storage);
+    assert.deepEqual(reloaded.publicKey, keypair.publicKey);
+    assert.deepEqual(reloaded.secretKey, keypair.secretKey);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("file storage: null when absent, round-trips the keypair, generate-once via ensure", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jurat-delkey-"));

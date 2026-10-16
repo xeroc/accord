@@ -11,7 +11,6 @@
  */
 import { mkdir } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import { ed25519 } from "@noble/curves/ed25519";
 import type { Address } from "@solana/kit";
 import {
   ACCORD_PROGRAM_ID,
@@ -27,7 +26,7 @@ import {
 } from "@useaccord/sdk";
 
 import { loadConfig } from "./config";
-import { createChainClient, loadOperatorKeyBytes } from "./chain/client";
+import { createChainClient, loadOperatorKeyBytes, operatorSignMessage } from "./chain/client";
 import { subscribeAccordEvents } from "./chain/events";
 import { joinSubaccord } from "./join/executor";
 import {
@@ -139,8 +138,7 @@ export async function main(): Promise<void> {
     const { keypair } = await ensureJuratDeliveryKey({
       endpoint: config.evidence.endpoint,
       juror: chain.address,
-      signMessage: (message) =>
-        Promise.resolve(ed25519.sign(message, loadOperatorKeyBytes(config.keypairPath))),
+      signMessage: operatorSignMessage(loadOperatorKeyBytes(config.keypairPath)),
       storage: createFileDeliveryKeyStorage(config.evidence.deliveryKeyPath),
     });
     log(
