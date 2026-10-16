@@ -1,5 +1,7 @@
 ---
 "@useaccord/sdk": patch
+"@useaccord/canon": patch
+"@useaccord/synod": patch
 "@useaccord/cli": patch
 ---
 

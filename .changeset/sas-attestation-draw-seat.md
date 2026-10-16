@@ -1,6 +1,8 @@
 ---
 "@useaccord/sdk": patch
 "@useaccord/cli": patch
+"@useaccord/cranker": patch
+"@useaccord/tests": patch
 ---
 
 SAS attestation threading for `draw_seat` clients + a meaningful gate error. The on-chain defense-in-depth re-check (PROG-ATTESTTION) required the juror's SAS attestation as `remaining_accounts[1]` on gated pools, but no client ever passed it — every gated draw reverted the red-herring `InvalidPanelSize`. The gated branch of the count check now reuses `AttestationMissing` (ungated stays `InvalidPanelSize`). SDK `drawSeat`/`buildDrawSeat` gain an optional `attestation` (read-only remaining account); new `findSasAttestation` query discovers an attestation by content (credential+schema+wallet memcmp over the SAS program); `draw:seat --attestation` forwards it explicitly, `draw:submit-panel` and the cranker's draw_seat crank resolve it per seat automatically and skip/abort with a clear remediation message when missing.
