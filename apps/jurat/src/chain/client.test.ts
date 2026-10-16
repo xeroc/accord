@@ -45,6 +45,7 @@ function testConfig(): Config {
     JURAT_STAKING_TOKENS: "MintA",
     JURAT_FEE_TOKENS: "MintA",
     JURAT_STAKE_BUDGET: "1000",
+    JURAT_STAKE_AMOUNT: "500",
     JURAT_SUBACCORD_CAP: "500",
     JURAT_RESERVE_FLOOR: "100",
   });

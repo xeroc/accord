@@ -15,6 +15,7 @@ const VALID_ENV: Record<string, string> = {
   JURAT_LLM_MODEL: "test-model",
   JURAT_STAKING_TOKENS: USDC,
   JURAT_FEE_TOKENS: USDC,
+  JURAT_STAKE_AMOUNT: "5000000",
   JURAT_STAKE_BUDGET: "1000000000",
   JURAT_SUBACCORD_CAP: "500000000",
   JURAT_RESERVE_FLOOR: "100000000",
@@ -33,6 +34,10 @@ test("parses a full env with every optional group set", () => {
     JURAT_MCP_SERVERS_PATH: "./mcp-servers.json",
     JURAT_TELEGRAM_TOKEN: "bot-token",
     JURAT_TELEGRAM_CHAT_ID: "12345",
+    JURAT_EVIDENCE_URL: "http://evidence.internal",
+    JURAT_DELIVERY_KEY_PATH: "./delivery.key",
+    JURAT_SCAN_INTERVAL_MS: "30000",
+    JURAT_MIN_SOL_LAMPORTS: "100000000",
     JURAT_MIN_STAKE_MIN: "1000",
     JURAT_MIN_STAKE_MAX: "9000",
     JURAT_FEE_PER_JUROR_MIN: "10",
@@ -47,12 +52,16 @@ test("parses a full env with every optional group set", () => {
     apiKey: "sk-fallback",
     model: "fallback-model",
   });
-  expect(config.mcpServersPath).toBe("./mcp-servers.json");
+  expect(config.evidence).toEqual({
+    endpoint: "http://evidence.internal",
+    deliveryKeyPath: "./delivery.key",
+  });
   expect(config.telegram).toEqual({ token: "bot-token", chatId: "12345" });
   expect(config.joinGates).toEqual({
     stakingTokens: [USDC],
     feeTokens: [USDC],
     minStakeMin: 1000n,
+    stakeAmount: 5000000n,
     minStakeMax: 9000n,
     feePerJurorMin: 10n,
     feePerJurorMax: 90n,
@@ -64,6 +73,8 @@ test("parses a full env with every optional group set", () => {
   });
   expect(config.dryRun).toBe(false);
   expect(config.stateDir).toBe("/var/lib/jurat");
+  expect(config.scanIntervalMs).toBe(30000);
+  expect(config.minSolLamports).toBe(100000000n);
 });
 
 test("defaults: minimal env → dryRun ON, sane floors, optional groups absent", () => {
@@ -100,12 +111,37 @@ test("missing required var throws with its name", () => {
     "JURAT_FEE_TOKENS",
     "JURAT_STAKE_BUDGET",
     "JURAT_SUBACCORD_CAP",
-    "JURAT_RESERVE_FLOOR",
+    "JURAT_STAKE_AMOUNT",
   ]) {
     const env = { ...VALID_ENV };
     delete env[key];
     expect(() => load(env)).toThrow(key);
   }
+});
+
+test("missing JURAT_STAKE_AMOUNT throws with its name", () => {
+  const env = { ...VALID_ENV };
+  delete env.JURAT_STAKE_AMOUNT;
+  expect(() => loadConfig(env)).toThrow("JURAT_STAKE_AMOUNT");
+});
+
+test("JURAT_STAKE_AMOUNT over the per-subaccord cap throws at boot", () => {
+  expect(() => load({ ...VALID_ENV, JURAT_STAKE_AMOUNT: "600000000" })).toThrow(
+    /JURAT_STAKE_AMOUNT.*JURAT_SUBACCORD_CAP/,
+  );
+});
+
+test("partial evidence pair throws", () => {
+  expect(() => load({ ...VALID_ENV, JURAT_EVIDENCE_URL: "http://evidence.internal" })).toThrow(
+    "JURAT_EVIDENCE_URL and JURAT_DELIVERY_KEY_PATH must be set together",
+  );
+});
+
+test("defaults: scan interval 60s, SOL fee floor, evidence absent", () => {
+  const config = load();
+  expect(config.scanIntervalMs).toBe(60_000);
+  expect(config.minSolLamports).toBe(50_000_000n);
+  expect(config.evidence).toBeUndefined();
 });
 
 test("blank required var counts as missing", () => {

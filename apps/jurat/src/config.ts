@@ -22,6 +22,8 @@ export interface JoinGatesConfig {
   readonly stakingTokens: readonly string[];
   /** Base58 mint allowlist for the Subaccord's fee_token. */
   readonly feeTokens: readonly string[];
+  /** Amount staked per join (raw base units of the pool's staking token). */
+  readonly stakeAmount: bigint;
   /** Accept pools whose configured min_stake is within [min, max]. */
   readonly minStakeMin: bigint;
   readonly minStakeMax?: bigint;
@@ -45,6 +47,14 @@ export interface TelegramConfig {
   readonly chatId: string;
 }
 
+/** Evidence daemon access — both vars together or none (unset: verdict pipeline dark). */
+export interface EvidenceConfig {
+  /** Evidence daemon base URL (ADR-0011). */
+  readonly endpoint: string;
+  /** X25519 Delivery Key file (ADR-0034), created on first run. */
+  readonly deliveryKeyPath: string;
+}
+
 export interface Config {
   readonly rpcUrl: string;
   /** WS endpoint: JURAT_WS_URL or derived from rpcUrl (http→ws, port+1). */
@@ -58,9 +68,15 @@ export interface Config {
   readonly joinGates: JoinGatesConfig;
   /** Both vars together or none. */
   readonly telegram?: TelegramConfig;
+  /** Both vars together or none; unset disables evidence intake (join watch still runs). */
+  readonly evidence?: EvidenceConfig;
   /** Default true — no vote tx leaves the process unless JURAT_DRY_RUN=false. */
   readonly dryRun: boolean;
   readonly stateDir: string;
+  /** Reconcile scan interval (ms) — the truth loop. Default 60_000. */
+  readonly scanIntervalMs: number;
+  /** SOL the operator must retain for tx fees (join executor guard). Default 50_000_000. */
+  readonly minSolLamports: bigint;
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -77,7 +93,20 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error("JURAT_TELEGRAM_TOKEN and JURAT_TELEGRAM_CHAT_ID must be set together");
   }
 
+  const evidenceUrl = optional(env.JURAT_EVIDENCE_URL);
+  const evidenceKey = optional(env.JURAT_DELIVERY_KEY_PATH);
+  if ((evidenceUrl === undefined) !== (evidenceKey === undefined)) {
+    throw new Error("JURAT_EVIDENCE_URL and JURAT_DELIVERY_KEY_PATH must be set together");
+  }
+
   const rpcUrl = required(env, "JURAT_RPC_URL");
+  const joinGates = parseJoinGates(env);
+  if (joinGates.stakeAmount > joinGates.subaccordCap) {
+    throw new Error(
+      `JURAT_STAKE_AMOUNT ${joinGates.stakeAmount} exceeds JURAT_SUBACCORD_CAP ` +
+        `${joinGates.subaccordCap} — every join would be rejected on-chain`,
+    );
+  }
 
   return {
     rpcUrl,
@@ -86,13 +115,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     llm,
     llmFallback,
     mcpServersPath: optional(env.JURAT_MCP_SERVERS_PATH),
-    joinGates: parseJoinGates(env),
+    joinGates,
     telegram:
       telegramToken !== undefined && telegramChat !== undefined
         ? { token: telegramToken, chatId: telegramChat }
         : undefined,
+    evidence:
+      evidenceUrl !== undefined && evidenceKey !== undefined
+        ? { endpoint: evidenceUrl, deliveryKeyPath: evidenceKey }
+        : undefined,
     dryRun: dryRunFlag(env.JURAT_DRY_RUN),
     stateDir: optional(env.JURAT_STATE_DIR) ?? "./state",
+    scanIntervalMs: intFlag(env.JURAT_SCAN_INTERVAL_MS, 60_000, "JURAT_SCAN_INTERVAL_MS"),
+    minSolLamports: bigIntFlag(env.JURAT_MIN_SOL_LAMPORTS, 50_000_000n, "JURAT_MIN_SOL_LAMPORTS"),
   };
 }
 
@@ -125,6 +160,7 @@ function parseJoinGates(env: Record<string, string | undefined>): JoinGatesConfi
   return {
     stakingTokens: tokenList(env, "JURAT_STAKING_TOKENS"),
     feeTokens: tokenList(env, "JURAT_FEE_TOKENS"),
+    stakeAmount: requiredBigInt(env, "JURAT_STAKE_AMOUNT"),
     minStakeMin,
     minStakeMax,
     feePerJurorMin: feeMin,

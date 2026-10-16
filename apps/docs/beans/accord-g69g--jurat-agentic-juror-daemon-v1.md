@@ -1,14 +1,12 @@
 ---
 # accord-g69g
 title: Jurat — agentic juror daemon (v1)
-status: todo
+status: completed
 type: milestone
 priority: high
 created_at: 2026-10-15T07:31:47Z
-updated_at: 2026-10-15T07:31:47Z
+updated_at: 2026-10-15T14:30:26Z
 ---
-
-# Jurat — agentic juror daemon (v1)
 
 `apps/jurat` — an autonomous Solana juror operator for the Accord arbitration
 protocol. One daemon, one hot operator keypair: it stakes into attractive

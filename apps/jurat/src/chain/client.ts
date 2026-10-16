@@ -110,10 +110,20 @@ export async function createChainClient(
 }
 
 /**
- * Load the operator keypair from a solana keypair JSON file (64 uint8 array).
- * Throws on unreadable file, malformed JSON, or wrong shape — the identity is
- * load-bearing, so boot fails loud. Balance checks are not done here: funds are
- * topped up manually and the reserve floor lives in the join evaluator.
+ * Parse a solana keypair JSON file into its 64 bytes — no validation beyond
+ * JSON shape; callers that need the signer use {@link loadOperatorSigner}.
+ * Shared with the Ed25519 signMessage seam (evidence registration): one
+ * parse, no drift.
+ */
+export function loadOperatorKeyBytes(path: string): Uint8Array {
+  return new Uint8Array(JSON.parse(readFileSync(path, "utf-8")) as number[]);
+}
+
+/**
+ * Load the operator keypair as a signer. Throws on unreadable file, malformed
+ * JSON, or wrong shape — the identity is load-bearing, so boot fails loud.
+ * Balance checks are not done here: funds are topped up manually and the
+ * reserve floor lives in the join evaluator.
  */
 export async function loadOperatorSigner(path: string): Promise<KeyPairSigner> {
   let raw: string;

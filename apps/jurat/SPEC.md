@@ -34,18 +34,19 @@ vote — a fake Schelling signal is worse than silence.
 | --- | --- | --- |
 | Package scaffold (bun + tsc + eslint) | `package.json`, `tsconfig.json`, `eslint.config.js` | Landed |
 | Notify channel interface + Telegram | `src/notify/` | Landed (bean `accord-4qyb`) |
-| Config (env → typed config) | `src/config.ts` | Not yet built |
-| Chain client (RPC, decoders, SDK facades) | `src/chain/` | Not yet built |
-| Event subscriber (log hints) | `src/chain/events.ts` | Not yet built |
-| Reconcile scan (account truth) | `src/chain/reconcile.ts` | Not yet built |
-| Join evaluator + executor | `src/join/` | Not yet built |
-| Duty tracker (Round.jurors[] membership) | `src/duty/` | Not yet built |
-| Evidence intake (Delivery Key registration + fetch) | `src/evidence/` | Not yet built |
-| Agent runner (`runVerdict(inputs) → Verdict`) | `src/agent/` | Not yet built (mock rig landed) |
-| Mock LLM test rig (openai-compatible stub server) | `src/agent/testing/mock-llm.ts` | Landed (bean `accord-f3ir`) |
-| Vote executor (commit/reveal, salts) | `src/vote/` | Not yet built |
-| Local state store (duties, salts, cursor, joins) | `src/state/` | Not yet built |
-| Entry point / loop | `src/main.ts` | Not yet built |
+| Config (env → typed config) | `src/config.ts` | Landed |
+| Chain client (RPC, decoders, SDK facades) | `src/chain/client.ts` | Landed |
+| Event subscriber (log hints) | `src/chain/events.ts` | Landed |
+| Reconcile scan (account truth) | `src/chain/reconcile.ts` | Landed |
+| Join evaluator + executor | `src/join/` | Landed |
+| Duty tracker (Round.jurors[] membership) | `src/duty/tracker.ts` | Landed |
+| Evidence intake (Delivery Key registration + fetch) | `src/duty/evidence.ts` | Landed |
+| Agent runner (`runVerdict(inputs) → Verdict`) | `src/agent/` | Landed (mock rig: `src/agent/testing/`) |
+| Provider ladder (primary → fallback) | `src/agent/provider.ts` | Landed |
+| Vote executor (commit/reveal, salts) | `src/vote/` | Landed |
+| Local state store (duties, votes, join book) | `src/state/stores.ts` + `src/join/book.ts` | Landed |
+| Daemon runtime (scan loop + duty state machine) | `src/runtime.ts` | Landed (bean `accord-vruh`) |
+| Entry point / loop | `src/main.ts` | Landed (bean `accord-vruh`) |
 
 ## In scope (v1)
 
@@ -158,26 +159,30 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | Env | Meaning | Default |
 | --- | --- | --- |
 | `JURAT_RPC_URL` | Solana RPC endpoint | required |
+| `JURAT_WS_URL` | WS endpoint (send confirm + log hints) | derived from RPC URL |
 | `JURAT_KEYPAIR_PATH` | Operator keypair (hot) | required |
 | `JURAT_DRY_RUN` | Vote gate — `true` blocks all vote-shaped tx | `true` |
-| `JURAT_STATE_DIR` | Local state (duties, salts, cursor, joins) | required |
-| `JURAT_TELEGRAM_BOT_TOKEN` / `JURAT_TELEGRAM_CHAT_ID` | Notify channel | required (v1: Telegram always fires) |
-| `JURAT_EVIDENCE_URL` | Evidence daemon base URL | required |
-| `JURAT_DELIVERY_KEY_PATH` | X25519 Delivery Key file (ADR-0034) | required |
+| `JURAT_STATE_DIR` | Local state (duties, votes, join book) | `./state` |
+| `JURAT_SCAN_INTERVAL_MS` | Reconcile scan interval (the truth loop) | `60000` |
+| `JURAT_TELEGRAM_TOKEN` / `JURAT_TELEGRAM_CHAT_ID` | Notify channel (both or none; unset = stdout) | optional |
+| `JURAT_EVIDENCE_URL` | Evidence daemon base URL (both or none; unset = duties hold, join watch still runs) | optional |
+| `JURAT_DELIVERY_KEY_PATH` | X25519 Delivery Key file (ADR-0034), created on first run | optional (pair) |
 | `JURAT_LLM_BASE_URL` / `JURAT_LLM_FALLBACK_BASE_URL` | openai-compatible endpoints | required / optional |
 | `JURAT_LLM_API_KEY` / `JURAT_LLM_MODEL` | Provider credentials / model id | required |
-| `JURAT_STAKING_TOKEN_ALLOWLIST` | Comma-separated mints | required |
-| `JURAT_FEE_TOKEN_ALLOWLIST` | Comma-separated mints | required |
-| `JURAT_MIN_STAKE_MIN` / `JURAT_MIN_STAKE_MAX` | Acceptable `min_stake` range | required |
-| `JURAT_FEE_PER_JUROR_MIN` / `JURAT_FEE_PER_JUROR_MAX` | Acceptable `fee_per_juror` range | required |
-| `JURAT_MAX_ALPHA_BPS` | Coherence cap | required |
-| `JURAT_COMMIT_WINDOW_FLOOR_S` | Minimum commit window (agent runtime budget) | required |
+| `JURAT_STAKING_TOKENS` | Comma-separated collateral mints | required |
+| `JURAT_FEE_TOKENS` | Comma-separated fee mints | required |
+| `JURAT_STAKE_AMOUNT` | Amount staked per join | required |
+| `JURAT_MIN_STAKE_MIN` / `JURAT_MIN_STAKE_MAX` | Acceptable `min_stake` range | `0` / unbounded |
+| `JURAT_FEE_PER_JUROR_MIN` / `JURAT_FEE_PER_JUROR_MAX` | Acceptable `fee_per_juror` range | `0` / unbounded |
+| `JURAT_ALPHA_BPS_CAP` | Coherence cap | `2000` |
+| `JURAT_COMMIT_WINDOW_FLOOR` | Minimum commit window seconds (agent runtime budget) | `600` |
 | `JURAT_STAKE_BUDGET` | Global stake budget (in each staking token) | required |
-| `JURAT_PER_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
+| `JURAT_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
+| `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
 
-Exact names/defaults finalize with the config module (`src/config.ts`,
-Epic 1); this table is the design contract.
+Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
+`accord-vruh`); `.env.example` is the copy-paste surface.
 
 ## Failure modes
 

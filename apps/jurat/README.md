@@ -13,10 +13,9 @@ Authority: [ADR-0036](../docs/adr/accord/0036-jurat-agentic-juror-daemon.md)
 (decisions) · [`SPEC.md`](./SPEC.md) (architecture, gates, duty flow, config).
 
 > [!NOTE]
-> **Status: in construction (v1).** The notify channel (`src/notify/`) is
-> landed and tested; the chain client, join evaluator, duty pipeline, agent
-> runner, and vote executor land with their beans (see the module map in
-> `SPEC.md`). The quickstart below describes the v1 surface.
+> **Status: v1 landed (milestone accord-g69g + daemon runtime accord-vruh).**
+> The full loop — scan → join gates → duty tracking → verdict → commit/reveal —
+> runs from `src/main.ts`; see `SPEC.md` for the module map.
 
 ## Quickstart
 
@@ -29,7 +28,7 @@ pnpm test    # bun test — unit tests (notify channel today)
 pnpm build   # tsc --noEmit
 pnpm lint    # eslint
 
-# run (once the daemon entry point lands)
+# run the daemon (boots a scan immediately, then every JURAT_SCAN_INTERVAL_MS)
 JURAT_RPC_URL=... JURAT_KEYPAIR_PATH=... JURAT_DRY_RUN=true bun run src/main.ts
 ```
 
