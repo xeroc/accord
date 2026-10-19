@@ -3,6 +3,8 @@
 > **Mechanize the verdict.**
 [![CI](https://github.com/xeroc/accord/actions/workflows/release.yml/badge.svg)](https://github.com/xeroc/accord/actions/workflows/release.yml)
 [![Docs](https://img.shields.io/badge/docs-docs.useaccord.xyz-cyan)](https://docs.useaccord.xyz)
+[![Whitepaper](https://img.shields.io/badge/arXiv-2610.20666-b31b1b?logo=arxiv)](https://arxiv.org/abs/2610.20666)
+[![npm](https://img.shields.io/npm/v/@useaccord/sdk)](https://www.npmjs.com/package/@useaccord/sdk)
 
 Accord is a general-purpose, **capital-weighted Schelling arbitration oracle on
 Solana** — an on-chain dispute-resolution primitive inspired by Kleros. Any
@@ -215,6 +217,8 @@ See [Testing](#testing) for the two-harness philosophy.
 │   ├── landing/                # Landing page (useaccord.xyz)
 │   ├── hanse/                  # Hanse — the protocol for mutuals (hanse.useaccord.xyz)
 │   ├── pitch/                  # Demo-day deck
+│   ├── jurat/                  # Jurat — autonomous agentic juror daemon (ADR-0036)
+│   ├── remotion/               # Remotion 4 video framework rendering brand-obedient videos
 │   └── docs/                   # Documentation hub
 │       ├── docs/               # MkDocs site content (integration, reference, security)
 │       └── adr/                # ADRs — repo-only, per-program series (accord/, canon/, synod/)
@@ -410,8 +414,8 @@ only the `release:*` scripts.
 | `make build`                              | `anchor build` (sBPFv3, verified) then `pnpm -r run build` (packages/apps) |
 | `make test`                               | Full suite: Rust unit + LiteSVM + jest e2e (`anchor test` auto-starts Surfpool) |
 | `make test_unit`                          | LiteSVM Rust unit/TDD tests (fast, no validator)                          |
-| `make run_surfpool`                       | Start a Surfpool Surfnet manually (for isolated e2e debugging)            |
-| `make test_surfpool`                      | Run jest e2e suite only (needs a running Surfpool/validator)             |
+| `surfpool start --yes --db :memory:`      | Start a fresh Surfpool Surfnet manually (isolated e2e debugging)          |
+| `pnpm --filter @useaccord/tests test`     | Run jest e2e suite only (needs a running Surfpool; override via `ACCORD_RPC_URL`) |
 | `make lint`                               | Lint every workspace that declares a lint script                          |
 | `make clean`                              | Remove build artifacts and `node_modules`                                 |
 | `make coverage`                           | Regenerate the instruction × test-suite matrix (docs/reference/coverage.md) |
@@ -447,10 +451,10 @@ The project uses **two complementary harnesses** (decision `veridao-8ys4`):
 
 ### jest + Surfpool — full end-to-end
 
-- **Location:** `tests/src/*.spec.ts`
 - **Run:** `make test` (runs the full suite including e2e; `anchor test`
   auto-starts Surfpool, deploys the program, and runs jest). For isolated e2e
-  iteration: `make run_surfpool` then `make test_surfpool`.
+  iteration: `surfpool start --yes --db :memory:` (fresh Surfnet each start),
+  then `pnpm --filter @useaccord/tests test` (honors `ACCORD_RPC_URL`).
 - **What it is:** the real validator behaviour — CPI chains, VRF, token
   transfers, Surfpool cheatcodes (time-warp, token injection). Long-running
   (`testTimeout: 120000`).
@@ -484,7 +488,8 @@ tests are green.
 | `@useaccord/canon`, `synod` (TypeScript) | ✅ Implemented | Facades over their own Codama clients                              |
 | `@useaccord/ui`                        | ✅ Implemented | Shared design tokens + React modules (Storybook)                   |
 | `tests/` (jest/Surfpool)               | ✅ Implemented | Per-instruction-group e2e specs (accord + canon + synod), green via `make test` |
-| Apps (CLI, cranker, evidence-daemon, dApps, landing, hanse, pitch) | ✅ Built | Consume the SDKs; lint/build/test green in CI      |
+| Apps (CLI, cranker, evidence-daemon, dApps, landing, hanse, pitch, remotion) | ✅ Built | Consume the SDKs; lint/build/test green in CI      |
+| `apps/jurat` (agentic juror)            | ✅ v1 landed   | Autonomous juror daemon (ADR-0036): stake filter → duty watch → LLM verdict → commit/reveal; Surfpool e2e green |
 | `apps/docs` (MkDocs)                   | ✅ Live        | Integration guide, protocol reference, security, evaluator on-ramp |
 | Security audit                         | ⚠️ Internal only | Reviews in `reports/`; external audit not started — pre-mainnet  |
 
@@ -623,8 +628,8 @@ older Anchor, ensure the crate declares `idl-build` in `[features]`.
 Integration tests need a running validator. Start Surfpool first:
 
 ```bash
-make run_surfpool     # keeps running; use a separate terminal
-make test_surfpool
+surfpool start --yes --db :memory:    # keeps running; use a separate terminal
+pnpm --filter @useaccord/tests test   # honours ACCORD_RPC_URL (default 127.0.0.1:8899)
 ```
 
 ### Native extension / build failures
@@ -677,6 +682,9 @@ reviewer's evidence map (claims → design doc → code → test), the
 Kourt), and the generated
 [test-coverage matrix](https://docs.useaccord.xyz/reference/coverage/).
 
+- **Whitepaper:** [Accord: Schelling-Point Arbitration as a Composable Solana
+  Primitive](https://arxiv.org/abs/2610.20666) (arXiv:2610.20666, cs.GT) —
+  the mechanism, economics, and appeal-ladder analysis behind this repo
 - **Docs site:** [docs.useaccord.xyz](https://docs.useaccord.xyz) — Quickstart,
   Integration Guide, Protocol Reference, Security (Trust Profile, Threat
   Model), Test Coverage
@@ -689,11 +697,30 @@ Kourt), and the generated
   economics, edge cases)
 - **`programs/accord/security-checklist.md`** — security audit authority
   (findings cite `file:line`)
-- **ADRs** (`apps/docs/adr/`, repo-only, per-program series — 35 accord, 3+ canon, 2 synod;
+- **ADRs** (`apps/docs/adr/`, repo-only, per-program series — 36 accord, 4 canon, 2 synod;
   superseded decisions stay readable with reasons):
   [Accord index](apps/docs/adr/accord/index.md) ·
   [Canon index](apps/docs/adr/canon/index.md) ·
   [Synod index](apps/docs/adr/synod/index.md)
+
+### Citation
+
+The protocol is published as a whitepaper: **Schuh, F. (2026). _Accord:
+Schelling-Point Arbitration as a Composable Solana Primitive._**
+[arXiv:2610.20666](https://arxiv.org/abs/2610.20666). If Accord informs your
+research, cite it as:
+
+```bibtex
+@misc{schuh2026accord,
+  title         = {Accord: Schelling-Point Arbitration as a Composable Solana Primitive},
+  author        = {Fabian Schuh},
+  year          = {2026},
+  eprint        = {2610.20666},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.GT},
+  url           = {https://arxiv.org/abs/2610.20666}
+}
+```
 
 ---
 
