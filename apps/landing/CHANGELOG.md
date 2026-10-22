@@ -1,5 +1,13 @@
 # @useaccord/landing
 
+## 0.6.0
+
+### Patch Changes
+
+- [#22](https://github.com/xeroc/accord/pull/22) [`cf7fad5`](https://github.com/xeroc/accord/commit/cf7fad59a1b55c5835639cbd663d1bb92c4e5404) Thanks [@xeroc](https://github.com/xeroc)! - Add a whitepaper card to the how-it-rules hub: full-width card linking to /whitepaper.pdf (first-page shot left, headline + abstract excerpt right, entire card clickable), with the film chapters moved under an "Explainers" subsection heading.
+- Updated dependencies []:
+  - @useaccord/ui@0.6.0
+
 ## 0.5.2
 
 ### Patch Changes
