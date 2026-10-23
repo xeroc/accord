@@ -150,5 +150,10 @@ export function parseTraceBatch(s: string): TraceBatch {
  */
 export interface TraceStore {
   appendBatch(b: TraceBatch): Promise<void>;
+  /**
+   * Highest stored batch seq for one juror, or `null` when none is stored —
+   * the ingest seq gate (`seq <= last` ⇒ idempotent no-op, ADR-0037 §3).
+   */
+  lastSeq(subaccord: Address, dispute: Address, juror: Address): Promise<number | null>;
   readEvents(dispute: Address, juror?: Address, fromSeq?: number): Promise<TraceEnvelope[]>;
 }

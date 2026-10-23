@@ -72,6 +72,16 @@ export class FsTraceStore implements TraceStore {
     await appendFile(path, `${serializeTraceBatch(b)}\n`, "utf-8");
   }
 
+  async lastSeq(subaccord: Address, dispute: Address, juror: Address): Promise<number | null> {
+    assertTraceAddress("subaccord", subaccord);
+    assertTraceAddress("dispute", dispute);
+    assertTraceAddress("juror", juror);
+    const path = join(this.rootDir, "traces", subaccord, dispute, `${juror}.jsonl`);
+    const batches = await this.readBatches(path);
+    const last = batches[batches.length - 1];
+    return last === undefined ? null : last.seq;
+  }
+
   async readEvents(dispute: Address, juror?: Address, fromSeq = 0): Promise<TraceEnvelope[]> {
     assertTraceAddress("dispute", dispute);
     if (juror !== undefined) assertTraceAddress("juror", juror);

@@ -118,6 +118,15 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     expect(await store.readEvents(other)).toEqual([]);
   });
 
+  test("lastSeq: highest stored seq, or null when none", async () => {
+    const store = new FsTraceStore({ rootDir });
+    expect(await store.lastSeq(SUB, DISPUTE, JUROR_A)).toBeNull();
+    await store.appendBatch(batch(1));
+    await store.appendBatch(batch(3));
+    expect(await store.lastSeq(SUB, DISPUTE, JUROR_A)).toBe(3);
+    expect(await store.lastSeq(SUB, DISPUTE, JUROR_B)).toBeNull();
+  });
+
   test("layout: one JSONL file per juror under traces/{sub}/{dispute}", async () => {
     const store = new FsTraceStore({ rootDir });
     await store.appendBatch(batch(1, undefined, JUROR_A));

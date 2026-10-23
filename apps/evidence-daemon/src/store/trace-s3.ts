@@ -82,6 +82,18 @@ export class S3TraceStore implements TraceStore {
     );
   }
 
+  async lastSeq(subaccord: Address, dispute: Address, juror: Address): Promise<number | null> {
+    assertTraceAddress("subaccord", subaccord);
+    assertTraceAddress("dispute", dispute);
+    assertTraceAddress("juror", juror);
+    let max: number | null = null;
+    for (const key of await this.listKeys(`traces/${subaccord}/${dispute}/${juror}/`)) {
+      const seq = Number(key.split("/")[4]!.replace(/\.json$/, ""));
+      if (max === null || seq > max) max = seq;
+    }
+    return max;
+  }
+
   async readEvents(dispute: Address, juror?: Address, fromSeq = 0): Promise<TraceEnvelope[]> {
     assertTraceAddress("dispute", dispute);
     if (juror !== undefined) assertTraceAddress("juror", juror);

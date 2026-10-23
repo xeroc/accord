@@ -95,6 +95,9 @@ function memoryDomainStore(): DomainStore {
 function memoryTraceStore(): TraceStore {
   return {
     async appendBatch() {},
+    async lastSeq() {
+      return null;
+    },
     async readEvents() {
       return [];
     },

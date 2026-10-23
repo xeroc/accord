@@ -148,15 +148,6 @@ export interface WireDeps {
 export function createServerDeps(deps: WireDeps): ServerDeps {
   const { store, accord, keyring } = deps;
 
-  const traceIngest: ServerDeps["traceIngest"] = async (subaccord, dispute, juror, body) => {
-    const out = await ingestTrace(subaccord, dispute, juror, body, {
-      store: deps.traceStore,
-    });
-    return out.status === 201
-      ? { ok: true, status: 201 }
-      : { ok: false, status: out.status, error: out.reason };
-  };
-
   // --- store adapter: pipeline ports (Uint8Array) → EvidenceStore (Address) ---
   const ingestStore: IngestStore = {
     async exists(sa, d, round) {
@@ -247,6 +238,16 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       // Only the first `jurorCount` entries are live; the rest are zero-pubkey padding.
       return { jurors: r.jurors.slice(0, r.jurorCount).map((j) => b58ToBytes(j)) };
     },
+  };
+
+  const traceIngest: ServerDeps["traceIngest"] = async (subaccord, dispute, juror, body) => {
+    const out = await ingestTrace(subaccord, dispute, juror, body, {
+      store: deps.traceStore,
+      chain: deliverChain, // same live-Round reader as delivery (ADR-0037 §0)
+    });
+    return out.status === 200 || out.status === 201
+      ? { ok: true, status: out.status }
+      : { ok: false, status: out.status, error: out.reason };
   };
 
   // --- keyring adapter: EnvKeyring (Ed25519Keypair) → deliver secret seed ---

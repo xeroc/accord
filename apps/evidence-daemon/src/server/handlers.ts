@@ -235,14 +235,14 @@ export type DeliveryKeyGetResult =
 export type DeliveryKeyGetHandler = (juror: string) => Promise<DeliveryKeyGetResult>;
 
 /**
- * POST /trace/{subaccord}/{dispute}/{juror} (ADR-0037): validate the push
- * envelope and append it to the durable trace corpus. Transport shape
- * (address guards, body cap) is the route's; envelope shape + events cap +
- * append live here.
+ * POST /trace/{subaccord}/{dispute}/{juror} (ADR-0037): authenticate the push
+ * (canonical-batch Ed25519 sig + live Round.jurors[] gate), then append it
+ * to the durable trace corpus. Transport shape (address guards, body cap) is
+ * the route's; envelope shape + events cap + auth + append live here.
  */
 export type TraceIngestResult =
-  | { readonly ok: true; readonly status: 201 }
-  | { readonly ok: false; readonly status: 400 | 413; readonly error: string };
+  | { readonly ok: true; readonly status: 200 | 201 }
+  | { readonly ok: false; readonly status: 400 | 403 | 413; readonly error: string };
 
 export type TraceIngestHandler = (
   subaccord: string,

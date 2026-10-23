@@ -157,6 +157,15 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
     expect(await store.readEvents(DISPUTE)).toEqual([]);
   });
 
+  test("lastSeq: highest stored seq, or null when none", async () => {
+    const { store } = setup();
+    expect(await store.lastSeq(SUB, DISPUTE, JUROR_A)).toBeNull();
+    await store.appendBatch(batch(1));
+    await store.appendBatch(batch(3));
+    expect(await store.lastSeq(SUB, DISPUTE, JUROR_A)).toBe(3);
+    expect(await store.lastSeq(SUB, DISPUTE, JUROR_B)).toBeNull();
+  });
+
   test("path hygiene: non-base58 segments are rejected before any S3 call", async () => {
     const { store, mock } = setup();
     await expect(
