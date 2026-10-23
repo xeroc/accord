@@ -55,8 +55,11 @@ export interface DutyOpenEvent {
 /** Evidence intake done — paths + digests + sizes, NEVER content. */
 export interface EvidenceEvent {
   kind: "evidence";
-  files: Array<{ path: string; sha256: string; bytes: number }>;
+  files: TraceEvidenceFile[];
 }
+
+/** One intake file's manifest entry (path + content digest + size — no content). */
+export type TraceEvidenceFile = { path: string; sha256: string; bytes: number };
 
 /** The settled verdict — sealed via `unsealAt` (round revealEnd) unless open mode. */
 export interface VerdictEvent {
@@ -213,5 +216,26 @@ export function makeTraceSink(options: TraceSinkOptions): TraceSink {
   return {
     emit,
     drain: () => tail,
+  };
+}
+
+/**
+ * Bind memoized per-duty sinks — the `RuntimeDeps.trace` seam. One binder
+ * per process; each (subaccord, dispute) pair keeps ONE sink so the queue
+ * and seq counter survive across scans of the same duty (a fresh sink per
+ * scan would restart seq and the daemon would idempotently drop everything).
+ */
+export function makeTraceSinkBinder(
+  base: Omit<TraceSinkOptions, "subaccord" | "dispute">,
+): (subaccord: string, dispute: string) => TraceSink {
+  const cache = new Map<string, TraceSink>();
+  return (subaccord, dispute) => {
+    const key = `${subaccord}:${dispute}`;
+    let sink = cache.get(key);
+    if (sink === undefined) {
+      sink = makeTraceSink({ ...base, subaccord, dispute });
+      cache.set(key, sink);
+    }
+    return sink;
   };
 }

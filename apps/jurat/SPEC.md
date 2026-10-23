@@ -46,7 +46,7 @@ vote — a fake Schelling signal is worse than silence.
 | Vote executor (commit/reveal, salts) | `src/vote/` | Landed |
 | Local state store (duties, votes, join book) | `src/state/stores.ts` + `src/join/book.ts` | Landed |
 | Daemon runtime (scan loop + duty state machine) | `src/runtime.ts` | Landed (bean `accord-vruh`) |
-| Trace sink (ADR-0037 push leg) | `src/trace/sink.ts` | Landed (bean `accord-9pdg`; runtime wiring `accord-w4j7`) |
+| Trace sink (ADR-0037 push leg) | `src/trace/sink.ts` + runtime emitters | Landed (beans `accord-9pdg` + `accord-w4j7`) |
 
 ## In scope (v1)
 
@@ -198,7 +198,7 @@ Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 | Verdict fails schema check | Treated as agent failure → retry ladder → abstain |
 | Evidence fetch fails | Duty holds until intake succeeds or commit window closes → abstain + alert |
 | Telegram send fails | Logged via `onError`; pipeline continues (never-reject contract) |
-| Missed events (restart) | Reconcile scan reconstructs duties from accounts; in-flight commit salts are unrecoverable (accepted) |
+| Trace push fails / endpoint dead | Batch dropped (warn log, visible seq gaps); duty pipeline unaffected (ADR-0037) |
 | Key balance below reserve floor | Join evaluator stops staking; alert |
 
 ## Verification

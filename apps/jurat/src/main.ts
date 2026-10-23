@@ -26,7 +26,13 @@ import {
 } from "@useaccord/sdk";
 
 import { loadConfig } from "./config";
-import { createChainClient, loadOperatorKeyBytes, operatorSignMessage } from "./chain/client";
+import {
+  createChainClient,
+  hotKeySeed,
+  loadOperatorKeyBytes,
+  operatorSignMessage,
+} from "./chain/client";
+import { makeTraceSinkBinder } from "./trace/sink";
 import { subscribeAccordEvents } from "./chain/events";
 import { joinSubaccord } from "./join/executor";
 import {
@@ -212,6 +218,14 @@ export async function main(): Promise<void> {
       send: (ix) => chain.sendIx(ix),
     },
     tokenBalance: joinChain.tokenBalance,
+    trace:
+      config.trace &&
+      makeTraceSinkBinder({
+        url: config.trace.url,
+        mode: config.trace.mode,
+        juror: chain.address,
+        seed: hotKeySeed(loadOperatorKeyBytes(config.keypairPath)),
+      }),
     now: async () => Number((await chain.readClock()).unixTimestamp),
     log,
   };

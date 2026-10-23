@@ -16,6 +16,7 @@
 // All persistence + clock IO is injected (same seams as the rest of the
 // duty pipeline); the module is pure orchestration.
 import type { DutyRecord, DutyStore } from "./types.js";
+import type { TraceSink } from "../trace/sink.js";
 
 /** Where a duty's round sits on the chain clock. */
 export type DutyPhase = "review" | "commit" | "reveal" | "final";
@@ -79,7 +80,7 @@ export function dutyPhase(windows: RoundWindows, now: number, allCommitted = fal
  *   retries a void duty.
  */
 export async function trackRound(
-  deps: { store: DutyStore; ourKey: string; now(): number },
+  deps: { store: DutyStore; ourKey: string; now(): number; trace?: TraceSink },
   round: RoundView,
 ): Promise<DutyRecord | null> {
   const prior = await deps.store.load(round.dispute, round.roundIdx);
@@ -118,5 +119,15 @@ export async function trackRound(
     updatedAt: now,
   };
   await deps.store.save(record);
+  // ADR-0037 duty-open — once per fresh draw (windows are chain seconds;
+  // the trace wire is unix ms).
+  deps.trace?.emit({
+    kind: "duty-open",
+    round: round.roundIdx,
+    seat,
+    reviewEnd: Number(round.reviewEnd) * 1_000,
+    commitEnd: Number(round.commitEnd) * 1_000,
+    revealEnd: Number(round.revealEnd) * 1_000,
+  });
   return record;
 }
