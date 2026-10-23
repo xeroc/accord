@@ -11,6 +11,7 @@
 //   pnpm --filter @useaccord/jurat test
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -228,11 +229,23 @@ test("happy path: decrypts the delivered bundle and assembles a working AgentCon
   ]);
   try {
     const notified: string[] = [];
-    const context = await assembleDutyContext(evidenceDeps(notified), CHAIN, dutyInput());
+    const { context, files } = await assembleDutyContext(
+      evidenceDeps(notified),
+      CHAIN,
+      dutyInput(),
+    );
 
     assert.equal(context.dispute, DISPUTE);
     assert.equal(context.numOptions, 3);
     assert.equal(notified.length, 0);
+    // manifest: path + raw-content sha256 + byte size — content itself absent
+    assert.equal(files.length, 1);
+    assert.equal(files[0].path, "round-0");
+    assert.equal(files[0].bytes, PLAINTEXT.length);
+    assert.equal(
+      files[0].sha256,
+      createHash("sha256").update(new TextEncoder().encode(PLAINTEXT)).digest("hex"),
+    );
 
     // tools wired: evidence served from the decrypted bundle (no HTTP),
     // chain readers routed through, domain doc fetched
@@ -271,7 +284,7 @@ test("missing domain doc is not a failure — empty string (optional input)", as
     },
   ]);
   try {
-    const context = await assembleDutyContext(evidenceDeps([]), CHAIN, dutyInput());
+    const { context } = await assembleDutyContext(evidenceDeps([]), CHAIN, dutyInput());
     const tools = context.tools as Record<string, { execute: (a: unknown) => Promise<unknown> }>;
     assert.equal(await tools.read_domain_doc!.execute({ subaccord: SUBACCORD }), "");
   } finally {

@@ -20,6 +20,7 @@
 // alerts via `notify` and throws a typed error — the pipeline abstains
 // with kind `evidence-unavailable`. A partial context is never returned;
 // there is no fallback evidence and no guessing.
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import {
   ensureRegisteredDeliveryKey,
@@ -33,6 +34,7 @@ import {
 
 import { makeJuratTools } from "../agent/tools.js";
 import type { AgentContext } from "../agent/runner.js";
+import type { TraceEvidenceFile } from "../trace/sink.js";
 
 /** Daemon transport/availability failures and empty deliveries. */
 export class EvidenceUnavailableError extends Error {
@@ -148,13 +150,20 @@ async function failMalformed(deps: EvidenceDeps, dispute: string, detail: string
 /**
  * Fetch + decrypt the juror-bound evidence bundle and the domain doc, and
  * assemble the runner's `AgentContext` over them. Every failure path
- * alerts and throws — a partial context is never returned.
+ * alerts and throws — a partial context is never returned. The returned
+ * manifest (path + sha256 + bytes per file) feeds the ADR-0037 `evidence`
+ * trace event — content itself never leaves the process.
  */
+export interface DutyIntake {
+  context: AgentContext;
+  files: TraceEvidenceFile[];
+}
+
 export async function assembleDutyContext(
   deps: EvidenceDeps,
   chain: ChainReaders,
   input: DutyIntakeInput,
-): Promise<AgentContext> {
+): Promise<DutyIntake> {
   let rounds;
   try {
     rounds = await fetchDelivery({
@@ -181,6 +190,7 @@ export async function assembleDutyContext(
   }
 
   const documents: EvidenceDocument[] = [];
+  const files: TraceEvidenceFile[] = [];
   for (const round of rounds) {
     let plaintext: Uint8Array;
     try {
@@ -193,6 +203,11 @@ export async function assembleDutyContext(
       );
     }
     documents.push({ name: `round-${round.round}`, content: new TextDecoder().decode(plaintext) });
+    files.push({
+      path: `round-${round.round}`,
+      sha256: createHash("sha256").update(plaintext).digest("hex"),
+      bytes: plaintext.length,
+    });
   }
 
   // Domain doc (ADR-0027 CAS): optional — absent is empty, not a failure.
@@ -208,7 +223,7 @@ export async function assembleDutyContext(
     }
   }
 
-  return {
+  const context: AgentContext = {
     dispute: input.dispute,
     subaccord: input.subaccord,
     numOptions: input.numOptions,
@@ -225,4 +240,5 @@ export async function assembleDutyContext(
       readDomainDoc: async () => domainDoc,
     }),
   };
+  return { context, files };
 }

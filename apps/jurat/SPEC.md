@@ -47,7 +47,7 @@ vote — a fake Schelling signal is worse than silence.
 | Local state store (duties, votes, join book) | `src/state/stores.ts` + `src/join/book.ts` | Landed |
 | Daemon runtime (scan loop + duty state machine) | `src/runtime.ts` | Landed (bean `accord-vruh`) |
 | Entry point / loop | `src/main.ts` | Landed (bean `accord-vruh`) |
-| Trace sink (signed batch push, ADR-0037) | `src/trace/` | Not yet — beans `accord-9pdg`/`accord-c19g` |
+| Trace sink (ADR-0037 push leg) | `src/trace/sink.ts` + runtime emitters | Landed (beans `accord-9pdg` + `accord-w4j7`) |
 
 ## In scope (v1)
 
@@ -137,6 +137,11 @@ config):
 - **Stack:** `ai` + `@ai-sdk/openai-compatible` (`createOpenAICompatible({
   baseURL, apiKey })`), `tool()` + Zod for the read-only toolset, agent loop
   via `generateText({ tools, stopWhen: stepCountIs(n) })`.
+- **Trace tap (ADR-0037):** optional `AgentContext.trace` emits `agent-start`
+  before the call and one redacted `step` event per model step — builtin-four
+  tool args verbatim, MCP args digest-only, tool results always
+  sha256-digest-only over canonical JSON (sorted keys, no whitespace); no
+  evidence content or intermediate model text is ever traced.
 - **Tools (read-only, fixed):** read chain (dispute/round/subaccord), fetch
   evidence files, read domain doc. No shell, no keys, no arbitrary IO.
 - **Output:** structured `Verdict` — `{ option: number, rationale: string,
@@ -168,6 +173,8 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_TELEGRAM_TOKEN` / `JURAT_TELEGRAM_CHAT_ID` | Notify channel (both or none; unset = stdout) | optional |
 | `JURAT_EVIDENCE_URL` | Evidence daemon base URL (both or none; unset = duties hold, join watch still runs) | optional |
 | `JURAT_DELIVERY_KEY_PATH` | X25519 Delivery Key file (ADR-0034), created on first run | optional (pair) |
+| `JURAT_TRACE_URL` | ADR-0037 trace push — evidence-daemon base URL (unset = no-op sink) | optional |
+| `JURAT_TRACE_MODE` | `sealed` (verdict withheld until `unsealAt`) / `open` (demo, release at push); requires `JURAT_TRACE_URL` | `sealed` |
 | `JURAT_LLM_BASE_URL` / `JURAT_LLM_FALLBACK_BASE_URL` | openai-compatible endpoints | required / optional |
 | `JURAT_LLM_API_KEY` / `JURAT_LLM_MODEL` | Provider credentials / model id | required |
 | `JURAT_STAKING_TOKENS` | Comma-separated collateral mints | required |
@@ -180,8 +187,6 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
 | `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
-| `JURAT_TRACE_URL` | Evidence daemon trace endpoint (ADR-0037); unset = traces off | not yet — `unset` |
-| `JURAT_TRACE_MODE` | `sealed` (verdicts sealed until `revealEnd`) or `open` (demo) | not yet — `sealed` |
 
 Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 `accord-vruh`); `.env.example` is the copy-paste surface.
@@ -194,6 +199,7 @@ Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 | Verdict fails schema check | Treated as agent failure → retry ladder → abstain |
 | Evidence fetch fails | Duty holds until intake succeeds or commit window closes → abstain + alert |
 | Telegram send fails | Logged via `onError`; pipeline continues (never-reject contract) |
+| Trace push fails / endpoint dead | Batch dropped (warn log, visible seq gaps); duty pipeline unaffected (ADR-0037) |
 | Missed events (restart) | Reconcile scan reconstructs duties from accounts; in-flight commit salts are unrecoverable (accepted) |
 | Key balance below reserve floor | Join evaluator stops staking; alert |
 

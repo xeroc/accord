@@ -53,6 +53,14 @@ export interface EvidenceConfig {
   readonly deliveryKeyPath: string;
 }
 
+/** Trace push (ADR-0037) — unset URL disables tracing entirely (no-op sink). */
+export interface TraceConfig {
+  /** Evidence-daemon base URL; the sink appends `/trace/:sub/:dispute/:juror`. */
+  readonly url: string;
+  /** `sealed` withholds verdict frames until `unsealAt`; `open` (demo) releases at push. */
+  readonly mode: "sealed" | "open";
+}
+
 export interface Config {
   readonly rpcUrl: string;
   /** WS endpoint: JURAT_WS_URL or derived from rpcUrl (http→ws, port+1). */
@@ -68,6 +76,8 @@ export interface Config {
   readonly telegram?: TelegramConfig;
   /** Both vars together or none; unset disables evidence intake (join watch still runs). */
   readonly evidence?: EvidenceConfig;
+  /** ADR-0037 trace push; unset URL → tracing off (no-op sink). */
+  readonly trace?: TraceConfig;
   /** Default true — no vote tx leaves the process unless JURAT_DRY_RUN=false. */
   readonly dryRun: boolean;
   readonly stateDir: string;
@@ -96,6 +106,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if ((evidenceUrl === undefined) !== (evidenceKey === undefined)) {
     throw new Error("JURAT_EVIDENCE_URL and JURAT_DELIVERY_KEY_PATH must be set together");
   }
+  const trace = parseTrace(env);
   const joinGates = parseJoinGates(env);
 
   const rpcUrl = required(env, "JURAT_RPC_URL");
@@ -116,6 +127,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       evidenceUrl !== undefined && evidenceKey !== undefined
         ? { endpoint: evidenceUrl, deliveryKeyPath: evidenceKey }
         : undefined,
+    trace,
     dryRun: dryRunFlag(env.JURAT_DRY_RUN),
     stateDir: optional(env.JURAT_STATE_DIR) ?? "./state",
     scanIntervalMs: intFlag(env.JURAT_SCAN_INTERVAL_MS, 60_000, "JURAT_SCAN_INTERVAL_MS"),
@@ -135,6 +147,20 @@ function parseFallback(env: Record<string, string | undefined>): LlmEndpointConf
     );
   }
   return { baseUrl: baseUrl!, apiKey: apiKey!, model: model! };
+}
+
+/** ADR-0037 trace push: URL optional; mode requires the URL and must be sealed|open. */
+function parseTrace(env: Record<string, string | undefined>): TraceConfig | undefined {
+  const url = optional(env.JURAT_TRACE_URL);
+  const mode = optional(env.JURAT_TRACE_MODE);
+  if (url === undefined && mode === undefined) return undefined;
+  if (url === undefined) {
+    throw new Error("JURAT_TRACE_MODE set without JURAT_TRACE_URL");
+  }
+  if (mode !== undefined && mode !== "sealed" && mode !== "open") {
+    throw new Error(`JURAT_TRACE_MODE must be "sealed" or "open", got "${mode}"`);
+  }
+  return { url, mode: mode ?? "sealed" };
 }
 
 function parseJoinGates(env: Record<string, string | undefined>): JoinGatesConfig {
