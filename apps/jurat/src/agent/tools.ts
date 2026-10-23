@@ -16,9 +16,22 @@
 // collision the builtin tool wins: the core read-only set stays
 // deterministic — a server shadowing `read_dispute` would change what the
 // agent believes it read.
+
 import { createMCPClient } from "@ai-sdk/mcp";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
+
+/**
+ * The closed builtin tool-name set (ADR-0037 trace redaction keys off it):
+ * the trace tap passes raw args for exactly these four tools — every other
+ * tool (MCP) is args-digest-only.
+ */
+export const BUILTIN_TOOL_NAMES: Record<string, boolean> = {
+  read_dispute: true,
+  read_subaccord: true,
+  fetch_evidence_file: true,
+  read_domain_doc: true,
+};
 
 /**
  * Read-only data seams the tools execute against. Implemented by the

@@ -136,6 +136,11 @@ config):
 - **Stack:** `ai` + `@ai-sdk/openai-compatible` (`createOpenAICompatible({
   baseURL, apiKey })`), `tool()` + Zod for the read-only toolset, agent loop
   via `generateText({ tools, stopWhen: stepCountIs(n) })`.
+- **Trace tap (ADR-0037):** optional `AgentContext.trace` emits `agent-start`
+  before the call and one redacted `step` event per model step — builtin-four
+  tool args verbatim, MCP args digest-only, tool results always
+  sha256-digest-only over canonical JSON (sorted keys, no whitespace); no
+  evidence content or intermediate model text is ever traced.
 - **Tools (read-only, fixed):** read chain (dispute/round/subaccord), fetch
   evidence files, read domain doc. No shell, no keys, no arbitrary IO.
 - **Output:** structured `Verdict` — `{ option: number, rationale: string,
