@@ -42,6 +42,8 @@ import {
   type BundleDecryptor,
 } from "./pipeline/synod-manifest";
 import { getDomain, putDomain } from "./pipeline/domain";
+import { ingestTrace } from "./pipeline/trace";
+import type { TraceStore } from "./store/trace";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -123,6 +125,8 @@ export interface WireDeps {
   readonly deliveryKeyStore: DeliveryKeyStore;
   /** Public domain-doc CAS (ADR-0027) — same backend selection as `store`. */
   readonly domainStore: DomainStore;
+  /** Durable jury-trace corpus (ADR-0037) — same backend selection as `store`. */
+  readonly traceStore: TraceStore;
   /** PUT /domains/{hash} body cap in bytes (default 1 MiB, config.ts). */
   readonly maxDomainBytes: number;
   /** v2 max manifest entries per round (config.ts, default 64). */
@@ -143,6 +147,15 @@ export interface WireDeps {
 
 export function createServerDeps(deps: WireDeps): ServerDeps {
   const { store, accord, keyring } = deps;
+
+  const traceIngest: ServerDeps["traceIngest"] = async (subaccord, dispute, juror, body) => {
+    const out = await ingestTrace(subaccord, dispute, juror, body, {
+      store: deps.traceStore,
+    });
+    return out.status === 201
+      ? { ok: true, status: 201 }
+      : { ok: false, status: out.status, error: out.reason };
+  };
 
   // --- store adapter: pipeline ports (Uint8Array) → EvidenceStore (Address) ---
   const ingestStore: IngestStore = {
@@ -708,6 +721,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     deliveryKeyPut: deliveryKeyPutHandler,
     deliveryKeyGet: deliveryKeyGetHandler,
     manifest: manifestHandler,
+    traceIngest,
     publicKeys: deps.publicKeys,
     health: deps.health,
   };

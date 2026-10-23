@@ -234,6 +234,23 @@ export type DeliveryKeyGetResult =
 
 export type DeliveryKeyGetHandler = (juror: string) => Promise<DeliveryKeyGetResult>;
 
+/**
+ * POST /trace/{subaccord}/{dispute}/{juror} (ADR-0037): validate the push
+ * envelope and append it to the durable trace corpus. Transport shape
+ * (address guards, body cap) is the route's; envelope shape + events cap +
+ * append live here.
+ */
+export type TraceIngestResult =
+  | { readonly ok: true; readonly status: 201 }
+  | { readonly ok: false; readonly status: 400 | 413; readonly error: string };
+
+export type TraceIngestHandler = (
+  subaccord: string,
+  dispute: string,
+  juror: string,
+  body: unknown,
+) => Promise<TraceIngestResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
@@ -246,6 +263,7 @@ export interface ServerDeps {
   readonly synodIngest: SynodIngestHandler;
   readonly manifest: ManifestHandler;
   readonly synodManifest: SynodManifestHandler;
+  readonly traceIngest: TraceIngestHandler;
   readonly health: HealthProbe;
 
   /**

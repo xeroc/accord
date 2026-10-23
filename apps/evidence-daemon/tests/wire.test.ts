@@ -32,6 +32,7 @@ import {
   type EvidenceStore,
 } from "../src/store/store";
 import { type DomainStore } from "../src/store/domain";
+import type { TraceStore } from "../src/store/trace";
 import { createServerDeps } from "../src/wire";
 import { stubAccord } from "./helpers/accordStub.ts";
 import type { KeyringPublicKeys } from "../src/server/public-keys";
@@ -104,6 +105,16 @@ function memoryDomainStore(): DomainStore {
     },
   };
 }
+
+/** In-memory TraceStore stand-in (wire tests don't exercise trace routes). */
+function memoryTraceStore(): TraceStore {
+  return {
+    async appendBatch() {},
+    async readEvents() {
+      return [];
+    },
+  };
+}
 /** In-memory DeliveryKeyStore stand-in (ADR-0034). */
 function memoryDeliveryKeyStore(): DeliveryKeyStore {
   const byJuror = new Map<string, JurorDeliveryKey>();
@@ -165,6 +176,7 @@ async function rig(registerDeliveryKey = true) {
     store,
     accord,
     domainStore: memoryDomainStore(),
+    traceStore: memoryTraceStore(),
     deliveryKeyStore: memoryDeliveryKeyStore(),
     maxDomainBytes: 1_048_576,
     maxEntries: 64,
@@ -252,6 +264,7 @@ test("wire: ingest against a missing on-chain dispute → 404", async () => {
     store,
     accord,
     domainStore: memoryDomainStore(),
+    traceStore: memoryTraceStore(),
     deliveryKeyStore: memoryDeliveryKeyStore(),
     maxDomainBytes: 1_048_576,
     maxEntries: 64,
@@ -352,6 +365,7 @@ test("wire: multifile — POST manifest with entries, PUT document (real ECIES)"
     store: memoryStore(),
     accord,
     domainStore: memoryDomainStore(),
+    traceStore: memoryTraceStore(),
     deliveryKeyStore: memoryDeliveryKeyStore(),
     maxDomainBytes: 1_048_576,
     maxEntries: 64,

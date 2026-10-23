@@ -32,6 +32,11 @@ export interface AppOptions {
    * `"*"` (allow any origin). Set to a specific origin to restrict.
    */
   readonly corsOrigin?: string;
+  /**
+   * Mount the trace ingest route (ADR-0037). False (default) ⇒ POST /trace
+   * 404s — maps TRACE_ENABLED.
+   */
+  readonly traceEnabled?: boolean;
 }
 
 interface RateBucket {
@@ -115,7 +120,7 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
     await next();
   });
 
-  app.route("/", evidenceRoutes(deps));
+  app.route("/", evidenceRoutes(deps, opts.traceEnabled ?? false));
   app.route("/", domainRoutes(deps));
 
   // /healthz — bean accord-u1pu implements the real S3+RPC probe; the server

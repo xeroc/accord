@@ -29,6 +29,7 @@ import {
   type EvidenceStore,
 } from "../src/store/store";
 import { type DomainStore } from "../src/store/domain";
+import type { TraceStore } from "../src/store/trace";
 import { synodEvidenceRoot } from "../src/pipeline/synod-group";
 import { createServerDeps } from "../src/wire";
 import { createApp } from "../src/server/app";
@@ -86,6 +87,16 @@ function memoryDomainStore(): DomainStore {
     },
     async exists(hash) {
       return objects.has(hash);
+    },
+  };
+}
+
+/** In-memory TraceStore stand-in (wire tests don't exercise trace routes). */
+function memoryTraceStore(): TraceStore {
+  return {
+    async appendBatch() {},
+    async readEvents() {
+      return [];
     },
   };
 }
@@ -194,6 +205,7 @@ async function rig(opts: {
     store,
     accord,
     domainStore: memoryDomainStore(),
+    traceStore: memoryTraceStore(),
     deliveryKeyStore,
     maxDomainBytes: 1_048_576,
     keyring: EnvKeyring.fromEnv(bs58.encode(operatorSeed)),
