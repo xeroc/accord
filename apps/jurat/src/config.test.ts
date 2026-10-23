@@ -188,3 +188,25 @@ test("wsUrl: JURAT_WS_URL wins; otherwise derived from rpcUrl (http→ws, port+1
     "wss://api.mainnet-beta.solana.com",
   );
 });
+
+test("trace: unset JURAT_TRACE_URL → tracing off", () => {
+  expect(load().trace).toBeUndefined();
+});
+
+test("trace: URL set → sealed by default, open parsed", () => {
+  expect(load({ ...VALID_ENV, JURAT_TRACE_URL: "http://evidence.internal" }).trace).toEqual({
+    url: "http://evidence.internal",
+    mode: "sealed",
+  });
+  expect(
+    load({ ...VALID_ENV, JURAT_TRACE_URL: "http://evidence.internal", JURAT_TRACE_MODE: "open" })
+      .trace,
+  ).toEqual({ url: "http://evidence.internal", mode: "open" });
+});
+
+test("trace: garbage mode or mode without URL throws", () => {
+  expect(() =>
+    load({ ...VALID_ENV, JURAT_TRACE_URL: "http://x", JURAT_TRACE_MODE: "loud" }),
+  ).toThrow("JURAT_TRACE_MODE");
+  expect(() => load({ ...VALID_ENV, JURAT_TRACE_MODE: "open" })).toThrow("JURAT_TRACE_URL");
+});

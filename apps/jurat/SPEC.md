@@ -46,7 +46,7 @@ vote — a fake Schelling signal is worse than silence.
 | Vote executor (commit/reveal, salts) | `src/vote/` | Landed |
 | Local state store (duties, votes, join book) | `src/state/stores.ts` + `src/join/book.ts` | Landed |
 | Daemon runtime (scan loop + duty state machine) | `src/runtime.ts` | Landed (bean `accord-vruh`) |
-| Entry point / loop | `src/main.ts` | Landed (bean `accord-vruh`) |
+| Trace sink (ADR-0037 push leg) | `src/trace/sink.ts` | Landed (bean `accord-9pdg`; runtime wiring `accord-w4j7`) |
 
 ## In scope (v1)
 
@@ -172,6 +172,8 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_TELEGRAM_TOKEN` / `JURAT_TELEGRAM_CHAT_ID` | Notify channel (both or none; unset = stdout) | optional |
 | `JURAT_EVIDENCE_URL` | Evidence daemon base URL (both or none; unset = duties hold, join watch still runs) | optional |
 | `JURAT_DELIVERY_KEY_PATH` | X25519 Delivery Key file (ADR-0034), created on first run | optional (pair) |
+| `JURAT_TRACE_URL` | ADR-0037 trace push — evidence-daemon base URL (unset = no-op sink) | optional |
+| `JURAT_TRACE_MODE` | `sealed` (verdict withheld until `unsealAt`) / `open` (demo, release at push); requires `JURAT_TRACE_URL` | `sealed` |
 | `JURAT_LLM_BASE_URL` / `JURAT_LLM_FALLBACK_BASE_URL` | openai-compatible endpoints | required / optional |
 | `JURAT_LLM_API_KEY` / `JURAT_LLM_MODEL` | Provider credentials / model id | required |
 | `JURAT_STAKING_TOKENS` | Comma-separated collateral mints | required |
