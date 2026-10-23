@@ -12,6 +12,7 @@
  */
 
 import type { DomainPreimageProof } from "../pipeline/domain.js";
+import type { Sealable } from "../pipeline/seal.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
 
 /** 32-byte SHA-256 digest, hex- or base58-style opaque to the server. */
@@ -234,6 +235,33 @@ export type DeliveryKeyGetResult =
 
 export type DeliveryKeyGetHandler = (juror: string) => Promise<DeliveryKeyGetResult>;
 
+/**
+ * One durable trace envelope (ADR-0037 v1) as the replay read path sees it.
+ * `event` is the redacted agent-trace event — opaque pass-through JSON except
+ * `unsealAt`, which is load-bearing for the daemon (seal-on-read).
+ */
+export interface TraceEnvelope {
+  readonly v: number;
+  /** Unix ms. */
+  readonly at: number;
+  /** Per-juror monotonic sequence. */
+  readonly seq: number;
+  readonly juror: string;
+  readonly dispute: string;
+  readonly event: Sealable;
+}
+
+/**
+ * GET /trace/{dispute}?fromSeq= (ADR-0037). → 200 seal-filtered envelopes
+ * ordered by (juror, seq); 500 when the store read fails. Absent seam ⇒ the
+ * route answers 404 (trace feature not wired).
+ */
+export type TraceReplayResult =
+  | { readonly ok: true; readonly status: 200; readonly body: TraceEnvelope[] }
+  | { readonly ok: false; readonly status: 500; readonly error: string };
+
+export type TraceReplayHandler = (dispute: string, fromSeq?: number) => Promise<TraceReplayResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
@@ -254,4 +282,11 @@ export interface ServerDeps {
    * Built once at boot by `buildKeyringPublicKeys`.
    */
   readonly publicKeys: KeyringPublicKeys;
+
+  /**
+   * Trace replay handler (ADR-0037) — GET /trace/{dispute}. Optional: absent
+   * ⇒ the route 404s (trace feature not wired). Wired to the TraceStore read
+   * side by {@link ./trace.ts}.
+   */
+  readonly traceReplay?: TraceReplayHandler;
 }

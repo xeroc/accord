@@ -47,6 +47,7 @@ vote — a fake Schelling signal is worse than silence.
 | Local state store (duties, votes, join book) | `src/state/stores.ts` + `src/join/book.ts` | Landed |
 | Daemon runtime (scan loop + duty state machine) | `src/runtime.ts` | Landed (bean `accord-vruh`) |
 | Entry point / loop | `src/main.ts` | Landed (bean `accord-vruh`) |
+| Trace sink (signed batch push, ADR-0037) | `src/trace/` | Not yet — beans `accord-9pdg`/`accord-c19g` |
 
 ## In scope (v1)
 
@@ -179,6 +180,8 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
 | `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
+| `JURAT_TRACE_URL` | Evidence daemon trace endpoint (ADR-0037); unset = traces off | not yet — `unset` |
+| `JURAT_TRACE_MODE` | `sealed` (verdicts sealed until `revealEnd`) or `open` (demo) | not yet — `sealed` |
 
 Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 `accord-vruh`); `.env.example` is the copy-paste surface.
