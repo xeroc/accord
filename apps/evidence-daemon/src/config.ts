@@ -185,6 +185,8 @@ export interface ServerConfig {
   readonly healthTimeoutMs: number;
   /** CORS Access-Control-Allow-Origin value. Defaults to "*" (allow all). */
   readonly corsOrigin: string;
+  /** Trace ingest route armed (ADR-0037). Default: false ⇒ POST /trace 404s. */
+  readonly traceEnabled: boolean;
 }
 
 function num(env: Record<string, string | undefined>, key: string, fallback: number): number {
@@ -217,5 +219,6 @@ export function loadServerConfig(
     trustProxy: (env.EVIDENCE_TRUST_PROXY ?? "").toLowerCase() === "true",
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
     corsOrigin: env.EVIDENCE_CORS_ORIGIN ?? "*",
+    traceEnabled: boolFlag(env.TRACE_ENABLED),
   };
 }

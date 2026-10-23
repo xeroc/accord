@@ -262,6 +262,23 @@ export type TraceReplayResult =
 
 export type TraceReplayHandler = (dispute: string, fromSeq?: number) => Promise<TraceReplayResult>;
 
+/**
+ * POST /trace/{subaccord}/{dispute}/{juror} (ADR-0037): authenticate the push
+ * (canonical-batch Ed25519 sig + live Round.jurors[] gate), then append it
+ * to the durable trace corpus. Transport shape (address guards, body cap) is
+ * the route's; envelope shape + events cap + auth + append live here.
+ */
+export type TraceIngestResult =
+  | { readonly ok: true; readonly status: 200 | 201 }
+  | { readonly ok: false; readonly status: 400 | 403 | 413; readonly error: string };
+
+export type TraceIngestHandler = (
+  subaccord: string,
+  dispute: string,
+  juror: string,
+  body: unknown,
+) => Promise<TraceIngestResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
@@ -274,6 +291,7 @@ export interface ServerDeps {
   readonly synodIngest: SynodIngestHandler;
   readonly manifest: ManifestHandler;
   readonly synodManifest: SynodManifestHandler;
+  readonly traceIngest: TraceIngestHandler;
   readonly health: HealthProbe;
 
   /**

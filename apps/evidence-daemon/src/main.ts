@@ -30,6 +30,9 @@ import { S3DeliveryKeyStore } from "./store/delivery-key-s3.js";
 import type { DomainStore } from "./store/domain.js";
 import { FsDomainStore } from "./store/domain-fs.js";
 import { S3DomainStore } from "./store/domain-s3.js";
+import type { TraceStore } from "./store/trace.js";
+import { FsTraceStore } from "./store/trace-fs.js";
+import { S3TraceStore } from "./store/trace-s3.js";
 import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
@@ -72,6 +75,7 @@ function main(): void {
   let storagePing: () => Promise<boolean>;
   let domainStore: DomainStore;
   let deliveryKeyStore: DeliveryKeyStore;
+  let traceStore: TraceStore;
   if (cfg.storage.kind === "fs") {
     // Pre-create the root so /healthz is green from boot (the store creates
     // parent dirs lazily per-object, but the probe stat()s the root itself).
@@ -80,6 +84,7 @@ function main(): void {
     store = new FsStore({ rootDir: root });
     domainStore = new FsDomainStore({ rootDir: root });
     deliveryKeyStore = new FsDeliveryKeyStore({ rootDir: root });
+    traceStore = new FsTraceStore({ rootDir: root });
     storagePing = async () => {
       try {
         return (await stat(root)).isDirectory();
@@ -119,6 +124,7 @@ function main(): void {
       ...(cfg.storage.s3.kmsKeyId ? { kmsKeyId: cfg.storage.s3.kmsKeyId } : {}),
     });
     deliveryKeyStore = new S3DeliveryKeyStore({ client: s3Client, bucket });
+    traceStore = new S3TraceStore({ client: s3Client, bucket });
     storagePing = async () => {
       try {
         await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
@@ -150,6 +156,7 @@ function main(): void {
     store,
     domainStore,
     deliveryKeyStore,
+    traceStore,
     maxDomainBytes: srv.maxDomainBytes,
     maxEntries: srv.maxEntries,
     maxDocBytes: srv.maxDocBytes,
@@ -163,6 +170,7 @@ function main(): void {
   const app = createApp(deps, {
     rateLimitPerMin: srv.rateLimitPerMin,
     maxBytes: srv.maxEvidenceBytes,
+    traceEnabled: srv.traceEnabled,
     accountKeyEnabled: srv.accountKeyEnabled,
     trustProxy: srv.trustProxy,
     log: (msg, fields) => console.log(JSON.stringify({ msg, ...fields })),
