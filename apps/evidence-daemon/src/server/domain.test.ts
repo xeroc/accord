@@ -24,7 +24,12 @@ import { join } from "node:path";
 import { loadServerConfig } from "../config.js";
 import { FsDomainStore } from "../store/domain-fs.js";
 import { DEFAULT_DOMAIN_CONTENT_TYPE } from "../store/domain.js";
-import { getDomain, putDomain, type DomainAnchorReader } from "../pipeline/domain.js";
+import {
+  getDomain,
+  putDomain,
+  putSubdocument,
+  type DomainAnchorReader,
+} from "../pipeline/domain.js";
 import { createApp } from "./app.js";
 import type { ServerDeps } from "./handlers.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
@@ -127,6 +132,18 @@ function makeApp(opts: MakeAppOpts = {}) {
         },
         proof,
       );
+      return out.status === 200 || out.status === 201
+        ? { ok: true, status: out.status }
+        : { ok: false, status: out.status, error: out.reason };
+    },
+    domainSubPut: async (ref, doc, bytes, contentType, subaccord) => {
+      const out = await putSubdocument(ref, doc, bytes, contentType, subaccord, {
+        store,
+        maxBytes: opts.maxBytes ?? MAX_DOMAIN_BYTES,
+        sha256: sdkSha256,
+        readAnchor: anchor,
+        anchorPollMs: opts.anchorPollMs ?? 25,
+      });
       return out.status === 200 || out.status === 201
         ? { ok: true, status: out.status }
         : { ok: false, status: out.status, error: out.reason };
@@ -496,5 +513,162 @@ describe("PUT /domains/:hash — preimage-proved upload (derived domain_ref)", (
     expect((await app.request(q(`preimage=${hex}&offset=abc`))).status).toBe(400); // non-numeric
     expect((await app.request(q(`preimage=&offset=${OFFSET}`))).status).toBe(400); // empty
     expect((await app.request(get(ref))).status).toBe(404); // nothing stored by any of them
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sub-documents — PUT/GET /domains/{domainRef}/{docHash} (bean accord-ea3s).
+// Namespaced public docs under an anchor Subaccord's domain_ref: per-item
+// documents (e.g. an Arbitrable's theses) share one anchor Subaccord without
+// each needing their own. The doc hash is content-addressed (identity only —
+// no proof mode), the anchor gate pins the namespace to the on-chain
+// domain_ref, and the write dual-homes: domains/{ref}/{doc} (namespaced) AND
+// domains/{doc} (bare-hash fetch, cross-anchor dedup).
+// ---------------------------------------------------------------------------
+
+/** A court-style parent ref: sha256 of a real domain doc. */
+const PARENT_REF = sha256Hex(new TextEncoder().encode("# Inveigo court\n\nJudge well.\n"));
+
+function putSub(
+  ref: string,
+  doc: string,
+  body: Uint8Array,
+  contentType?: string,
+  subaccord = SUB,
+): Request {
+  if (!anchorRefs.has(subaccord)) anchorRefs.set(subaccord, ref); // honest author default
+  return new Request(`http://x/domains/${ref}/${doc}?subaccord=${subaccord}`, {
+    method: "PUT",
+    body,
+    ...(contentType ? { headers: { "content-type": contentType } } : {}),
+  });
+}
+
+function getSub(ref: string, doc: string): Request {
+  return new Request(`http://x/domains/${ref}/${doc}`);
+}
+
+describe("PUT /domains/:ref/:doc — sub-documents under a domain_ref", () => {
+  it("correct bytes → 201 + Location; served at the namespaced key AND the bare doc hash", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    const res = await app.request(putSub(PARENT_REF, doc, DOC, "text/markdown; charset=utf-8"));
+    expect(res.status).toBe(201);
+    expect(res.headers.get("location")).toBe(`/domains/${PARENT_REF}/${doc}`);
+
+    const byNs = await app.request(getSub(PARENT_REF, doc));
+    expect(byNs.status).toBe(200);
+    expect(new Uint8Array(await byNs.arrayBuffer())).toEqual(DOC);
+    expect(byNs.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(byNs.headers.get("etag")).toBe(doc);
+    expect(byNs.headers.get("cache-control")).toBe("immutable");
+
+    // Bare-hash alias: fetchable without knowing the namespace (arena, jurat).
+    const byHash = await app.request(get(doc));
+    expect(byHash.status).toBe(200);
+    expect(new Uint8Array(await byHash.arrayBuffer())).toEqual(DOC);
+  });
+
+  it("does NOT require the parent domain doc to be stored — the chain anchor is the gate", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    expect((await app.request(get(PARENT_REF))).status).toBe(404); // parent never PUT
+    expect((await app.request(putSub(PARENT_REF, doc, DOC))).status).toBe(201);
+  });
+
+  it("missing ?subaccord → 400", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    setAnchor(SUB, PARENT_REF);
+    const res = await app.request(
+      new Request(`http://x/domains/${PARENT_REF}/${doc}`, { method: "PUT", body: DOC }),
+    );
+    expect(res.status).toBe(400);
+    const body: unknown = await res.json().catch(() => null);
+    const error =
+      typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
+        ? body.error
+        : "";
+    expect(error).toContain("subaccord");
+  });
+
+  it("malformed ref or doc hash → 400", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    setAnchor(SUB, PARENT_REF);
+    expect(
+      (await app.request(putSub("ff".repeat(31), doc, DOC, undefined, "3".repeat(32)))).status,
+    ).toBe(400);
+    expect(
+      (await app.request(putSub(PARENT_REF.toUpperCase(), doc, DOC, undefined, "4".repeat(32))))
+        .status,
+    ).toBe(400);
+    expect(
+      (await app.request(putSub(PARENT_REF, "nothex", DOC, undefined, "5".repeat(32)))).status,
+    ).toBe(400);
+    expect(
+      (await app.request(putSub(PARENT_REF, doc.slice(0, 63), DOC, undefined, "6".repeat(32))))
+        .status,
+    ).toBe(400);
+  });
+
+  it("body sha256 ≠ doc hash → 400; nothing stored at either key", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    const other = new TextEncoder().encode("# a different thesis\n");
+    expect((await app.request(putSub(PARENT_REF, doc, other))).status).toBe(400);
+    expect((await app.request(getSub(PARENT_REF, doc))).status).toBe(404);
+    expect((await app.request(get(doc))).status).toBe(404);
+  });
+
+  it("anchor domain_ref ≠ route ref → 400", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    setAnchor(SUB, sha256Hex(new TextEncoder().encode("a different court ref"))); // honest-default overridden
+    expect((await app.request(putSub(PARENT_REF, doc, DOC))).status).toBe(400);
+  });
+
+  it("anchor never appears → 404", async () => {
+    const app = makeApp({ anchorPollMs: 1 });
+    const doc = sha256Hex(DOC);
+    const req = putSub(PARENT_REF, doc, DOC);
+    setAnchor(SUB, null);
+    expect((await app.request(req)).status).toBe(404);
+  });
+
+  it("idempotent re-PUT → 200; different bytes already at the (ref, doc) → 409", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    expect((await app.request(putSub(PARENT_REF, doc, DOC))).status).toBe(201);
+    expect((await app.request(putSub(PARENT_REF, doc, DOC))).status).toBe(200);
+
+    // 409 leg on a FRESH key: seed different bytes at the nested key directly
+    // (the CAS never overwrites, so a prior app PUT cannot be displaced).
+    const thesis = new TextEncoder().encode("# another thesis\n");
+    const store = new FsDomainStore({ rootDir });
+    await store.put({
+      hash: `${PARENT_REF}/${sha256Hex(thesis)}`,
+      bytes: new TextEncoder().encode("tampered"),
+      contentType: "text/plain",
+    });
+    expect((await app.request(putSub(PARENT_REF, sha256Hex(thesis), thesis))).status).toBe(409);
+  });
+  it("over cap → 413", async () => {
+    const app = makeApp({ maxBytes: 4 });
+    const doc = sha256Hex(DOC);
+    expect((await app.request(putSub(PARENT_REF, doc, DOC))).status).toBe(413);
+  });
+
+  it("proof params on a sub-document → 400 (identity content addressing only)", async () => {
+    const app = makeApp();
+    const doc = sha256Hex(DOC);
+    setAnchor(SUB, PARENT_REF);
+    const res = await app.request(
+      new Request(
+        `http://x/domains/${PARENT_REF}/${doc}?subaccord=${SUB}&preimage=${"00".repeat(8)}&offset=0`,
+        { method: "PUT", body: DOC },
+      ),
+    );
+    expect(res.status).toBe(400);
   });
 });

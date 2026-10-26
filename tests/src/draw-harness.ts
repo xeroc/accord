@@ -215,6 +215,8 @@ export async function armSubaccordAndJurors(
   env: TestEnv,
   accordState: Address,
   subaccordOverrides: Partial<CreateSubaccordArgs> = {},
+  /** Panel is still PANEL_SIZE — jurat.spec stakes the 3rd seat itself. */
+  nJurors: number = N_JURORS,
 ): Promise<Omit<DrawFixture, "env" | "up">> {
   const { mint } = await createMint(env, 6);
 
@@ -242,7 +244,7 @@ export async function armSubaccordAndJurors(
 
   const jurors: JurorCtx[] = [];
   const jurorPdaByHex = new Map<string, Address>();
-  for (let i = 0; i < N_JURORS; i++) {
+  for (let i = 0; i < nJurors; i++) {
     const signer = await fundSigner(env);
     await setTokenBalance(env, signer.address, mint, STAKE_AMOUNT);
     const jurorAccord = roleAccord(env, signer);

@@ -14,9 +14,15 @@
  *                          sha256(body)): the preimage must hash to the
  *                          on-chain domain_ref and contain sha256(body) at
  *                          byte offset n (pipeline/domain.ts proof mode)
+ *   PUT /domains/:ref/:doc?subaccord=<addr>
+ *                        → sub-document put handler (bean accord-ea3s):
+ *                          a per-item public doc namespaced under the
+ *                          anchor's domain_ref; sha256(body) == doc, the
+ *                          anchor gate pins ref, dual-written to the bare
+ *                          domains/{doc} key. No proof mode (identity only).
  *   GET  /domains/:hash  → domain get handler (bytes + stored Content-Type,
  *                          ETag = hash, Cache-Control: immutable; ungated)
- *
+ *   GET  /domains/:ref/:doc → same, namespaced sub-document (ETag = doc)
  * Rate limiting is the global per-IP middleware in app.ts (mounted for every
  * route); PUT bodies also pass the global Content-Length cap when configured.
  */
@@ -101,6 +107,33 @@ export function domainRoutes(deps: ServerDeps): Hono {
     return c.body(null, 200);
   });
 
+  app.put("/domains/:ref/:doc", async (c) => {
+    const ref = c.req.param("ref");
+    const doc = c.req.param("doc");
+    if (!HASH.test(ref) || !HASH.test(doc)) return badHash();
+    const subaccord = c.req.query("subaccord");
+    if (subaccord === undefined) return badSubaccord("?subaccord=<addr> query parameter required");
+    if (!ADDRESS.test(subaccord)) return badSubaccord("must be a base58 address");
+    // Identity content addressing only — a proof would be meaningless when the
+    // route already carries the content hash. Loud, not silently ignored.
+    if (c.req.query("preimage") !== undefined || c.req.query("offset") !== undefined) {
+      return Response.json(
+        { error: "preimage proof is not supported for sub-documents" },
+        { status: 400 },
+      );
+    }
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    const contentType = c.req.header("content-type") ?? DEFAULT_DOMAIN_CONTENT_TYPE;
+    const res = await deps.domainSubPut(ref, doc, bytes, contentType, subaccord);
+    if (!res.ok) {
+      return Response.json({ error: res.error }, { status: res.status });
+    }
+    if (res.status === 201) {
+      return c.body(null, 201, { Location: `/domains/${ref}/${doc}` });
+    }
+    return c.body(null, 200);
+  });
+
   app.get("/domains/:hash", async (c) => {
     const hash = c.req.param("hash");
     if (!HASH.test(hash)) return badHash();
@@ -111,6 +144,24 @@ export function domainRoutes(deps: ServerDeps): Hono {
         headers: {
           "Content-Type": res.contentType,
           ETag: hash,
+          "Cache-Control": "immutable",
+        },
+      });
+    }
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  app.get("/domains/:ref/:doc", async (c) => {
+    const ref = c.req.param("ref");
+    const doc = c.req.param("doc");
+    if (!HASH.test(ref) || !HASH.test(doc)) return badHash();
+    const res = await deps.domainGet(`${ref}/${doc}`);
+    if (res.ok) {
+      return new Response(res.bytes, {
+        status: 200,
+        headers: {
+          "Content-Type": res.contentType,
+          ETag: doc,
           "Cache-Control": "immutable",
         },
       });

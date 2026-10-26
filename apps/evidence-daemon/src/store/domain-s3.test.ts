@@ -237,3 +237,35 @@ describe("S3DomainStore — exists", () => {
     expect(await store.exists(HASH_B)).toBe(false);
   });
 });
+
+describe("S3DomainStore — nested sub-document keys (bean accord-ea3s)", () => {
+  const NESTED = `${HASH_A}/${HASH_B}`;
+
+  test("put/get round-trips a {ref}/{doc} key at object key domains/{ref}/{doc}", async () => {
+    const { store, mock } = setup();
+    const o = mkDomain({ hash: NESTED });
+    await store.put(o);
+    const got = await store.get(NESTED);
+    expect(got).not.toBeNull();
+    expect(got!.hash).toBe(NESTED);
+    expect(Array.from(got!.bytes)).toEqual(Array.from(o.bytes));
+    expect(mock.objects.get(`${BUCKET}/domains/${NESTED}`)?.contentType).toBe("text/markdown");
+    expect(await store.get(HASH_A)).toBeNull(); // bare parent key independent
+  });
+
+  test("idempotent on equal bytes (single PutObject); different bytes → conflict", async () => {
+    const { store, mock } = setup();
+    await store.put(mkDomain({ hash: NESTED }));
+    await store.put(mkDomain({ hash: NESTED, contentType: "text/plain" })); // no-op
+    expect(mock.putCount).toBe(1);
+    await expect(
+      store.put(mkDomain({ hash: NESTED, bytes: new Uint8Array([9, 9, 9]) })),
+    ).rejects.toBeInstanceOf(DomainConflictError);
+  });
+
+  test("malformed nested key → rejected before any S3 call", async () => {
+    const { store, mock } = setup();
+    await expect(store.put(mkDomain({ hash: `${HASH_A}/../evil` }))).rejects.toThrow();
+    expect(mock.putCount).toBe(0);
+  });
+});

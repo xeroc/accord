@@ -32,6 +32,7 @@ function okDeps(health: ServerDeps["health"]): ServerDeps {
     deliveryKeyGet: async () => ({ ok: false, status: 404, error: "stub" }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
     domainPut: async () => ({ ok: true, status: 201 }),
+    domainSubPut: async () => ({ ok: true, status: 201 }),
     domainGet: async () => ({ ok: false, status: 404, error: "stub" }),
     health,
     publicKeys: STUB_PUBLIC_KEYS,

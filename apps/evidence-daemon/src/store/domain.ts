@@ -15,17 +15,22 @@
 /** Content-Type stored/echoed when a PUT omits one. Applied at the HTTP layer. */
 export const DEFAULT_DOMAIN_CONTENT_TYPE = "text/markdown";
 
-/** 64-char lowercase hex — the shape of a sha256 digest and of every key. */
-const DOMAIN_HASH_RE = /^[0-9a-f]{64}$/;
+/** Storage key shape: a sha256 hex key, or a namespaced `{ref}/{doc}`
+ * sub-document key (both halves 64-char lowercase hex — every path component
+ * stays a validated hash, so the fs backend is traversal-safe). */
+const DOMAIN_HASH_RE = /^[0-9a-f]{64}(?:\/[0-9a-f]{64})?$/;
 
 /**
- * Reject a malformed hash before it reaches a filesystem path or an object
- * key. Internal seam, but the guard is load-bearing for the fs backend
- * (path traversal) and keeps the trait invariant cheap to rely on.
+ * Reject a malformed storage key before it reaches a filesystem path or an
+ * object key. Internal seam, but the guard is load-bearing for the fs backend
+ * (path traversal) and keeps the trait invariant cheap to rely on. Accepts
+ * the bare content/domain hash and the `{ref}/{doc}` sub-document key.
  */
 export function assertDomainHash(hash: string): void {
   if (!DOMAIN_HASH_RE.test(hash)) {
-    throw new Error(`DomainStore: hash must be 64-char lowercase hex, got: ${hash}`);
+    throw new Error(
+      `DomainStore: key must be 64-char lowercase hex (or {ref}/{doc}, both 64-hex), got: ${hash}`,
+    );
   }
 }
 
@@ -36,7 +41,8 @@ export function assertDomainHash(hash: string): void {
  * invariant of {@link ./store.ts EvidenceBundle} applies to evidence only.
  */
 export interface DomainObject {
-  /** sha256(bytes) as 64-char lowercase hex — the storage key `domains/{hash}`. */
+  /** Storage key `domains/{hash}`: sha256(bytes) hex, or the namespaced
+   * `{ref}/{doc}` sub-document key (ref = anchor domain_ref, doc = sha256(bytes)). */
   readonly hash: string;
   /** Opaque public bytes. Format-blind: markdown, frontmatter, or anything. */
   readonly bytes: Uint8Array;
