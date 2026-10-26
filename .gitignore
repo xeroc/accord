@@ -43,3 +43,6 @@ meta
 # Remotion (apps/remotion) — local videos, generated manifest, renders
 apps/remotion/out/
 apps/remotion/public/audio/
+
+# Jurat runtime state (duties, votes, join book, delivery key — secrets + local state)
+apps/jurat/state/

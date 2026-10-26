@@ -155,6 +155,17 @@ export type DomainPutHandler = (
   proof?: DomainPreimageProof,
 ) => Promise<DomainPutResult>;
 
+/** PUT /domains/{ref}/{doc}?subaccord={addr} — sub-document under an anchor's
+ * domain_ref namespace: bytes + Content-Type + anchor; content-addressed
+ * (sha256(body) == doc), dual-written to the bare {doc} key. */
+export type DomainSubPutHandler = (
+  ref: string,
+  doc: string,
+  bytes: Uint8Array,
+  contentType: string,
+  subaccord: string,
+) => Promise<DomainPutResult>;
+
 /** GET /domains/{hash} — the stored bytes + stored Content-Type. */
 export type DomainGetHandler = (hash: string) => Promise<DomainGetResult>;
 
@@ -242,6 +253,7 @@ export interface ServerDeps {
   readonly deliveryKeyPut: DeliveryKeyPutHandler;
   readonly deliveryKeyGet: DeliveryKeyGetHandler;
   readonly domainPut: DomainPutHandler;
+  readonly domainSubPut: DomainSubPutHandler;
   readonly domainGet: DomainGetHandler;
   readonly synodIngest: SynodIngestHandler;
   readonly manifest: ManifestHandler;

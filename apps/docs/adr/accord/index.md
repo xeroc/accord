@@ -51,6 +51,8 @@ status banner is annotated.
 | [0033](0033-failed-path-no-participation-no-ruling-no-pay.md) | Failed-path participation removed — no ruling, no pay | Accepted | — |
 | [0034](0034-delivery-keys-registered-x25519-strict-juror-delivery.md) | Delivery Keys — registered X25519 keys for juror delivery; strict mode drops juror-side dual-use | Accepted | — |
 | [0035](0035-minimum-position-min-stake-reconcile-ejection.md) | Minimum juror position = min_stake; reconcile ejects below-floor jurors | Accepted | — |
+| [0036](0036-jurat-agentic-juror-daemon.md) | Jurat — agentic juror daemon: full-auto pipeline behind DRY_RUN, evidence-fed agent, conservative join gates | Accepted | — |
+| [0037](0037-jury-telemetry-trace-push-ws-watch-durable-replay.md) | Jury telemetry — jurat traces pushed to the evidence daemon, public WS watch, sealed verdicts, durable replay | Accepted | — |
 
 ### Supersession map
 
@@ -99,6 +101,11 @@ status banner is annotated.
   daemon gains `PUT/GET /jurors/{juror}/delivery-key` + a `juror-keys/`
   storage namespace). The `accord-deliver-v1` HKDF label and `JurorBundle`
   wire shape are unchanged.
+- **0037** amends **0011** (the daemon gains `POST /trace/...`, `GET /watch/...`
+  WS, `GET /trace/...` + a `traces/` storage namespace) and extends **0036**
+  (Jurat gains a `TraceSink` with the `NotifyChannel` never-reject contract and
+  an `onStepFinish` tap inside the `VerdictRunner` seam). Verdict frames are
+  sealed until `revealEnd`; evidence content never enters traces (0006/0034).
 
 ## How to read them
 
@@ -113,7 +120,7 @@ status banner is annotated.
 - **Auditing**: 0008 + 0009 + 0012 are the security-critical ADRs (snapshot fraud
   proofs → canonical accumulator, sortition enforcement, VRF integration).
 
-1. Number = next sequential (currently **0035**).
+1. Number = next sequential (currently **0037**).
 2. Follow the format: `# Title` → decision statement → `## Considered Options`
    → `## Consequences`.
 3. Add the file here via `git mv` (or create in place) at

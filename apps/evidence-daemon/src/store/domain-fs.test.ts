@@ -176,3 +176,37 @@ describe("FsDomainStore — exists / layout", () => {
     expect(await store.exists(HASH_A)).toBe(false);
   });
 });
+
+describe("FsDomainStore — nested sub-document keys (bean accord-ea3s)", () => {
+  const NESTED = `${HASH_A}/${HASH_B}`;
+
+  test("put/get round-trips a {ref}/{doc} key; file lands at domains/{ref}/{doc}.json", async () => {
+    const store = setup();
+    const o = mkDomain({ hash: NESTED });
+    await store.put(o);
+    const got = await store.get(NESTED);
+    expect(got).not.toBeNull();
+    expect(got!.hash).toBe(NESTED);
+    expect(Array.from(got!.bytes)).toEqual(Array.from(o.bytes));
+    expect(got!.contentType).toBe("text/markdown");
+    // The bare parent key stays independent (it is a different object).
+    expect(await store.get(HASH_A)).toBeNull();
+    const raw = await readFile(join(rootDir, "domains", HASH_A, `${HASH_B}.json`), "utf-8");
+    expect(JSON.parse(raw)).toHaveProperty("v", 1);
+  });
+
+  test("idempotent on equal bytes; different bytes at the nested key → conflict", async () => {
+    const store = setup();
+    await store.put(mkDomain({ hash: NESTED }));
+    await store.put(mkDomain({ hash: NESTED, contentType: "text/plain" })); // no-op, first type wins
+    await expect(
+      store.put(mkDomain({ hash: NESTED, bytes: new Uint8Array([9, 9, 9]) })),
+    ).rejects.toBeInstanceOf(DomainConflictError);
+  });
+
+  test("malformed nested key (second half not 64-hex) → rejected before the path", async () => {
+    const store = setup();
+    await expect(store.put(mkDomain({ hash: `${HASH_A}/../evil` }))).rejects.toThrow();
+    await expect(store.get(`${HASH_A}/zz`)).rejects.toThrow();
+  });
+});
