@@ -110,6 +110,17 @@ function resolveCanonProgramId(env: Record<string, string | undefined>): Address
 }
 
 async function main(): Promise<void> {
+  // @solana/errors v7 swaps every SolanaError message for `Solana error #N;
+  // Decode this error by running npx … '<base64 blob>'` when
+  // NODE_ENV=production (a browser bundle-size trim — the Docker image sets
+  // it). This is a log-driven service: readable error text IS the product, so
+  // neutralise the trim. The library reads process.env.NODE_ENV lazily, per
+  // error constructed, so mutating it here retroactively un-strips every
+  // future error message.
+  if (process.env.NODE_ENV === "production") {
+    process.env.NODE_ENV = "development";
+  }
+
   const rpcUrl = process.env.ACCORD_RPC_URL;
   if (rpcUrl === undefined || rpcUrl.trim().length === 0) {
     throw new Error("Missing required env var: ACCORD_RPC_URL");

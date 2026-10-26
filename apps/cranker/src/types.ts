@@ -125,7 +125,9 @@ export interface CrankContext {
   readonly sendIx: (ix: Instruction) => Promise<string>;
   /** Structured per-crank log sink — `{kind} {subject} {msg}`. `subject` is
    * the account the crank acts on: the Dispute PDA for Accord lifecycle
-   * cranks, the CanonItem PDA for Canon cranks. */
+   * cranks, the CanonItem PDA for Canon cranks. The reconciler additionally
+   * stamps `subaccord` (and the acting account) onto every crank + tx log
+   * line when known. */
   readonly log: (kind: CrankKind, subject: Address | null, msg: string) => void;
   /**
    * The dispute this cycle resolved against (dispute-lifecycle cranks only).

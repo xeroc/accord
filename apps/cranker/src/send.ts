@@ -114,15 +114,16 @@ export async function sendIx(instruction: Instruction, config: SendConfig): Prom
     } catch (e: unknown) {
       const logs = extractLogs(e);
       if (logs !== undefined) {
+        const reason = programLogReason(logs);
         // Simulation or on-chain error — state moved; skip (do not retry).
-        log("crank tx simulation failed", { attempt, error: errorDigest(e), logs });
+        log("crank tx simulation failed", { attempt, error: reason ?? formatError(e), logs });
         throw new SimulationError(
-          `crank tx failed on-chain (attempt ${attempt}): ${errorDigest(e)}`,
+          `crank tx failed on-chain (attempt ${attempt}): ${reason ?? formatError(e)}`,
           logs,
         );
       }
       if (attempt >= maxRetries) {
-        throw new SendError(`crank tx send failed after ${attempt} attempt(s): ${errorDigest(e)}`, {
+        throw new SendError(`crank tx send failed after ${attempt} attempt(s): ${formatError(e)}`, {
           cause: e,
         });
       }
@@ -130,7 +131,7 @@ export async function sendIx(instruction: Instruction, config: SendConfig): Prom
       log("crank tx send failed; retrying with higher fee", {
         attempt,
         nextPriorityFeeMicroLamports: fee.toString(),
-        error: errorDigest(e),
+        error: formatError(e),
       });
     }
   }
@@ -185,7 +186,34 @@ function readLogArray(node: Record<string, unknown>): string[] | undefined {
 }
 
 /** Compact, leak-free digest of an unknown error for log lines. */
-function errorDigest(e: unknown): string {
+export function formatError(e: unknown): string {
   if (e instanceof Error) return `${e.name}: ${e.message}`;
   return String(e);
+}
+
+/**
+ * The most specific on-chain failure reason in a program log trace: the last
+ * `AnchorError … Error Code: Xxx … Error Message: …` line (a panic line beats
+ * it — the program aborted), else the terminal `custom program error: 0xNN`.
+ * Undefined when the trace carries no error line — the caller then falls back
+ * to the thrown error's own message.
+ */
+export function programLogReason(logs: readonly string[]): string | undefined {
+  let reason: string | undefined;
+  for (const line of logs) {
+    if (line.includes("panicked at")) {
+      reason = line.replace(/^Program log: /, "");
+      continue;
+    }
+    const anchor = /Error Code: (\w+)(?:\. Error Number: \d+\. Error Message: (.*))?/.exec(line);
+    if (anchor !== null) {
+      reason = anchor[2] !== undefined ? `${anchor[1]}: ${anchor[2]}` : anchor[1];
+      continue;
+    }
+    const custom = /custom program error: (0x[0-9a-fA-F]+)/.exec(line);
+    if (custom !== null && reason === undefined) {
+      reason = `custom program error ${custom[1]}`;
+    }
+  }
+  return reason;
 }
