@@ -28,11 +28,17 @@ import type { Address, Instruction } from "@solana/kit";
 import { findRoundPda, type AccordVotingClient, type Dispute, type Round } from "@useaccord/sdk";
 
 import type { Config } from "./config";
-import type { DutySignal, JoinCandidate, ReconcileChain, ReconcileResult } from "./chain/reconcile";
+import type {
+  DutySignal,
+  HeldStake,
+  JoinCandidate,
+  ReconcileChain,
+  ReconcileResult,
+} from "./chain/reconcile";
 import { reconcile } from "./chain/reconcile";
 import { evaluateJoinGate, type JoinPolicy } from "./join/gates";
 import type { JoinBudget, JoinOutcome } from "./join/executor";
-import { findEntry, loadBook, totalStaked } from "./join/book";
+import { findEntry, loadBook, saveBook, totalStaked, upsertEntry } from "./join/book";
 import { trackRound, dutyPhase, roundWindows } from "./duty/tracker";
 import { abstain } from "./duty/failures";
 import type { DutyStore } from "./duty/types";
@@ -117,7 +123,7 @@ export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Pr
     `scan: ${result.joinCandidates.length} subaccord(s), ` +
       `${result.duties.length} actionable duty/duties`,
   );
-  await handleJoins(deps, result.joinCandidates);
+  await handleJoins(deps, result.joinCandidates, result.heldStakes);
   for (const signal of result.duties) {
     try {
       await runDuty(deps, signal);
@@ -129,9 +135,27 @@ export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Pr
   }
 }
 
-async function handleJoins(deps: RuntimeDeps, candidates: readonly JoinCandidate[]): Promise<void> {
+async function handleJoins(
+  deps: RuntimeDeps,
+  candidates: readonly JoinCandidate[],
+  heldStakes: readonly HeldStake[],
+): Promise<void> {
   const log = deps.log ?? console.log;
-  const book = await loadBook(deps.stateDir);
+  let book = await loadBook(deps.stateDir);
+  // On-chain stakes the scan recognized but the book missed (wiped state dir,
+  // manual stake, second instance): heal so budgets count real exposure.
+  const heal = heldStakes.filter((h) => !findEntry(book, h.subaccord));
+  if (heal.length > 0) {
+    for (const h of heal) {
+      book = upsertEntry(book, {
+        ...h,
+        signature: "reconciled",
+        joinedAt: new Date().toISOString(),
+      });
+    }
+    await saveBook(deps.stateDir, book);
+    log(`join: healed book with ${heal.length} on-chain stake(s) (already joined)`);
+  }
   // Budgets are per staking token: each candidate is evaluated against what
   // is already staked in ITS mint, not a cross-mint sum.
   const stakedByToken = new Map<Address, bigint>();

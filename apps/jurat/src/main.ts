@@ -17,9 +17,12 @@ import {
   findAllDisputes,
   findAllSubaccords,
   findAssociatedTokenAddress,
+  findJurorStakePda,
   findJurorStakesBySubaccord,
   findRoundPda,
+  findSasAttestation,
   fetchDisputeMaybe,
+  fetchJurorStakeMaybe,
   fetchRoundMaybe,
   fetchSubaccordMaybe,
   type Subaccord,
@@ -106,6 +109,11 @@ export async function main(): Promise<void> {
       const acc = await fetchDisputeMaybe(chain.rpc, dispute);
       return acc.exists ? acc.data : null;
     },
+    fetchJurorStake: async (subaccord, juror) => {
+      const [pda] = await findJurorStakePda({ subaccord, juror });
+      const acc = await fetchJurorStakeMaybe(chain.rpc, pda);
+      return acc.exists ? { staked: acc.data.staked } : null;
+    },
   };
 
   const joinChain = {
@@ -128,6 +136,8 @@ export async function main(): Promise<void> {
       return BigInt(res.value.amount);
     },
     solBalance: async (owner: Address) => (await chain.rpc.getBalance(owner).send()).value,
+    findAttestation: (binding: Parameters<typeof findSasAttestation>[1]) =>
+      findSasAttestation(chain.rpc, binding),
     send: (ix: Parameters<typeof chain.sendIx>[0]) => chain.sendIx(ix),
   };
 

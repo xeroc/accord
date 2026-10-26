@@ -24,8 +24,8 @@ import { RetryLadderExhaustedError } from "./agent/provider";
 import { MalformedVerdictError, type AgentContext } from "./agent/runner";
 import { EvidenceUnavailableError } from "./duty/evidence";
 import type { DutyRecord, DutyStore } from "./duty/types";
-import type { DutySignal, JoinCandidate, ReconcileResult } from "./chain/reconcile";
 import type { JoinOutcome as ExecOutcome } from "./join/executor";
+import { loadBook } from "./join/book.js";
 import type { Config } from "./config";
 
 const JUROR = address("Jura111111111111111111111111111111111111111");
@@ -127,6 +127,7 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
     fetchDisputes: async () => [],
     fetchRound: async () => null,
     fetchDispute: async () => null,
+    fetchJurorStake: async () => null,
     ...overrides.chain,
   };
   const deps: RuntimeDeps = {
@@ -244,8 +245,12 @@ test("joinPolicyFromConfig: unset range maxima are unbounded", () => {
 
 // --- handleScan: joins ----------------------------------------------------------
 
-function scanResult(candidates: JoinCandidate[], duties: DutySignal[] = []): ReconcileResult {
-  return { joinCandidates: candidates, duties };
+function scanResult(
+  candidates: JoinCandidate[],
+  duties: DutySignal[] = [],
+  heldStakes: ReconcileResult["heldStakes"] = [],
+): ReconcileResult {
+  return { joinCandidates: candidates, duties, heldStakes };
 }
 
 function candidate(sub: Subaccord, addr: Address = SUB): JoinCandidate {
@@ -297,6 +302,21 @@ test("executor throw is caught and logged, never kills the scan", async () => {
   });
   await handleScan(deps, scanResult([candidate(subFixture())]));
   expect(rec.logs.some((l) => l.includes("AccumulatorRootMismatch"))).toBe(true);
+});
+
+test("heldStakes heal the book: no join attempt, budget counts the on-chain stake", async () => {
+  const { deps, rec } = makeDeps();
+  // Full budget 100_000 already staked on-chain in MINT → the fresh candidate
+  // (minStake 1) must blow the global budget once the book heals.
+  const held = { subaccord: SUB, stakingToken: MINT, staked: 100_000n };
+  const fresh = candidate(subFixture(), address("1".repeat(31) + "5") as Address);
+  await handleScan(deps, scanResult([fresh], [], [held]));
+  expect(rec.joins).toEqual([]); // executor never runs for held or budget-rejected pools
+  expect(rec.logs.some((l) => l.includes("OverGlobalBudget"))).toBe(true);
+  const book = await loadBook(dir);
+  expect(book.entries).toEqual([
+    { ...held, signature: "reconciled", joinedAt: expect.any(String) },
+  ]);
 });
 
 // --- runDuty: state machine -----------------------------------------------------

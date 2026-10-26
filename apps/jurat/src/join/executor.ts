@@ -87,6 +87,16 @@ export interface JoinChain {
   /** Balance of `owner`'s ATA for `mint`. */
   tokenBalance(owner: Address, mint: Address): Promise<bigint>;
   solBalance(owner: Address): Promise<bigint>;
+  /**
+   * The juror's SAS attestation account for a credential-gated Subaccord's
+   * `(credential, schema)` binding (SDK `findSasAttestation`), null when the
+   * juror holds none — a gated pool without it cannot be joined.
+   */
+  findAttestation(binding: {
+    credential: Address;
+    schema: Address;
+    juror: Address;
+  }): Promise<Address | null>;
   /** Sign, send, and confirm one instruction; returns the signature. */
   send(instruction: Instruction): Promise<string>;
 }
@@ -131,10 +141,12 @@ interface StakeSlot {
  * Join `subaccord` for `juror`.
  *
  * Ordering: cheap Subaccord-local rejects first, then on-chain idempotency,
- * then balances, then the accumulator proof (throws on stale state), then
- * send + book write. Idempotent by construction: an existing on-chain stake
- * short-circuits to `already-joined` and reconciles the book (crash between
- * send and book-write heals on re-run), and a rejected join never sends.
+ * then the attestation lookup (gated pools only — after idempotency so an
+ * already-joined pool never pays it), then balances, then the accumulator
+ * proof (throws on stale state), then send + book write. Idempotent by
+ * construction: an existing on-chain stake short-circuits to `already-joined`
+ * and reconciles the book (crash between send and book-write heals on re-run),
+ * and a rejected join never sends.
  */
 export async function joinSubaccord(
   chain: JoinChain,
@@ -166,12 +178,6 @@ export async function joinSubaccord(
 
   if (amount <= 0n) {
     throw new Error(`InvalidAmount: min_stake must be > 0, got ${amount}`);
-  }
-  if (sub.jurorCredential !== DEFAULT_PUBKEY || sub.jurorSchema !== DEFAULT_PUBKEY) {
-    return reject(
-      "AttestationGated",
-      `${subAddr} requires a SAS attestation (juror_credential set); v1 jurat holds none`,
-    );
   }
   if (amount > budget.perSubaccordCap) {
     return reject(
@@ -220,6 +226,30 @@ export async function joinSubaccord(
     return { status: "already-joined", subaccord: subAddr, staked: own.staked };
   }
 
+  // --- Attestation gate (PROG-ATTESTATION) -------------------------------------
+  // Gated pools require the juror's SAS attestation as a remaining account on
+  // stake. Checked AFTER on-chain idempotency so an already-joined pool never
+  // pays the lookup. ponytail: binding/expiry validity is the on-chain gate's
+  // call — the lookup is exact (credential+schema+subject memcmp), a stale
+  // credential fails the send with AttestationExpired and costs one fee.
+
+  const gated = sub.jurorCredential !== DEFAULT_PUBKEY || sub.jurorSchema !== DEFAULT_PUBKEY;
+  let attestation: Address | undefined;
+  if (gated) {
+    const found = await chain.findAttestation({
+      credential: sub.jurorCredential,
+      schema: sub.jurorSchema,
+      juror,
+    });
+    if (!found) {
+      return reject(
+        "AttestationGated",
+        `pool binds SAS credential ${sub.jurorCredential}/${sub.jurorSchema}; juror holds no matching attestation — cannot join`,
+      );
+    }
+    attestation = found;
+  }
+
   // --- Balance checks (reserve floor: never stake below the configured line) --
 
   const token = await chain.tokenBalance(juror, sub.stakingToken);
@@ -261,7 +291,7 @@ export async function joinSubaccord(
     accounts,
     amount,
     slot.path,
-    undefined,
+    attestation,
     slot.freedSlotAccount,
     slot.nextNeighborAccount,
   );

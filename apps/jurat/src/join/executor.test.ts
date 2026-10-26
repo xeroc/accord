@@ -172,6 +172,14 @@ class FakeChain implements JoinChain {
       };
     },
   };
+  /** What findAttestation returns (null = juror holds no matching credential). */
+  attestation: Address | null = null;
+  readonly attestQueries: { credential: Address; schema: Address; juror: Address }[] = [];
+
+  async findAttestation(binding: { credential: Address; schema: Address; juror: Address }) {
+    this.attestQueries.push(binding);
+    return this.attestation;
+  }
 
   constructor(sub: Subaccord | null, stakes: JoinStakeRow[] = []) {
     this.sub = sub;
@@ -443,7 +451,7 @@ describe("joinSubaccord", () => {
     expect(chain.sent).toHaveLength(0);
   });
 
-  test("rejects AttestationGated pools (v1 jurat holds no SAS credential)", async () => {
+  test("rejects gated pools when no matching attestation is held (cannot join)", async () => {
     const chain = new FakeChain(
       await fakeSubaccord([], {
         jurorCredential: STAKER_A,
@@ -459,6 +467,60 @@ describe("joinSubaccord", () => {
     await cleanup();
     expect(out).toMatchObject({ status: "rejected", reason: "AttestationGated" });
     expect(chain.sent).toHaveLength(0);
+    expect(chain.attestQueries).toEqual([{ credential: STAKER_A, schema: STAKER_B, juror: JUROR }]);
+  });
+
+  test("already-joined gated pool short-circuits before the attestation lookup", async () => {
+    const own = stakeRow(JUROR, 0, 100n);
+    const chain = new FakeChain(
+      await fakeSubaccord([own], {
+        jurorCredential: STAKER_A,
+        jurorSchema: STAKER_B,
+      }),
+      [own],
+    );
+    const out = await joinSubaccord(chain, {
+      juror: JUROR,
+      subaccord: SUBACCORD,
+      budget: DEFAULT_BUDGET,
+      stateDir,
+    });
+    await cleanup();
+    expect(out).toMatchObject({ status: "already-joined", staked: 100n });
+    expect(chain.attestQueries).toHaveLength(0);
+    expect(chain.sent).toHaveLength(0);
+  });
+  test("joins gated pools when the SAS attestation is found, threading it into stake", async () => {
+    const ATTESTATION = addr("9");
+    const chain = new FakeChain(
+      await fakeSubaccord([], {
+        jurorCredential: STAKER_A,
+        jurorSchema: STAKER_B,
+      }),
+    );
+    chain.attestation = ATTESTATION;
+    const out = await joinSubaccord(chain, {
+      juror: JUROR,
+      subaccord: SUBACCORD,
+      budget: DEFAULT_BUDGET,
+      stateDir,
+    });
+    await cleanup();
+    expect(out).toMatchObject({ status: "joined", amount: 100n });
+    expect(chain.built[0]!.attestation).toBe(ATTESTATION);
+  });
+
+  test("stake-only pools never query for an attestation", async () => {
+    const chain = new FakeChain(await fakeSubaccord());
+    await joinSubaccord(chain, {
+      juror: JUROR,
+      subaccord: SUBACCORD,
+      budget: DEFAULT_BUDGET,
+      stateDir,
+    });
+    await cleanup();
+    expect(chain.attestQueries).toHaveLength(0);
+    expect(chain.built[0]!.attestation).toBeUndefined();
   });
 
   test("throws SubaccordNotFound", async () => {

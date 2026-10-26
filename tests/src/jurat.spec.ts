@@ -33,10 +33,12 @@ import {
   commit as sdkCommit,
   findAllDisputes,
   findAllSubaccords,
+  fetchJurorStakeMaybe,
   fetchRoundMaybe,
   findJurorStakePda,
   findJurorStakesBySubaccord,
   findRoundPda,
+  findSasAttestation,
   stake as sdkStake,
   getDisputeDecoder,
   getRoundDecoder,
@@ -193,6 +195,14 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
     poolMin = candidate!.data.minStake;
     expect(outcome).toMatchObject({ status: "joined", amount: poolMin });
 
+    // The next iteration recognizes jurat's own JurorStake: the pool is never
+    // re-offered as a join candidate, it is reported as a held stake instead.
+    const rescan = await reconcile(reconcileChain(), juratAddr);
+    expect(rescan.joinCandidates.some((c) => c.subaccord === fx.subaccord)).toBe(false);
+    expect(rescan.heldStakes).toEqual([
+      { subaccord: fx.subaccord, stakingToken: fx.mint, staked: poolMin },
+    ]);
+
     // --- sync the harness tree with jurat's on-chain leaf (slot 2) ---
     const [juratStakePda] = await findJurorStakePda({
       subaccord: fx.subaccord,
@@ -238,6 +248,11 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         const acc = await fetchRoundMaybe(env.rpc, pda);
         return acc.exists ? acc.data : null;
       },
+      fetchJurorStake: async (subaccord, juror) => {
+        const [pda] = await findJurorStakePda({ subaccord, juror });
+        const acc = await fetchJurorStakeMaybe(env.rpc, pda);
+        return acc.exists ? { staked: acc.data.staked } : null;
+      },
     };
   }
 
@@ -262,6 +277,7 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         return BigInt(res.value.amount);
       },
       solBalance: async (owner) => (await env.rpc.getBalance(owner).send()).value,
+      findAttestation: (binding) => findSasAttestation(env.rpc, binding),
       send: (ix) => env.sendIx(ix),
     };
   }

@@ -80,8 +80,10 @@ second hand-rolled implementation):
 - **Writes:** `stake` (join executor), `commit`, `reveal` (vote executor).
 - **Reads:** `Subaccord` (join evaluation — `getProgramAccounts` scan),
   `Dispute` / `Round` (duty state, windows, `Round.jurors[]` membership),
-  `JurorStake` (own position, `fees_earned`), `Ruling` (post-settlement
-  observation).
+  `JurorStake` (own position — the scan's own-stake PDA read powers
+  already-joined recognition; plus `fees_earned`), SAS `Attestation`
+  (credential-gated pools — `findSasAttestation` memcmp scan, ADR-0024),
+  `Ruling` (post-settlement observation).
 - Program logs subscription for hint events; accounts are authoritative.
 
 ## Duty flow
@@ -127,6 +129,21 @@ config):
 | Aggregation | `aggregation == Plurality` (v1) |
 | Commit window | `commit_window` ≥ configured floor (agent runtime budget) |
 | Budget | pool `min_stake` (the join amount) not over the per-Subaccord cap; per-token global stake budget not exceeded; reserve floor retained (never stake below configured remaining balance) |
+
+Two executor-level rules sit beside the gates (both chain-read, so not in the
+pure evaluator):
+
+- **Attestation gate (ADR-0024):** a credential-gated Subaccord
+  (`juror_credential`/`juror_schema` set) is joined only with the juror's
+  matching SAS attestation, resolved per join and passed to `stake`; no
+  matching attestation ⇒ reject `AttestationGated` — no join. Binding/expiry
+  validity is the on-chain gate's call.
+- **Already joined:** every scan reads the juror's own `JurorStake` per pool;
+  a live stake (`staked > 0`) is never re-offered to the join gates — the
+  scan reports it as a held stake and the local join book heals from it, so
+  budget accounting counts real on-chain exposure (wiped state dir, manual
+  stake, second instance). A drained slot (`staked == 0`) stays joinable —
+  re-staking regains draw weight.
 
 ## Agent runner
 

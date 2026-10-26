@@ -57,11 +57,29 @@ export interface ReconcileChain {
   fetchDisputes(): Promise<readonly AccountView<Dispute>[]>;
   /** The Round at `(dispute, roundIdx)`, or null when absent. */
   fetchRound(dispute: Address, roundIdx: number): Promise<Round | null>;
+  /**
+   * The juror's own JurorStake in `subaccord` (PDA read), null when no
+   * account exists. Powers already-joined recognition at the scan layer.
+   */
+  fetchJurorStake(subaccord: Address, juror: Address): Promise<{ staked: bigint } | null>;
+}
+
+/**
+ * A Subaccord the juror already holds a live stake in (on-chain truth, not
+ * book state) — never re-offered to the join gates; heals the local book so
+ * budget accounting counts real exposure.
+ */
+export interface HeldStake {
+  readonly subaccord: Address;
+  readonly stakingToken: Address;
+  readonly staked: bigint;
 }
 
 export interface ReconcileResult {
   readonly joinCandidates: readonly JoinCandidate[];
   readonly duties: readonly DutySignal[];
+  /** Pools the juror is already staked into (staked > 0). */
+  readonly heldStakes: readonly HeldStake[];
 }
 
 /** Dispute states in which a seated juror still has work to do. */
@@ -99,13 +117,22 @@ export async function reconcile(chain: ReconcileChain, juror: Address): Promise<
     });
   }
 
-  return {
-    joinCandidates: subaccords.map((s) => ({
-      subaccord: s.address,
-      data: s.data,
-    })),
-    duties,
-  };
+  const joinCandidates: JoinCandidate[] = [];
+  const heldStakes: HeldStake[] = [];
+  for (const s of subaccords) {
+    const own = await chain.fetchJurorStake(s.address, juror);
+    if (own && own.staked > 0n) {
+      heldStakes.push({
+        subaccord: s.address,
+        stakingToken: s.data.stakingToken,
+        staked: own.staked,
+      });
+      continue; // already a juror here — never re-offer the pool to the join gates
+    }
+    joinCandidates.push({ subaccord: s.address, data: s.data });
+  }
+
+  return { joinCandidates, duties, heldStakes };
 }
 
 export interface ReconcileLoopOptions {
