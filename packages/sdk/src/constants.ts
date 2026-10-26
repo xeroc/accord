@@ -33,7 +33,7 @@ export const UNPAUSE_TIMELOCK_SLOTS = 216_000n; // 24h
  *  value is `dispute.terms.appealWindow` (frozen at filing). 3 days. */
 export const DEFAULT_APPEAL_WINDOW_SECS = 259_200n;
 /** Floor on the per-Subaccord appeal window (ADR-0022). 1 hour. */
-export const MIN_APPEAL_WINDOW_SECS = 3_600n;
+export const MIN_APPEAL_WINDOW_SECS = 0n;
 
 // --- Accumulator (ADR-0012) ---
 

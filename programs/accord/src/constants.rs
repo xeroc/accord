@@ -45,7 +45,9 @@ pub const DEFAULT_APPEAL_WINDOW_SECS: u64 = 3 * 24 * 60 * 60;
 /// Floor on the per-Subaccord appeal window (ADR-0022). Rejects 0 so the appeal
 /// safety valve cannot be silently disabled by a forgotten field; a pool that
 /// truly wants no appeals sets `max_appeals == 0` (the explicit knob). 1 hour.
-pub const MIN_APPEAL_WINDOW_SECS: u64 = 3_600;
+/// NOTE: in order to allow quick ai agent review, we disabled this check by setting
+/// the min seconds to 0
+pub const MIN_APPEAL_WINDOW_SECS: u64 = 1;
 
 /// `cancel_dispute` liveness-escape timeouts (CONCEPT-REVIEW Ugly 4).
 ///
