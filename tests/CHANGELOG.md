@@ -1,5 +1,15 @@
 # @useaccord/tests
 
+## 0.7.0
+
+### Patch Changes
+
+- [#24](https://github.com/xeroc/accord/pull/24) [`6303d7b`](https://github.com/xeroc/accord/commit/6303d7b440ff60f076e54c7d6566b229c8c2f60c) Thanks [@xeroc](https://github.com/xeroc)! - Jurat Surfpool e2e: `tests/src/jurat.spec.ts` drives the full agentic-juror duty loop green (reconcile scan → join gates → auto-join → dispute → VRF draw → mock-LLM verdict through the real provider ladder + runner → commit → reveal, with `Round.reveals` and the verdict notice asserted, dryRun OFF) plus the failing-LLM twin (retry ladder exhausted → clean abstain + alert, no vote). Joining the suite required a `loadBook` robustness fix: the first-run ENOENT path now duck-types `code` instead of `instanceof Error`, which breaks on cross-realm errors (jest ESM vm contexts, workers).
+- Updated dependencies [[`71dafcb`](https://github.com/xeroc/accord/commit/71dafcb4f42fba11cb5629226baee99f3ea43fdd), [`1e4ad2e`](https://github.com/xeroc/accord/commit/1e4ad2ee4c7b08516392d84100bc9317c8728b79)]:
+  - @useaccord/sdk@0.7.0
+  - @useaccord/canon@0.7.0
+  - @useaccord/synod@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
