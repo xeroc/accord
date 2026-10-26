@@ -55,6 +55,7 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
     }),
     manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
     domainPut: async () => ({ ok: true, status: 201 }),
+    domainSubPut: async () => ({ ok: true, status: 201 }),
     domainGet: async () => ({
       ok: true,
       status: 200,

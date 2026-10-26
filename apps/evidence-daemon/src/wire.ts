@@ -41,7 +41,7 @@ import {
   synodManifest as synodManifestPipeline,
   type BundleDecryptor,
 } from "./pipeline/synod-manifest";
-import { getDomain, putDomain } from "./pipeline/domain";
+import { getDomain, putDomain, putSubdocument } from "./pipeline/domain";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -62,6 +62,7 @@ import type {
   ServerDeps,
   SynodIngestHandler,
   SynodManifestHandler,
+  DomainSubPutHandler,
 } from "./server/handlers";
 import type { KeyringPublicKeys } from "./server/public-keys";
 
@@ -643,6 +644,26 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       ? { ok: true, status: out.status }
       : { ok: false, status: out.status, error: out.reason };
   };
+  const domainSubPutHandler: DomainSubPutHandler = async (
+    ref,
+    doc,
+    bytes,
+    contentType,
+    subaccordStr,
+  ) => {
+    const out = await putSubdocument(ref, doc, bytes, contentType, subaccordStr, {
+      store: deps.domainStore,
+      maxBytes: deps.maxDomainBytes,
+      sha256,
+      readAnchor: async (sa) => {
+        const v = await readSubaccord(accord, address(sa));
+        return v === null ? null : new Uint8Array(v.domainRef);
+      },
+    });
+    return out.status === 200 || out.status === 201
+      ? { ok: true, status: out.status }
+      : { ok: false, status: out.status, error: out.reason };
+  };
   const domainGetHandler: DomainGetHandler = async (hash) => {
     const out = await getDomain(hash, { store: deps.domainStore });
     return out.status === 200
@@ -700,6 +721,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     ingest: ingestHandler,
     ingestFile: ingestFileHandler,
     domainPut: domainPutHandler,
+    domainSubPut: domainSubPutHandler,
     domainGet: domainGetHandler,
     synodIngest: synodIngestHandler,
     synodManifest: synodManifestHandler,

@@ -219,3 +219,74 @@ export async function getDomain(
   if (obj === null) return { status: 404, reason: "domain document not found" };
   return { status: 200, bytes: obj.bytes, contentType: obj.contentType };
 }
+
+/**
+ * Validate + store a public SUB-document at `domains/{ref}/{doc}` — a
+ * per-item document namespaced under an anchor Subaccord's `domain_ref`
+ * (bean accord-ea3s; e.g. an Arbitrable's per-thesis docs under its court).
+ * The doc hash is content-addressed (`sha256(body) == doc`, ALWAYS — there is
+ * no proof mode: the route already carries both hashes), and the write
+ * dual-homes: the namespaced key links the document to its anchor, the bare
+ * `domains/{doc}` copy keeps it fetchable without knowing the namespace (and
+ * dedups identical documents across anchors). Gate order mirrors
+ * {@link putDomain}: key shape → size cap → identity →
+ * idempotency/conflict → anchor gate (`domain_ref == ref`, create-first
+ * poll) → dual write. The parent domain document itself need NOT be stored —
+ * the chain anchor is the gate, not a stored parent.
+ */
+export async function putSubdocument(
+  ref: string,
+  doc: string,
+  bytes: Uint8Array,
+  contentType: string,
+  subaccord: string,
+  deps: DomainDeps,
+): Promise<DomainPutOutcome> {
+  const key = `${ref}/${doc}`;
+  try {
+    assertDomainHash(key);
+  } catch {
+    return { status: 400, reason: "ref and doc must each be 64-char lowercase hex" };
+  }
+  if (bytes.length > deps.maxBytes) {
+    return { status: 413, reason: `domain document exceeds ${deps.maxBytes}-byte cap` };
+  }
+  const digest = toHex(await deps.sha256(bytes));
+  if (digest !== doc) {
+    return { status: 400, reason: "body sha256 does not match route sub-document hash" };
+  }
+
+  // Idempotency at the namespaced key; the store's own put() re-checks both
+  // keys under the race window; its DomainConflictError ⇒ 409.
+  const existing = await deps.store.get(key);
+  if (existing !== null) {
+    if (!bytesEqual(existing.bytes, bytes)) {
+      return { status: 409, reason: "different bytes already stored at this hash" };
+    }
+    // Heal the bare alias — a prior dual write may have been interrupted.
+    await deps.store.put({ hash: doc, bytes, contentType });
+    return { status: 200 };
+  }
+
+  // Chain gate (create-first): the anchor Subaccord must exist on-chain with
+  // domain_ref == ref. The namespace belongs to the anchor, not to a stored
+  // parent document.
+  const anchorRef = await resolveAnchorRef(subaccord, deps);
+  if (anchorRef === null) {
+    return { status: 404, reason: "anchor subaccord not found" };
+  }
+  if (toHex(anchorRef) !== ref) {
+    return { status: 400, reason: "anchor subaccord domain_ref does not match route ref" };
+  }
+
+  try {
+    await deps.store.put({ hash: key, bytes, contentType });
+    await deps.store.put({ hash: doc, bytes, contentType }); // bare-hash alias
+    return { status: 201 };
+  } catch (e) {
+    if (e instanceof DomainConflictError) {
+      return { status: 409, reason: "different bytes already stored at this hash" };
+    }
+    throw e;
+  }
+}
