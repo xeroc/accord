@@ -154,7 +154,9 @@ pure evaluator):
   baseURL, apiKey })`), `tool()` + Zod for the read-only toolset, agent loop
   via `generateText({ tools, stopWhen: stepCountIs(n) })`.
 - **Tools (read-only, fixed):** read chain (dispute/round/subaccord), fetch
-  evidence files, read domain doc. No shell, no keys, no arbitrary IO.
+  evidence files, read domain doc, `read_case` (Inveigo: boss Item +
+  claim-hash-verified thesis, resolved via `Item.current_dispute` — see
+  `src/chain/inveigo.ts`). No shell, no keys, no arbitrary IO.
 - **Output:** structured `Verdict` — `{ option: number, rationale: string,
   confidence: number }` (Zod-checked); the vote tx is built from the schema
   by daemon code.

@@ -30,6 +30,7 @@ import {
 
 import { loadConfig } from "./config";
 import { createChainClient, loadOperatorKeyBytes, operatorSignMessage } from "./chain/client";
+import { readInveigoCase } from "./chain/inveigo";
 import { subscribeAccordEvents } from "./chain/events";
 import { joinSubaccord } from "./join/executor";
 import {
@@ -167,6 +168,13 @@ export async function main(): Promise<void> {
         {
           readDispute: (d) => runtimeChain.fetchDispute(d as Address),
           readSubaccord: (s) => joinChain.fetchSubaccord(s as Address),
+          readCase: (d) =>
+            readInveigoCase({
+              rpc: chain.rpc,
+              endpoint: evidenceDeps.endpoint,
+              dispute: d as Address,
+              expectedSubaccord: input.subaccord as Address,
+            }),
         },
         { ...input, domainRef },
       );

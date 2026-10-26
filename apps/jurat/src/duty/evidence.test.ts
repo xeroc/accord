@@ -105,6 +105,7 @@ function evidenceDeps(notified: string[]): EvidenceDeps {
 const CHAIN: ChainReaders = {
   readDispute: async () => ({ numOptions: 3, state: "Commit" }),
   readSubaccord: async () => ({ domainRef: DOMAIN_HASH, aggregation: "Plurality" }),
+  readCase: async () => null,
 };
 
 function dutyInput() {
@@ -249,6 +250,7 @@ test("happy path: decrypts the delivered bundle and assembles a working AgentCon
       state: "Commit",
     });
     assert.equal(await tools.read_domain_doc!.execute({ subaccord: SUBACCORD }), "# rubric");
+    assert.equal(await tools.read_case!.execute({ dispute: DISPUTE }), null);
   } finally {
     stub.close();
   }

@@ -32,6 +32,7 @@ import {
 } from "@useaccord/sdk/evidence";
 
 import { makeJuratTools } from "../agent/tools.js";
+import type { InveigoCase } from "../chain/inveigo.js";
 import type { AgentContext } from "../agent/runner.js";
 
 /** Daemon transport/availability failures and empty deliveries. */
@@ -60,6 +61,8 @@ export interface EvidenceDocument {
 export interface ChainReaders {
   readDispute(dispute: string): Promise<unknown>;
   readSubaccord(subaccord: string): Promise<unknown>;
+  /** Inveigo case resolution for `read_case` (boss Item + verified thesis). */
+  readCase(dispute: string): Promise<InveigoCase | null>;
 }
 
 /** Injected daemon access + notification. */

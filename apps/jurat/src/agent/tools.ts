@@ -1,11 +1,11 @@
-// tools.ts — the agent toolset (bean accord-gww8): four Zod-typed read-only
+// tools.ts — the agent toolset (bean accord-gww8): five Zod-typed read-only
 // tools over injected seams, plus MCP servers loaded from operator config
 // via `@ai-sdk/mcp`'s `createMCPClient`, merged behind the builtin set.
 //
 // Isolation contract (milestone decision 5): the agent sees a fixed,
 // read-only view of the world — chain accounts, evidence files, domain doc.
 // There are no key, shell, or fs-write tools and there is no way to add
-// one: the builtin set is closed over exactly four names and every
+// one: the builtin set is closed over exactly five names and every
 // executor routes through `JuratToolDeps` (implemented by the daemon with
 // the SDK + evidence client — never with raw fs/exec). Dispute evidence is
 // attacker-controlled text; the worst an injected instruction can do here
@@ -20,6 +20,8 @@ import { createMCPClient } from "@ai-sdk/mcp";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
+import type { InveigoCase } from "../chain/inveigo.js";
+
 /**
  * Read-only data seams the tools execute against. Implemented by the
  * daemon with `@useaccord/sdk` account fetchers + the evidence client.
@@ -33,6 +35,9 @@ export interface JuratToolDeps {
   fetchEvidenceFile(dispute: string, file: string): Promise<{ name: string; content: string }>;
   /** The Subaccord's domain doc (how disputes here should be judged). */
   readDomainDoc(subaccord: string): Promise<string>;
+  /** Inveigo case (boss Item + claim-hash-verified thesis) for a dispute —
+   *  `null` when the dispute is not an Inveigo challenge. */
+  readCase(dispute: string): Promise<InveigoCase | null>;
 }
 
 /** One MCP server from operator config (streamable HTTP transport). */
@@ -42,7 +47,7 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
 }
 
-/** Build the four builtin read-only tools. */
+/** Build the five builtin read-only tools. */
 export function makeJuratTools(deps: JuratToolDeps): ToolSet {
   return {
     read_dispute: tool({
@@ -82,6 +87,20 @@ export function makeJuratTools(deps: JuratToolDeps): ToolSet {
         subaccord: z.string().describe("Subaccord PDA, base58"),
       }),
       execute: ({ subaccord }) => deps.readDomainDoc(subaccord),
+    }),
+    read_case: tool({
+      description:
+        "Resolve the Inveigo case bound to this dispute (Inveigo AI-bounty " +
+        "challenges only; null for anything else). Returns the boss Item " +
+        "(stake, pot, defenses, court) and the ORIGINAL THESIS document, " +
+        "fetched from the evidence CAS and verified against the on-chain " +
+        "claim hash. REQUIRED for full context on Inveigo disputes: the " +
+        "evidence bundle's round-0 file is only the challenger's " +
+        "anti-thesis — read the thesis here before deciding hold vs flip.",
+      inputSchema: z.object({
+        dispute: z.string().describe("Dispute PDA, base58"),
+      }),
+      execute: ({ dispute }) => deps.readCase(dispute),
     }),
   };
 }

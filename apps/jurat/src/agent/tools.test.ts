@@ -1,8 +1,8 @@
 // tools.test.ts — unit contract for the agent toolset (bean accord-gww8):
-// exactly four Zod-typed read-only tools wired to injected seams, MCP
+// exactly five Zod-typed read-only tools wired to injected seams, MCP
 // servers loaded from config via createMCPClient (fetch-stubbed), builtin
 // toolset wins on name collisions. No key/shell/fs-write surface exists —
-// the builtin set is closed over four names and every executor routes
+// the builtin set is closed over five names and every executor routes
 // through an injected dependency, so there is nothing else to call.
 //
 // Excluded from the TypeScript build (tsconfig.json exclude); run via:
@@ -42,6 +42,18 @@ function makeDeps() {
       calls.push(["readDomainDoc", subaccord]);
       return "# domain doc";
     },
+    readCase: async (dispute) => {
+      calls.push(["readCase", dispute]);
+      return dispute === DISPUTE
+        ? {
+            protocol: "inveigo",
+            dispute,
+            item: { pot: "13" },
+            thesis: "the thesis",
+            checks: { courtMatches: true },
+          }
+        : null;
+    },
   };
   return { deps, calls };
 }
@@ -55,11 +67,12 @@ function schema(tools: ToolSet, name: string) {
 
 // --- builtin toolset: closed, read-only, schema-validated --------------------
 
-test("builtin toolset is exactly the four read-only tools", () => {
+test("builtin toolset is exactly the five read-only tools", () => {
   const { deps } = makeDeps();
   const tools = makeJuratTools(deps);
   assert.deepEqual(Object.keys(tools).sort(), [
     "fetch_evidence_file",
+    "read_case",
     "read_dispute",
     "read_domain_doc",
     "read_subaccord",
@@ -89,6 +102,10 @@ test("schemas: valid inputs parse, missing/mistyped inputs reject", () => {
 
   assert.equal(schema(tools, "read_domain_doc").safeParse({ subaccord: SUBACCORD }).success, true);
   assert.equal(schema(tools, "read_domain_doc").safeParse({}).success, false);
+
+  assert.equal(schema(tools, "read_case").safeParse({ dispute: DISPUTE }).success, true);
+  assert.equal(schema(tools, "read_case").safeParse({}).success, false);
+  assert.equal(schema(tools, "read_case").safeParse({ subaccord: SUBACCORD }).success, false);
 });
 
 test("executors route through the injected seams with the parsed args", async () => {
@@ -111,12 +128,25 @@ test("executors route through the injected seams with the parsed args", async ()
     content: "plaintext",
   });
   assert.deepEqual(await tools.read_domain_doc!.execute({ subaccord: SUBACCORD }), "# domain doc");
+  assert.deepEqual(await tools.read_case!.execute({ dispute: DISPUTE }), {
+    protocol: "inveigo",
+    dispute: DISPUTE,
+    item: { pot: "13" },
+    thesis: "the thesis",
+    checks: { courtMatches: true },
+  });
+  assert.equal(
+    await tools.read_case!.execute({ dispute: "Other11111111111111111111111111111111111" }),
+    null,
+  );
 
   assert.deepEqual(calls, [
     ["readDispute", DISPUTE],
     ["readSubaccord", SUBACCORD],
     ["fetchEvidenceFile", DISPUTE, "a.txt"],
     ["readDomainDoc", SUBACCORD],
+    ["readCase", DISPUTE],
+    ["readCase", "Other11111111111111111111111111111111111"],
   ]);
 });
 
@@ -220,6 +250,7 @@ test("buildToolset: builtin + MCP merged, builtin precedence end-to-end", async 
     assert.deepEqual(Object.keys(tools).sort(), [
       "extra_lookup",
       "fetch_evidence_file",
+      "read_case",
       "read_dispute",
       "read_domain_doc",
       "read_subaccord",
