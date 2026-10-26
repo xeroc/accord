@@ -35,7 +35,7 @@ A Juror's secret submission of `hash(vote, salt)`. Prevents vote-copying so the 
 _Avoid_: sealed bid, secret ballot
 
 **Reveal**:
-A Juror's disclosure of `{vote, salt}` after all Commits are in. The Accord verifies the hash matches the Commit.
+A Juror's disclosure of `{vote, salt}` after all Commits are in. The Accord verifies the hash matches the Commit. Reveal opens early once the panel is fully committed, and that panel-full commit re-anchors `reveal_end` shrink-only to `now + reveal_window`; an early round resolution (all revealed) pins `reveal_end` to the resolution instant — so the appeal window and finality count from the actual resolution, not the scheduled window ends (ADR-0038).
 _Avoid_: unseal, open
 
 **Ruling**:

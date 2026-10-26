@@ -66,6 +66,15 @@ impl<'info> Commit<'info> {
         // to `Reveal` immediately rather than idling out the commit window.
         if round.commit_count == round.juror_count {
             dispute.state = DisputeState::Reveal;
+            // ADR-0038: re-anchor the reveal window at the last commitment —
+            // revealers get the full `reveal_window` from NOW, not from the
+            // scheduled commit_end. Shrink-only: `now < commit_end` and
+            // `commit_end + reveal_window == reveal_end` (draw-time anchor)
+            // ⇒ `now + reveal_window < reveal_end` strictly.
+            round.reveal_end = round.reveal_end.min(
+                now.checked_add(dispute.terms.reveal_window as i64)
+                    .ok_or(AccordError::ArithmeticOverflow)?,
+            );
         }
 
         emit!(Committed {

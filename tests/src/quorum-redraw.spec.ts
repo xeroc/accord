@@ -38,6 +38,7 @@ import {
   readDisputeState,
   readRound,
   warpTo,
+  warpToRevealWindow,
   toAddress,
   toHex,
   ataOf,
@@ -145,7 +146,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
     );
     await env.sendIx(commitIx);
 
-    await warpTo(env, round!.commitEnd);
+    await warpToRevealWindow(env, roundPda);
     await env.sendIx(
       reveal(
         drawn[0]!.accord.adapter,
@@ -244,7 +245,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
       );
       await env.sendIx(instruction);
     }
-    await warpTo(env, round!.commitEnd);
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < reDrawn.length; i++) {
       await env.sendIx(
         reveal(
@@ -327,7 +328,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
       );
       await env.sendIx(instruction);
     }
-    await warpTo(env, round!.commitEnd);
+    await warpToRevealWindow(env, roundPda);
     for (const i of [0, 1]) {
       await env.sendIx(
         reveal(
@@ -441,7 +442,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
       { vote: 0n, salt },
     );
     await env.sendIx(commitIx);
-    await warpTo(env, round!.commitEnd);
+    await warpToRevealWindow(env, roundPda);
     await env.sendIx(
       reveal(
         drawn[0]!.accord.adapter,
@@ -550,7 +551,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
       );
       await env.sendIx(instruction);
     }
-    await warpTo(env, round!.commitEnd);
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < 2; i++) {
       await env.sendIx(
         reveal(
@@ -663,7 +664,7 @@ describe("e2e: ADR-0021/0026 non-decisive rounds — shortfall + plurality tie (
       );
       await env.sendIx(instruction);
     }
-    await warpTo(env, round!.commitEnd);
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < reDrawn.length; i++) {
       await env.sendIx(
         reveal(

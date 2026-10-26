@@ -4651,8 +4651,14 @@ fn commit_reveal_votes(
             salts.push(None);
         }
     }
-    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(env, commit_end - now + 1);
+    // ADR-0038: a panel-full commit re-anchors `reveal_end` to
+    // last-commit + reveal_window, which can sit BEFORE `commit_end + 1`.
+    // When every seat committed, reveal immediately (the all_committed gate
+    // is open); only partial-commit rounds need the commit_end warp.
+    if votes.iter().any(|v| v.is_none()) {
+        let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+        warp_seconds(env, commit_end - now + 1);
+    }
     for (i, vote) in votes.iter().enumerate() {
         if let (Some(vote), Some(salt)) = (vote, salts[i]) {
             let juror = &jurors[panel[i].1];
@@ -4681,8 +4687,9 @@ fn commit_reveal_votes(
     env.ctx.svm.expire_blockhash();
 }
 
-/// Warp past `reveal_end` and run `finalize_round` with the panel's
-/// JurorStake PDAs as remaining accounts.
+/// Warp TO `reveal_end` (the `now >= reveal_end` gate admits equality) and
+/// run `finalize_round` with the panel's JurorStake PDAs as
+/// remaining_accounts.
 fn finalize_round_for(
     env: &mut AccEnv,
     dispute: Pubkey,
@@ -4695,7 +4702,9 @@ fn finalize_round_for(
     let reveal_end = round.reveal_end;
     drop(round_acc);
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(env, reveal_end - now + 1);
+    // Land exactly ON reveal_end: satisfies the `now >= reveal_end` gate
+    // while leaving the (tight, locally 1s) appeal window open for callers.
+    warp_seconds(env, reveal_end - now);
     let ix = env
         .ctx
         .program()
@@ -6387,8 +6396,9 @@ fn scalar_vote_panel(
             .assert_success();
     }
 
-    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(env, commit_end - now + 1);
+    // ADR-0038: the panel-full commit above re-anchored `reveal_end` to
+    // last-commit + reveal_window (which is before commit_end + 1) — reveal
+    // immediately instead of warping to commit_end.
     for (i, &(_, leaf_idx)) in drawn.iter().enumerate() {
         let salt = [i as u8 + 1; 32];
         let ix = env
@@ -6569,7 +6579,10 @@ fn scalar_median_even_reveal_count_takes_upper_middle() {
             .assert_success();
     }
     let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
-    warp_seconds(&mut env, commit_end - now + 1);
+    // ADR-0038: the panel-full commit above re-anchored reveal_end to
+    // commit-time + reveal_window == commit_end + 1 — land ON commit_end
+    // (the `now >= commit_end` gate admits equality), not past it.
+    warp_seconds(&mut env, commit_end - now);
     for (i, &(.., leaf_idx)) in drawn.iter().enumerate().take(2) {
         let salt = [i as u8 + 1; 32];
         let ix = env

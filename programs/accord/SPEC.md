@@ -114,10 +114,16 @@ appeal. `(round_idx, draw_attempt)` salts the seed
 permissionless crank advances states when their windows elapse. Commit→reveal
 opens as soon as `now ≥ commit_end` **OR** every drawn juror has committed
 (`commit_count == juror_count` — the panel-full commit flips state straight to
-`Reveal`, so a fully-committed panel needn't idle out the commit window); the
-reveal window's `reveal_end` upper bound is unchanged. `finalize_round`
+`Reveal`, so a fully-committed panel needn't idle out the commit window), and
+that panel-full commit re-anchors `reveal_end` shrink-only to
+`now + reveal_window` (ADR-0038 — revealers get the full reveal window from
+the last commitment, not from the scheduled `commit_end`). `finalize_round`
 (reveal→resolved) likewise resolves early once every juror has revealed
-(`reveal_count == juror_count`) — no need to wait out the reveal window. Odd
+(`reveal_count == juror_count`) and pins `reveal_end = now` on that early
+path, so the appeal window + finality (`appeal`, `finalize_dispute`,
+`cancel_dispute` all anchor at `reveal_end + appeal_window`) open at the
+actual resolution time; a late (timeout-path) `finalize_round` never extends
+`reveal_end`. Odd
 `min_jury_size` (default 3) keeps every appeal round odd
 (3 / 7 / 15 / 31 at default; accord-9q3e generalizes the base), preventing
 two-bloc full-panel splits — but **not** literal ties: N>2 options tie on a

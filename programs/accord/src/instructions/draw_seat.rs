@@ -264,7 +264,9 @@ impl<'info> DrawSeat<'info> {
         dispute.drawn_seats = round.juror_count;
 
         // When the panel fills, open the round windows and transition to Drawn.
-        // Ugly 6: windows are filing-time (frozen on the dispute).
+        // Ugly 6: windows are filing-time (frozen on the dispute). ADR-0038:
+        // this is the INITIAL anchor — later transitions re-anchor
+        // `reveal_end` shrink-only (panel-full commit / early resolve).
         if round.juror_count >= panel {
             let now_ts = Clock::get()?.unix_timestamp;
             let review_end = now_ts

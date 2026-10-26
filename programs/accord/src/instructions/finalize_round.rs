@@ -113,6 +113,15 @@ impl<'info> FinalizeRound<'info> {
                 vs[n / 2]
             }
         };
+        // ADR-0038: on early resolve (all revealed, now < reveal_end) pin
+        // `reveal_end` to the resolution instant — the appeal window opens at
+        // resolution, not at the scheduled reveal close. Shrink-only by
+        // construction. The timeout path (now >= reveal_end, a lazy cranker)
+        // deliberately does NOT rewrite: landing late must never push the
+        // appeal deadline out.
+        if now < round.reveal_end {
+            round.reveal_end = now;
+        }
         round.result = winner;
         // ADR-0029: no fee credit here. The round's ENTIRE fee pot settles at
         // `settle_round` / `finalize_dispute` against `final_ruling` —

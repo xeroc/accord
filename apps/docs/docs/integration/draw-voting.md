@@ -12,6 +12,14 @@ The crank sequence from `Created` to `RoundResolved`. Every step after `commit_v
 | 6    | `finalize_round`      | crank      | `now ≥ reveal_end` ∨ all revealed                            | `RoundResolved` (quorum + decisive tally) / `RedrawEligible` (shortfall ∨ Plurality tie, ADR-0026) |
 | 7    | `redraw`              | crank      | `state == RedrawEligible` (ADR-0021)                         | `Created` (re-draw) / `Failed` (exhausted)              |
 
+Window re-anchoring
+([ADR-0038](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0038-re-anchor-round-windows-at-last-state-change.md)):
+the deadlines in steps 5–6 are the **re-anchored** ones. A panel-full `commit`
+(step 4) pulls `reveal_end` shrink-only to `now + reveal_window`; an early
+`finalize_round` (step 6, all revealed) pins `reveal_end = now`, so the appeal
+window and finality follow the actual resolution time rather than the
+scheduled reveal close. The timeout path never extends `reveal_end`.
+
 ## Commit hash
 
 ```

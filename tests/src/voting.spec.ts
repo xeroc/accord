@@ -9,7 +9,14 @@
 // Window timing (per Subaccord v1 defaults): commit opens at review_end
 // (draw_time + review_window), reveal at commit_end (+commit_window),
 // finalizable at reveal_end (+reveal_window).
-import { commit, findJurorStakePda, finalizeRound, reveal } from "@useaccord/sdk";
+import {
+  DEFAULT_APPEAL_WINDOW_SECS,
+  commit,
+  finalizeDispute,
+  finalizeRound,
+  findJurorStakePda,
+  reveal,
+} from "@useaccord/sdk";
 
 import { createTestEnv, type TestEnv } from "./setup/env.js";
 import {
@@ -22,6 +29,7 @@ import {
   submitDraw,
   toAddress,
   warpTo,
+  warpToRevealWindow,
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
@@ -29,6 +37,7 @@ import {
 /** DisputeState numeric tags (state.rs — ADR-0012: Created=0, Drawn=1, …,
  * RoundResolved=5, Final=6; SnapshotPosted removed so the tags shifted). */
 const DRAWN = 1;
+const FINAL = 6;
 const ROUND_RESOLVED = 5;
 
 describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
@@ -96,9 +105,9 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     let mid = await readRound(env, roundPda);
     expect(mid!.commitCount).toBe(drawnJurors.length);
 
-    // --- reveal all (window opens at commit_end) ---
-    mid = await readRound(env, roundPda);
-    await warpTo(env, mid!.commitEnd);
+    // --- reveal all (ADR-0038: panel-full commit may have re-anchored
+    // revealEnd before commitEnd + 1 — fresh, window-respecting warp) ---
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < drawnJurors.length; i++) {
       await env.sendIx(
         reveal(
@@ -179,4 +188,127 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     );
     await expect(env.sendIx(instruction)).rejects.toThrow();
   }, 200_000);
+
+  it("ADR-0038: eager panel reaches Final at resolve_ts + appeal_window, not the scheduled windows", async () => {
+    if (!env.up) return; // offline CI lane
+
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
+    const fx: DrawFixture = { env, up: true, ...core };
+    const nonce = crypto
+      .getRandomValues(new Uint8Array(8))
+      .reduce((acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)), 0n);
+    const armed = await armDispute(fx, nonce);
+    const memberships = await resolveDistinctPanel(fx, armed);
+    const roundPda = await submitDraw(fx, armed, memberships);
+    const drawnJurors: JurorCtx[] = memberships.map((m) => {
+      const addr = toAddress(m.leaf.juror);
+      const j = fx.jurors.find((x) => x.signer.address === addr);
+      if (!j) throw new Error(`drawn juror not in staked set: ${addr}`);
+      return j;
+    });
+
+    // Scheduled windows from the draw-time anchor (harness defaults:
+    // review 7d / commit 2d / reveal 2d — the eager panel must NOT idle them).
+    const scheduled = await readRound(env, roundPda);
+    expect(scheduled!.revealEnd).toBeGreaterThan(scheduled!.commitEnd);
+
+    // Eager panel: everyone commits one second into the review window.
+    await warpTo(env, scheduled!.reviewEnd);
+    const salts = memberships.map(() => crypto.getRandomValues(new Uint8Array(32)));
+    for (let i = 0; i < drawnJurors.length; i++) {
+      const { instruction } = await commit(
+        drawnJurors[i]!.accord.adapter,
+        env.programId,
+        {
+          signer: drawnJurors[i]!.signer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        },
+        { vote: 0n, salt: salts[i]! },
+      );
+      await env.sendIx(instruction);
+    }
+
+    // Panel-full commit re-anchored reveal_end to last-commit + reveal_window
+    // (== commit_end + 1 under the harness's equal commit/reveal windows).
+    let mid = await readRound(env, roundPda);
+    expect(mid!.revealEnd).toBeLessThan(scheduled!.revealEnd);
+    expect(mid!.revealEnd - mid!.commitEnd).toBe(1n);
+
+    // Everyone reveals IMMEDIATELY (all committed ⇒ reveal open) — no warp.
+    for (let i = 0; i < drawnJurors.length; i++) {
+      await env.sendIx(
+        reveal(
+          drawnJurors[i]!.accord.adapter,
+          env.programId,
+          {
+            signer: drawnJurors[i]!.signer.address,
+            subaccord: fx.subaccord,
+            dispute: armed.dispute,
+            round: roundPda,
+            stakingToken: fx.mint,
+            jurorTokenAccount: drawnJurors[i]!.jurorAta,
+            vault: fx.vault,
+          },
+          { vote: 0n, salt: salts[i]! },
+        ),
+      );
+    }
+    mid = await readRound(env, roundPda);
+    expect(mid!.revealCount).toBe(drawnJurors.length);
+
+    // Early finalize (all revealed) resolves the round and pins reveal_end to
+    // the resolution instant — while the scheduled commit window is still open.
+    await env.sendIx(
+      finalizeRound(env.accord.adapter, env.programId, {
+        signer: env.payer.address,
+        subaccord: fx.subaccord,
+        dispute: armed.dispute,
+        round: roundPda,
+      }),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(ROUND_RESOLVED);
+    const resolved = await readRound(env, roundPda);
+    const resolveTs = resolved!.revealEnd;
+    expect(resolveTs).toBeLessThan(scheduled!.commitEnd);
+    expect(resolved!.result).toBe(0n);
+
+    // finalize_dispute while the (re-anchored) appeal window is open → reject.
+    const jurorStakePdas = await Promise.all(
+      drawnJurors.map((j) =>
+        findJurorStakePda(
+          { subaccord: fx.subaccord, juror: j.signer.address },
+          { programAddress: env.programId },
+        ).then(([address]) => address),
+      ),
+    );
+    await expect(
+      env.sendIx(
+        finalizeDispute(env.accord.adapter, env.programId, {
+          signer: env.payer.address,
+          subaccord: fx.subaccord,
+          dispute: armed.dispute,
+          round: roundPda,
+        }, jurorStakePdas),
+      ),
+    ).rejects.toThrow();
+
+    // Finality lands at resolve_ts + appeal_window — days before the
+    // scheduled reveal_end (the whole point of ADR-0038).
+    expect(resolveTs + DEFAULT_APPEAL_WINDOW_SECS + 2n).toBeLessThan(
+      scheduled!.revealEnd,
+    );
+    await warpTo(env, resolveTs + DEFAULT_APPEAL_WINDOW_SECS + 1n);
+    await env.sendIx(
+      finalizeDispute(env.accord.adapter, env.programId, {
+        signer: env.payer.address,
+        subaccord: fx.subaccord,
+        dispute: armed.dispute,
+        round: roundPda,
+      }, jurorStakePdas),
+    );
+    expect(await readDisputeState(env, armed.dispute)).toBe(FINAL);
+  }, 300_000);
 });

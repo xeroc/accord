@@ -137,4 +137,3 @@ function parseAddressList(raw: string | undefined): Address[] {
   }
   return list as Address[];
 }
-

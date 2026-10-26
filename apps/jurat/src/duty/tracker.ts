@@ -7,7 +7,11 @@
 //     computed on-chain from the CaseTerms frozen at filing; the tracker
 //     reads them rather than re-deriving (accounts are authoritative,
 //     milestone decision 4 — a local re-derivation could drift from the
-//     gates and is a second implementation of the same math).
+//     gates and is a second implementation of the same math). ADR-0038:
+//     `reveal_end` MUTATES shrink-only after draw — a panel-full commit
+//     pulls it to `now + reveal_window`, an early finalize_round pins it to
+//     the resolution instant. Reading the live field (never a cached copy)
+//     keeps `final` correct as the deadline moves earlier.
 //   - gates:    commit.rs  `review_end <= now < commit_end`
 //               reveal.rs  `(now >= commit_end || all_committed) && now < reveal_end`
 //   - redraw:   ADR-0021 — same Round PDA (same round_idx), draw_attempt+1,

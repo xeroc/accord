@@ -80,6 +80,7 @@ import {
   toAddress,
   toHex,
   warpTo,
+  warpToRevealWindow,
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
@@ -438,7 +439,8 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
       });
 
       // Warp to the reveal window; reveal with the EXACT persisted preimage.
-      await warpTo(env, round.commitEnd);
+      // ADR-0038: reveal may already be open / re-anchored — fresh-read warp.
+      await warpToRevealWindow(env, roundPda);
       const revealed = await revealVote(
         {
           client: juratAccord.adapter,
