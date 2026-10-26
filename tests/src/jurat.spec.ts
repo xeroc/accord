@@ -13,10 +13,12 @@
 // dryRun is OFF in this spec only — it is the one place the vote path is
 // proven against the real chain (everywhere else jurat defaults to DRY_RUN).
 //
-// Duty surfacing: reconcile surfaces actionable disputes (Review / Commit /
-// Reveal); a freshly drawn dispute sits in Drawn until the FIRST panel
-// commit flips it (commit.rs), so a background juror commits first to open
-// the duty — exactly how a live pool behaves.
+// Duty surfacing: reconcile surfaces actionable disputes (Drawn / Commit /
+// Reveal — Drawn IS the review phase; Review is a dead on-chain arm). The
+// duty opens while the dispute is still Drawn: runDuty holds through review
+// and commits at window open, so the solo-panel case works too (bean
+// accord-zhnh). The background juror's commit here just exercises the
+// Drawn→Commit flip on chain.
 //
 // Panel guarantee: the pool holds exactly PANEL_SIZE stakers (2 background +
 // jurat), so the VRF draw seats all three — jurat's seat is structural, not
@@ -347,8 +349,14 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
 
     const { armed, roundPda, seat } = await armAndDraw();
 
+    // The duty surfaces while the dispute is STILL Drawn (the review phase —
+    // panel full, no commit yet). Solo panels have no other juror to flip the
+    // state, so this is the recognition that makes them servable (accord-zhnh).
+    const drawnScan = await reconcile(reconcileChain(), juratAddr);
+    expect(drawnScan.duties.some((d) => d.dispute === armed.dispute)).toBe(true);
+
     // Open the commit window, then a background juror commits → the dispute
-    // leaves Drawn and the duty becomes reconcile-actionable.
+    // leaves Drawn (Drawn→Commit flip, commit.rs).
     const round = await decodedRound(roundPda);
     await warpTo(env, round.reviewEnd);
     await backgroundCommit(fx.jurors[0]!, armed.dispute, roundPda);

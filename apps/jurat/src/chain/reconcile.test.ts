@@ -198,6 +198,25 @@ describe("reconcile", () => {
     expect(out.heldStakes).toEqual([]);
   });
 
+  test("seated juror in a Drawn dispute (panel full, review window) yields a DutySignal", async () => {
+    chain.subaccords = [{ address: SUB_A, data: subaccordFixture() }];
+    chain.disputes = [{ address: DISPUTE_1, data: disputeFixture(SUB_A, DisputeState.Drawn) }];
+    chain.rounds.set(
+      `${DISPUTE_1}:0`,
+      roundFixture(DISPUTE_1, [JUROR, OTHER_JUROR, DEFAULT_PUBKEY]),
+    );
+    const out = await reconcile(chain, JUROR);
+    expect(out.duties).toEqual([
+      {
+        dispute: DISPUTE_1,
+        subaccord: SUB_A,
+        roundIdx: 0,
+        jurorIndex: 0,
+        state: DisputeState.Drawn,
+      },
+    ]);
+  });
+
   test("panel seat in a Commit dispute yields a DutySignal with our index", async () => {
     chain.subaccords = [{ address: SUB_A, data: subaccordFixture(SUB_A) }];
     chain.disputes = [{ address: DISPUTE_1, data: disputeFixture(SUB_A, DisputeState.Commit) }];
@@ -238,7 +257,6 @@ describe("reconcile", () => {
   test("non-actionable states yield no duty even when seated", async () => {
     for (const state of [
       DisputeState.Created,
-      DisputeState.Drawn,
       DisputeState.RoundResolved,
       DisputeState.RedrawEligible,
       DisputeState.Final,

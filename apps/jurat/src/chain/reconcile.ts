@@ -8,7 +8,8 @@
  *   - every Subaccord on the program → {@link JoinCandidate} (the join gates
  *     + executor decide what happens next; already-joined pools are filtered
  *     by the executor's idempotency),
- *   - every actionable dispute (Review / Commit / Reveal) whose *current*
+ *   - every actionable dispute (Drawn / Commit / Reveal — the review phase
+ *     lives in Drawn; Review is a dead on-chain arm) whose *current*
  *     Round panel contains our key → {@link DutySignal}.
  *
  * Because the scan is a pure function of chain state, missed events are
@@ -82,8 +83,17 @@ export interface ReconcileResult {
   readonly heldStakes: readonly HeldStake[];
 }
 
-/** Dispute states in which a seated juror still has work to do. */
+/**
+ * Dispute states in which a seated juror still has work to do. `Drawn` is the
+ * review phase: `draw_seat` sets it when the panel fills and the windows open,
+ * and it only leaves via the FIRST panel commit (commit.rs flips Drawn→Commit)
+ * — nothing ever writes `Review` on chain (dead enum arm; kept here for
+ * safety). Excluding Drawn made solo panels invisible: with no other juror to
+ * commit first, the duty never surfaced and the dispute stalled into redraw
+ * (bean accord-zhnh). `Created` stays excluded — partial panel, windows unset.
+ */
 const ACTIONABLE_STATES: ReadonlySet<DisputeState> = new Set([
+  DisputeState.Drawn,
   DisputeState.Review,
   DisputeState.Commit,
   DisputeState.Reveal,
