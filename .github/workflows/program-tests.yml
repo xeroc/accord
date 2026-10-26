@@ -37,7 +37,7 @@ jobs:
         with:
           solana_version: ${{ steps.versions.outputs.solana_version }}
           anchor_version: ${{ steps.versions.outputs.anchor_version }}
-          node_version: 20
+          node_version: 22
 
       - uses: xeroc/github-actions/run-tests@main
         with:
