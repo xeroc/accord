@@ -9,12 +9,13 @@
  * refund_roster_miss / claim).
  */
 import { test, expect } from "bun:test";
-import { address, type Account } from "@solana/kit";
+import { address, type Account, type Address } from "@solana/kit";
 import { ItemState, type CanonItem, type CanonList } from "@useaccord/canon";
 import { CaseState, type SynodCase } from "@useaccord/synod";
 import {
   Accord,
   Aggregation,
+  type AppealBond,
   DisputeState,
   NO_RULING,
   NO_VOTE,
@@ -605,4 +606,29 @@ test("synod: unregistered synod kind → logged + skipped, fired stays 0", async
   );
   expect(fired).toBe(0);
   expect(calls).toEqual([]);
+});
+
+test("Failed with an outstanding appeal bond at seed 0 → claim_refund roundIdx 0", async () => {
+  // Bond PDA seeds are the round BEING appealed (0-based) — 0..currentRound-1.
+  // The sweep used to probe 1..currentRound, so the FIRST appellant's bond
+  // (seed 0) was never swept (bean accord-br6a).
+  const { d, calls } = recordingDispatch({ claim_refund: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [
+        {
+          address: D_ADDR,
+          data: dispute({ state: DisputeState.Failed, currentRound: 1 }),
+        } as unknown as Account<Dispute>,
+      ],
+      fetchRound: async () => null,
+      fetchAppealBond: async (_dispute: Address, roundIdx: number) =>
+        roundIdx === 0
+          ? ({ address: R_ADDR, data: { amount: 100n } } as unknown as Account<AppealBond>)
+          : null,
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "claim_refund", dispute: D_ADDR, roundIdx: 0 }]);
 });

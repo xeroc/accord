@@ -29,14 +29,16 @@ export async function execute(
     dispute: d.address,
     round: roundAddr,
   };
-  // Current panel stakes, then one AppealBond PDA per prior appeal round
-  // (rounds 1..currentRound — each appeal opened round currentRound+1).
+  // Current panel stakes, then one AppealBond PDA per appeal. Bond PDA seeds
+  // are the round BEING appealed (0-based: 0..currentRound-1) — the bond's
+  // `round_idx` FIELD records the round the appeal OPENED (seed + 1); the
+  // PDA seed is NOT that field (bean accord-br6a).
   const remaining: Address[] = await panelStakePdas(
     ctx.programId,
     d.data.subaccord,
     round.data.jurors,
   );
-  for (let r = 1; r <= d.data.currentRound; r++) {
+  for (let r = 0; r < d.data.currentRound; r++) {
     remaining.push(await appealBondPda(ctx.programId, d.address, r));
   }
   const ix = finalizeDispute(ctx.accord.adapter, ctx.programId, accounts, remaining);

@@ -3,23 +3,21 @@
  * round-1 fee when a dispute stalls. SDK: `methods.cancelDispute`
  * (methods/settlement.ts:89). ChainCommand (sends).
  *
- * `--remaining-accounts auto` (default) derives the Round + JurorStake +
- * AppealBond PDAs the handler closes/refunds by reading the Dispute + each
- * Round's drawn jurors. `list` takes an explicit comma-separated address set
- * for advanced / partial refunds.
+ * `--remaining-accounts auto` (default) derives the remainingAccounts layout
+ * via the SDK's deriveCancelDisputeRemainingAccounts (current Round + panel,
+ * prior rounds + panels, AppealBonds — the handler's strict accounting
+ * rejects any other shape). `list` takes an explicit comma-separated address
+ * set for advanced / partial refunds.
  */
 import { Args, Flags } from "@oclif/core";
 import type { Address, Commitment, Rpc, SolanaRpcApi } from "@solana/kit";
 
 import {
-  fetchMaybeAppealBond,
+  Accord,
+  deriveCancelDisputeRemainingAccounts,
   fetchMaybeDispute,
-  fetchMaybeRound,
   fetchMaybeSubaccord,
-  findAppealBondPda,
   findAssociatedTokenAddress,
-  findJurorStakePda,
-  findRoundPda,
   type Dispute,
 } from "@useaccord/sdk";
 
@@ -92,12 +90,13 @@ export default class DisputeCancel extends ChainCommand {
     const remaining =
       flags["remaining-accounts"] === "list"
         ? parseAddressList(flags.remaining)
-        : await autoDeriveRemaining(
+        : await deriveCancelDisputeRemainingAccounts(
             ctx.accord.rpc,
+            Accord.PROGRAM_ID as Address,
             dispute,
             subaccord,
             data.currentRound,
-            ctx.commitment,
+            data.drawnSeats,
           );
 
     const instruction = ctx.accord.methods.cancelDispute(
@@ -139,41 +138,3 @@ function parseAddressList(raw: string | undefined): Address[] {
   return list as Address[];
 }
 
-/**
- * Derive the Round + JurorStake + AppealBond PDAs `cancel_dispute` closes/refunds.
- * Rounds 0..=currentRound that exist contribute their drawn jurors' JurorStake
- * PDAs; each round also contributes an AppealBond PDA if one was posted.
- * Dedup preserves first-seen order (stable for --dry-run diffs).
- */
-async function autoDeriveRemaining(
-  rpc: Rpc<SolanaRpcApi>,
-  dispute: Address,
-  subaccord: Address,
-  currentRound: number,
-  commitment: Commitment,
-): Promise<Address[]> {
-  const out: Address[] = [];
-  const seen = new Set<string>();
-
-  const push = (addr: Address): void => {
-    if (!seen.has(addr)) {
-      seen.add(addr);
-      out.push(addr);
-    }
-  };
-
-  for (let r = 0; r <= currentRound; r++) {
-    const [roundPda] = await findRoundPda({ dispute, roundIdx: r });
-    push(roundPda);
-    const round = await fetchMaybeRound(rpc, roundPda, { commitment });
-    if (!round.exists) continue;
-    for (const juror of round.data.jurors) {
-      const [stakePda] = await findJurorStakePda({ subaccord, juror });
-      push(stakePda);
-    }
-    const [bondPda] = await findAppealBondPda({ dispute, roundIdx: r });
-    const bond = await fetchMaybeAppealBond(rpc, bondPda, { commitment });
-    if (bond.exists) push(bondPda);
-  }
-  return out;
-}

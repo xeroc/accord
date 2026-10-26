@@ -78,6 +78,9 @@ export interface ReconcilerConfig {
   fetchDisputes?: () => Promise<Account<Dispute>[]>;
   /** Override the round fetch (tests). Defaults to the SDK round PDA read. */
   fetchRound?: (dispute: Address, roundIdx: number) => Promise<Account<Round> | null>;
+  /** Override the appeal-bond fetch (tests). Bond seed `roundIdx` is the
+   *  round BEING appealed (0-based). Defaults to the SDK AppealBond PDA read. */
+  fetchAppealBond?: (dispute: Address, roundIdx: number) => Promise<Account<AppealBond> | null>;
   /** Override the Canon item scan (tests). Defaults to `findAllCanonItems(rpc)`. */
   fetchCanonItems?: () => Promise<Account<CanonItem>[]>;
   /** Override the Canon list scan (tests). Defaults to `findAllCanonLists(rpc)`. */
@@ -132,6 +135,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     now = defaultNow,
     fetchDisputes = () => findAllDisputes(accord.rpc),
     fetchRound = (dispute, roundIdx) => fetchRoundAccount(accord.rpc, dispute, roundIdx),
+    fetchAppealBond = (dispute, roundIdx) => fetchAppealBondAccount(accord.rpc, dispute, roundIdx),
     fetchPendingUpdates = () => findAllPendingUpdates(accord.rpc),
     slot = async () => BigInt((await accord.rpc.getSlot().send()).valueOf()),
     fetchAccordState = async () => fetchAccordStateAccount(accord.rpc),
@@ -223,18 +227,17 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     }
     // 3) No lifecycle action and Final/Failed with appeals? Sweep appeal bonds
     //    for an outstanding refund (one round per cycle; idempotent on-chain).
+    //    Bond PDA seeds are the round BEING appealed (0-based:
+    //    0..currentRound-1) — the sweep used to probe 1..currentRound, so the
+    //    FIRST appellant's bond (seed 0) was never swept (bean accord-br6a).
     if (
       action === null &&
       dispute.data.currentRound > 0 &&
       (dispute.data.state === DisputeState.Final || dispute.data.state === DisputeState.Failed)
     ) {
-      for (let r = 1; r <= dispute.data.currentRound; r++) {
-        const [bondAddr] = await findAppealBondPda({
-          dispute: dispute.address,
-          roundIdx: r,
-        });
-        const bond = await fetchMaybeAppealBond(rpc, bondAddr);
-        if (bond.exists && (bond as Account<AppealBond>).data.amount > 0n) {
+      for (let r = 0; r < dispute.data.currentRound; r++) {
+        const bond = await fetchAppealBond(dispute.address, r);
+        if (bond !== null && bond.data.amount > 0n) {
           action = { kind: "claim_refund", dispute: dispute.address, roundIdx: r };
           break;
         }
@@ -390,6 +393,17 @@ async function fetchRoundAccount(
 ): Promise<Account<Round> | null> {
   const [pda] = await findRoundPda({ dispute, roundIdx });
   const maybe = await fetchMaybeRound(rpc, pda);
+  if (maybe.exists) return maybe;
+  return null;
+}
+
+async function fetchAppealBondAccount(
+  rpc: Rpc<SolanaRpcApi>,
+  dispute: Address,
+  roundIdx: number,
+): Promise<Account<AppealBond> | null> {
+  const [pda] = await findAppealBondPda({ dispute, roundIdx });
+  const maybe = await fetchMaybeAppealBond(rpc, pda);
   if (maybe.exists) return maybe;
   return null;
 }

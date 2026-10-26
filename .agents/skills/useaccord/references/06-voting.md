@@ -155,7 +155,8 @@ final-ruling-coherent, write `final_ruling`, state → `Final`.
 Prior rounds settle separately via `settle:round`. **Cranker automates this.**
 
 `--remaining-accounts`: `[panel JurorStake PDAs]` + one `AppealBond` PDA per
-prior appeal (collapses to just the panel when there were no appeals).
+prior appeal (seeds `0..currentRound-1` — the round BEING appealed; collapses
+to just the panel when there were no appeals).
 
 ```bash
 useaccord vote:finalize-dispute \

@@ -1,10 +1,12 @@
 /**
  * claim_appeal_refund crank — after a dispute is Final/Failed, an appellant
  * whose appeal FLIPPED the ruling may reclaim their bond. `action.roundIdx`
- * is the round the appeal OPENED (selects the AppealBond PDA). The cranker
- * sweeps to the appellant's feeToken ATA (read from the bond so the caller
- * need not know it). Idempotent on-chain (bond zeroed on payout).
- * (lib.rs:1481, ADR-0004, milestone accord-27r5.)
+ * is the AppealBond PDA SEED — the round BEING appealed (0-based), NOT the
+ * round the appeal opened (that lives in the bond's `round_idx` field,
+ * seed + 1). The cranker sweeps to the appellant's feeToken ATA (read from
+ * the bond so the caller need not know it). Idempotent on-chain (bond
+ * zeroed on payout). (lib.rs:1481, ADR-0004, milestone accord-27r5; bean
+ * accord-br6a.)
  */
 import { DisputeState, claimAppealRefund, type ClaimRefundAccounts } from "@useaccord/sdk";
 import { registerCrank, type CrankDispatch } from "../../dispatch.js";
