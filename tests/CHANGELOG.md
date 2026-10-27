@@ -1,5 +1,64 @@
 # @useaccord/tests
 
+## 0.8.0
+
+### Patch Changes
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`e6eaa63`](https://github.com/xeroc/accord/commit/e6eaa632eb273735d12b0896963a62550ac98872) Thanks [@xeroc](https://github.com/xeroc)! - cancel_dispute remainingAccounts: single-source derivation + AppealBond seed fixes (bean accord-br6a)
+
+  - SDK: new `deriveCancelDisputeRemainingAccounts` mirrors the on-chain strict
+    accounting (current Round + panel only when seats were drawn, prior rounds +
+    panels, AppealBond seeds 0..currentRound-1; EMPTY for a never-drawn stall).
+  - Cranker `cancel_dispute` no longer pushes the current-round PDA
+    unconditionally — that made every pre-draw cancel (dead VRF oracle) revert
+    with `InvalidPanelSize` (cancel_dispute.rs:261) — and now carries prior
+    rounds it previously omitted entirely.
+  - Cranker `finalize_dispute` + reconciler `claim_refund` sweep: AppealBond
+    seeds were off by one (1..currentRound); the first appellant's bond (seed 0)
+    was never swept and appealed finalizes reverted.
+  - CLI `dispute:cancel --remaining-accounts auto` now uses the SDK derivation
+    (old auto interleaved rounds/bonds in the wrong order, deduped repeat
+    jurors, and pushed stake PDAs for unfilled seat sentinels).
+
+- [#29](https://github.com/xeroc/accord/pull/29) [`6299aca`](https://github.com/xeroc/accord/commit/6299aca0f19d00ddc2cbd67b670ac23e195004b9) Thanks [@xeroc](https://github.com/xeroc)! - Fix e2e `[#6036](https://github.com/xeroc/accord/issues/6036) RevealWindowClosed` failures on slow CI runners (ADR-0038
+  follow-up, bean accord-9952; broke release merges [#27](https://github.com/xeroc/accord/issues/27)/[#28](https://github.com/xeroc/accord/issues/28)):
+
+  - `warpToRevealWindow` no longer reserves a fixed `panel + 3` seconds of
+    Surfnet clock against the re-anchored `reveal_end` — that budget assumed
+    ~1s of clock burn per tx, but a loaded CI runner burns ~5s/tx, so the
+    reveal txs themselves overran the deadline. It now branches on panel
+    state: full panel ⇒ reveal is already open via the `all committed` arm
+    with the whole re-anchored `reveal_window` (2d) as headroom (no warp);
+    partial panel ⇒ no re-anchor ever fired, so warp to `commit_end` with the
+    whole scheduled `reveal_window` as headroom. Machine-speed independent.
+  - `voting.spec` ADR-0038 test pinned `revealEnd − commitEnd === 1n`, which
+    only holds when the commit loop burns zero clock (fast laptop; CI burned
+    15s ⇒ got `16n`). It now pins the re-anchor formula
+    `revealEnd = last_commit + reveal_window` via burn-independent bounds.
+  - `appeal.spec`: dropped its stale local copy of `warpToRevealWindow` for
+    the shared (fixed) helper.
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`41da6ad`](https://github.com/xeroc/accord/commit/41da6aded4f0cae24e6d8de68b1bab4fdd788302) Thanks [@xeroc](https://github.com/xeroc)! - Re-anchor round windows at the last state change (ADR-0038, bean accord-9952)
+
+  - `commit` (panel-full) re-anchors `Round.reveal_end` shrink-only to
+    `now + reveal_window` — revealers get the full reveal window from the LAST
+    commitment, not from the scheduled `commit_end`.
+  - `finalize_round` (early resolve, all revealed) pins `reveal_end = now` —
+    the appeal window opens at resolution. The timeout path never extends it.
+  - Every deadline consumer (`appeal`, `finalize_dispute`, `cancel_dispute`)
+    anchors at the re-anchored `reveal_end`, so an eager panel reaches `Final`
+    at `resolve_ts + appeal_window` instead of idling out the scheduled
+    commit+reveal span (devnet repro: Inveigo arena court, 1s/12h/12h/30s,
+    ~24h → ~40s). No account-layout, IDL, or SDK-signature change.
+  - e2e harness: new shared `warpToRevealWindow` (draw-harness + appeal.spec
+    local) replaces the `warpTo(commitEnd)` reveal warps; jurat duty tracker
+    header documents the live-field requirement + a phase test pins it.
+
+- Updated dependencies [[`e6eaa63`](https://github.com/xeroc/accord/commit/e6eaa632eb273735d12b0896963a62550ac98872), [`190145b`](https://github.com/xeroc/accord/commit/190145b334e91295be7a8dc174f79758adb9ec1a), [`41da6ad`](https://github.com/xeroc/accord/commit/41da6aded4f0cae24e6d8de68b1bab4fdd788302)]:
+  - @useaccord/canon@0.8.0
+  - @useaccord/sdk@0.8.0
+  - @useaccord/synod@0.8.0
+
 ## 0.7.0
 
 ### Patch Changes
