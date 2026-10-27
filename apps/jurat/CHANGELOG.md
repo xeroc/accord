@@ -1,5 +1,68 @@
 # @useaccord/jurat
 
+## 0.8.0
+
+### Minor Changes
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`566d75c`](https://github.com/xeroc/accord/commit/566d75cd65a5eaee3b37fdd858976b3af5922ccf) Thanks [@xeroc](https://github.com/xeroc)! - Attestation-aware joining (ADR-0024 / PROG-ATTESTATION): the join executor no longer blanket-rejects credential-gated Subaccords. Gated pools resolve the juror's SAS attestation via `findSasAttestation` (credential+schema+subject memcmp) and thread it into the `stake` instruction; a gated pool with no matching attestation is rejected `AttestationGated` — no join. The lookup sits after on-chain idempotency so an already-joined pool never pays it. Scan iterations also recognize the juror's own on-chain JurorStake now: `reconcile` drops already-staked pools from `joinCandidates` and reports them as `heldStakes`, and the runtime heals the joined book from that — budgets count real on-chain exposure even after a wiped state dir or a manual stake (beans accord-pph6).
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`5c6f331`](https://github.com/xeroc/accord/commit/5c6f331b621137b7649f5aadd3054c1b48ba6c3d) Thanks [@xeroc](https://github.com/xeroc)! - Jurat: LLM observability via Pydantic Logfire.
+
+  - `JURAT_LOGFIRE=1` exports every AI SDK 7 call (prompts, ⚒ tool calls, responses, token usage) plus winston log records as OpenTelemetry spans to Logfire (`xeroc/inveigo`, eu region) — `src/telemetry.ts` installs the global OTel provider via `@pydantic/logfire-node` and registers `@ai-sdk/otel`'s `OpenTelemetry` integration alongside the existing `JURAT_DEVTOOLS` capture (both can run together).
+  - `JURAT_LOGFIRE_SERVICE` (default `jurat`) sets the `service.name`; auto http/fs instrumentations are disabled so the chain-polling loop doesn't bury LLM spans under RPC chatter.
+  - Write token resolves via `LOGFIRE_TOKEN` env or `apps/jurat/.logfire/logfire_credentials.json` (git-ignored; written by the Logfire agent-setup wizard, never committed).
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`4e5c8d8`](https://github.com/xeroc/accord/commit/4e5c8d839ea27148c19649854902b73a37aa53c3) Thanks [@xeroc](https://github.com/xeroc)! - Builtin `read_case` tool: Inveigo disputes now reach the juror with full context. The round-0 evidence bundle carries only the challenger's anti-thesis; `read_case` resolves the boss `Item` via the unique live `Item.current_dispute` link (one `getProgramAccounts` scan, discriminator + dispute memcmp — same cross-program pattern as `findSasAttestation`), fetches the ORIGINAL THESIS from the evidence CAS at `Item.claim_hash`, and gates on `sha256(bytes) === claim_hash` — a tampered or wrong document throws, so the agent only ever sees the on-chain-committed thesis. Returns `null` for non-Inveigo disputes; `checks.courtMatches` cross-checks `Item.subaccord` against the dispute's court. Offsets mirror inveigo `state.rs` and are drift-pinned by that repo's `tests.rs::layout_pins`. The default system prompt now tells the juror the tool is required context on Inveigo disputes (hold-vs-flip framing lives in the court's domain doc).
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`ac69232`](https://github.com/xeroc/accord/commit/ac69232fb10483930c6a09f39a8377338eae5157) Thanks [@xeroc](https://github.com/xeroc)! - Duty-lifecycle trace emitters + runtime wiring (ADR-0037): the runtime binds a memoized per-duty TraceSink and emits duty-open at tracking, evidence (path + sha256 + bytes manifest) after intake, the sealed verdict (unsealAt = round.revealEnd in ms), commit/reveal tx events, and abstain; the agent step tap rides AgentContext.trace through the same sink; main.ts wires the RemoteTraceSink binder from JURAT_TRACE_* config (bean accord-w4j7).
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`c4de0d0`](https://github.com/xeroc/accord/commit/c4de0d0c1616b937b0bf187026d25fb7e207ea81) Thanks [@xeroc](https://github.com/xeroc)! - TraceSink + RemoteTraceSink (ADR-0037): sync never-throw emit with a bounded drop-oldest queue (256), signed Ed25519 batches (`{v, seq, events, sig}` over canonical JSON, 64-event chunks, 2s push timeout, drop-on-failure), no-op sink when JURAT_TRACE_URL is unset; JURAT_TRACE_MODE=sealed|open strips verdict unsealAt in open mode (bean accord-9pdg).
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`6e4e361`](https://github.com/xeroc/accord/commit/6e4e361ce497e869c40125ef1e048f8ab73ee87f) Thanks [@xeroc](https://github.com/xeroc)! - Agent step tap (ADR-0037): optional `AgentContext.trace` callback emits `agent-start` before the generation call and one redacted `step` event per model step — builtin-four tool args verbatim, MCP args digest-only, tool results always sha256-digest-only over canonical JSON; no evidence content or model text ever traced (bean accord-1nxb).
+
+### Patch Changes
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`324965a`](https://github.com/xeroc/accord/commit/324965a48a04b2f4d17f6ef8081924ec3dfd2060) Thanks [@xeroc](https://github.com/xeroc)! - Jurat: LLM observability + verdict-agent harness hardening (two-phase runner).
+
+  - `JURAT_DEVTOOLS=1` registers AI SDK DevTools, capturing every verdict-agent step (prompts, tool calls, responses) to `.devtools/generations.json` for the `npx ai-tools` viewer; request/response bodies are retained on every run.
+  - Harness prompts prescribe a concrete investigation protocol with grounded PDAs (`read_domain_doc` → rubric-mandated reads (`read_case` on Inveigo) → `read_dispute` → `fetch_evidence_file` for every listed file) and forbid prior-only verdicts.
+  - Two-phase runner: phase 1 investigates with tools and forced step-0 `toolChoice: "required"` (no output spec — `response_format` overrides `tool_choice` on endpoints like z.ai, making the model answer immediately); phase 2 extracts the structured verdict via `Output.object` from the full investigation transcript. A model that answers without tools (SDK `ToolChoiceViolationError`) or a run with zero tool calls is a `MalformedVerdictError` → clean abstain, never a vote, never re-rolled on the retry ladder.
+  - Tool outputs are deep-converted to JSON-wire-safe data (BigInt → decimal string) — decoded on-chain accounts previously crashed the follow-up request serialization (`Do not know how to serialize a BigInt`), exhausting the retry ladder on any real tool-using run.
+  - `read_dispute` now returns `{ account, evidenceFiles }` — the raw account carries evidence hashes, not file names, so the model previously had to guess `round-N` names that `fetch_evidence_file` rejects.
+  - Boot log now names the LLM endpoint + model.
+
+- [#28](https://github.com/xeroc/accord/pull/28) [`f06c7ab`](https://github.com/xeroc/accord/commit/f06c7ab75ef5ff48986897f3583d46a8b5b2b85f) Thanks [@xeroc](https://github.com/xeroc)! - Docker images (bean accord-a8a9):
+
+  - New `apps/jurat/Dockerfile` — jurat juror-daemon image (same workspace pnpm
+    - `pnpm deploy` + bun-runtime pattern as the cranker), built and pushed by
+      the Release workflow as `ghcr.io/xeroc/useaccord-jurat`.
+  - Cranker/evidence-daemon Dockerfiles: copy EVERY lockfile importer's
+    manifest again — `packages/ui`, `apps/{canon,synod,hanse,pitch,remotion,jurat}`
+    were missing, so `pnpm install --frozen-lockfile` failed at the deps stage.
+  - `.dockerignore`: jurat added to the root-context builds; manifest-only
+    members' sources excluded from the context.
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`01fa77c`](https://github.com/xeroc/accord/commit/01fa77cba2d50b3b4edf9087c40515949a7d3e29) Thanks [@xeroc](https://github.com/xeroc)! - Fix solo-panel duties never surfacing: `reconcile` now treats `DisputeState.Drawn` as actionable — on chain, `Drawn` IS the review phase (panel full, windows open; nothing ever writes `Review`, and the first panel `commit` flips `Drawn→Commit`). With a multi-juror panel another juror's commit eventually made the dispute visible; with a solo panel (`min_jury_size: 1`) nobody commits first, jurat idled through the commit window, and the dispute stalled into shortfall redraws. `runDuty` already holds through review and commits at window open, so the fix is the actionable-state set alone (bean accord-zhnh).
+
+- [#27](https://github.com/xeroc/accord/pull/27) [`41da6ad`](https://github.com/xeroc/accord/commit/41da6aded4f0cae24e6d8de68b1bab4fdd788302) Thanks [@xeroc](https://github.com/xeroc)! - Re-anchor round windows at the last state change (ADR-0038, bean accord-9952)
+
+  - `commit` (panel-full) re-anchors `Round.reveal_end` shrink-only to
+    `now + reveal_window` — revealers get the full reveal window from the LAST
+    commitment, not from the scheduled `commit_end`.
+  - `finalize_round` (early resolve, all revealed) pins `reveal_end = now` —
+    the appeal window opens at resolution. The timeout path never extends it.
+  - Every deadline consumer (`appeal`, `finalize_dispute`, `cancel_dispute`)
+    anchors at the re-anchored `reveal_end`, so an eager panel reaches `Final`
+    at `resolve_ts + appeal_window` instead of idling out the scheduled
+    commit+reveal span (devnet repro: Inveigo arena court, 1s/12h/12h/30s,
+    ~24h → ~40s). No account-layout, IDL, or SDK-signature change.
+  - e2e harness: new shared `warpToRevealWindow` (draw-harness + appeal.spec
+    local) replaces the `warpTo(commitEnd)` reveal warps; jurat duty tracker
+    header documents the live-field requirement + a phase test pins it.
+
+- Updated dependencies [[`e6eaa63`](https://github.com/xeroc/accord/commit/e6eaa632eb273735d12b0896963a62550ac98872), [`190145b`](https://github.com/xeroc/accord/commit/190145b334e91295be7a8dc174f79758adb9ec1a), [`41da6ad`](https://github.com/xeroc/accord/commit/41da6aded4f0cae24e6d8de68b1bab4fdd788302)]:
+  - @useaccord/sdk@0.8.0
+
 ## 0.7.0
 
 ### Minor Changes
