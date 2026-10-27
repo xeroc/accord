@@ -313,6 +313,8 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
           throw new Error("no evidence bundle on the e2e Surfnet");
         },
         readDomainDoc: async () => "",
+        // no Inveigo program on the e2e Surfnet — not an Inveigo challenge
+        readCase: async () => null,
       }),
     };
   }
