@@ -46,6 +46,20 @@ export interface McpServerConfig {
   url: string;
   headers?: Record<string, string>;
 }
+/**
+ * Deep-convert a tool output into JSON-wire-safe data: decoded on-chain
+ * accounts carry u64/i64 as BigInt, which the SDK's follow-up request
+ * serialization rejects. BigInts become decimal strings (what the model
+ * reads anyway); byte arrays stay arrays.
+ */
+export function jsonSafe(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(jsonSafe);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, jsonSafe(entry)]));
+  }
+  return value;
+}
 
 /** Build the five builtin read-only tools. */
 export function makeJuratTools(deps: JuratToolDeps): ToolSet {
@@ -57,7 +71,7 @@ export function makeJuratTools(deps: JuratToolDeps): ToolSet {
       inputSchema: z.object({
         dispute: z.string().describe("Dispute PDA, base58"),
       }),
-      execute: ({ dispute }) => deps.readDispute(dispute),
+      execute: ({ dispute }) => deps.readDispute(dispute).then(jsonSafe),
     }),
     read_subaccord: tool({
       description:
@@ -67,7 +81,7 @@ export function makeJuratTools(deps: JuratToolDeps): ToolSet {
       inputSchema: z.object({
         subaccord: z.string().describe("Subaccord PDA, base58"),
       }),
-      execute: ({ subaccord }) => deps.readSubaccord(subaccord),
+      execute: ({ subaccord }) => deps.readSubaccord(subaccord).then(jsonSafe),
     }),
     fetch_evidence_file: tool({
       description:
@@ -77,7 +91,7 @@ export function makeJuratTools(deps: JuratToolDeps): ToolSet {
         dispute: z.string().describe("Dispute PDA, base58"),
         file: z.string().describe("File name within the dispute's evidence bundle"),
       }),
-      execute: ({ dispute, file }) => deps.fetchEvidenceFile(dispute, file),
+      execute: ({ dispute, file }) => deps.fetchEvidenceFile(dispute, file).then(jsonSafe),
     }),
     read_domain_doc: tool({
       description:
@@ -86,7 +100,7 @@ export function makeJuratTools(deps: JuratToolDeps): ToolSet {
       inputSchema: z.object({
         subaccord: z.string().describe("Subaccord PDA, base58"),
       }),
-      execute: ({ subaccord }) => deps.readDomainDoc(subaccord),
+      execute: ({ subaccord }) => deps.readDomainDoc(subaccord).then(jsonSafe),
     }),
     read_case: tool({
       description:
@@ -100,7 +114,7 @@ export function makeJuratTools(deps: JuratToolDeps): ToolSet {
       inputSchema: z.object({
         dispute: z.string().describe("Dispute PDA, base58"),
       }),
-      execute: ({ dispute }) => deps.readCase(dispute),
+      execute: ({ dispute }) => deps.readCase(dispute).then(jsonSafe),
     }),
   };
 }

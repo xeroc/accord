@@ -152,16 +152,30 @@ pure evaluator):
 
 - **Stack:** `ai` + `@ai-sdk/openai-compatible` (`createOpenAICompatible({
   baseURL, apiKey })`), `tool()` + Zod for the read-only toolset, agent loop
-  via `generateText({ tools, stopWhen: stepCountIs(n) })`.
+  via `generateText({ tools, stopWhen: stepCountIs(n) })` with
+  `Output.object` structured verdicts.
+- **Forced investigation (two-phase runner):** phase 1 runs the tool loop
+  with `toolChoice: "required"` on step 0 and **no** output spec — on
+  endpoints like z.ai, `response_format` on the wire overrides
+  `tool_choice` (the model answers immediately, SDK
+  `ToolChoiceViolationError`). Phase 2 re-asks with `Output.object` over
+  the full investigation transcript (tools absent, so nothing competes
+  with `response_format`). A model that still answers without tools, or a
+  run with zero tool calls, is a `MalformedVerdictError` → clean abstain,
+  never a vote. Phase-1 text is never trusted as the verdict.
 - **Tools (read-only, fixed):** read chain (dispute/round/subaccord), fetch
   evidence files, read domain doc, `read_case` (Inveigo: boss Item +
   claim-hash-verified thesis, resolved via `Item.current_dispute` — see
-  `src/chain/inveigo.ts`). No shell, no keys, no arbitrary IO.
-- **Output:** structured `Verdict` — `{ option: number, rationale: string,
-  confidence: number }` (Zod-checked); the vote tx is built from the schema
-  by daemon code.
+  `src/chain/inveigo.ts`). No shell, no keys, no arbitrary IO. Tool outputs
+  are deep-converted to JSON-wire-safe data first (BigInt → decimal
+  string) — decoded accounts would otherwise crash the follow-up request
+  serialization.
+- **Output:** structured `Verdict` — `{ optionIndex: number, rationale:
+  string, confidence: number }` (Zod-checked, bounded to `num_options`);
+  the vote tx is built from the schema by daemon code.
 - **Retry ladder:** primary endpoint → fallback endpoint → clean abstain
-  (+ Telegram alert). Never a default vote.
+  (+ Telegram alert). Never a default vote. Malformed/uninvestigated
+  verdicts short-circuit the ladder (no re-roll).
 
 ## Notify channel
 

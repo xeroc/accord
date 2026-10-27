@@ -27,6 +27,8 @@ import {
   fetchSubaccordMaybe,
   type Subaccord,
 } from "@useaccord/sdk";
+import { registerTelemetry } from "ai";
+import { DevToolsTelemetry } from "@ai-sdk/devtools";
 
 import { loadConfig } from "./config";
 import { createChainClient, loadOperatorKeyBytes, operatorSignMessage } from "./chain/client";
@@ -73,6 +75,12 @@ function formatNotice(notice: VerdictNotice): string {
 
 export async function main(): Promise<void> {
   const config = loadConfig();
+  if (config.devtools) {
+    // Local debug only: captures every generateText step (prompts, ⚒ tool
+    // calls, responses) to .devtools/generations.json for the `ai-tools`
+    // viewer (npx ai-tools@latest dev).
+    registerTelemetry(DevToolsTelemetry());
+  }
   const chain = await createChainClient(config);
   const channel = config.telegram
     ? createTelegramChannel({
@@ -86,7 +94,8 @@ export async function main(): Promise<void> {
   log(
     `jurat: booted rpc=${config.rpcUrl} operator=${chain.address} ` +
       `state=${config.stateDir} dryRun=${config.dryRun} ` +
-      `scanInterval=${config.scanIntervalMs}ms`,
+      `scanInterval=${config.scanIntervalMs}ms devtools=${config.devtools} ` +
+      `llm=${config.llm.baseUrl} model=${config.llm.model}`,
   );
 
   // --- chain adapters over the SDK (single implementation, no second copy) ---

@@ -246,8 +246,8 @@ test("happy path: decrypts the delivered bundle and assembles a working AgentCon
     };
     assert.equal(doc.content, PLAINTEXT);
     assert.deepEqual(await tools.read_dispute!.execute({ dispute: DISPUTE }), {
-      numOptions: 3,
-      state: "Commit",
+      account: { numOptions: 3, state: "Commit" },
+      evidenceFiles: ["round-0"],
     });
     assert.equal(await tools.read_domain_doc!.execute({ subaccord: SUBACCORD }), "# rubric");
     assert.equal(await tools.read_case!.execute({ dispute: DISPUTE }), null);

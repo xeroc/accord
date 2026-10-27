@@ -16,12 +16,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@ai-sdk/devtools": "^1.0.57",
     "@ai-sdk/mcp": "^2",
     "@ai-sdk/openai-compatible": "^3.0.69",
     "@noble/curves": "^1.9.7",
     "@solana/kit": "^7.0.0",
     "@useaccord/sdk": "workspace:*",
-    "ai": "^7.0.141",
+    "ai": "^7.0.154",
     "winston": "^3.19.0",
     "zod": "^4.6.7"
   },

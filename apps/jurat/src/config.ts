@@ -70,6 +70,8 @@ export interface Config {
   readonly evidence?: EvidenceConfig;
   /** Default true — no vote tx leaves the process unless JURAT_DRY_RUN=false. */
   readonly dryRun: boolean;
+  /** JURAT_DEVTOOLS=1|true — register AI SDK DevTools capture (local debug only). */
+  readonly devtools: boolean;
   readonly stateDir: string;
   /** Reconcile scan interval (ms) — the truth loop. Default 60_000. */
   readonly scanIntervalMs: number;
@@ -117,6 +119,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         ? { endpoint: evidenceUrl, deliveryKeyPath: evidenceKey }
         : undefined,
     dryRun: dryRunFlag(env.JURAT_DRY_RUN),
+    devtools: env.JURAT_DEVTOOLS === "1" || env.JURAT_DEVTOOLS?.toLowerCase() === "true",
     stateDir: optional(env.JURAT_STATE_DIR) ?? "./state",
     scanIntervalMs: intFlag(env.JURAT_SCAN_INTERVAL_MS, 60_000, "JURAT_SCAN_INTERVAL_MS"),
     minSolLamports: bigIntFlag(env.JURAT_MIN_SOL_LAMPORTS, 50_000_000n, "JURAT_MIN_SOL_LAMPORTS"),

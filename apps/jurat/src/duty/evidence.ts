@@ -218,6 +218,13 @@ export async function assembleDutyContext(
     maxSteps: input.maxSteps,
     tools: makeJuratTools({
       ...chain,
+      // The raw account carries evidence hashes, not file names — the
+      // model cannot enumerate the bundle without this enrichment
+      // (fetch_evidence_file throws on unknown names).
+      readDispute: async (dispute) => ({
+        account: await chain.readDispute(dispute),
+        evidenceFiles: documents.map((d) => d.name),
+      }),
       fetchEvidenceFile: async (dispute, file) => {
         const doc = documents.find((d) => d.name === file);
         if (!doc) {

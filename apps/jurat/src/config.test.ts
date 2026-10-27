@@ -93,6 +93,12 @@ test("dryRun accepts explicit true/false/0/no", () => {
   expect(load({ ...VALID_ENV, JURAT_DRY_RUN: "0" }).dryRun).toBe(false);
   expect(load({ ...VALID_ENV, JURAT_DRY_RUN: "NO" }).dryRun).toBe(false);
 });
+test("devtools: default off, 1/true enable, garbage stays off", () => {
+  expect(load().devtools).toBe(false);
+  expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "1" }).devtools).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "true" }).devtools).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "maybe" }).devtools).toBe(false);
+});
 
 test("dryRun garbage throws rather than silently disarming the gate", () => {
   expect(() => load({ ...VALID_ENV, JURAT_DRY_RUN: "maybe" })).toThrow(/JURAT_DRY_RUN/);

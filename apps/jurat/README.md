@@ -46,6 +46,22 @@ auto-acquisition by design.
 - The agent never touches keys, shell, or arbitrary IO; votes are built by
   daemon code from a schema-checked verdict.
 
+## LLM observability (local debug)
+
+`JURAT_DEVTOOLS=1` registers
+[AI SDK DevTools](https://ai-sdk.dev/docs/ai-sdk-core/devtools): every
+`generateText` step — system/user prompts, ⚒ tool calls and results, the raw
+model response — is captured to `.devtools/generations.json` under the working
+directory. Inspect captures in the viewer UI:
+
+```sh
+npx ai-tools@latest dev   # serves the UI, watches the capture file
+JURAT_DEVTOOLS=1 pnpm start
+```
+
+Debug-level logs (`JURAT_LOG_LEVEL=debug`) cover the same steps inline; the
+devtools capture additionally keeps the full message history per round-trip.
+
 ## Arming (live voting)
 
 The daemon ships **disarmed**: `JURAT_DRY_RUN=true` (default) computes and

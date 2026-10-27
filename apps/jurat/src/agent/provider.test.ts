@@ -31,12 +31,16 @@ interface MockServer {
 }
 
 /**
- * Mock openai-compatible server: `respond(reqIndex)` decides per-request —
- * `null` for a healthy chat-completion reply, `"fail"` for a 500, or a
- * string used as the structured-output content.
+ * Mock openai-compatible server: `respond(reqIndex, body)` decides per
+ * request — `null` for a healthy verdict reply, `{toolCall}` to answer the
+ * runner's forced step-0 tool_choice:"required" with a function call,
+ * `"fail"` for a 500, or a string as the structured-output content.
  */
 function startMock(
-  respond: (reqIndex: number, isOutputCall: boolean) => string | "fail" | null,
+  respond: (
+    reqIndex: number,
+    body: Record<string, unknown>,
+  ) => string | "fail" | null | { toolCall: { name: string; arguments: string } },
 ): Promise<MockServer> {
   const requests: { path: string; body: unknown }[] = [];
   const server = http.createServer((req, res) => {
@@ -50,14 +54,15 @@ function startMock(
         parsed = null;
       }
       requests.push({ path: req.url ?? "", body: parsed });
-      const isOutputCall =
-        parsed !== null &&
-        typeof parsed === "object" &&
-        "response_format" in parsed &&
-        parsed.response_format !== undefined;
       const idx = requests.length - 1;
-      const verdict = respond(idx, isOutputCall);
-      if (verdict === "fail") {
+      const reply = respond(idx, (parsed ?? {}) as Record<string, unknown>);
+      const toolCall =
+        (parsed as Record<string, unknown> | null)?.tool_choice === "required" &&
+        reply !== null &&
+        typeof reply === "object"
+          ? reply.toolCall
+          : null;
+      if (reply === "fail") {
         res.writeHead(500, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: { message: "upstream exploded" } }));
         return;
@@ -72,10 +77,21 @@ function startMock(
           choices: [
             {
               index: 0,
-              message: isOutputCall
-                ? { role: "assistant", content: verdict ?? JSON.stringify(GOOD_VERDICT) }
-                : { role: "assistant", content: "", tool_calls: [] },
-              finish_reason: "stop",
+              message: toolCall
+                ? {
+                    role: "assistant",
+                    content: "",
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call-1",
+                        type: "function",
+                        function: { name: toolCall.name, arguments: toolCall.arguments },
+                      },
+                    ],
+                  }
+                : { role: "assistant", content: reply ?? JSON.stringify(GOOD_VERDICT) },
+              finish_reason: toolCall ? "tool_calls" : "stop",
             },
           ],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -99,6 +115,19 @@ function startMock(
     });
   });
 }
+/** Reply shape for the runner's forced step-0 investigation call. */
+const investigateReply = {
+  toolCall: {
+    name: "read_dispute",
+    arguments: JSON.stringify({ dispute: "Disp111111111111111111111111111111111111111" }),
+  },
+};
+/** Healthy model: investigate when forced, verdict content afterwards. */
+const healthy = (
+  _idx: number,
+  body: Record<string, unknown>,
+): string | null | typeof investigateReply =>
+  body.tool_choice === "required" ? investigateReply : null;
 
 function context(): AgentContext {
   return {
@@ -144,8 +173,8 @@ test("verdict calls carry the schema on the wire — json_schema, not json_objec
 });
 
 test("healthy primary answers; fallback never contacted", async () => {
-  const primary = await startMock(() => null);
-  const fallback = await startMock(() => null);
+  const primary = await startMock(healthy);
+  const fallback = await startMock(healthy);
   try {
     const runner = makeLadderVerdictRunner(primary.endpoint, fallback.endpoint, fastOpts);
     assert.deepEqual(await runner.runVerdict(context()), GOOD_VERDICT);
@@ -159,8 +188,8 @@ test("healthy primary answers; fallback never contacted", async () => {
 
 test("flaky primary (fails once, then recovers) retries in place via backoff", async () => {
   const sleeps: number[] = [];
-  const primary = await startMock((idx) => (idx === 0 ? "fail" : null));
-  const fallback = await startMock(() => null);
+  const primary = await startMock((idx, body) => (idx === 0 ? "fail" : healthy(idx, body)));
+  const fallback = await startMock(healthy);
   try {
     const runner = makeLadderVerdictRunner(primary.endpoint, fallback.endpoint, {
       ...fastOpts,
@@ -179,7 +208,7 @@ test("flaky primary (fails once, then recovers) retries in place via backoff", a
 
 test("dead primary → fallback used", async () => {
   const primary = await startMock(() => "fail");
-  const fallback = await startMock(() => null);
+  const fallback = await startMock(healthy);
   try {
     const runner = makeLadderVerdictRunner(primary.endpoint, fallback.endpoint, fastOpts);
     assert.deepEqual(await runner.runVerdict(context()), GOOD_VERDICT);
@@ -223,10 +252,10 @@ test("no fallback configured: single dead endpoint → exhausted error", async (
 
 test("malformed verdict short-circuits the ladder — no fallback burn", async () => {
   // primary's structured-output call answers prose → MalformedVerdictError
-  const primary = await startMock((_idx, isOutputCall) =>
-    isOutputCall ? "option 1 looks right" : null,
+  const primary = await startMock((_idx, body) =>
+    body.tool_choice === "required" ? investigateReply : "option 1 looks right",
   );
-  const fallback = await startMock(() => null);
+  const fallback = await startMock(healthy);
   try {
     const runner = makeLadderVerdictRunner(primary.endpoint, fallback.endpoint, fastOpts);
     await assert.rejects(() => runner.runVerdict(context()), MalformedVerdictError);

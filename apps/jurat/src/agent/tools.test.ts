@@ -84,6 +84,32 @@ test("builtin toolset is exactly the five read-only tools", () => {
   }
 });
 
+test("tool outputs are JSON-wire-safe: BigInts in decoded accounts never reach the SDK", async () => {
+  // e2e regression: the real read_dispute returns a decoded Dispute with
+  // u64/i64 BigInts; the SDK JSON-serializes tool results into the next
+  // request and throws "Do not know how to serialize a BigInt".
+  const deps: JuratToolDeps = {
+    ...makeDeps().deps,
+    readDispute: async () => ({
+      kind: "Dispute",
+      feePerJuror: 1_000_000n,
+      nested: { amounts: [1n, 2n], ok: true },
+    }),
+  };
+  const tools = makeJuratTools(deps) as Record<
+    string,
+    { execute: (args: unknown) => Promise<unknown> }
+  >;
+  const out = await tools.read_dispute!.execute({ dispute: DISPUTE });
+  const wire = JSON.stringify(out); // must not throw
+  assert.ok(wire.includes('"1000000"'), "BigInt serialized as decimal string");
+  assert.deepEqual(out, {
+    kind: "Dispute",
+    feePerJuror: "1000000",
+    nested: { amounts: ["1", "2"], ok: true },
+  });
+});
+
 test("schemas: valid inputs parse, missing/mistyped inputs reject", () => {
   const tools = makeJuratTools(makeDeps().deps);
 

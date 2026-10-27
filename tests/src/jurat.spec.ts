@@ -72,7 +72,12 @@ import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
 import { readClock } from "./setup/cheats.js";
 import { setTokenBalance } from "./setup/tokens.js";
 import { fetchDecoded } from "./setup/assertions.js";
-import { chatCompletion, openAiError, startMockLlm } from "./setup/mock-llm.js";
+import {
+  chatCompletion,
+  openAiError,
+  startMockLlm,
+  toolCallCompletion,
+} from "./setup/mock-llm.js";
 import {
   addressBytes,
   armDispute,
@@ -405,10 +410,12 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
     expect(record?.seat).toBe(seat);
 
     // Verdict: the real provider ladder + agent runner over the mock LLM.
+    // The runner forces step-0 tool use — answer it with a read_dispute
+    // call before serving the deterministic verdict.
     const llm = await startMockLlm((body) =>
-      body.response_format !== undefined
-        ? chatCompletion(VERDICT_JSON)
-        : chatCompletion(""),
+      body.tool_choice === "required"
+        ? toolCallCompletion("read_dispute", JSON.stringify({ dispute: armed.dispute }))
+        : chatCompletion(VERDICT_JSON),
     );
     try {
       const runner = makeLadderVerdictRunner(
@@ -584,7 +591,9 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
 
     const logs: string[] = [];
     const llm = await startMockLlm((body) =>
-      body.response_format !== undefined ? chatCompletion(VERDICT_JSON) : chatCompletion(""),
+      body.tool_choice === "required"
+        ? toolCallCompletion("read_dispute", JSON.stringify({ dispute: armed.dispute }))
+        : chatCompletion(VERDICT_JSON),
     );
     const abort = new AbortController();
     let daemon: DaemonHandle | undefined;
