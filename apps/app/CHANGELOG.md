@@ -1,5 +1,13 @@
 # @useaccord/app
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.8.1
+  - @useaccord/ui@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes
