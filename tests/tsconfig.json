@@ -4,7 +4,7 @@
     "lib": ["ES2020", "ES2024.Promise", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["jest", "node"]
   },
   "include": ["src/**/*.ts"]

@@ -631,7 +631,7 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         votes: voteStore,
         channel,
         verdict: (ctx) => runner.runVerdict(ctx),
-        assembleContext: async (input) => agentContext(address(input.dispute)),
+        assembleContext: async (input) => ({ context: agentContext(address(input.dispute)), files: [] }),
         voting: {
           client: juratAccord.adapter,
           programId: env.programId,
