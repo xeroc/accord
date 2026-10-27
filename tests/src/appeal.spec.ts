@@ -66,6 +66,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "./setup/tokens.js";
 import { injectCommittedVrf } from "./setup/vrf.js";
+import { warpToRevealWindow } from "./draw-harness.js";
 
 // --- economics mirroring appeal_litesvm.rs -----------------------------------
 const FEE_PER_JUROR = 50n; // ADR-0029
@@ -180,24 +181,6 @@ async function warpTo(env: TestEnv, targetTs: bigint): Promise<void> {
   if (delta > 0n) await warpForwardSeconds(env, delta);
 }
 
-/**
- * Warp until reveal is OPEN for this round (ADR-0038-safe): a panel-full
- * commit re-anchors `reveal_end` to `last_commit + reveal_window`, which can
- * sit before `commit_end + 1`. Reads the round FRESH and lands at
- * `min(commit_end, reveal_end − panel − 3)` — the re-anchored branch reserves
- * one second per reveal tx (the Surfnet clock advances ~1s per confirmed tx)
- * and always coincides with a fully-committed panel, so the `all committed`
- * arm satisfies the lower gate.
- */
-async function warpToRevealWindow(env: TestEnv, roundPda: Address): Promise<void> {
-  const round = await readRound(env, roundPda);
-  const panel = BigInt(round.jurorCount);
-  const target =
-    round.commitEnd < round.revealEnd - panel - 2n
-      ? round.commitEnd
-      : round.revealEnd - panel - 3n;
-  await warpTo(env, target);
-}
 
 interface Juror {
   signer: KeyPairSigner;

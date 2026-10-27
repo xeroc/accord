@@ -33,6 +33,7 @@ import {
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
+import { readClock } from "./setup/cheats.js";
 
 /** DisputeState numeric tags (state.rs — ADR-0012: Created=0, Drawn=1, …,
  * RoundResolved=5, Final=6; SnapshotPosted removed so the tags shifted). */
@@ -231,11 +232,18 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
       await env.sendIx(instruction);
     }
 
-    // Panel-full commit re-anchored reveal_end to last-commit + reveal_window
-    // (== commit_end + 1 under the harness's equal commit/reveal windows).
+    // Panel-full commit re-anchored reveal_end to last_commit + reveal_window.
+    // Pin the re-anchor FORMULA, not `revealEnd - commitEnd == 1`: that
+    // constant holds only when the commit loop burns zero Surfnet clock —
+    // true on a fast laptop, ~5s/tx on a loaded CI runner (release merges
+    // #27/#28). The last commit's instant is unobservable, but bounded by
+    // the pre-loop warp landing (reviewEnd + 1) and the post-loop clock.
     let mid = await readRound(env, roundPda);
     expect(mid!.revealEnd).toBeLessThan(scheduled!.revealEnd);
-    expect(mid!.revealEnd - mid!.commitEnd).toBe(1n);
+    const revealWindow = scheduled!.revealEnd - scheduled!.commitEnd;
+    const lastCommitTs = mid!.revealEnd - revealWindow;
+    expect(lastCommitTs).toBeGreaterThan(scheduled!.reviewEnd);
+    expect(lastCommitTs).toBeLessThanOrEqual((await readClock(env)).unixTimestamp);
 
     // Everyone reveals IMMEDIATELY (all committed ⇒ reveal open) — no warp.
     for (let i = 0; i < drawnJurors.length; i++) {
