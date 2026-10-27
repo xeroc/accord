@@ -7,15 +7,15 @@
 //   pnpm --filter @useaccord/jurat test
 import http from "node:http";
 import { AddressInfo } from "node:net";
-import { test } from "node:test";
+import { Output, generateText } from "ai";
 import assert from "node:assert/strict";
-
 import {
   RetryLadderExhaustedError,
+  createProviderModel,
   makeLadderVerdictRunner,
   type ProviderEndpoint,
 } from "./provider.ts";
-import { MalformedVerdictError, type AgentContext, type Verdict } from "./runner.ts";
+import { MalformedVerdictError, verdictSchema, type AgentContext, type Verdict } from "./runner.ts";
 import { makeJuratTools } from "./tools.ts";
 
 const GOOD_VERDICT: Verdict = {
@@ -26,7 +26,7 @@ const GOOD_VERDICT: Verdict = {
 
 interface MockServer {
   endpoint: ProviderEndpoint;
-  requests: { path: string }[];
+  requests: { path: string; body: unknown }[];
   close: () => Promise<void>;
 }
 
@@ -38,20 +38,24 @@ interface MockServer {
 function startMock(
   respond: (reqIndex: number, isOutputCall: boolean) => string | "fail" | null,
 ): Promise<MockServer> {
-  const requests: { path: string }[] = [];
+  const requests: { path: string; body: unknown }[] = [];
   const server = http.createServer((req, res) => {
     let data = "";
     req.on("data", (chunk) => (data += chunk));
     req.on("end", () => {
-      const idx = requests.length;
-      requests.push({ path: req.url ?? "" });
-      let isOutputCall = false;
+      let parsed: unknown = null;
       try {
-        isOutputCall =
-          (JSON.parse(data) as { response_format?: unknown }).response_format !== undefined;
+        parsed = JSON.parse(data);
       } catch {
-        isOutputCall = false;
+        parsed = null;
       }
+      requests.push({ path: req.url ?? "", body: parsed });
+      const isOutputCall =
+        parsed !== null &&
+        typeof parsed === "object" &&
+        "response_format" in parsed &&
+        parsed.response_format !== undefined;
+      const idx = requests.length - 1;
       const verdict = respond(idx, isOutputCall);
       if (verdict === "fail") {
         res.writeHead(500, { "content-type": "application/json" });
@@ -106,6 +110,7 @@ function context(): AgentContext {
       readSubaccord: async () => ({}),
       fetchEvidenceFile: async (_d, name) => ({ name, content: "x" }),
       readDomainDoc: async () => "# doc",
+      readCase: async () => null,
     }),
   };
 }
@@ -117,6 +122,26 @@ const fastOpts = {
   backoffFactor: 2,
   sleep: async () => {},
 };
+
+test("verdict calls carry the schema on the wire — json_schema, not json_object", async () => {
+  const mock = await startMock(() => null);
+  try {
+    const { output } = await generateText({
+      model: createProviderModel(mock.endpoint),
+      prompt: "judge",
+      maxRetries: 0,
+      output: Output.object({ schema: verdictSchema }),
+    });
+    assert.deepEqual(output, GOOD_VERDICT);
+    const last = mock.requests.at(-1)?.body;
+    assert.ok(typeof last === "object" && last !== null && "response_format" in last);
+    const rf = last.response_format;
+    assert.ok(typeof rf === "object" && rf !== null && "type" in rf);
+    assert.equal(rf.type, "json_schema");
+  } finally {
+    await mock.close();
+  }
+});
 
 test("healthy primary answers; fallback never contacted", async () => {
   const primary = await startMock(() => null);
