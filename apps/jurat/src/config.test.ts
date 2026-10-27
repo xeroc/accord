@@ -100,6 +100,24 @@ test("devtools: default off, 1/true enable, garbage stays off", () => {
   expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "maybe" }).devtools).toBe(false);
 });
 
+test("logfire: default off, service name defaults to jurat", () => {
+  expect(load().logfire).toBe(false);
+  expect(load().logfireService).toBe("jurat");
+});
+
+test("logfire: 1/true enable, garbage stays off", () => {
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE: "1" }).logfire).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE: "true" }).logfire).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE: "maybe" }).logfire).toBe(false);
+});
+
+test("logfire: JURAT_LOGFIRE_SERVICE overrides the default", () => {
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE_SERVICE: "jurat-devnet" }).logfireService).toBe(
+    "jurat-devnet",
+  );
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE_SERVICE: "   " }).logfireService).toBe("jurat");
+});
+
 test("dryRun garbage throws rather than silently disarming the gate", () => {
   expect(() => load({ ...VALID_ENV, JURAT_DRY_RUN: "maybe" })).toThrow(/JURAT_DRY_RUN/);
 });

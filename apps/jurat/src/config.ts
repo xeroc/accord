@@ -72,6 +72,10 @@ export interface Config {
   readonly dryRun: boolean;
   /** JURAT_DEVTOOLS=1|true — register AI SDK DevTools capture (local debug only). */
   readonly devtools: boolean;
+  /** JURAT_LOGFIRE=1|true — export OTel spans (AI SDK + daemon) to Pydantic Logfire. */
+  readonly logfire: boolean;
+  /** Logfire service.name. Default "jurat". */
+  readonly logfireService: string;
   readonly stateDir: string;
   /** Reconcile scan interval (ms) — the truth loop. Default 60_000. */
   readonly scanIntervalMs: number;
@@ -120,6 +124,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         : undefined,
     dryRun: dryRunFlag(env.JURAT_DRY_RUN),
     devtools: env.JURAT_DEVTOOLS === "1" || env.JURAT_DEVTOOLS?.toLowerCase() === "true",
+    logfire: env.JURAT_LOGFIRE === "1" || env.JURAT_LOGFIRE?.toLowerCase() === "true",
+    logfireService: optional(env.JURAT_LOGFIRE_SERVICE) ?? "jurat",
     stateDir: optional(env.JURAT_STATE_DIR) ?? "./state",
     scanIntervalMs: intFlag(env.JURAT_SCAN_INTERVAL_MS, 60_000, "JURAT_SCAN_INTERVAL_MS"),
     minSolLamports: bigIntFlag(env.JURAT_MIN_SOL_LAMPORTS, 50_000_000n, "JURAT_MIN_SOL_LAMPORTS"),

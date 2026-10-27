@@ -213,6 +213,8 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
 | `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
 | `JURAT_LOG_LEVEL` / `LOG_LEVEL` | Logging level (winston); `debug` traces verdict resolution — prompts, ⚒ tool calls, model response | `info` |
+| `JURAT_LOGFIRE` | `1`/`true` exports OTel spans (every AI SDK call + winston logs) to Pydantic Logfire (`xeroc/inveigo`, eu) via `@pydantic/logfire-node`; token from `LOGFIRE_TOKEN` or `.logfire/logfire_credentials.json` | `false` |
+| `JURAT_LOGFIRE_SERVICE` | Logfire `service.name` | `jurat` |
 
 Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 `accord-vruh`); `.env.example` is the copy-paste surface.

@@ -27,10 +27,13 @@ import {
   fetchSubaccordMaybe,
   type Subaccord,
 } from "@useaccord/sdk";
-import { registerTelemetry } from "ai";
+import { registerTelemetry, type Telemetry } from "ai";
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
+import { OpenTelemetry } from "@ai-sdk/otel";
 
 import { loadConfig } from "./config";
+import { configureLogfire } from "./telemetry";
+
 import { createChainClient, loadOperatorKeyBytes, operatorSignMessage } from "./chain/client";
 import { readInveigoCase } from "./chain/inveigo";
 import { subscribeAccordEvents } from "./chain/events";
@@ -75,12 +78,20 @@ function formatNotice(notice: VerdictNotice): string {
 
 export async function main(): Promise<void> {
   const config = loadConfig();
+  const telemetry: Telemetry[] = [];
   if (config.devtools) {
     // Local debug only: captures every generateText step (prompts, ⚒ tool
     // calls, responses) to .devtools/generations.json for the `ai-tools`
     // viewer (npx ai-tools@latest dev).
-    registerTelemetry(DevToolsTelemetry());
+    telemetry.push(DevToolsTelemetry());
   }
+  if (config.logfire) {
+    // Pydantic Logfire (xeroc/inveigo): global OTel provider + AI SDK spans.
+    // Token: LOGFIRE_TOKEN or .logfire/logfire_credentials.json.
+    configureLogfire(config.logfireService);
+    telemetry.push(new OpenTelemetry());
+  }
+  if (telemetry.length > 0) registerTelemetry(...telemetry);
   const chain = await createChainClient(config);
   const channel = config.telegram
     ? createTelegramChannel({
@@ -95,6 +106,7 @@ export async function main(): Promise<void> {
     `jurat: booted rpc=${config.rpcUrl} operator=${chain.address} ` +
       `state=${config.stateDir} dryRun=${config.dryRun} ` +
       `scanInterval=${config.scanIntervalMs}ms devtools=${config.devtools} ` +
+      `logfire=${config.logfire ? config.logfireService : "off"} ` +
       `llm=${config.llm.baseUrl} model=${config.llm.model}`,
   );
 
