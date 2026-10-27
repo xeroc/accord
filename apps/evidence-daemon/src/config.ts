@@ -187,6 +187,10 @@ export interface ServerConfig {
   readonly corsOrigin: string;
   /** Trace ingest route armed (ADR-0037). Default: false ⇒ POST /trace 404s. */
   readonly traceEnabled: boolean;
+  /** WS watch ring buffer per dispute (ADR-0037). Unset ⇒ watch.ts default (512). */
+  readonly traceBufferPerDispute?: number;
+  /** WS watch per-IP concurrent-connection cap (ADR-0037). Unset ⇒ 8 (watch.ts). */
+  readonly traceMaxClientsPerIp?: number;
 }
 
 function num(env: Record<string, string | undefined>, key: string, fallback: number): number {
@@ -199,6 +203,13 @@ function num(env: Record<string, string | undefined>, key: string, fallback: num
 function str(env: Record<string, string | undefined>, key: string): string | undefined {
   const v = env[key];
   return v === "" ? undefined : v;
+}
+
+/** Optional non-negative-int env knob; unset/empty → undefined, garbage throws. */
+function optPosInt(env: Record<string, string | undefined>, key: string): number | undefined {
+  const v = env[key];
+  if (v === undefined || v === "") return undefined;
+  return parseNonNegInt(v, key);
 }
 
 export function loadServerConfig(
@@ -220,5 +231,11 @@ export function loadServerConfig(
     healthTimeoutMs: num(env, "EVIDENCE_HEALTH_TIMEOUT_MS", 2000),
     corsOrigin: env.EVIDENCE_CORS_ORIGIN ?? "*",
     traceEnabled: boolFlag(env.TRACE_ENABLED),
+    ...(optPosInt(env, "TRACE_BUFFER_PER_DISPUTE") !== undefined
+      ? { traceBufferPerDispute: optPosInt(env, "TRACE_BUFFER_PER_DISPUTE") }
+      : {}),
+    ...(optPosInt(env, "TRACE_MAX_CLIENTS_PER_IP") !== undefined
+      ? { traceMaxClientsPerIp: optPosInt(env, "TRACE_MAX_CLIENTS_PER_IP") }
+      : {}),
   };
 }

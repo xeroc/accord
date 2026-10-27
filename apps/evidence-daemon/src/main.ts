@@ -33,6 +33,8 @@ import { S3DomainStore } from "./store/domain-s3.js";
 import type { TraceStore } from "./store/trace.js";
 import { FsTraceStore } from "./store/trace-fs.js";
 import { S3TraceStore } from "./store/trace-s3.js";
+import { traceEnvelopeOf, type TraceBatch } from "./store/trace.js";
+import { WatchHub, watchRoutes, websocketHandlers, type WatchSocketData } from "./server/watch.js";
 import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
@@ -152,11 +154,31 @@ function main(): void {
     timeoutMs: srv.healthTimeoutMs,
   });
 
+  // Jury telemetry (ADR-0037): the trace store is the durable replay source
+  // (GET /trace answers on any replica); the hub adds LIVE frames on this
+  // replica only (locked: fan-out state is single-replica in-memory).
+  const hub = new WatchHub({
+    ...(srv.traceBufferPerDispute !== undefined
+      ? { bufferPerDispute: srv.traceBufferPerDispute }
+      : {}),
+    ...(srv.traceMaxClientsPerIp !== undefined
+      ? { maxClientsPerIp: srv.traceMaxClientsPerIp }
+      : {}),
+    replay: traceStore,
+  });
+  const traceFanout = (batch: TraceBatch): void => {
+    hub.publish(
+      batch.dispute,
+      batch.events.map((e) => traceEnvelopeOf(batch, e)),
+    );
+  };
+
   const deps = createServerDeps({
     store,
     domainStore,
     deliveryKeyStore,
     traceStore,
+    traceFanout,
     maxDomainBytes: srv.maxDomainBytes,
     maxEntries: srv.maxEntries,
     maxDocBytes: srv.maxDocBytes,
@@ -184,9 +206,18 @@ function main(): void {
   }
   const tls = hasTls ? { cert: Bun.file(cfg.tls!.cert), key: Bun.file(cfg.tls!.key) } : undefined;
 
-  const server = Bun.serve({
+  // TDZ-safe: watchRoutes closes over `server`; the binding is set right after
+  // listen, before any upgrade request can arrive.
+  // eslint-disable-next-line prefer-const -- closure reads the binding before its assignment (TDZ)
+  let server: Bun.Server<WatchSocketData> | undefined;
+  app.route(
+    "/",
+    watchRoutes(hub, () => server),
+  );
+  server = Bun.serve<WatchSocketData>({
     port: cfg.port,
     fetch: app.fetch,
+    websocket: websocketHandlers(hub),
     ...(tls !== undefined ? { tls } : {}),
   });
 

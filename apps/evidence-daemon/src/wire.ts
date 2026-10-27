@@ -43,7 +43,8 @@ import {
 } from "./pipeline/synod-manifest";
 import { getDomain, putDomain, putSubdocument } from "./pipeline/domain";
 import { ingestTrace } from "./pipeline/trace";
-import type { TraceStore } from "./store/trace";
+import { createTraceReplayHandler } from "./server/trace";
+import type { TraceBatch, TraceStore } from "./store/trace";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -144,6 +145,11 @@ export interface WireDeps {
 
   /** Operator public keys served at GET /config (built by main.ts). */
   readonly publicKeys: KeyringPublicKeys;
+  /**
+   * Live fan-out sink for accepted trace batches (ADR-0037): main.ts binds
+   * the single-replica WatchHub here; unset ⇒ ingest stays durable-only.
+   */
+  readonly traceFanout?: (batch: TraceBatch) => void;
 }
 
 export function createServerDeps(deps: WireDeps): ServerDeps {
@@ -245,6 +251,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     const out = await ingestTrace(subaccord, dispute, juror, body, {
       store: deps.traceStore,
       chain: deliverChain, // same live-Round reader as delivery (ADR-0037 §0)
+      fanout: deps.traceFanout,
     });
     return out.status === 200 || out.status === 201
       ? { ok: true, status: out.status }
@@ -745,6 +752,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     deliveryKeyGet: deliveryKeyGetHandler,
     manifest: manifestHandler,
     traceIngest,
+    traceReplay: createTraceReplayHandler(deps.traceStore),
     publicKeys: deps.publicKeys,
     health: deps.health,
   };
