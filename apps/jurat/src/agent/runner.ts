@@ -15,6 +15,7 @@
 // agent never touches keys or instructions.
 import { NoObjectGeneratedError, Output, generateText, stepCountIs } from "ai";
 import type { LanguageModel, ToolSet } from "ai";
+import { logger } from "../log.js";
 import { z } from "zod";
 
 /** v1 verdict: a Plurality option index + judgment metadata. */
@@ -67,6 +68,11 @@ export interface VerdictRunner {
 /** Default agent step budget. */
 export const DEFAULT_MAX_STEPS = 8;
 
+/** Debug trace sink — the shared winston logger by default (src/log.ts). */
+export interface VerdictLog {
+  debug(message: string): void;
+}
+
 const DEFAULT_SYSTEM_PROMPT = [
   "You are Jurat, an honest juror for an Accord arbitration dispute.",
   "Investigate the dispute with the read-only tools: read the dispute and",
@@ -88,9 +94,16 @@ const DEFAULT_SYSTEM_PROMPT = [
 export function makeAgentRunner(
   model: LanguageModel,
   systemPrompt: string = DEFAULT_SYSTEM_PROMPT,
+  log: VerdictLog = logger,
 ): VerdictRunner {
   return {
     async runVerdict(context: AgentContext): Promise<Verdict> {
+      const userPrompt =
+        `Judge dispute ${context.dispute} in subaccord ${context.subaccord}. ` +
+        `It has ${context.numOptions} options (index 0..${context.numOptions - 1}). ` +
+        "Investigate, then deliver your verdict.";
+      log.debug(`system prompt: ${systemPrompt}`);
+      log.debug(`user prompt: ${userPrompt}`);
       let result;
       try {
         result = await generateText({
@@ -99,13 +112,18 @@ export function makeAgentRunner(
           // internal ones would multiply every ladder attempt.
           maxRetries: 0,
           system: systemPrompt,
-          prompt:
-            `Judge dispute ${context.dispute} in subaccord ${context.subaccord}. ` +
-            `It has ${context.numOptions} options (index 0..${context.numOptions - 1}). ` +
-            "Investigate, then deliver your verdict.",
+          prompt: userPrompt,
           tools: context.tools,
           stopWhen: stepCountIs(context.maxSteps ?? DEFAULT_MAX_STEPS),
           output: Output.object({ schema: verdictSchema }),
+          onStepFinish: (step) => {
+            for (const call of step.toolCalls) {
+              log.debug(`⚒ ${call.toolName}(${JSON.stringify(call.input)})`);
+            }
+            for (const result of step.toolResults) {
+              log.debug(`⚒ ${result.toolName} → ${JSON.stringify(result.output)}`);
+            }
+          },
         });
       } catch (err) {
         // The SDK validates the structured output itself; an unparseable or
@@ -120,6 +138,11 @@ export function makeAgentRunner(
         }
         throw err;
       }
+
+      log.debug(
+        `response: ${JSON.stringify(result.output)} text=${JSON.stringify(result.text)} ` +
+          `finishReason=${result.finishReason}`,
+      );
 
       // Belt and braces: the SDK already validated the shape, but the
       // verdict is duty-specific — re-check, then bound it to numOptions.

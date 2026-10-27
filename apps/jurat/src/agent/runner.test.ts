@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { makeJuratTools } from "./tools.ts";
 import { MalformedVerdictError, makeAgentRunner, verdictSchema, type Verdict } from "./runner.ts";
+import { startMockLlm } from "./testing/mock-llm.ts";
 
 const DISPUTE = "Disp111111111111111111111111111111111111111";
 const SUBACCORD = "Suba111111111111111111111111111111111111111";
@@ -79,7 +80,11 @@ function startMockServer(respond: (body: ChatRequestBody) => string | null) {
 }
 
 function makeRunner(url: string) {
-  const provider = createOpenAICompatible({ name: "mock", baseURL: url });
+  const provider = createOpenAICompatible({
+    name: "mock",
+    baseURL: url,
+    supportsStructuredOutputs: true,
+  });
   return makeAgentRunner(provider.chatModel("mock-model"));
 }
 
@@ -93,6 +98,7 @@ function context(overrides: Record<string, unknown> = {}) {
       readSubaccord: async () => ({}),
       fetchEvidenceFile: async (_d, name) => ({ name, content: "x" }),
       readDomainDoc: async () => "# doc",
+      readCase: async () => null,
     }),
     ...overrides,
   };
@@ -115,6 +121,51 @@ test("happy path: structured verdict parsed from the mock server", async () => {
     );
   } finally {
     await server.close();
+  }
+});
+
+test("debug trace: prompts, ⚒ tool calls + results, and response logged at debug", async () => {
+  const lines: string[] = [];
+  const llm = await startMockLlm([
+    {
+      kind: "toolCalls",
+      toolCalls: [{ id: "call-1", name: "read_dispute", arguments: `{"dispute":"${DISPUTE}"}` }],
+    },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) },
+  ]);
+  try {
+    const provider = createOpenAICompatible({
+      name: "mock",
+      baseURL: llm.url,
+      supportsStructuredOutputs: true,
+    });
+    const runner = makeAgentRunner(provider.chatModel("mock-model"), undefined, {
+      debug: (message) => lines.push(message),
+    });
+    const verdict = await runner.runVerdict(context());
+    assert.deepEqual(verdict, GOOD_VERDICT);
+    assert.ok(
+      lines.some((l) => l.startsWith("system prompt:")),
+      "system prompt logged",
+    );
+    assert.ok(
+      lines.some((l) => l.startsWith("user prompt:") && l.includes(DISPUTE)),
+      "user prompt with dispute logged",
+    );
+    assert.ok(
+      lines.some((l) => l.includes("⚒ read_dispute(")),
+      "tool call logged",
+    );
+    assert.ok(
+      lines.some((l) => l.includes("⚒ read_dispute →")),
+      "tool result logged",
+    );
+    assert.ok(
+      lines.some((l) => l.startsWith("response:")),
+      "response logged",
+    );
+  } finally {
+    await llm.stop();
   }
 });
 

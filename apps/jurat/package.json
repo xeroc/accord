@@ -22,6 +22,7 @@
     "@solana/kit": "^7.0.0",
     "@useaccord/sdk": "workspace:*",
     "ai": "^7.0.141",
+    "winston": "^3.19.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

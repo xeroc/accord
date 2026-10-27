@@ -198,6 +198,7 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
 | `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
+| `JURAT_LOG_LEVEL` / `LOG_LEVEL` | Logging level (winston); `debug` traces verdict resolution — prompts, ⚒ tool calls, model response | `info` |
 
 Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 `accord-vruh`); `.env.example` is the copy-paste surface.
@@ -220,8 +221,10 @@ Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
   client), config parsing, join evaluator gate table, agent runner against
   the rig (deterministic responses, retry-ladder paths), vote executor
   salt/commit/reveal building.
-- **e2e (Surfpool, dryRun OFF):** `tests/src/jurat.spec.ts` — the full duty
-  loop green (auto-join → dispute → VRF draw → mock-LLM verdict → commit →
+- **e2e (Surfpool, dryRun OFF):** `tests/src/jurat.spec.ts` — the staged duty
+  loop (auto-join → dispute → VRF draw → mock-LLM verdict → commit →
   reveal; `Round.reveals` + the verdict notice asserted) plus the failing-LLM
-  twin (ladder exhausted → abstain + alert, no vote) (the milestone's
-  non-negotiable).
+  twin (ladder exhausted → abstain + alert, no vote) and the **armed-loop**
+  test: the real `runDaemon` booted against Surfpool with `dryRun=false`,
+  whose own scan discovers the drawn duty, commits, and reveals — no stage
+  hand-driven.
