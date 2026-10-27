@@ -93,6 +93,19 @@ jobs:
       version: "${{ github.ref_name }}.${{ github.run_number }}"
       push: ${{ github.event_name != 'pull_request' }}
 
+  build-jurat-docker:
+    name: Build Jurat Image
+    needs: [tests]
+    permissions:
+      packages: write
+      contents: read
+    uses: ./.github/workflows/build-docker-image.yaml
+    with:
+      registry: ghcr.io
+      package: jurat
+      version: "${{ github.ref_name }}.${{ github.run_number }}"
+      push: ${{ github.event_name != 'pull_request' }}
+
   release:
     name: Version & Publish
     needs: [tests, program-tests]
