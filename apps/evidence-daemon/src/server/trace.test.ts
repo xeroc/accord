@@ -291,6 +291,16 @@ describe("TRACE_ENABLED config", () => {
     expect(loadServerConfig({}).traceEnabled).toBe(false);
     expect(loadServerConfig({ TRACE_ENABLED: "true" }).traceEnabled).toBe(true);
   });
+
+  it("watch knobs: unset → undefined; set → parsed; garbage throws", () => {
+    expect(loadServerConfig({}).traceBufferPerDispute).toBeUndefined();
+    expect(loadServerConfig({}).traceMaxClientsPerIp).toBeUndefined();
+    expect(loadServerConfig({ TRACE_BUFFER_PER_DISPUTE: "16" }).traceBufferPerDispute).toBe(16);
+    expect(loadServerConfig({ TRACE_MAX_CLIENTS_PER_IP: "2" }).traceMaxClientsPerIp).toBe(2);
+    expect(() => loadServerConfig({ TRACE_BUFFER_PER_DISPUTE: "lots" })).toThrow(
+      "TRACE_BUFFER_PER_DISPUTE",
+    );
+  });
 });
 
 describe("POST /trace — disabled", () => {
