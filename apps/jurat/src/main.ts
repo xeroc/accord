@@ -49,9 +49,10 @@ import {
   type RuntimeChain,
   type RuntimeDeps,
 } from "./runtime";
+import { logger } from "./log";
 
 function log(message: string): void {
-  console.log(`[${new Date().toISOString()}] ${message}`);
+  logger.info(message);
 }
 
 /** No Telegram configured: verdicts + alerts go to stdout. */
@@ -133,6 +134,11 @@ export async function main(): Promise<void> {
       })),
     tokenBalance: async (owner: Address, mint: Address) => {
       const ata = await findAssociatedTokenAddress(mint, owner);
+      // No ATA = never held the mint = zero balance. A raw
+      // getTokenAccountBalance would throw "account not found" and kill the
+      // whole scan on any foreign pool — the join pre-gate must degrade to 0.
+      const info = await chain.rpc.getAccountInfo(ata, { encoding: "base64" }).send();
+      if (info.value === null) return 0n;
       const res = await chain.rpc.getTokenAccountBalance(ata).send();
       return BigInt(res.value.amount);
     },

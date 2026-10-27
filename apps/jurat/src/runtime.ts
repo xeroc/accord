@@ -486,6 +486,7 @@ export interface DaemonHandle {
 export async function runDaemon(deps: RuntimeDeps, opts: DaemonOptions): Promise<DaemonHandle> {
   let running = false;
   let pending = false;
+  let inflight: Promise<void> | undefined;
   const guarded = async (): Promise<void> => {
     if (running) {
       pending = true; // one queued kick, not a stack
@@ -503,14 +504,14 @@ export async function runDaemon(deps: RuntimeDeps, opts: DaemonOptions): Promise
       running = false;
       if (pending && !opts.signal?.aborted) {
         pending = false;
-        void guarded();
+        inflight = guarded(); // chained re-kick stays tracked
       }
     }
   };
 
   await guarded(); // boot scan — restart-safe: pure function of chain state
 
-  const timer = setInterval(() => void guarded(), opts.intervalMs);
+  const timer = setInterval(() => void (inflight = guarded()), opts.intervalMs);
   const { promise, resolve } = Promise.withResolvers<void>();
   const onAbort = () => {
     clearInterval(timer);
@@ -521,9 +522,10 @@ export async function runDaemon(deps: RuntimeDeps, opts: DaemonOptions): Promise
   else opts.signal?.addEventListener("abort", onAbort, { once: true });
 
   return {
-    kick: () => void guarded(),
+    kick: () => void (inflight = guarded()),
     stop: async () => {
       onAbort();
+      await inflight; // let an in-flight scan land — no dangling RPC after stop
       await promise;
     },
   };

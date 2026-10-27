@@ -27,6 +27,7 @@
 // on-chain leaf afterwards.
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 import { join } from "node:path";
 
 import { address, type Address } from "@solana/kit";
@@ -60,6 +61,11 @@ import {
 } from "../../apps/jurat/src/agent/provider.js";
 import { commitVote, type VoteRecord, type VoteStore } from "../../apps/jurat/src/vote/commit.js";
 import { revealVote } from "../../apps/jurat/src/vote/reveal.js";
+import {
+  runDaemon,
+  type DaemonHandle,
+  type RuntimeDeps,
+} from "../../apps/jurat/src/runtime.js";
 import type { NotifyChannel, VerdictNotice } from "../../apps/jurat/src/notify/channel.js";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
@@ -119,6 +125,16 @@ function memVoteStore(): VoteStore {
       m.set(`${record.dispute}:${record.roundIdx}`, record);
     },
   };
+}
+
+/** Poll a chain condition until it holds (wall-clock bounded). */
+async function waitFor(cond: () => Promise<boolean>, ms = 30_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await cond()) return;
+    await sleep(250);
+  }
+  throw new Error(`condition not met within ${ms}ms`);
 }
 
 /** Recording NotifyChannel — the notification-emission assertion surface. */
@@ -276,6 +292,9 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         })),
       tokenBalance: async (owner, mint) => {
         const ata = await ataOf(mint, owner);
+        // No ATA = zero balance (foreign mints must not kill the scan).
+        const info = await env.rpc.getAccountInfo(ata, { encoding: "base64" }).send();
+        if (info.value === null) return 0n;
         const res = await env.rpc.getTokenAccountBalance(ata).send();
         return BigInt(res.value.amount);
       },
@@ -550,6 +569,89 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         ),
       ).toBe(true);
     } finally {
+      await llm.stop();
+    }
+  }, 300_000);
+
+  it("armed loop: runDaemon discovers the drawn duty and sends commit + reveal itself", async () => {
+    if (!env.up) return;
+
+    const { armed, roundPda, seat } = await armAndDraw();
+    const round = await decodedRound(roundPda);
+    // Open the commit window; a background juror flips Drawn → Commit.
+    await warpTo(env, round.reviewEnd);
+    await backgroundCommit(fx.jurors[0]!, armed.dispute, roundPda);
+
+    const logs: string[] = [];
+    const llm = await startMockLlm((body) =>
+      body.response_format !== undefined ? chatCompletion(VERDICT_JSON) : chatCompletion(""),
+    );
+    const abort = new AbortController();
+    let daemon: DaemonHandle | undefined;
+    try {
+      const runner = makeLadderVerdictRunner(
+        { name: "primary", baseURL: llm.baseURL, apiKey: "test-key", modelId: "mock-model" },
+        undefined,
+        { retriesPerEndpoint: 1, initialBackoffMs: 1, sleep: async () => {} },
+      );
+      const deps: RuntimeDeps = {
+        juror: juratAddr,
+        stateDir,
+        dryRun: false, // ARMED — the daemon itself sends the vote transactions
+        // Never-join policy: the armed loop is about voting, and this spec
+        // must not react to foreign pools created by sibling specs.
+        policy: {
+          ...joinPolicy(),
+          stakingTokenAllowlist: new Set<Address>(),
+          feeTokenAllowlist: new Set<Address>(),
+        },
+        budget: {
+          globalStakeBudget: 100_000n,
+          perSubaccordCap: 50_000n,
+          reserveFloor: RESERVE,
+          minSolLamports: 50_000_000n,
+        },
+        chain: {
+          ...reconcileChain(),
+          fetchDispute: async (d) => (await fetchDecoded(env, d, getDisputeDecoder()))!,
+        },
+        join: async () => {
+          throw new Error("join must not run in the armed loop");
+        },
+        store: dutyStore,
+        votes: voteStore,
+        channel,
+        verdict: (ctx) => runner.runVerdict(ctx),
+        assembleContext: async (input) => agentContext(address(input.dispute)),
+        voting: {
+          client: juratAccord.adapter,
+          programId: env.programId,
+          send: (ix) => env.sendIx(ix),
+        },
+        tokenBalance: joinChain().tokenBalance,
+        now: async () => Number((await readClock(env)).unixTimestamp), // live clock
+        log: (m) => logs.push(m),
+      };
+      daemon = await runDaemon(deps, { intervalMs: 200, signal: abort.signal });
+
+      // Commit phase: the daemon's own scan → verdict → commitVote tx.
+      await waitFor(async () => (await dutyStore.load(armed.dispute, 0))?.status === "committed");
+      expect((await dutyStore.load(armed.dispute, 0))?.status).toBe("committed");
+      expect(logs.some((l) => l.includes(`duty: committed ${armed.dispute}`))).toBe(true);
+
+      // Reveal window opens → the daemon's scan reveals with the persisted salt.
+      await warpToRevealWindow(env, roundPda);
+      await waitFor(async () => (await dutyStore.load(armed.dispute, 0))?.status === "revealed");
+      const after = await decodedRound(roundPda);
+      expect(after.reveals[seat]).toBe(BigInt(VERDICT_OPTION));
+      expect((await dutyStore.load(armed.dispute, 0))?.status).toBe("revealed");
+      expect(logs.some((l) => l.includes(`duty: revealed ${armed.dispute}`))).toBe(true);
+      expect(
+        channel.verdicts.some((v) => v.dispute === armed.dispute && v.dryRun === false),
+      ).toBe(true);
+    } finally {
+      abort.abort();
+      await daemon?.stop();
       await llm.stop();
     }
   }, 300_000);

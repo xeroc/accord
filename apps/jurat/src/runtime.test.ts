@@ -18,7 +18,13 @@ import {
   type Subaccord,
 } from "@useaccord/sdk";
 
-import { handleScan, runDuty, joinPolicyFromConfig, joinBudgetFromConfig } from "./runtime";
+import {
+  handleScan,
+  runDaemon,
+  runDuty,
+  joinPolicyFromConfig,
+  joinBudgetFromConfig,
+} from "./runtime";
 import type { RuntimeDeps, RuntimeChain } from "./runtime";
 import { RetryLadderExhaustedError } from "./agent/provider";
 import { MalformedVerdictError, type AgentContext } from "./agent/runner";
@@ -114,6 +120,7 @@ type RuntimeOverrides = Partial<Omit<RuntimeDeps, "chain">> & {
 };
 
 function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: Recording } {
+  const { chain: chainOverride, ...rest } = overrides;
   const rec: Recording = {
     logs: [],
     alerts: [],
@@ -128,7 +135,7 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
     fetchRound: async () => null,
     fetchDispute: async () => null,
     fetchJurorStake: async () => null,
-    ...overrides.chain,
+    ...chainOverride,
   };
   const deps: RuntimeDeps = {
     juror: JUROR,
@@ -178,7 +185,7 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
     },
     now: async () => 1_500,
     log: (m) => void rec.logs.push(m),
-    ...overrides,
+    ...rest,
   };
   return { deps, rec };
 }
@@ -558,5 +565,40 @@ test("abstained/revealed duties are skipped entirely", async () => {
     await runDuty(deps, dutySignal());
     expect(rec.sends).toHaveLength(0);
     expect(rec.logs.some((l) => l.includes("skip") && l.includes(status))).toBe(true);
+  }
+});
+
+test("runDaemon: stop() awaits the in-flight scan before resolving", async () => {
+  const { promise: held, resolve: release } = Promise.withResolvers<void>();
+  const { promise: secondScanEntered, resolve: markSecond } = Promise.withResolvers<void>();
+  let scans = 0;
+  const { deps } = makeDeps({
+    chain: {
+      fetchSubaccords: async () => {
+        scans += 1;
+        if (scans === 2) {
+          markSecond();
+          await held;
+        }
+        return [];
+      },
+    },
+  });
+  const daemon = await runDaemon(deps, { intervalMs: 10_000 });
+  try {
+    daemon.kick();
+    await secondScanEntered; // scan #2 is inside the gate, blocked on `held`
+    const stopped = daemon.stop();
+    let settledEarly = false;
+    void stopped.then(() => (settledEarly = true));
+    // Drain the microtask queue: a stop() that ignores the in-flight scan
+    // resolves within a few ticks; the correct one is parked on `held`.
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    expect(settledEarly).toBe(false);
+    release();
+    await stopped;
+  } finally {
+    release();
+    await daemon.stop();
   }
 });
