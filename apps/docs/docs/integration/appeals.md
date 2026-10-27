@@ -18,7 +18,14 @@ round," and round-N jurors reuse the accumulated `evidence_hashes[0..=N]`.
 | `state == RoundResolved`                 | `InvalidState`       |
 | `current_round < max_appeals`            | `MaxAppealsReached`  |
 | `now < reveal_end + terms.appeal_window` | `AppealWindowClosed` |
-| `subaccord.staker_count ≥ new_panel`     | `InsufficientJurors` |
+
+`reveal_end` is re-anchored shrink-only at the last state change
+([ADR-0038](https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0038-re-anchor-round-windows-at-last-state-change.md)):
+a panel-full `commit` pulls it to `now + reveal_window`, an early
+`finalize_round` (all revealed) pins it to the resolution instant. The appeal
+window therefore opens at **resolution**, not at the scheduled reveal close —
+an eager panel gets `appeal_window` seconds from the moment the round
+resolved.
 
 ## Panel ladder
 

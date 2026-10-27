@@ -80,6 +80,33 @@ export function chatCompletion(content: string): MockLlmReply {
   };
 }
 
+/** A 200 chat.completion answering with one function call (tool_choice:"required" step). */
+export function toolCallCompletion(name: string, args: string): MockLlmReply {
+  return {
+    status: 200,
+    body: {
+      id: "chatcmpl-mock",
+      object: "chat.completion",
+      created: 1_700_000_000,
+      model: "mock-model",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              { index: 0, id: "call-1", type: "function", function: { name, arguments: args } },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    },
+  };
+}
+
 /** An OpenAI wire-shaped error (the provider surfaces the message client-side). */
 export function openAiError(status: number, message: string): MockLlmReply {
   return { status, body: { error: { message, type: "mock_error" } } };

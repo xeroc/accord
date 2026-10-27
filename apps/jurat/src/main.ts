@@ -17,16 +17,31 @@ import {
   findAllDisputes,
   findAllSubaccords,
   findAssociatedTokenAddress,
+  findJurorStakePda,
   findJurorStakesBySubaccord,
   findRoundPda,
+  findSasAttestation,
   fetchDisputeMaybe,
+  fetchJurorStakeMaybe,
   fetchRoundMaybe,
   fetchSubaccordMaybe,
   type Subaccord,
 } from "@useaccord/sdk";
+import { registerTelemetry, type Telemetry } from "ai";
+import { DevToolsTelemetry } from "@ai-sdk/devtools";
+import { OpenTelemetry } from "@ai-sdk/otel";
 
 import { loadConfig } from "./config";
-import { createChainClient, loadOperatorKeyBytes, operatorSignMessage } from "./chain/client";
+import { configureLogfire } from "./telemetry";
+
+import {
+  createChainClient,
+  hotKeySeed,
+  loadOperatorKeyBytes,
+  operatorSignMessage,
+} from "./chain/client";
+import { readInveigoCase } from "./chain/inveigo";
+import { makeTraceSinkBinder } from "./trace/sink";
 import { subscribeAccordEvents } from "./chain/events";
 import { joinSubaccord } from "./join/executor";
 import {
@@ -45,9 +60,10 @@ import {
   type RuntimeChain,
   type RuntimeDeps,
 } from "./runtime";
+import { logger } from "./log";
 
 function log(message: string): void {
-  console.log(`[${new Date().toISOString()}] ${message}`);
+  logger.info(message);
 }
 
 /** No Telegram configured: verdicts + alerts go to stdout. */
@@ -68,6 +84,20 @@ function formatNotice(notice: VerdictNotice): string {
 
 export async function main(): Promise<void> {
   const config = loadConfig();
+  const telemetry: Telemetry[] = [];
+  if (config.devtools) {
+    // Local debug only: captures every generateText step (prompts, ⚒ tool
+    // calls, responses) to .devtools/generations.json for the `ai-tools`
+    // viewer (npx ai-tools@latest dev).
+    telemetry.push(DevToolsTelemetry());
+  }
+  if (config.logfire) {
+    // Pydantic Logfire (xeroc/inveigo): global OTel provider + AI SDK spans.
+    // Token: LOGFIRE_TOKEN or .logfire/logfire_credentials.json.
+    configureLogfire(config.logfireService);
+    telemetry.push(new OpenTelemetry());
+  }
+  if (telemetry.length > 0) registerTelemetry(...telemetry);
   const chain = await createChainClient(config);
   const channel = config.telegram
     ? createTelegramChannel({
@@ -81,7 +111,9 @@ export async function main(): Promise<void> {
   log(
     `jurat: booted rpc=${config.rpcUrl} operator=${chain.address} ` +
       `state=${config.stateDir} dryRun=${config.dryRun} ` +
-      `scanInterval=${config.scanIntervalMs}ms`,
+      `scanInterval=${config.scanIntervalMs}ms devtools=${config.devtools} ` +
+      `logfire=${config.logfire ? config.logfireService : "off"} ` +
+      `llm=${config.llm.baseUrl} model=${config.llm.model}`,
   );
 
   // --- chain adapters over the SDK (single implementation, no second copy) ---
@@ -106,6 +138,11 @@ export async function main(): Promise<void> {
       const acc = await fetchDisputeMaybe(chain.rpc, dispute);
       return acc.exists ? acc.data : null;
     },
+    fetchJurorStake: async (subaccord, juror) => {
+      const [pda] = await findJurorStakePda({ subaccord, juror });
+      const acc = await fetchJurorStakeMaybe(chain.rpc, pda);
+      return acc.exists ? { staked: acc.data.staked } : null;
+    },
   };
 
   const joinChain = {
@@ -124,10 +161,17 @@ export async function main(): Promise<void> {
       })),
     tokenBalance: async (owner: Address, mint: Address) => {
       const ata = await findAssociatedTokenAddress(mint, owner);
+      // No ATA = never held the mint = zero balance. A raw
+      // getTokenAccountBalance would throw "account not found" and kill the
+      // whole scan on any foreign pool — the join pre-gate must degrade to 0.
+      const info = await chain.rpc.getAccountInfo(ata, { encoding: "base64" }).send();
+      if (info.value === null) return 0n;
       const res = await chain.rpc.getTokenAccountBalance(ata).send();
       return BigInt(res.value.amount);
     },
     solBalance: async (owner: Address) => (await chain.rpc.getBalance(owner).send()).value,
+    findAttestation: (binding: Parameters<typeof findSasAttestation>[1]) =>
+      findSasAttestation(chain.rpc, binding),
     send: (ix: Parameters<typeof chain.sendIx>[0]) => chain.sendIx(ix),
   };
 
@@ -157,6 +201,13 @@ export async function main(): Promise<void> {
         {
           readDispute: (d) => runtimeChain.fetchDispute(d as Address),
           readSubaccord: (s) => joinChain.fetchSubaccord(s as Address),
+          readCase: (d) =>
+            readInveigoCase({
+              rpc: chain.rpc,
+              endpoint: evidenceDeps.endpoint,
+              dispute: d as Address,
+              expectedSubaccord: input.subaccord as Address,
+            }),
         },
         { ...input, domainRef },
       );
@@ -212,6 +263,14 @@ export async function main(): Promise<void> {
       send: (ix) => chain.sendIx(ix),
     },
     tokenBalance: joinChain.tokenBalance,
+    trace:
+      config.trace &&
+      makeTraceSinkBinder({
+        url: config.trace.url,
+        mode: config.trace.mode,
+        juror: chain.address,
+        seed: hotKeySeed(loadOperatorKeyBytes(config.keypairPath)),
+      }),
     now: async () => Number((await chain.readClock()).unixTimestamp),
     log,
   };

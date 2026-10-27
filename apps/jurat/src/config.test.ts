@@ -93,6 +93,30 @@ test("dryRun accepts explicit true/false/0/no", () => {
   expect(load({ ...VALID_ENV, JURAT_DRY_RUN: "0" }).dryRun).toBe(false);
   expect(load({ ...VALID_ENV, JURAT_DRY_RUN: "NO" }).dryRun).toBe(false);
 });
+test("devtools: default off, 1/true enable, garbage stays off", () => {
+  expect(load().devtools).toBe(false);
+  expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "1" }).devtools).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "true" }).devtools).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_DEVTOOLS: "maybe" }).devtools).toBe(false);
+});
+
+test("logfire: default off, service name defaults to jurat", () => {
+  expect(load().logfire).toBe(false);
+  expect(load().logfireService).toBe("jurat");
+});
+
+test("logfire: 1/true enable, garbage stays off", () => {
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE: "1" }).logfire).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE: "true" }).logfire).toBe(true);
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE: "maybe" }).logfire).toBe(false);
+});
+
+test("logfire: JURAT_LOGFIRE_SERVICE overrides the default", () => {
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE_SERVICE: "jurat-devnet" }).logfireService).toBe(
+    "jurat-devnet",
+  );
+  expect(load({ ...VALID_ENV, JURAT_LOGFIRE_SERVICE: "   " }).logfireService).toBe("jurat");
+});
 
 test("dryRun garbage throws rather than silently disarming the gate", () => {
   expect(() => load({ ...VALID_ENV, JURAT_DRY_RUN: "maybe" })).toThrow(/JURAT_DRY_RUN/);
@@ -187,4 +211,26 @@ test("wsUrl: JURAT_WS_URL wins; otherwise derived from rpcUrl (http→ws, port+1
   expect(load({ ...VALID_ENV, JURAT_RPC_URL: "https://api.mainnet-beta.solana.com" }).wsUrl).toBe(
     "wss://api.mainnet-beta.solana.com",
   );
+});
+
+test("trace: unset JURAT_TRACE_URL → tracing off", () => {
+  expect(load().trace).toBeUndefined();
+});
+
+test("trace: URL set → sealed by default, open parsed", () => {
+  expect(load({ ...VALID_ENV, JURAT_TRACE_URL: "http://evidence.internal" }).trace).toEqual({
+    url: "http://evidence.internal",
+    mode: "sealed",
+  });
+  expect(
+    load({ ...VALID_ENV, JURAT_TRACE_URL: "http://evidence.internal", JURAT_TRACE_MODE: "open" })
+      .trace,
+  ).toEqual({ url: "http://evidence.internal", mode: "open" });
+});
+
+test("trace: garbage mode or mode without URL throws", () => {
+  expect(() =>
+    load({ ...VALID_ENV, JURAT_TRACE_URL: "http://x", JURAT_TRACE_MODE: "loud" }),
+  ).toThrow("JURAT_TRACE_MODE");
+  expect(() => load({ ...VALID_ENV, JURAT_TRACE_MODE: "open" })).toThrow("JURAT_TRACE_URL");
 });

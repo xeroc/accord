@@ -13,10 +13,12 @@
 // dryRun is OFF in this spec only — it is the one place the vote path is
 // proven against the real chain (everywhere else jurat defaults to DRY_RUN).
 //
-// Duty surfacing: reconcile surfaces actionable disputes (Review / Commit /
-// Reveal); a freshly drawn dispute sits in Drawn until the FIRST panel
-// commit flips it (commit.rs), so a background juror commits first to open
-// the duty — exactly how a live pool behaves.
+// Duty surfacing: reconcile surfaces actionable disputes (Drawn / Commit /
+// Reveal — Drawn IS the review phase; Review is a dead on-chain arm). The
+// duty opens while the dispute is still Drawn: runDuty holds through review
+// and commits at window open, so the solo-panel case works too (bean
+// accord-zhnh). The background juror's commit here just exercises the
+// Drawn→Commit flip on chain.
 //
 // Panel guarantee: the pool holds exactly PANEL_SIZE stakers (2 background +
 // jurat), so the VRF draw seats all three — jurat's seat is structural, not
@@ -25,6 +27,7 @@
 // on-chain leaf afterwards.
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { setTimeout as sleep } from "node:timers/promises";
 import { join } from "node:path";
 
 import { address, type Address } from "@solana/kit";
@@ -33,10 +36,12 @@ import {
   commit as sdkCommit,
   findAllDisputes,
   findAllSubaccords,
+  fetchJurorStakeMaybe,
   fetchRoundMaybe,
   findJurorStakePda,
   findJurorStakesBySubaccord,
   findRoundPda,
+  findSasAttestation,
   stake as sdkStake,
   getDisputeDecoder,
   getRoundDecoder,
@@ -56,13 +61,23 @@ import {
 } from "../../apps/jurat/src/agent/provider.js";
 import { commitVote, type VoteRecord, type VoteStore } from "../../apps/jurat/src/vote/commit.js";
 import { revealVote } from "../../apps/jurat/src/vote/reveal.js";
+import {
+  runDaemon,
+  type DaemonHandle,
+  type RuntimeDeps,
+} from "../../apps/jurat/src/runtime.js";
 import type { NotifyChannel, VerdictNotice } from "../../apps/jurat/src/notify/channel.js";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
 import { readClock } from "./setup/cheats.js";
 import { setTokenBalance } from "./setup/tokens.js";
 import { fetchDecoded } from "./setup/assertions.js";
-import { chatCompletion, openAiError, startMockLlm } from "./setup/mock-llm.js";
+import {
+  chatCompletion,
+  openAiError,
+  startMockLlm,
+  toolCallCompletion,
+} from "./setup/mock-llm.js";
 import {
   addressBytes,
   armDispute,
@@ -76,6 +91,7 @@ import {
   toAddress,
   toHex,
   warpTo,
+  warpToRevealWindow,
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
@@ -114,6 +130,16 @@ function memVoteStore(): VoteStore {
       m.set(`${record.dispute}:${record.roundIdx}`, record);
     },
   };
+}
+
+/** Poll a chain condition until it holds (wall-clock bounded). */
+async function waitFor(cond: () => Promise<boolean>, ms = 30_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await cond()) return;
+    await sleep(250);
+  }
+  throw new Error(`condition not met within ${ms}ms`);
 }
 
 /** Recording NotifyChannel — the notification-emission assertion surface. */
@@ -193,6 +219,14 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
     poolMin = candidate!.data.minStake;
     expect(outcome).toMatchObject({ status: "joined", amount: poolMin });
 
+    // The next iteration recognizes jurat's own JurorStake: the pool is never
+    // re-offered as a join candidate, it is reported as a held stake instead.
+    const rescan = await reconcile(reconcileChain(), juratAddr);
+    expect(rescan.joinCandidates.some((c) => c.subaccord === fx.subaccord)).toBe(false);
+    expect(rescan.heldStakes).toEqual([
+      { subaccord: fx.subaccord, stakingToken: fx.mint, staked: poolMin },
+    ]);
+
     // --- sync the harness tree with jurat's on-chain leaf (slot 2) ---
     const [juratStakePda] = await findJurorStakePda({
       subaccord: fx.subaccord,
@@ -238,6 +272,11 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         const acc = await fetchRoundMaybe(env.rpc, pda);
         return acc.exists ? acc.data : null;
       },
+      fetchJurorStake: async (subaccord, juror) => {
+        const [pda] = await findJurorStakePda({ subaccord, juror });
+        const acc = await fetchJurorStakeMaybe(env.rpc, pda);
+        return acc.exists ? { staked: acc.data.staked } : null;
+      },
     };
   }
 
@@ -258,10 +297,14 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         })),
       tokenBalance: async (owner, mint) => {
         const ata = await ataOf(mint, owner);
+        // No ATA = zero balance (foreign mints must not kill the scan).
+        const info = await env.rpc.getAccountInfo(ata, { encoding: "base64" }).send();
+        if (info.value === null) return 0n;
         const res = await env.rpc.getTokenAccountBalance(ata).send();
         return BigInt(res.value.amount);
       },
       solBalance: async (owner) => (await env.rpc.getBalance(owner).send()).value,
+      findAttestation: (binding) => findSasAttestation(env.rpc, binding),
       send: (ix) => env.sendIx(ix),
     };
   }
@@ -294,6 +337,8 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
           throw new Error("no evidence bundle on the e2e Surfnet");
         },
         readDomainDoc: async () => "",
+        // no Inveigo program on the e2e Surfnet — not an Inveigo challenge
+        readCase: async () => null,
       }),
     };
   }
@@ -331,8 +376,14 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
 
     const { armed, roundPda, seat } = await armAndDraw();
 
+    // The duty surfaces while the dispute is STILL Drawn (the review phase —
+    // panel full, no commit yet). Solo panels have no other juror to flip the
+    // state, so this is the recognition that makes them servable (accord-zhnh).
+    const drawnScan = await reconcile(reconcileChain(), juratAddr);
+    expect(drawnScan.duties.some((d) => d.dispute === armed.dispute)).toBe(true);
+
     // Open the commit window, then a background juror commits → the dispute
-    // leaves Drawn and the duty becomes reconcile-actionable.
+    // leaves Drawn (Drawn→Commit flip, commit.rs).
     const round = await decodedRound(roundPda);
     await warpTo(env, round.reviewEnd);
     await backgroundCommit(fx.jurors[0]!, armed.dispute, roundPda);
@@ -359,10 +410,12 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
     expect(record?.seat).toBe(seat);
 
     // Verdict: the real provider ladder + agent runner over the mock LLM.
+    // The runner forces step-0 tool use — answer it with a read_dispute
+    // call before serving the deterministic verdict.
     const llm = await startMockLlm((body) =>
-      body.response_format !== undefined
-        ? chatCompletion(VERDICT_JSON)
-        : chatCompletion(""),
+      body.tool_choice === "required"
+        ? toolCallCompletion("read_dispute", JSON.stringify({ dispute: armed.dispute }))
+        : chatCompletion(VERDICT_JSON),
     );
     try {
       const runner = makeLadderVerdictRunner(
@@ -414,7 +467,8 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
       });
 
       // Warp to the reveal window; reveal with the EXACT persisted preimage.
-      await warpTo(env, round.commitEnd);
+      // ADR-0038: reveal may already be open / re-anchored — fresh-read warp.
+      await warpToRevealWindow(env, roundPda);
       const revealed = await revealVote(
         {
           client: juratAccord.adapter,
@@ -522,6 +576,91 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         ),
       ).toBe(true);
     } finally {
+      await llm.stop();
+    }
+  }, 300_000);
+
+  it("armed loop: runDaemon discovers the drawn duty and sends commit + reveal itself", async () => {
+    if (!env.up) return;
+
+    const { armed, roundPda, seat } = await armAndDraw();
+    const round = await decodedRound(roundPda);
+    // Open the commit window; a background juror flips Drawn → Commit.
+    await warpTo(env, round.reviewEnd);
+    await backgroundCommit(fx.jurors[0]!, armed.dispute, roundPda);
+
+    const logs: string[] = [];
+    const llm = await startMockLlm((body) =>
+      body.tool_choice === "required"
+        ? toolCallCompletion("read_dispute", JSON.stringify({ dispute: armed.dispute }))
+        : chatCompletion(VERDICT_JSON),
+    );
+    const abort = new AbortController();
+    let daemon: DaemonHandle | undefined;
+    try {
+      const runner = makeLadderVerdictRunner(
+        { name: "primary", baseURL: llm.baseURL, apiKey: "test-key", modelId: "mock-model" },
+        undefined,
+        { retriesPerEndpoint: 1, initialBackoffMs: 1, sleep: async () => {} },
+      );
+      const deps: RuntimeDeps = {
+        juror: juratAddr,
+        stateDir,
+        dryRun: false, // ARMED — the daemon itself sends the vote transactions
+        // Never-join policy: the armed loop is about voting, and this spec
+        // must not react to foreign pools created by sibling specs.
+        policy: {
+          ...joinPolicy(),
+          stakingTokenAllowlist: new Set<Address>(),
+          feeTokenAllowlist: new Set<Address>(),
+        },
+        budget: {
+          globalStakeBudget: 100_000n,
+          perSubaccordCap: 50_000n,
+          reserveFloor: RESERVE,
+          minSolLamports: 50_000_000n,
+        },
+        chain: {
+          ...reconcileChain(),
+          fetchDispute: async (d) => (await fetchDecoded(env, d, getDisputeDecoder()))!,
+        },
+        join: async () => {
+          throw new Error("join must not run in the armed loop");
+        },
+        store: dutyStore,
+        votes: voteStore,
+        channel,
+        verdict: (ctx) => runner.runVerdict(ctx),
+        assembleContext: async (input) => agentContext(address(input.dispute)),
+        voting: {
+          client: juratAccord.adapter,
+          programId: env.programId,
+          send: (ix) => env.sendIx(ix),
+        },
+        tokenBalance: joinChain().tokenBalance,
+        now: async () => Number((await readClock(env)).unixTimestamp), // live clock
+        log: (m) => logs.push(m),
+      };
+      daemon = await runDaemon(deps, { intervalMs: 200, signal: abort.signal });
+
+      // Commit phase: the daemon's own scan → verdict → commitVote tx.
+      await waitFor(async () => (await dutyStore.load(armed.dispute, 0))?.status === "committed");
+      expect((await dutyStore.load(armed.dispute, 0))?.status).toBe("committed");
+      expect(logs.some((l) => l.includes(`duty: committed ${armed.dispute}`))).toBe(true);
+
+      // Reveal window opens → the daemon's scan reveals with the persisted salt.
+      await warpToRevealWindow(env, roundPda);
+      await waitFor(async () => (await dutyStore.load(armed.dispute, 0))?.status === "revealed");
+      const after = await decodedRound(roundPda);
+      expect(after.reveals[seat]).toBe(BigInt(VERDICT_OPTION));
+      expect((await dutyStore.load(armed.dispute, 0))?.status).toBe("revealed");
+      expect(logs.some((l) => l.includes(`duty: revealed ${armed.dispute}`))).toBe(true);
+      expect(
+        channel.verdicts.some((v) => v.dispute === armed.dispute && v.dryRun === false),
+      ).toBe(true);
+    } finally {
+      abort.abort();
+      await daemon?.stop();
       await llm.stop();
     }
   }, 300_000);

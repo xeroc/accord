@@ -136,6 +136,8 @@ class FakeChain implements ReconcileChain {
   subaccords: Array<{ address: Address; data: Subaccord }> = [];
   disputes: Array<{ address: Address; data: Dispute }> = [];
   rounds = new Map<string, Round>();
+  /** The juror's own JurorStake per subaccord (absent = no account). */
+  ownStakes = new Map<Address, bigint>();
 
   async fetchSubaccords() {
     return this.subaccords;
@@ -147,6 +149,12 @@ class FakeChain implements ReconcileChain {
 
   async fetchRound(dispute: Address, roundIdx: number): Promise<Round | null> {
     return this.rounds.get(`${dispute}:${roundIdx}`) ?? null;
+  }
+
+  async fetchJurorStake(subaccord: Address, juror: Address) {
+    expect(juror).toBe(JUROR);
+    const staked = this.ownStakes.get(subaccord);
+    return staked === undefined ? null : { staked };
   }
 }
 
@@ -167,6 +175,46 @@ describe("reconcile", () => {
     const out = await reconcile(chain, JUROR);
     expect(out.joinCandidates.map((c) => c.subaccord)).toEqual([SUB_A, SUB_B]);
     expect(out.duties).toEqual([]);
+  });
+
+  test("subaccords the juror already staked into are not join candidates (heldStakes)", async () => {
+    chain.subaccords = [
+      { address: SUB_A, data: subaccordFixture() },
+      { address: SUB_B, data: subaccordFixture() },
+    ];
+    chain.ownStakes.set(SUB_A, 100n);
+    const out = await reconcile(chain, JUROR);
+    expect(out.joinCandidates.map((c) => c.subaccord)).toEqual([SUB_B]);
+    expect(out.heldStakes).toEqual([
+      { subaccord: SUB_A, stakingToken: subaccordFixture().stakingToken, staked: 100n },
+    ]);
+  });
+
+  test("a drained JurorStake (staked 0) stays a join candidate — re-stake regains draw weight", async () => {
+    chain.subaccords = [{ address: SUB_A, data: subaccordFixture() }];
+    chain.ownStakes.set(SUB_A, 0n);
+    const out = await reconcile(chain, JUROR);
+    expect(out.joinCandidates.map((c) => c.subaccord)).toEqual([SUB_A]);
+    expect(out.heldStakes).toEqual([]);
+  });
+
+  test("seated juror in a Drawn dispute (panel full, review window) yields a DutySignal", async () => {
+    chain.subaccords = [{ address: SUB_A, data: subaccordFixture() }];
+    chain.disputes = [{ address: DISPUTE_1, data: disputeFixture(SUB_A, DisputeState.Drawn) }];
+    chain.rounds.set(
+      `${DISPUTE_1}:0`,
+      roundFixture(DISPUTE_1, [JUROR, OTHER_JUROR, DEFAULT_PUBKEY]),
+    );
+    const out = await reconcile(chain, JUROR);
+    expect(out.duties).toEqual([
+      {
+        dispute: DISPUTE_1,
+        subaccord: SUB_A,
+        roundIdx: 0,
+        jurorIndex: 0,
+        state: DisputeState.Drawn,
+      },
+    ]);
   });
 
   test("panel seat in a Commit dispute yields a DutySignal with our index", async () => {
@@ -209,7 +257,6 @@ describe("reconcile", () => {
   test("non-actionable states yield no duty even when seated", async () => {
     for (const state of [
       DisputeState.Created,
-      DisputeState.Drawn,
       DisputeState.RoundResolved,
       DisputeState.RedrawEligible,
       DisputeState.Final,

@@ -47,6 +47,7 @@ import {
   submitDraw,
   toAddress,
   warpTo,
+  warpToRevealWindow,
   ataOf,
   COMMITTED_VRF,
   type DrawFixture,
@@ -227,9 +228,9 @@ describe("e2e: canon challenge → settle (Surfpool)", () => {
       await env.sendIx(instruction);
     }
 
-    // --- reveal all (window opens at commitEnd) ---
-    round = await readRound(env, roundPda);
-    await warpTo(env, round!.commitEnd);
+    // --- reveal all (ADR-0038: panel-full commit may have re-anchored
+    // revealEnd before commitEnd + 1 — use the fresh, window-respecting warp) ---
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < drawnJurors.length; i++) {
       const instruction = reveal(
         drawnJurors[i]!.accord.adapter,

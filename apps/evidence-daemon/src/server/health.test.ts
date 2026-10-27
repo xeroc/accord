@@ -34,6 +34,7 @@ function okDeps(health: ServerDeps["health"]): ServerDeps {
     domainPut: async () => ({ ok: true, status: 201 }),
     domainSubPut: async () => ({ ok: true, status: 201 }),
     domainGet: async () => ({ ok: false, status: 404, error: "stub" }),
+    traceIngest: async () => ({ ok: true, status: 201 }),
     health,
     publicKeys: STUB_PUBLIC_KEYS,
   };

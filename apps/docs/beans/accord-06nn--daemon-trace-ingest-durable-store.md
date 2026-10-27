@@ -1,10 +1,11 @@
 ---
 # accord-06nn
 title: Daemon trace ingest + durable store
-status: todo
+status: completed
 type: epic
+priority: normal
 created_at: 2026-10-23T09:32:33Z
-updated_at: 2026-10-23T09:32:33Z
+updated_at: 2026-10-23T11:04:48Z
 parent: accord-24t6
 ---
 

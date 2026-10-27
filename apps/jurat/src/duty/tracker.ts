@@ -7,7 +7,11 @@
 //     computed on-chain from the CaseTerms frozen at filing; the tracker
 //     reads them rather than re-deriving (accounts are authoritative,
 //     milestone decision 4 — a local re-derivation could drift from the
-//     gates and is a second implementation of the same math).
+//     gates and is a second implementation of the same math). ADR-0038:
+//     `reveal_end` MUTATES shrink-only after draw — a panel-full commit
+//     pulls it to `now + reveal_window`, an early finalize_round pins it to
+//     the resolution instant. Reading the live field (never a cached copy)
+//     keeps `final` correct as the deadline moves earlier.
 //   - gates:    commit.rs  `review_end <= now < commit_end`
 //               reveal.rs  `(now >= commit_end || all_committed) && now < reveal_end`
 //   - redraw:   ADR-0021 — same Round PDA (same round_idx), draw_attempt+1,
@@ -16,6 +20,7 @@
 // All persistence + clock IO is injected (same seams as the rest of the
 // duty pipeline); the module is pure orchestration.
 import type { DutyRecord, DutyStore } from "./types.js";
+import type { TraceSink } from "../trace/sink.js";
 
 /** Where a duty's round sits on the chain clock. */
 export type DutyPhase = "review" | "commit" | "reveal" | "final";
@@ -79,7 +84,7 @@ export function dutyPhase(windows: RoundWindows, now: number, allCommitted = fal
  *   retries a void duty.
  */
 export async function trackRound(
-  deps: { store: DutyStore; ourKey: string; now(): number },
+  deps: { store: DutyStore; ourKey: string; now(): number; trace?: TraceSink },
   round: RoundView,
 ): Promise<DutyRecord | null> {
   const prior = await deps.store.load(round.dispute, round.roundIdx);
@@ -118,5 +123,15 @@ export async function trackRound(
     updatedAt: now,
   };
   await deps.store.save(record);
+  // ADR-0037 duty-open — once per fresh draw (windows are chain seconds;
+  // the trace wire is unix ms).
+  deps.trace?.emit({
+    kind: "duty-open",
+    round: round.roundIdx,
+    seat,
+    reviewEnd: Number(round.reviewEnd) * 1_000,
+    commitEnd: Number(round.commitEnd) * 1_000,
+    revealEnd: Number(round.revealEnd) * 1_000,
+  });
   return record;
 }

@@ -29,12 +29,18 @@ stateDiagram-v2
 | `RoundResolved`           | `Final`         | [`finalize_dispute`](instructions.md)                                         | `now ≥ reveal_end + terms.appeal_window`                                                                                                                                                                                                                                |
 | `Final`                   | (gate)          | [`claim_appeal_refund`](instructions.md)                                      | `appeal_bond.amount > 0`; flips only                                                                                                                                                                                                                                    |
 
-Round window timeline (set at `draw`):
+Round window timeline (set at `draw`; ADR-0038 re-anchors `reveal_end`
+**shrink-only** at the last state change — panel-full `commit` pulls it to
+`now + reveal_window`, early `finalize_round` pins it to the resolution
+instant — so the appeal window opens at resolution, not at the scheduled
+reveal close; the timeout path never extends it):
 
 ```
 draw_time ──review_window──► review_end
             ──commit_window──► commit_end
             ──reveal_window──► reveal_end ──terms.appeal_window──► appeal_deadline
+                                ▲ re-anchored (shrink-only) at panel-full commit
+                                  / early resolve (ADR-0038)
 ```
 
 Panel ladder (closed form `(J+1)·2^k − 1`, capped at `MAX_JURORS`):

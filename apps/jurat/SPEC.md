@@ -47,6 +47,7 @@ vote — a fake Schelling signal is worse than silence.
 | Local state store (duties, votes, join book) | `src/state/stores.ts` + `src/join/book.ts` | Landed |
 | Daemon runtime (scan loop + duty state machine) | `src/runtime.ts` | Landed (bean `accord-vruh`) |
 | Entry point / loop | `src/main.ts` | Landed (bean `accord-vruh`) |
+| Trace sink (ADR-0037 push leg) | `src/trace/sink.ts` + runtime emitters | Landed (beans `accord-9pdg` + `accord-w4j7`) |
 
 ## In scope (v1)
 
@@ -80,8 +81,10 @@ second hand-rolled implementation):
 - **Writes:** `stake` (join executor), `commit`, `reveal` (vote executor).
 - **Reads:** `Subaccord` (join evaluation — `getProgramAccounts` scan),
   `Dispute` / `Round` (duty state, windows, `Round.jurors[]` membership),
-  `JurorStake` (own position, `fees_earned`), `Ruling` (post-settlement
-  observation).
+  `JurorStake` (own position — the scan's own-stake PDA read powers
+  already-joined recognition; plus `fees_earned`), SAS `Attestation`
+  (credential-gated pools — `findSasAttestation` memcmp scan, ADR-0024),
+  `Ruling` (post-settlement observation).
 - Program logs subscription for hint events; accounts are authoritative.
 
 ## Duty flow
@@ -128,6 +131,21 @@ config):
 | Commit window | `commit_window` ≥ configured floor (agent runtime budget) |
 | Budget | pool `min_stake` (the join amount) not over the per-Subaccord cap; per-token global stake budget not exceeded; reserve floor retained (never stake below configured remaining balance) |
 
+Two executor-level rules sit beside the gates (both chain-read, so not in the
+pure evaluator):
+
+- **Attestation gate (ADR-0024):** a credential-gated Subaccord
+  (`juror_credential`/`juror_schema` set) is joined only with the juror's
+  matching SAS attestation, resolved per join and passed to `stake`; no
+  matching attestation ⇒ reject `AttestationGated` — no join. Binding/expiry
+  validity is the on-chain gate's call.
+- **Already joined:** every scan reads the juror's own `JurorStake` per pool;
+  a live stake (`staked > 0`) is never re-offered to the join gates — the
+  scan reports it as a held stake and the local join book heals from it, so
+  budget accounting counts real on-chain exposure (wiped state dir, manual
+  stake, second instance). A drained slot (`staked == 0`) stays joinable —
+  re-staking regains draw weight.
+
 ## Agent runner
 
 `runVerdict(inputs) → Verdict` — the seam a container backend can replace
@@ -135,14 +153,37 @@ config):
 
 - **Stack:** `ai` + `@ai-sdk/openai-compatible` (`createOpenAICompatible({
   baseURL, apiKey })`), `tool()` + Zod for the read-only toolset, agent loop
-  via `generateText({ tools, stopWhen: stepCountIs(n) })`.
+  via `generateText({ tools, stopWhen: stepCountIs(n) })` with
+  `Output.object` structured verdicts.
+- **Forced investigation (two-phase runner):** phase 1 runs the tool loop
+  with `toolChoice: "required"` on step 0 and **no** output spec — on
+  endpoints like z.ai, `response_format` on the wire overrides
+  `tool_choice` (the model answers immediately, SDK
+  `ToolChoiceViolationError`). Phase 2 re-asks with `Output.object` over
+  the full investigation transcript (tools absent, so nothing competes
+  with `response_format`). A model that still answers without tools, or a
+  run with zero tool calls, is a `MalformedVerdictError` → clean abstain,
+  never a vote. Phase-1 text is never trusted as the verdict.
+- **Trace tap (ADR-0037):** optional `AgentContext.trace` emits `agent-start`
+  before the investigation call and one redacted `step` event per phase-1
+  model step — builtin tool args verbatim (the closed set in `BUILTIN_TOOL_NAMES`), MCP args digest-only, tool
+  results always sha256-digest-only over canonical JSON (sorted keys, no
+  whitespace); no evidence content or intermediate model text is ever
+  traced. The phase-2 extraction re-ask emits no step events (it runs
+  tool-less; its outcome is the `verdict` event).
 - **Tools (read-only, fixed):** read chain (dispute/round/subaccord), fetch
-  evidence files, read domain doc. No shell, no keys, no arbitrary IO.
-- **Output:** structured `Verdict` — `{ option: number, rationale: string,
-  confidence: number }` (Zod-checked); the vote tx is built from the schema
-  by daemon code.
+  evidence files, read domain doc, `read_case` (Inveigo: boss Item +
+  claim-hash-verified thesis, resolved via `Item.current_dispute` — see
+  `src/chain/inveigo.ts`). No shell, no keys, no arbitrary IO. Tool outputs
+  are deep-converted to JSON-wire-safe data first (BigInt → decimal
+  string) — decoded accounts would otherwise crash the follow-up request
+  serialization.
+- **Output:** structured `Verdict` — `{ optionIndex: number, rationale:
+  string, confidence: number }` (Zod-checked, bounded to `num_options`);
+  the vote tx is built from the schema by daemon code.
 - **Retry ladder:** primary endpoint → fallback endpoint → clean abstain
-  (+ Telegram alert). Never a default vote.
+  (+ Telegram alert). Never a default vote. Malformed/uninvestigated
+  verdicts short-circuit the ladder (no re-roll).
 
 ## Notify channel
 
@@ -167,6 +208,8 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_TELEGRAM_TOKEN` / `JURAT_TELEGRAM_CHAT_ID` | Notify channel (both or none; unset = stdout) | optional |
 | `JURAT_EVIDENCE_URL` | Evidence daemon base URL (both or none; unset = duties hold, join watch still runs) | optional |
 | `JURAT_DELIVERY_KEY_PATH` | X25519 Delivery Key file (ADR-0034), created on first run | optional (pair) |
+| `JURAT_TRACE_URL` | ADR-0037 trace push — evidence-daemon base URL (unset = no-op sink) | optional |
+| `JURAT_TRACE_MODE` | `sealed` (verdict withheld until `unsealAt`) / `open` (demo, release at push); requires `JURAT_TRACE_URL` | `sealed` |
 | `JURAT_LLM_BASE_URL` / `JURAT_LLM_FALLBACK_BASE_URL` | openai-compatible endpoints | required / optional |
 | `JURAT_LLM_API_KEY` / `JURAT_LLM_MODEL` | Provider credentials / model id | required |
 | `JURAT_STAKING_TOKENS` | Comma-separated collateral mints | required |
@@ -179,6 +222,9 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_SUBACCORD_CAP` | Per-Subaccord stake cap | required |
 | `JURAT_RESERVE_FLOOR` | Never stake below this remaining balance | required |
 | `JURAT_MIN_SOL_LAMPORTS` | SOL floor for tx fees (join executor guard) | `50000000` |
+| `JURAT_LOG_LEVEL` / `LOG_LEVEL` | Logging level (winston); `debug` traces verdict resolution — prompts, ⚒ tool calls, model response | `info` |
+| `JURAT_LOGFIRE` | `1`/`true` exports OTel spans (every AI SDK call + winston logs) to Pydantic Logfire (`xeroc/inveigo`, eu) via `@pydantic/logfire-node`; token from `LOGFIRE_TOKEN` or `.logfire/logfire_credentials.json` | `false` |
+| `JURAT_LOGFIRE_SERVICE` | Logfire `service.name` | `jurat` |
 
 Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 `accord-vruh`); `.env.example` is the copy-paste surface.
@@ -191,6 +237,7 @@ Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
 | Verdict fails schema check | Treated as agent failure → retry ladder → abstain |
 | Evidence fetch fails | Duty holds until intake succeeds or commit window closes → abstain + alert |
 | Telegram send fails | Logged via `onError`; pipeline continues (never-reject contract) |
+| Trace push fails / endpoint dead | Batch dropped (warn log, visible seq gaps); duty pipeline unaffected (ADR-0037) |
 | Missed events (restart) | Reconcile scan reconstructs duties from accounts; in-flight commit salts are unrecoverable (accepted) |
 | Key balance below reserve floor | Join evaluator stops staking; alert |
 
@@ -201,8 +248,10 @@ Names/defaults are implemented in `src/config.ts` (bean `accord-jxpn` +
   client), config parsing, join evaluator gate table, agent runner against
   the rig (deterministic responses, retry-ladder paths), vote executor
   salt/commit/reveal building.
-- **e2e (Surfpool, dryRun OFF):** `tests/src/jurat.spec.ts` — the full duty
-  loop green (auto-join → dispute → VRF draw → mock-LLM verdict → commit →
+- **e2e (Surfpool, dryRun OFF):** `tests/src/jurat.spec.ts` — the staged duty
+  loop (auto-join → dispute → VRF draw → mock-LLM verdict → commit →
   reveal; `Round.reveals` + the verdict notice asserted) plus the failing-LLM
-  twin (ladder exhausted → abstain + alert, no vote) (the milestone's
-  non-negotiable).
+  twin (ladder exhausted → abstain + alert, no vote) and the **armed-loop**
+  test: the real `runDaemon` booted against Surfpool with `dryRun=false`,
+  whose own scan discovers the drawn duty, commits, and reveals — no stage
+  hand-driven.

@@ -130,7 +130,9 @@ current and prior rounds, then refunds the filer. **Cranker automates this** on
 timeout; the CLI is the manual fallback.
 
 ```bash
-# Auto-derives the Round / JurorStake / AppealBond PDAs to release
+# Auto-derives the remainingAccounts layout (SDK
+# deriveCancelDisputeRemainingAccounts — current Round + panel, prior
+# rounds + panels, then AppealBonds; EMPTY for a never-drawn stall)
 useaccord dispute:cancel --dispute RokL…HEef --remaining-accounts auto
 # → { signature, refund: 300000 }
 
@@ -139,8 +141,14 @@ useaccord dispute:cancel --dispute RokL…HEef \
   --remaining-accounts RoundPDA,Stake1,Stake2,Stake3,Bond0
 ```
 
-`Final`/`Closed`/`Failed` are terminal and revert (`InvalidState`).
-SDK: `cancelDispute` (settlement.ts:89).
+`Final`/`Closed`/`Failed` are terminal and revert (`InvalidState`). The
+handler enforces STRICT accounting over the list: `[current Round + panel,
+prior rounds 0..currentRound-1 + panels, AppealBond seeds
+0..currentRound-1]`, and an EMPTY list when no seat was ever drawn — any
+other shape reverts with `InvalidPanelSize`/`InvalidMembershipProof`.
+AppealBond PDA seeds are the round BEING appealed (0-based); the bond's
+`round_idx` field is the round the appeal opened (seed + 1).
+SDK: `cancelDispute` + `deriveCancelDisputeRemainingAccounts` (settlement.ts).
 
 > **C-1 fix (Critical):** the refund is exactly `dispute.fee_paid` (the
 > per-dispute fee pool) — **not** the shared `fee_vault` balance. The

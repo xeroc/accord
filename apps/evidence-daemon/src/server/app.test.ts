@@ -54,6 +54,7 @@ function makeDeps(overrides: Partial<ServerDeps> = {}): ServerDeps {
       error: "no delivery key registered",
     }),
     manifest: async () => ({ ok: true, status: 200, body: { v: 1, ct: "Y3Q=" } }),
+    traceIngest: async () => ({ ok: true, status: 201 }),
     domainPut: async () => ({ ok: true, status: 201 }),
     domainSubPut: async () => ({ ok: true, status: 201 }),
     domainGet: async () => ({

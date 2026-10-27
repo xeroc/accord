@@ -46,6 +46,47 @@ auto-acquisition by design.
 - The agent never touches keys, shell, or arbitrary IO; votes are built by
   daemon code from a schema-checked verdict.
 
+## LLM observability (local debug)
+
+`JURAT_DEVTOOLS=1` registers
+[AI SDK DevTools](https://ai-sdk.dev/docs/ai-sdk-core/devtools): every
+`generateText` step — system/user prompts, ⚒ tool calls and results, the raw
+model response — is captured to `.devtools/generations.json` under the working
+directory. Inspect captures in the viewer UI:
+
+```sh
+npx ai-tools@latest dev   # serves the UI, watches the capture file
+JURAT_DEVTOOLS=1 pnpm start
+```
+
+Debug-level logs (`JURAT_LOG_LEVEL=debug`) cover the same steps inline; the
+devtools capture additionally keeps the full message history per round-trip.
+
+## Arming (live voting)
+
+The daemon ships **disarmed**: `JURAT_DRY_RUN=true` (default) computes and
+reports verdicts but never sends a vote-shaped transaction. To arm it:
+
+```sh
+JURAT_DRY_RUN=false
+```
+
+Arming only produces votes when the rest of the pipeline is live:
+
+- **Evidence intake** — `JURAT_EVIDENCE_URL` + `JURAT_DELIVERY_KEY_PATH` must
+  both be set; without them duties hold forever (verdicts need the decrypted
+  bundle + domain doc).
+- **LLM** — `JURAT_LLM_BASE_URL` / `JURAT_LLM_API_KEY` / `JURAT_LLM_MODEL`
+  (plus the optional fallback triple).
+- **Stake + SOL** — the operator key must hold allowlisted staking tokens and
+  SOL; the join executor stakes the pool minimum per accepted Subaccord.
+
+A dry-run verdict held before arming is **re-committed with the same salt and
+vote** on the next scan after `JURAT_DRY_RUN=false` — flipping the gate does
+not re-roll the verdict. The armed loop (scan → verdict → commit → reveal,
+daemon-driven) is proven by `tests/src/jurat.spec.ts` against Surfpool with
+`dryRun` off.
+
 ## Further reading
 
 - `apps/jurat/SPEC.md` — build specification

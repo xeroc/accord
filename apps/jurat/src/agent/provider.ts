@@ -60,6 +60,11 @@ export function createProviderModel(endpoint: ProviderEndpoint): LanguageModel {
     name: endpoint.name,
     baseURL: endpoint.baseURL,
     apiKey: endpoint.apiKey,
+    // Send the verdict schema on the wire (response_format: json_schema,
+    // strict). Without this the provider downgrades to schema-less
+    // json_object mode — the model never sees the verdict shape and every
+    // run risks a client-side NoObjectGeneratedError → abstain.
+    supportsStructuredOutputs: true,
   });
   return provider.chatModel(endpoint.modelId);
 }

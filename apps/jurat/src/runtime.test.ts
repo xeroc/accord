@@ -18,15 +18,22 @@ import {
   type Subaccord,
 } from "@useaccord/sdk";
 
-import { handleScan, runDuty, joinPolicyFromConfig, joinBudgetFromConfig } from "./runtime";
+import {
+  handleScan,
+  runDaemon,
+  runDuty,
+  joinPolicyFromConfig,
+  joinBudgetFromConfig,
+} from "./runtime";
 import type { RuntimeDeps, RuntimeChain } from "./runtime";
 import { RetryLadderExhaustedError } from "./agent/provider";
 import { MalformedVerdictError, type AgentContext } from "./agent/runner";
 import { EvidenceUnavailableError } from "./duty/evidence";
 import type { DutyRecord, DutyStore } from "./duty/types";
-import type { DutySignal, JoinCandidate, ReconcileResult } from "./chain/reconcile";
 import type { JoinOutcome as ExecOutcome } from "./join/executor";
+import { loadBook } from "./join/book.js";
 import type { Config } from "./config";
+import { makeTraceSink, type TraceEvent, type TraceSink } from "./trace/sink";
 
 const JUROR = address("Jura111111111111111111111111111111111111111");
 const OTHER = address("1".repeat(31) + "2") as Address;
@@ -114,6 +121,7 @@ type RuntimeOverrides = Partial<Omit<RuntimeDeps, "chain">> & {
 };
 
 function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: Recording } {
+  const { chain: chainOverride, ...rest } = overrides;
   const rec: Recording = {
     logs: [],
     alerts: [],
@@ -127,7 +135,8 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
     fetchDisputes: async () => [],
     fetchRound: async () => null,
     fetchDispute: async () => null,
-    ...overrides.chain,
+    fetchJurorStake: async () => null,
+    ...chainOverride,
   };
   const deps: RuntimeDeps = {
     juror: JUROR,
@@ -153,7 +162,7 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
     votes: memVoteStore(),
     channel: recordingChannel(rec),
     verdict: async () => ({ optionIndex: 1, rationale: "clear", confidence: 0.9 }),
-    assembleContext: async () => ({}) as AgentContext,
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
     voting: {
       client: {
         encodeAddress: () => new Uint8Array(32).fill(7),
@@ -177,7 +186,7 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
     },
     now: async () => 1_500,
     log: (m) => void rec.logs.push(m),
-    ...overrides,
+    ...rest,
   };
   return { deps, rec };
 }
@@ -244,8 +253,12 @@ test("joinPolicyFromConfig: unset range maxima are unbounded", () => {
 
 // --- handleScan: joins ----------------------------------------------------------
 
-function scanResult(candidates: JoinCandidate[], duties: DutySignal[] = []): ReconcileResult {
-  return { joinCandidates: candidates, duties };
+function scanResult(
+  candidates: JoinCandidate[],
+  duties: DutySignal[] = [],
+  heldStakes: ReconcileResult["heldStakes"] = [],
+): ReconcileResult {
+  return { joinCandidates: candidates, duties, heldStakes };
 }
 
 function candidate(sub: Subaccord, addr: Address = SUB): JoinCandidate {
@@ -297,6 +310,21 @@ test("executor throw is caught and logged, never kills the scan", async () => {
   });
   await handleScan(deps, scanResult([candidate(subFixture())]));
   expect(rec.logs.some((l) => l.includes("AccumulatorRootMismatch"))).toBe(true);
+});
+
+test("heldStakes heal the book: no join attempt, budget counts the on-chain stake", async () => {
+  const { deps, rec } = makeDeps();
+  // Full budget 100_000 already staked on-chain in MINT → the fresh candidate
+  // (minStake 1) must blow the global budget once the book heals.
+  const held = { subaccord: SUB, stakingToken: MINT, staked: 100_000n };
+  const fresh = candidate(subFixture(), address("1".repeat(31) + "5") as Address);
+  await handleScan(deps, scanResult([fresh], [], [held]));
+  expect(rec.joins).toEqual([]); // executor never runs for held or budget-rejected pools
+  expect(rec.logs.some((l) => l.includes("OverGlobalBudget"))).toBe(true);
+  const book = await loadBook(dir);
+  expect(book.entries).toEqual([
+    { ...held, signature: "reconciled", joinedAt: expect.any(String) },
+  ]);
 });
 
 // --- runDuty: state machine -----------------------------------------------------
@@ -539,4 +567,187 @@ test("abstained/revealed duties are skipped entirely", async () => {
     expect(rec.sends).toHaveLength(0);
     expect(rec.logs.some((l) => l.includes("skip") && l.includes(status))).toBe(true);
   }
+});
+
+test("runDaemon: stop() awaits the in-flight scan before resolving", async () => {
+  const { promise: held, resolve: release } = Promise.withResolvers<void>();
+  const { promise: secondScanEntered, resolve: markSecond } = Promise.withResolvers<void>();
+  let scans = 0;
+  const { deps } = makeDeps({
+    chain: {
+      fetchSubaccords: async () => {
+        scans += 1;
+        if (scans === 2) {
+          markSecond();
+          await held;
+        }
+        return [];
+      },
+    },
+  });
+  const daemon = await runDaemon(deps, { intervalMs: 10_000 });
+  try {
+    daemon.kick();
+    await secondScanEntered; // scan #2 is inside the gate, blocked on `held`
+    const stopped = daemon.stop();
+    let settledEarly = false;
+    void stopped.then(() => (settledEarly = true));
+    // Drain the microtask queue: a stop() that ignores the in-flight scan
+    // resolves within a few ticks; the correct one is parked on `held`.
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    expect(settledEarly).toBe(false);
+    release();
+    await stopped;
+  } finally {
+    release();
+    await daemon.stop();
+  }
+});
+
+// --- trace emitters (bean accord-w4j7, ADR-0037) -----------------------------
+
+function captureSink(events: TraceEvent[]): TraceSink {
+  return { emit: (event) => void events.push(event), drain: async () => {} };
+}
+
+test("trace: full duty emits duty-open → evidence → agent events → verdict → commit", async () => {
+  const events: TraceEvent[] = [];
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () => captureSink(events),
+    assembleContext: async () => ({
+      context: {} as AgentContext,
+      files: [{ path: "round-0", sha256: "ab".repeat(32), bytes: 11 }],
+    }),
+    verdict: async (ctx) => {
+      // the real runner emits agent-start + steps through ctx.trace — mimic it
+      ctx.trace?.({ kind: "agent-start", model: "mock-model", maxSteps: 8 });
+      ctx.trace?.({
+        kind: "step",
+        n: 1,
+        toolCalls: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      });
+      return { optionIndex: 1, rationale: "clear", confidence: 0.9 };
+    },
+  });
+  await runDuty(deps, dutySignal());
+  expect(events.map((e) => e.kind)).toEqual([
+    "duty-open",
+    "evidence",
+    "agent-start",
+    "step",
+    "verdict",
+    "commit",
+  ]);
+  // chain windows are seconds; the trace wire is unix ms
+  expect(events[0]).toEqual({
+    kind: "duty-open",
+    round: 0,
+    seat: 0,
+    reviewEnd: 1_000_000,
+    commitEnd: 2_000_000,
+    revealEnd: 3_000_000,
+  });
+  expect(events[1]).toEqual({
+    kind: "evidence",
+    files: [{ path: "round-0", sha256: "ab".repeat(32), bytes: 11 }],
+  });
+  expect(events[4]).toEqual({
+    kind: "verdict",
+    optionIndex: 1,
+    rationale: "clear",
+    confidence: 0.9,
+    unsealAt: 3_000_000, // round.revealEnd × 1000
+  });
+  expect(events[5]).toEqual({ kind: "commit", tx: "sig", dryRun: false });
+
+  // tracking is idempotent — a re-scan never re-emits duty-open
+  await runDuty(deps, dutySignal());
+  expect(events.filter((e) => e.kind === "duty-open")).toHaveLength(1);
+});
+
+test("trace: DRY_RUN commit carries dryRun:true and no tx", async () => {
+  const events: TraceEvent[] = [];
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    dryRun: true,
+    trace: () => captureSink(events),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(events.at(-1)).toEqual({ kind: "commit", dryRun: true });
+});
+
+test("trace: abstain path emits abstain{failure, reason}", async () => {
+  const events: TraceEvent[] = [];
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () => captureSink(events),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+    verdict: async () => {
+      throw new RetryLadderExhaustedError(["m#1: down"], new Error("down"));
+    },
+  });
+  await runDuty(deps, dutySignal());
+  const last = events.at(-1);
+  expect(last?.kind).toBe("abstain");
+  if (last?.kind === "abstain") {
+    expect(last.failure).toBe("retry-ladder-exhausted");
+    expect(last.reason).toContain("down");
+  }
+});
+
+test("trace: reveal phase emits reveal{tx}", async () => {
+  const events: TraceEvent[] = [];
+  const duty: DutyRecord = {
+    dispute: DISPUTE,
+    roundIdx: 0,
+    status: "committed",
+    updatedAt: 1,
+    seat: 0,
+    drawAttempt: 0,
+    reviewEnd: 1_000,
+    commitEnd: 2_000,
+    revealEnd: 3_000,
+  };
+  const vote: VoteRecord = {
+    dispute: DISPUTE,
+    roundIdx: 0,
+    salt: "ab".repeat(32),
+    vote: "1",
+    commitment: "cd".repeat(32),
+    committed: true,
+    dryRun: false,
+    updatedAt: 1,
+  };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Reveal)),
+    store: memDutyStore(duty),
+    votes: memVoteStore(vote),
+    now: async () => 2_500,
+    trace: () => captureSink(events),
+  });
+  await runDuty(deps, dutySignal(DisputeState.Reveal));
+  expect(events.at(-1)).toEqual({ kind: "reveal", tx: "sig" });
+});
+
+test("trace: dead trace endpoint never fails the duty", async () => {
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () =>
+      makeTraceSink({
+        url: "http://127.0.0.1:1",
+        mode: "sealed",
+        juror: JUROR,
+        subaccord: SUB,
+        dispute: DISPUTE,
+        seed: Uint8Array.from({ length: 32 }, (_, i) => i + 1),
+      }),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  const record = await deps.store.load(DISPUTE as string, 0);
+  expect(record?.status).toBe("committed");
+  expect(rec.verdicts).toHaveLength(1);
 });

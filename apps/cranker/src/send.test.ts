@@ -7,7 +7,7 @@
  */
 import { test, expect } from "bun:test";
 
-import { extractLogs } from "./send.js";
+import { extractLogs, formatError, programLogReason, SimulationError } from "./send.js";
 
 /** Build a plain Error shaped like a kit SolanaError (without importing it). */
 function solanaError(context: Record<string, unknown>, cause?: unknown): Error {
@@ -69,4 +69,44 @@ test("terminates on circular cause chains", () => {
   const b: { cause?: unknown } = { cause: a };
   a.cause = b; // a -> b -> a ...
   expect(extractLogs(a)).toBeUndefined();
+});
+
+test("programLogReason: Anchor error code + message from the trace", () => {
+  const reason = programLogReason([
+    "Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed invoke [1]",
+    "Program log: Instruction: DrawSeat",
+    "Program log: AnchorError occurred. Error Code: SeatAlreadyFilled. Error Number: 6014. Error Message: This seat is already drawn.",
+    "Program failed to complete: custom program error: 0x179e",
+    "Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed failed: custom program error: 0x179e",
+  ]);
+  expect(reason).toBe("SeatAlreadyFilled: This seat is already drawn.");
+});
+
+test("programLogReason: bare code line without message", () => {
+  expect(programLogReason(["Program log: Error Code: InvalidRound"])).toBe("InvalidRound");
+});
+
+test("programLogReason: no Anchor line → custom program error hex", () => {
+  expect(programLogReason(["Program failed to complete: custom program error: 0x3"])).toBe(
+    "custom program error 0x3",
+  );
+});
+
+test("programLogReason: clean trace → undefined", () => {
+  expect(programLogReason(["Program log: Instruction: DrawSeat"])).toBeUndefined();
+  expect(programLogReason([])).toBeUndefined();
+});
+
+test("programLogReason: panic line wins over earlier codes", () => {
+  expect(
+    programLogReason([
+      "Program log: Error Code: SeatAlreadyFilled",
+      "Program log: panicked at 'attempt to subtract with overflow', src/draw.rs:42",
+    ]),
+  ).toBe("panicked at 'attempt to subtract with overflow', src/draw.rs:42");
+});
+
+test("formatError: Error → `Name: message`, non-Error stringified", () => {
+  expect(formatError(new SimulationError("boom", []))).toBe("SimulationError: boom");
+  expect(formatError("nope")).toBe("nope");
 });

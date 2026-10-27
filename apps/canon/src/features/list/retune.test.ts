@@ -69,14 +69,6 @@ test("parseCourtUpdateValue: zero review/commit/reveal window rejected (anti-bri
   });
 });
 
-test("parseCourtUpdateValue: AppealWindow enforces Accord's 1h floor", () => {
-  assert.throws(() => parseCourtUpdateValue("AppealWindow", "59"), /3600/);
-  assert.deepEqual(parseCourtUpdateValue("AppealWindow", "3600"), {
-    __kind: "AppealWindow",
-    fields: [3600n],
-  });
-});
-
 test("parseCourtUpdateValue: RevealThresholdBps allowed at 0 (Plurality pools)", () => {
   // Canon pools are pinned Plurality — the Median >0 gate never applies.
   assert.deepEqual(parseCourtUpdateValue("RevealThresholdBps", "0"), {

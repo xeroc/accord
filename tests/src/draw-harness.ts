@@ -156,6 +156,29 @@ export async function warpTo(env: TestEnv, targetSec: bigint): Promise<void> {
   if (delta > 0n) await warpForwardSeconds(env, delta);
 }
 
+/**
+ * Warp until reveal is OPEN for this round (ADR-0038-safe). The on-chain gate
+ * is `(now >= commit_end || all committed) && now < reveal_end`, and a
+ * panel-full commit re-anchors `reveal_end` to `last_commit + reveal_window`,
+ * which can sit before `commit_end + 1`. Reads the round FRESH (a pre-commit
+ * read still holds the scheduled deadline) and lands at
+ * `min(commit_end, reveal_end − panel − 3)`: on the scheduled clock that is
+ * `commit_end`; on a re-anchored clock it reserves one second per reveal tx
+ * (Surfpool advances the clock ~1s per confirmed tx) below `reveal_end`. The
+ * re-anchored branch always coincides with a fully-committed panel, so the
+ * `all committed` arm satisfies the lower gate.
+ */
+export async function warpToRevealWindow(env: TestEnv, roundPda: Address): Promise<void> {
+  const round = await readRound(env, roundPda);
+  if (!round) throw new Error(`round not found: ${roundPda}`);
+  const panel = BigInt(round.jurorCount);
+  const target =
+    round.commitEnd < round.revealEnd - panel - 2n
+      ? round.commitEnd
+      : round.revealEnd - panel - 3n;
+  await warpTo(env, target);
+}
+
 // ---------------------------------------------------------------------------
 // Fixture types
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@
  *   GET  /evidence/:subaccord/:dispute[/:round]   → manifest handler (public, round default 0)
  *   PUT  /jurors/:juror/delivery-key              → Delivery Key registration (ADR-0034)
  *   GET  /jurors/:juror/delivery-key              → registered Delivery Key (ADR-0034)
+ *   POST /trace/:subaccord/:dispute/:juror        → trace ingest handler (ADR-0037)
  */
 import { Hono } from "hono";
 import type { ServerDeps } from "./handlers.js";
@@ -19,6 +20,10 @@ export const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** Non-negative integer (evidence round index, ADR-0023). */
 const ROUND = /^(0|[1-9][0-9]*)$/;
+
+/** Trace push body cap in bytes (ADR-0037 §3: 64 events / 256 KiB → 413). */
+const MAX_TRACE_BATCH_BYTES = 256 * 1024;
+
 /** Party slot 0–6 (Synod MAX_PARTIES − 1; roster floor is 2). */
 const SLOT = /^[0-6]$/;
 
@@ -26,7 +31,7 @@ function badAddress(name: string): Response {
   return Response.json({ error: `invalid ${name}` }, { status: 400 });
 }
 
-export function evidenceRoutes(deps: ServerDeps): Hono {
+export function evidenceRoutes(deps: ServerDeps, traceEnabled = false): Hono {
   const app = new Hono();
 
   // Synod pre-dispute grouping (accord-1viq): pushed per party BEFORE any
@@ -220,6 +225,38 @@ export function evidenceRoutes(deps: ServerDeps): Hono {
     if (!ADDRESS.test(juror)) return badAddress("juror");
     const res = await deps.deliveryKeyGet(juror);
     if (res.ok) return Response.json(res.body, { status: 200 });
+    return Response.json({ error: res.error }, { status: res.status });
+  });
+
+  // Trace ingest (ADR-0037): juror pushes a signed agent-trace batch. The
+  // route owns transport shape — address guards + the 256 KiB body cap
+  // (measured on the raw body bytes, so no Content-Length trust); envelope
+  // shape, the 64-event cap and the durable append live in the trace ingest
+  // handler (pipeline/trace.ts). Default-off: TRACE_ENABLED=false ⇒ 404
+  // before any validation or store touch.
+  app.post("/trace/:subaccord/:dispute/:juror", async (c) => {
+    if (!traceEnabled) return Response.json({ error: "trace ingest disabled" }, { status: 404 });
+    const subaccord = c.req.param("subaccord");
+    const dispute = c.req.param("dispute");
+    const juror = c.req.param("juror");
+    if (!ADDRESS.test(subaccord)) return badAddress("subaccord");
+    if (!ADDRESS.test(dispute)) return badAddress("dispute");
+    if (!ADDRESS.test(juror)) return badAddress("juror");
+    const text = await c.req.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_TRACE_BATCH_BYTES) {
+      return Response.json({ error: "trace batch too large" }, { status: 413 });
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return Response.json({ error: "invalid json body" }, { status: 400 });
+    }
+    if (body === null || typeof body !== "object") {
+      return Response.json({ error: "invalid json body" }, { status: 400 });
+    }
+    const res = await deps.traceIngest(subaccord, dispute, juror, body);
+    if (res.ok) return c.body(null, res.status);
     return Response.json({ error: res.error }, { status: res.status });
   });
 

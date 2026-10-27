@@ -14,7 +14,14 @@
  *   - settle_round:  programs/accord/src/lib.rs (1291)
  *   - cancel_dispute: programs/accord/src/lib.rs (1539)
  */
-import type { Address, Instruction } from "@solana/kit";
+import type { Account, Address, GetAccountInfoApi, Instruction, Rpc } from "@solana/kit";
+import { fetchRoundMaybe } from "../fetch.js";
+import {
+  findAppealBondPda,
+  findJurorStakePda,
+  findRoundPda,
+} from "../pda.js";
+import type { Round } from "../generated/accounts/round.js";
 
 /** Accounts for `settle_round`. */
 export interface SettleRoundAccounts {
@@ -98,8 +105,9 @@ export function settleRound(
 
 /**
  * Build the permissionless `cancel_dispute` crank (lib.rs:1539). Refunds the
- * filer's fee when a round times out without a ruling. `remainingAccounts`
- * carries the Round + JurorStake + AppealBond PDAs the handler closes/refunds.
+ * filer's fee when a round times out without a ruling. Derive
+ * `remainingAccounts` with {@link deriveCancelDisputeRemainingAccounts} — the
+ * handler's strict accounting rejects any other layout.
  */
 export function cancelDispute(
   client: AccordSettlementClient,
@@ -112,6 +120,71 @@ export function cancelDispute(
     accounts,
     remainingAccounts,
   });
+}
+
+/** Sentinel in `Round.jurors` for an unfilled seat (the SystemProgram id). */
+const SYSTEM_PROGRAM_ID = "11111111111111111111111111111111" as Address;
+
+/**
+ * Derive `cancel_dispute`'s `remainingAccounts`, mirroring the on-chain
+ * strict accounting (programs/accord/src/instructions/cancel_dispute.rs):
+ *
+ * 1. the current Round PDA + its panel's JurorStake PDAs — ONLY while
+ *    `drawnSeats > 0`: `draw_seat` creates the Round, so a never-drawn
+ *    dispute (dead VRF oracle — the classic pre-draw stall) has no account
+ *    and the handler requires an EMPTY list.
+ * 2. every prior Round (`0..currentRound`) + its panel, ascending —
+ *    `release_prior_rounds`.
+ * 3. one AppealBond PDA per appeal (`0..currentRound`) —
+ *    `credit_bond_bounty_units`. Bond PDA seeds are the round BEING appealed
+ *    (0-based appeal index); the bond's `roundIdx` FIELD records the round
+ *    the appeal OPENED (seed + 1) — do not confuse them.
+ *
+ * A juror drawn into several rounds appears once per round — the handler
+ * counts occurrences, not addresses. (bean accord-br6a: the cranker, CLI,
+ * and reconciler each drifted from this layout independently; it lives here
+ * as the single source.)
+ */
+export async function deriveCancelDisputeRemainingAccounts(
+  rpc: Rpc<GetAccountInfoApi>,
+  programId: Address,
+  dispute: Address,
+  subaccord: Address,
+  currentRound: number,
+  drawnSeats: number,
+): Promise<Address[]> {
+  const out: Address[] = [];
+  const pushRound = async (roundIdx: number): Promise<void> => {
+    const [roundAddress] = await findRoundPda(
+      { dispute, roundIdx },
+      { programAddress: programId },
+    );
+    out.push(roundAddress);
+    const account = await fetchRoundMaybe(rpc, roundAddress);
+    if (!account.exists) {
+      throw new Error(
+        `RoundNotFound: ${roundAddress} (dispute ${dispute}, round ${roundIdx})`,
+      );
+    }
+    for (const juror of (account as Account<Round>).data.jurors) {
+      if (juror === SYSTEM_PROGRAM_ID) continue; // unfilled seat sentinel
+      const [stakeAddress] = await findJurorStakePda(
+        { subaccord, juror },
+        { programAddress: programId },
+      );
+      out.push(stakeAddress);
+    }
+  };
+  if (drawnSeats > 0) await pushRound(currentRound);
+  for (let r = 0; r < currentRound; r++) await pushRound(r);
+  for (let r = 0; r < currentRound; r++) {
+    const [bondAddress] = await findAppealBondPda(
+      { dispute, roundIdx: r },
+      { programAddress: programId },
+    );
+    out.push(bondAddress);
+  }
+  return out;
 }
 
 /**

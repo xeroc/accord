@@ -42,6 +42,8 @@ import {
   type BundleDecryptor,
 } from "./pipeline/synod-manifest";
 import { getDomain, putDomain, putSubdocument } from "./pipeline/domain";
+import { ingestTrace } from "./pipeline/trace";
+import type { TraceStore } from "./store/trace";
 import {
   base64ToBytes,
   bytesToBase64,
@@ -124,6 +126,8 @@ export interface WireDeps {
   readonly deliveryKeyStore: DeliveryKeyStore;
   /** Public domain-doc CAS (ADR-0027) — same backend selection as `store`. */
   readonly domainStore: DomainStore;
+  /** Durable jury-trace corpus (ADR-0037) — same backend selection as `store`. */
+  readonly traceStore: TraceStore;
   /** PUT /domains/{hash} body cap in bytes (default 1 MiB, config.ts). */
   readonly maxDomainBytes: number;
   /** v2 max manifest entries per round (config.ts, default 64). */
@@ -235,6 +239,16 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
       // Only the first `jurorCount` entries are live; the rest are zero-pubkey padding.
       return { jurors: r.jurors.slice(0, r.jurorCount).map((j) => b58ToBytes(j)) };
     },
+  };
+
+  const traceIngest: ServerDeps["traceIngest"] = async (subaccord, dispute, juror, body) => {
+    const out = await ingestTrace(subaccord, dispute, juror, body, {
+      store: deps.traceStore,
+      chain: deliverChain, // same live-Round reader as delivery (ADR-0037 §0)
+    });
+    return out.status === 200 || out.status === 201
+      ? { ok: true, status: out.status }
+      : { ok: false, status: out.status, error: out.reason };
   };
 
   // --- keyring adapter: EnvKeyring (Ed25519Keypair) → deliver secret seed ---
@@ -730,6 +744,7 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     deliveryKeyPut: deliveryKeyPutHandler,
     deliveryKeyGet: deliveryKeyGetHandler,
     manifest: manifestHandler,
+    traceIngest,
     publicKeys: deps.publicKeys,
     health: deps.health,
   };

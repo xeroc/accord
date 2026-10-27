@@ -53,6 +53,15 @@ test("dutyPhase: fully-committed panel reveals early (reveal.rs all_committed)",
   assert.equal(dutyPhase(w, 3_000, true), "final"); // upper bound unchanged
 });
 
+test("dutyPhase: ADR-0038 re-anchored revealEnd governs final (no cached scheduled end)", () => {
+  // Panel-full commit at t=1_001 re-anchored reveal_end to 1_001 + reveal
+  // window (1_000) = 2_001 — far before the scheduled 3_000. The tracker
+  // reads the live field, so reveal/final follow the re-anchored deadline.
+  const w = { reviewEnd: 1_000, commitEnd: 2_000, revealEnd: 2_001 };
+  assert.equal(dutyPhase(w, 1_500, true), "reveal"); // inside re-anchored window
+  assert.equal(dutyPhase(w, 2_000, true), "reveal"); // last valid second
+  assert.equal(dutyPhase(w, 2_001, true), "final"); // closed at re-anchored end
+});
 test("roundWindows normalizes decoded bigint ends to unix seconds", () => {
   const w = roundWindows(round());
   assert.deepEqual(w, { reviewEnd: 1_000, commitEnd: 2_000, revealEnd: 3_000 });

@@ -9,12 +9,13 @@
  * refund_roster_miss / claim).
  */
 import { test, expect } from "bun:test";
-import { address, type Account } from "@solana/kit";
+import { address, type Account, type Address } from "@solana/kit";
 import { ItemState, type CanonItem, type CanonList } from "@useaccord/canon";
 import { CaseState, type SynodCase } from "@useaccord/synod";
 import {
   Accord,
   Aggregation,
+  type AppealBond,
   DisputeState,
   NO_RULING,
   NO_VOTE,
@@ -24,6 +25,7 @@ import {
 } from "@useaccord/sdk";
 
 import { createCrankDispatch, type CrankAction, type CrankContext } from "./dispatch.js";
+import { SimulationError } from "./send.js";
 import { reconcileOnce, type ReconcilerConfig } from "./reconciler.js";
 import type { CrankerWallet } from "./wallet.js";
 
@@ -158,6 +160,49 @@ test("Created dispute without VRF → request_vrf dispatched + logged", async ()
   expect(fired).toBe(1);
   expect(calls).toEqual([{ kind: "request_vrf", dispute: D_ADDR }]);
   expect(logs.some((l) => l.includes("crank action") && l.includes("request_vrf"))).toBe(true);
+});
+
+test("A failing crank is isolated + logged with its subaccord; the cycle continues", async () => {
+  const D2_ADDR = address("Dispute111111111111111111111111111111111112");
+  const SUB = address("Subacrd111111111111111111111111111111111111");
+  let thrown = false;
+  const { d, calls } = recordingDispatch({
+    request_vrf: async () => {
+      if (!thrown) {
+        thrown = true;
+        throw new SimulationError(
+          "crank tx failed on-chain (attempt 1): SeatAlreadyFilled: This seat is already drawn.",
+          [],
+        );
+      }
+    },
+  });
+  const logs: string[] = [];
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [
+        {
+          address: D_ADDR,
+          data: dispute({ state: DisputeState.Created, subaccord: SUB }),
+        } as unknown as Account<Dispute>,
+        {
+          address: D2_ADDR,
+          data: dispute({ state: DisputeState.Created }),
+        } as unknown as Account<Dispute>,
+      ],
+      fetchRound: async () => null,
+      log: (msg, fields = {}) => logs.push(JSON.stringify({ msg, ...fields })),
+    }),
+  );
+  // Both actions reached a handler; only the second counted as fired.
+  expect(calls.length).toBe(2);
+  expect(fired).toBe(1);
+  const failure = logs.find((l) => l.includes("crank action failed"));
+  expect(failure).toBeDefined();
+  expect(failure).toContain(SUB.toString());
+  expect(failure).toContain("SeatAlreadyFilled");
+  expect(failure).toContain(D_ADDR.toString());
 });
 
 test("Closed disputes are skipped; Failed with no appeals is a no-op", async () => {
@@ -561,4 +606,29 @@ test("synod: unregistered synod kind → logged + skipped, fired stays 0", async
   );
   expect(fired).toBe(0);
   expect(calls).toEqual([]);
+});
+
+test("Failed with an outstanding appeal bond at seed 0 → claim_refund roundIdx 0", async () => {
+  // Bond PDA seeds are the round BEING appealed (0-based) — 0..currentRound-1.
+  // The sweep used to probe 1..currentRound, so the FIRST appellant's bond
+  // (seed 0) was never swept (bean accord-br6a).
+  const { d, calls } = recordingDispatch({ claim_refund: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [
+        {
+          address: D_ADDR,
+          data: dispute({ state: DisputeState.Failed, currentRound: 1 }),
+        } as unknown as Account<Dispute>,
+      ],
+      fetchRound: async () => null,
+      fetchAppealBond: async (_dispute: Address, roundIdx: number) =>
+        roundIdx === 0
+          ? ({ address: R_ADDR, data: { amount: 100n } } as unknown as Account<AppealBond>)
+          : null,
+    }),
+  );
+  expect(fired).toBe(1);
+  expect(calls).toEqual([{ kind: "claim_refund", dispute: D_ADDR, roundIdx: 0 }]);
 });

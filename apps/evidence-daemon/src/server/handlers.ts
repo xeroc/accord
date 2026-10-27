@@ -12,6 +12,7 @@
  */
 
 import type { DomainPreimageProof } from "../pipeline/domain.js";
+import type { Sealable } from "../pipeline/seal.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
 
 /** 32-byte SHA-256 digest, hex- or base58-style opaque to the server. */
@@ -245,6 +246,50 @@ export type DeliveryKeyGetResult =
 
 export type DeliveryKeyGetHandler = (juror: string) => Promise<DeliveryKeyGetResult>;
 
+/**
+ * One durable trace envelope (ADR-0037 v1) as the replay read path sees it.
+ * `event` is the redacted agent-trace event — opaque pass-through JSON except
+ * `unsealAt`, which is load-bearing for the daemon (seal-on-read).
+ */
+export interface TraceEnvelope {
+  readonly v: number;
+  /** Unix ms. */
+  readonly at: number;
+  /** Per-juror monotonic sequence. */
+  readonly seq: number;
+  readonly juror: string;
+  readonly dispute: string;
+  readonly event: Sealable;
+}
+
+/**
+ * GET /trace/{dispute}?fromSeq= (ADR-0037). → 200 seal-filtered envelopes
+ * ordered by (juror, seq); 500 when the store read fails. Absent seam ⇒ the
+ * route answers 404 (trace feature not wired).
+ */
+export type TraceReplayResult =
+  | { readonly ok: true; readonly status: 200; readonly body: TraceEnvelope[] }
+  | { readonly ok: false; readonly status: 500; readonly error: string };
+
+export type TraceReplayHandler = (dispute: string, fromSeq?: number) => Promise<TraceReplayResult>;
+
+/**
+ * POST /trace/{subaccord}/{dispute}/{juror} (ADR-0037): authenticate the push
+ * (canonical-batch Ed25519 sig + live Round.jurors[] gate), then append it
+ * to the durable trace corpus. Transport shape (address guards, body cap) is
+ * the route's; envelope shape + events cap + auth + append live here.
+ */
+export type TraceIngestResult =
+  | { readonly ok: true; readonly status: 200 | 201 }
+  | { readonly ok: false; readonly status: 400 | 403 | 413; readonly error: string };
+
+export type TraceIngestHandler = (
+  subaccord: string,
+  dispute: string,
+  juror: string,
+  body: unknown,
+) => Promise<TraceIngestResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
@@ -258,6 +303,7 @@ export interface ServerDeps {
   readonly synodIngest: SynodIngestHandler;
   readonly manifest: ManifestHandler;
   readonly synodManifest: SynodManifestHandler;
+  readonly traceIngest: TraceIngestHandler;
   readonly health: HealthProbe;
 
   /**
@@ -266,4 +312,11 @@ export interface ServerDeps {
    * Built once at boot by `buildKeyringPublicKeys`.
    */
   readonly publicKeys: KeyringPublicKeys;
+
+  /**
+   * Trace replay handler (ADR-0037) — GET /trace/{dispute}. Optional: absent
+   * ⇒ the route 404s (trace feature not wired). Wired to the TraceStore read
+   * side by {@link ./trace.ts}.
+   */
+  readonly traceReplay?: TraceReplayHandler;
 }

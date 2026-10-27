@@ -35,6 +35,7 @@ import {
   submitDraw,
   toAddress,
   warpTo,
+  warpToRevealWindow,
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
@@ -111,9 +112,9 @@ describe("e2e: scalar voting — Median aggregation + coherence band (requires S
       await env.sendIx(instruction);
     }
 
-    // --- reveal all (window opens at commit_end) ---
-    round = await readRound(env, roundPda);
-    await warpTo(env, round!.commitEnd);
+    // --- reveal all (ADR-0038: panel-full commit may have re-anchored
+    // revealEnd before commitEnd + 1 — fresh, window-respecting warp) ---
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < drawnJurors.length; i++) {
       await env.sendIx(
         reveal(

@@ -114,6 +114,7 @@ function makeApp(opts: MakeAppOpts = {}) {
       error: "no delivery key registered",
     }),
     manifest: async () => ({ ok: true, status: 200, body: {} }),
+    traceIngest: async () => ({ ok: true, status: 201 }),
     health: async () => ({ ok: true }),
     publicKeys: STUB_PUBLIC_KEYS,
     // Same outcome→result mapping wire.ts applies (pipeline ⇒ handler shape).

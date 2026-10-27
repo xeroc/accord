@@ -50,8 +50,10 @@ impl<'info> Reveal<'info> {
         let round = &mut ctx.accounts.round.load_mut()?;
         let now = Clock::get()?.unix_timestamp;
         // Reveal opens at `commit_end`, OR as soon as the panel is fully
-        // committed (early reveal — see `commit`). Only the lower bound is
-        // relaxed; the `reveal_end` upper bound is unchanged.
+        // committed (early reveal — see `commit`, which also re-anchors
+        // `reveal_end` to `now + reveal_window` on that panel-full commit,
+        // ADR-0038). The lower bound is relaxed; the upper bound is the
+        // (possibly re-anchored, always shrink-only) `reveal_end`.
         let all_committed = round.commit_count == round.juror_count;
         require!(
             now >= round.commit_end || all_committed,

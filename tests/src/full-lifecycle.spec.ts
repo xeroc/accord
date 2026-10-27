@@ -29,6 +29,7 @@ import {
   submitDraw,
   toAddress,
   warpTo,
+  warpToRevealWindow,
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
@@ -106,9 +107,9 @@ describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
       await env.sendIx(instruction);
     }
 
-    // --- reveal all (window opens at commit_end) ---
-    round = await readRound(env, roundPda);
-    await warpTo(env, round!.commitEnd);
+    // --- reveal all (ADR-0038: panel-full commit may have re-anchored
+    // revealEnd before commitEnd + 1 — use the fresh, window-respecting warp) ---
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < drawnJurors.length; i++) {
       const instruction = reveal(
         drawnJurors[i]!.accord.adapter,

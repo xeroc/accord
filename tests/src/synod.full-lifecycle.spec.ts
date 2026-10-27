@@ -38,6 +38,7 @@ import {
   submitDraw,
   toAddress,
   warpTo,
+  warpToRevealWindow,
   type DrawFixture,
   type JurorCtx,
 } from "./draw-harness.js";
@@ -121,7 +122,8 @@ describe("e2e: synod full lifecycle (requires Surfpool)", () => {
     }
 
     round = await readRound(env, roundPda);
-    await warpTo(env, round!.commitEnd);
+    // ADR-0038: panel-full commit may have re-anchored revealEnd — fresh warp.
+    await warpToRevealWindow(env, roundPda);
     for (let i = 0; i < drawnJurors.length; i++) {
       const instruction = reveal(
         drawnJurors[i]!.accord.adapter,

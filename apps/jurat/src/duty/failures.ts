@@ -22,6 +22,7 @@ import {
   type DutyStore,
   type FailureKind,
 } from "./types.js";
+import type { TraceSink } from "../trace/sink.js";
 
 /**
  * Mark a duty abstained with the failure reason and fire one alert.
@@ -34,7 +35,13 @@ import {
  * - Re-abstain → newest failure wins, alert fires again.
  */
 export async function abstain(
-  deps: { store: DutyStore; notify(message: string): Promise<void>; now(): number },
+  deps: {
+    store: DutyStore;
+    notify(message: string): Promise<void>;
+    now(): number;
+    /** ADR-0037 — one abstain trace event per abstention, before the alert. */
+    trace?: TraceSink;
+  },
   ref: DutyRef,
   kind: FailureKind,
   reason: string,
@@ -56,6 +63,7 @@ export async function abstain(
       };
   await deps.store.save(record);
 
+  deps.trace?.emit({ kind: "abstain", failure: kind, reason });
   await deps.notify(`[jurat] abstained ${ref.dispute} round ${ref.roundIdx}: ${kind} — ${reason}`);
   return record;
 }

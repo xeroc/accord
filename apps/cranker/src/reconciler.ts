@@ -56,7 +56,7 @@ import { resolveSynodAction } from "./synod-state.js";
 import type { CrankAction, CrankContext, CrankDispatch, CrankKind } from "./dispatch.js";
 import type { CrankAction as ResolveAction } from "./state.js";
 import { log } from "./log.js";
-import { sendIx } from "./send.js";
+import { formatError, sendIx } from "./send.js";
 import { resolveNextAction } from "./state.js";
 import type { CrankerWallet } from "./wallet.js";
 
@@ -78,6 +78,9 @@ export interface ReconcilerConfig {
   fetchDisputes?: () => Promise<Account<Dispute>[]>;
   /** Override the round fetch (tests). Defaults to the SDK round PDA read. */
   fetchRound?: (dispute: Address, roundIdx: number) => Promise<Account<Round> | null>;
+  /** Override the appeal-bond fetch (tests). Bond seed `roundIdx` is the
+   *  round BEING appealed (0-based). Defaults to the SDK AppealBond PDA read. */
+  fetchAppealBond?: (dispute: Address, roundIdx: number) => Promise<Account<AppealBond> | null>;
   /** Override the Canon item scan (tests). Defaults to `findAllCanonItems(rpc)`. */
   fetchCanonItems?: () => Promise<Account<CanonItem>[]>;
   /** Override the Canon list scan (tests). Defaults to `findAllCanonLists(rpc)`. */
@@ -132,6 +135,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     now = defaultNow,
     fetchDisputes = () => findAllDisputes(accord.rpc),
     fetchRound = (dispute, roundIdx) => fetchRoundAccount(accord.rpc, dispute, roundIdx),
+    fetchAppealBond = (dispute, roundIdx) => fetchAppealBondAccount(accord.rpc, dispute, roundIdx),
     fetchPendingUpdates = () => findAllPendingUpdates(accord.rpc),
     slot = async () => BigInt((await accord.rpc.getSlot().send()).valueOf()),
     fetchAccordState = async () => fetchAccordStateAccount(accord.rpc),
@@ -147,16 +151,54 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
   const rpc = accord.rpc;
   const programId = Accord.PROGRAM_ID;
   const t = now();
-  const send = (instruction: Instruction): Promise<string> =>
-    sendIx(instruction, {
+  /**
+   * Context whose EVERY log line — crank lines and tx send/confirm/failure
+   * lines — is tagged with the accounts the action belongs to: at minimum the
+   * subaccord it deals with (Accord dispute cranks resolve it off the Dispute;
+   * update/reclaim/synod carry it directly), plus the acting account itself.
+   */
+  const ctxFor = (tags: Record<string, unknown>): CrankContext => {
+    const taggedLog = (msg: string, fields?: Record<string, unknown>): void =>
+      log(msg, { ...fields, ...tags });
+    return {
+      accord,
+      programId,
+      cranker: wallet.address,
+      oracleQueue,
+      programIdentity,
+      sendIx: (instruction: Instruction): Promise<string> =>
+        sendIx(instruction, {
+          rpc,
+          rpcSubscriptions: config.rpcSubscriptions,
+          feePayer: wallet.signer,
+          log: taggedLog,
+        }),
+      signer: wallet.signer,
+      log: (kind: CrankKind, subject: Address | null, detail: string): void =>
+        taggedLog(`crank ${kind}`, { subject, detail }),
       rpc,
       rpcSubscriptions: config.rpcSubscriptions,
-      feePayer: wallet.signer,
-      log,
-    });
-  /** Adapt the reconciler's `(msg, fields)` logger to the cranks' per-kind sink. */
-  const ctxLog = (kind: CrankKind, subject: Address | null, detail: string): void =>
-    log(`crank ${kind}`, { subject, detail });
+      canonProgramId,
+    };
+  };
+  /**
+   * Execute one action, isolated: a failure is logged with its tags and
+   * skipped — one stuck account must not starve the rest of the cycle (the
+   * next cycle retries it). This is the skip semantics send.ts documents for
+   * simulation errors, extended to unexpected throws.
+   */
+  const runAction = async (
+    ctx: CrankContext,
+    action: CrankAction,
+    tags: Record<string, unknown>,
+  ): Promise<boolean> => {
+    try {
+      return await dispatch.execute(ctx, action);
+    } catch (e: unknown) {
+      log("crank action failed", { ...tags, action: action.kind, error: formatError(e) });
+      return false;
+    }
+  };
 
   let fired = 0;
   const disputes = await fetchDisputes();
@@ -185,18 +227,17 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     }
     // 3) No lifecycle action and Final/Failed with appeals? Sweep appeal bonds
     //    for an outstanding refund (one round per cycle; idempotent on-chain).
+    //    Bond PDA seeds are the round BEING appealed (0-based:
+    //    0..currentRound-1) — the sweep used to probe 1..currentRound, so the
+    //    FIRST appellant's bond (seed 0) was never swept (bean accord-br6a).
     if (
       action === null &&
       dispute.data.currentRound > 0 &&
       (dispute.data.state === DisputeState.Final || dispute.data.state === DisputeState.Failed)
     ) {
-      for (let r = 1; r <= dispute.data.currentRound; r++) {
-        const [bondAddr] = await findAppealBondPda({
-          dispute: dispute.address,
-          roundIdx: r,
-        });
-        const bond = await fetchMaybeAppealBond(rpc, bondAddr);
-        if (bond.exists && (bond as Account<AppealBond>).data.amount > 0n) {
+      for (let r = 0; r < dispute.data.currentRound; r++) {
+        const bond = await fetchAppealBond(dispute.address, r);
+        if (bond !== null && bond.data.amount > 0n) {
           action = { kind: "claim_refund", dispute: dispute.address, roundIdx: r };
           break;
         }
@@ -204,50 +245,22 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     }
     if (action === null) continue;
 
-    const ctx: CrankContext = {
-      accord,
-      programId,
-      cranker: wallet.address,
-      oracleQueue,
-      programIdentity,
-      sendIx: send,
-      signer: wallet.signer,
-      log: ctxLog,
-      dispute,
-      round,
-      rpc,
-      rpcSubscriptions: config.rpcSubscriptions,
-      canonProgramId,
-    };
-    const handled = await dispatch.execute(ctx, action);
-    log("crank action", {
-      dispute: dispute.address,
-      action: action.kind,
-      handled,
-    });
+    const tags = { dispute: dispute.address, subaccord: dispute.data.subaccord };
+    const ctx: CrankContext = { ...ctxFor(tags), dispute, round };
+    const handled = await runAction(ctx, action, tags);
+    log("crank action", { ...tags, action: action.kind, handled });
     if (handled) fired++;
   }
 
   // --- Phase 2: PendingUpdate timelock crank (execute_subaccord_update) ---
-  const baseCtx: CrankContext = {
-    accord,
-    programId,
-    cranker: wallet.address,
-    oracleQueue,
-    programIdentity,
-    signer: wallet.signer,
-    sendIx: send,
-    log: ctxLog,
-    rpc,
-    rpcSubscriptions: config.rpcSubscriptions,
-    canonProgramId,
-  };
   const updates = await fetchPendingUpdates();
   const currentSlot = await slot();
   for (const pending of updates) {
     if (canExecuteAt(pending.data.executeAfterSlot, currentSlot)) {
       const action: CrankAction = { kind: "execute_update", subaccord: pending.data.subaccord };
-      const handled = await dispatch.execute(baseCtx, action);
+      const handled = await runAction(ctxFor({ subaccord: pending.data.subaccord }), action, {
+        subaccord: pending.data.subaccord,
+      });
       if (handled) fired++;
     }
   }
@@ -261,7 +274,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     canExecuteAt(pendingUnpauseAfter.value, currentSlot)
   ) {
     const action: CrankAction = { kind: "execute_unpause" };
-    const handled = await dispatch.execute(baseCtx, action);
+    const handled = await runAction(ctxFor({}), action, {});
     if (handled) fired++;
   }
 
@@ -275,7 +288,9 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       subaccord: slotInfo.subaccord,
       jurorStake: slotInfo.jurorStake,
     };
-    const handled = await dispatch.execute(baseCtx, action);
+    const handled = await runAction(ctxFor({ subaccord: slotInfo.subaccord }), action, {
+      subaccord: slotInfo.subaccord,
+    });
     if (handled) fired++;
   }
 
@@ -299,7 +314,9 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       const resolved = resolveCanonAction(item.data, list.data, disputeFinal, t);
       if (resolved === null) continue;
       const action: CrankAction = { kind: resolved.kind, item: item.address };
-      const handled = await dispatch.execute(baseCtx, action);
+      const handled = await runAction(ctxFor({ item: item.address }), action, {
+        item: item.address,
+      });
       log("crank action", { item: item.address, action: action.kind, handled });
       if (handled) fired++;
     }
@@ -315,7 +332,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     const removed = await fetchRemovedCanonItems();
     for (const item of removed) {
       const action: CrankAction = { kind: "canon_close_item", item };
-      const handled = await dispatch.execute(baseCtx, action);
+      const handled = await runAction(ctxFor({ item }), action, { item });
       log("crank action", { item, action: action.kind, handled });
       if (handled) fired++;
     }
@@ -336,8 +353,9 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
       resolved.kind === "synod_file_dispute"
         ? { kind: resolved.kind, case: c.address }
         : { kind: resolved.kind, case: c.address, partyIndex: resolved.partyIndex };
-    const handled = await dispatch.execute(baseCtx, action);
-    log("crank action", { case: c.address, action: action.kind, handled });
+    const tags = { case: c.address, subaccord: c.data.subaccord };
+    const handled = await runAction(ctxFor(tags), action, tags);
+    log("crank action", { ...tags, action: action.kind, handled });
     if (handled) fired++;
   }
 
@@ -355,7 +373,7 @@ export function startReconciler(config: ReconcilerConfig): ReconcilerHandle {
     try {
       await reconcileOnce(config);
     } catch (e: unknown) {
-      (config.log ?? defaultLog)("reconcile cycle failed", { error: errorDigest(e) });
+      (config.log ?? defaultLog)("reconcile cycle failed", { error: formatError(e) });
     }
   };
   void loop();
@@ -375,6 +393,17 @@ async function fetchRoundAccount(
 ): Promise<Account<Round> | null> {
   const [pda] = await findRoundPda({ dispute, roundIdx });
   const maybe = await fetchMaybeRound(rpc, pda);
+  if (maybe.exists) return maybe;
+  return null;
+}
+
+async function fetchAppealBondAccount(
+  rpc: Rpc<SolanaRpcApi>,
+  dispute: Address,
+  roundIdx: number,
+): Promise<Account<AppealBond> | null> {
+  const [pda] = await findAppealBondPda({ dispute, roundIdx });
+  const maybe = await fetchMaybeAppealBond(rpc, pda);
   if (maybe.exists) return maybe;
   return null;
 }
@@ -444,8 +473,3 @@ function defaultNow(): bigint {
 
 // The shared stamped sink (src/log.ts) — same shape the old local copy had.
 const defaultLog = log;
-
-function errorDigest(e: unknown): string {
-  if (e instanceof Error) return `${e.name}: ${e.message}`;
-  return String(e);
-}

@@ -80,7 +80,14 @@ export type Round = {
   reviewEnd: bigint;
   /** Reveal opens at this timestamp (= review_end + commit_window). */
   commitEnd: bigint;
-  /** Round can be finalized after this timestamp (= commit_end + reveal_window). */
+  /**
+   * Round can be finalized after this timestamp (= commit_end +
+   * reveal_window at draw). ADR-0038: re-anchored shrink-only at the last
+   * state change — panel-full `commit` pulls it to `now + reveal_window`,
+   * early `finalize_round` pins it to the resolution instant. Every
+   * deadline consumer (appeal, finalize_dispute, cancel_dispute) derives
+   * from it, so re-anchoring moves the appeal window + finality with it.
+   */
   revealEnd: bigint;
   /**
    * The tallied round result; `u64::MAX` = not set. `Plurality`: winning
@@ -140,7 +147,14 @@ export type RoundArgs = {
   reviewEnd: number | bigint;
   /** Reveal opens at this timestamp (= review_end + commit_window). */
   commitEnd: number | bigint;
-  /** Round can be finalized after this timestamp (= commit_end + reveal_window). */
+  /**
+   * Round can be finalized after this timestamp (= commit_end +
+   * reveal_window at draw). ADR-0038: re-anchored shrink-only at the last
+   * state change — panel-full `commit` pulls it to `now + reveal_window`,
+   * early `finalize_round` pins it to the resolution instant. Every
+   * deadline consumer (appeal, finalize_dispute, cancel_dispute) derives
+   * from it, so re-anchoring moves the appeal window + finality with it.
+   */
   revealEnd: number | bigint;
   /**
    * The tallied round result; `u64::MAX` = not set. `Plurality`: winning
