@@ -42,8 +42,9 @@ import { findEntry, loadBook, saveBook, totalStaked, upsertEntry } from "./join/
 import { trackRound, dutyPhase, roundWindows } from "./duty/tracker";
 import { abstain } from "./duty/failures";
 import type { DutyStore } from "./duty/types";
-import type { DutyIntakeInput } from "./duty/evidence";
+import type { DutyIntake, DutyIntakeInput } from "./duty/evidence";
 import { EvidenceUnavailableError, MalformedBundleError } from "./duty/evidence";
+import type { TraceSink } from "./trace/sink";
 import { RetryLadderExhaustedError } from "./agent/provider";
 import { MalformedVerdictError, type AgentContext, type Verdict } from "./agent/runner";
 import type { NotifyChannel } from "./notify/channel";
@@ -75,8 +76,13 @@ export interface RuntimeDeps {
   /** The agent seam — ladder runner in main, stub in tests. */
   verdict(ctx: AgentContext): Promise<Verdict>;
   /** Evidence intake; undefined = not configured (duties hold, boot warned). */
-  assembleContext?(input: DutyIntakeInput): Promise<AgentContext>;
-  /** Commit/reveal instruction client + sender. */
+  assembleContext?(input: DutyIntakeInput): Promise<DutyIntake>;
+  /**
+   * ADR-0037 trace — binds the memoized per-duty sink (see
+   * makeTraceSinkBinder); undefined = tracing off. Emit failures never
+   * propagate: the sink owns the never-throw contract.
+   */
+  readonly trace?: (subaccord: string, dispute: string) => TraceSink;
   readonly voting: {
     client: AccordVotingClient;
     programId: Address;
@@ -209,8 +215,9 @@ export async function runDuty(deps: RuntimeDeps, signal: DutySignal): Promise<vo
   const round = await deps.chain.fetchRound(signal.dispute, signal.roundIdx);
   if (!round) return; // round not created yet — next scan picks it up
 
+  const trace = deps.trace?.(signal.subaccord, signal.dispute);
   const record = await trackRound(
-    { store: deps.store, ourKey: deps.juror, now: () => now },
+    { store: deps.store, ourKey: deps.juror, now: () => now, trace },
     {
       dispute: signal.dispute,
       roundIdx: signal.roundIdx,
@@ -236,6 +243,7 @@ export async function runDuty(deps: RuntimeDeps, signal: DutySignal): Promise<vo
     store: deps.store,
     notify: deps.channel.alert,
     now: () => now,
+    trace,
   };
 
   if (record.status === "open") {
@@ -263,13 +271,13 @@ export async function runDuty(deps: RuntimeDeps, signal: DutySignal): Promise<vo
       );
       return;
     }
-    await runVerdictPipeline(deps, signal, round, priorVote, now);
+    await runVerdictPipeline(deps, signal, round, priorVote, now, trace);
     return;
   }
 
   // status === "committed"
   if (phase === "reveal") {
-    await tryReveal(deps, signal, round, now, allCommitted);
+    await tryReveal(deps, signal, round, now, allCommitted, trace);
     return;
   }
   if (phase === "final") {
@@ -289,6 +297,7 @@ async function runVerdictPipeline(
   round: Round,
   held: { vote: string } | undefined,
   now: number,
+  trace: TraceSink | undefined,
 ): Promise<void> {
   const log = deps.log ?? console.log;
   const dispute = await deps.chain.fetchDispute(signal.dispute);
@@ -304,9 +313,9 @@ async function runVerdictPipeline(
       log(`duty: evidence intake not configured — holding ${signal.dispute}:${signal.roundIdx}`);
       return;
     }
-    let ctx: AgentContext;
+    let intake: DutyIntake;
     try {
-      ctx = await deps.assembleContext({
+      intake = await deps.assembleContext({
         dispute: signal.dispute,
         subaccord: signal.subaccord,
         juror: deps.juror,
@@ -319,13 +328,18 @@ async function runVerdictPipeline(
       }
       throw e;
     }
+    trace?.emit({ kind: "evidence", files: intake.files });
+    // The runner's step tap (ADR-0037) rides AgentContext.trace.
+    const ctx: AgentContext = trace
+      ? { ...intake.context, trace: (event) => trace.emit(event) }
+      : intake.context;
     try {
       verdict = await deps.verdict(ctx);
       vote = BigInt(verdict.optionIndex);
     } catch (e) {
       if (e instanceof RetryLadderExhaustedError) {
         await abstain(
-          { store: deps.store, notify: deps.channel.alert, now: () => now },
+          { store: deps.store, notify: deps.channel.alert, now: () => now, trace },
           signal,
           "retry-ladder-exhausted",
           e.message,
@@ -334,7 +348,7 @@ async function runVerdictPipeline(
       }
       if (e instanceof MalformedVerdictError) {
         await abstain(
-          { store: deps.store, notify: deps.channel.alert, now: () => now },
+          { store: deps.store, notify: deps.channel.alert, now: () => now, trace },
           signal,
           "malformed-verdict",
           e.message,
@@ -343,6 +357,15 @@ async function runVerdictPipeline(
       }
       throw e; // transport-shaped: retry next scan
     }
+    // Sealed verdict frame — unsealAt = round.revealEnd (chain seconds → ms;
+    // open mode strips it sink-side).
+    trace?.emit({
+      kind: "verdict",
+      optionIndex: verdict.optionIndex,
+      rationale: verdict.rationale,
+      confidence: verdict.confidence,
+      unsealAt: Number(round.revealEnd) * 1_000,
+    });
   }
 
   const [roundPda] = await findRoundPda({
@@ -392,7 +415,7 @@ async function runVerdictPipeline(
   } else {
     log(`duty: dry-run commit held for ${signal.dispute}:${signal.roundIdx} vote ${vote}`);
   }
-  // Verdict notice fires for every settled verdict, DRY_RUN-independent.
+  trace?.emit({ kind: "commit", tx: result.signature, dryRun: result.dryRun });
   await deps.channel.verdict({
     dispute: signal.dispute,
     option: Number(vote),
@@ -408,6 +431,7 @@ async function tryReveal(
   round: Round,
   now: number,
   allCommitted: boolean,
+  trace: TraceSink | undefined,
 ): Promise<void> {
   const log = deps.log ?? console.log;
   const [roundPda] = await findRoundPda({
@@ -439,17 +463,18 @@ async function tryReveal(
       },
       deps.dryRun,
     );
-    if (result.sent) {
+    if (result.sent && result.signature !== undefined) {
+      trace?.emit({ kind: "reveal", tx: result.signature });
       const record = await deps.store.load(signal.dispute, signal.roundIdx);
       await deps.store.save({ ...record!, status: "revealed", updatedAt: now });
       log(`duty: revealed ${signal.dispute}:${signal.roundIdx}`);
-    } else if (!result.alreadyRevealed) {
+    } else if (!result.sent && !result.alreadyRevealed) {
       log(`duty: dry-run reveal held for ${signal.dispute}:${signal.roundIdx}`);
     }
   } catch (e) {
     if (e instanceof SaltLostError) {
       await abstain(
-        { store: deps.store, notify: deps.channel.alert, now: () => now },
+        { store: deps.store, notify: deps.channel.alert, now: () => now, trace },
         signal,
         "salt-lost",
         e.message,

@@ -121,20 +121,29 @@ export function loadOperatorKeyBytes(path: string): Uint8Array {
 }
 
 /**
+ * The 32-byte Ed25519 seed of a solana keypair file. Noble's `ed25519.sign`
+ * takes the SEED — the file is 64 bytes (`seed ‖ public`), so sign with the
+ * first half. Throws loudly on any other length (a wrong-size key must fail
+ * boot, not produce signatures against the wrong identity). Shared by the
+ * evidence-registration seam and the ADR-0037 trace sink.
+ */
+export function hotKeySeed(keypairBytes: Uint8Array): Uint8Array {
+  if (keypairBytes.length !== 64) {
+    throw new Error(`operator keypair must be 64 bytes (seed‖pub), got ${keypairBytes.length}`);
+  }
+  return keypairBytes.slice(0, 32);
+}
+
+/**
  * The evidence-registration `signMessage` seam over the operator keypair
  * (ADR-0034): the daemon verifies the signature against the operator's
- * Ed25519 PUBLIC key. Noble's `ed25519.sign` takes the 32-byte SEED — a
- * solana keypair file is 64 bytes (`seed ‖ public`), so sign with the first
- * half. Throws loudly on any other length (a wrong-size key must fail boot,
- * not produce signatures against the wrong identity).
+ * Ed25519 PUBLIC key.
  */
 export function operatorSignMessage(
   keypairBytes: Uint8Array,
 ): (message: Uint8Array) => Promise<Uint8Array> {
-  if (keypairBytes.length !== 64) {
-    throw new Error(`operator keypair must be 64 bytes (seed‖pub), got ${keypairBytes.length}`);
-  }
-  return (message) => Promise.resolve(ed25519.sign(message, keypairBytes.slice(0, 32)));
+  const seed = hotKeySeed(keypairBytes);
+  return (message) => Promise.resolve(ed25519.sign(message, seed));
 }
 
 /**

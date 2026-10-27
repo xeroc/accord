@@ -11,10 +11,19 @@ import http from "node:http";
 import { AddressInfo } from "node:net";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { tool } from "ai";
+import { z } from "zod";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { makeJuratTools } from "./tools.ts";
-import { MalformedVerdictError, makeAgentRunner, verdictSchema, type Verdict } from "./runner.ts";
+import { BUILTIN_TOOL_NAMES, makeJuratTools } from "./tools.ts";
 import { startMockLlm } from "./testing/mock-llm.ts";
+import {
+  MalformedVerdictError,
+  makeAgentRunner,
+  verdictSchema,
+  type RunnerTraceEvent,
+  type StepEvent,
+  type Verdict,
+} from "./runner.ts";
 
 const DISPUTE = "Disp111111111111111111111111111111111111111";
 const SUBACCORD = "Suba111111111111111111111111111111111111111";
@@ -333,5 +342,173 @@ test("verdictSchema pins the wire shape: optionIndex/rationale/confidence", () =
   assert.equal(
     verdictSchema.safeParse({ optionIndex: 0, rationale: "x", confidence: 1.5 }).success,
     false,
+  );
+});
+
+// ─── trace tap (bean accord-1nxb, ADR-0037) ────────────────────────────────
+//
+// The mock-llm rig drives N model steps; the tap must emit one agent-start
+// before the call and one step event per step, in order. Builtin-four tool
+// args pass through verbatim, every other tool's args are digest-only, and
+// tool results are ALWAYS digest-only — no evidence content, no model text.
+// The final script turn answers the two-phase runner's phase-2 extraction
+// re-ask (no tools, structured output) — it emits no step event.
+
+const TRACE_DEPS = {
+  readDispute: async () => ({ zFirst: 1, aSecond: 2, state: "Voting", filer: "F" }),
+  readSubaccord: async () => ({}),
+  fetchEvidenceFile: async (_d: string, name: string) => ({
+    name,
+    content: "SECRET-EVIDENCE-TEXT",
+  }),
+  readDomainDoc: async () => "# doc",
+  readCase: async () => null,
+};
+
+// sha256 over canonical JSON (sorted keys, no whitespace) — pinned oracles.
+const READ_DISPUTE_DIGEST = "3b9dd9867ae2b979827bba0d6b5c9356cf0cb09ad81806aba29b061861063152";
+const FETCH_EVIDENCE_DIGEST = "9c59d7297b831a4756797240e1db7eb8e3e74f5528d16a23ba67597d35068147";
+const MCP_ARGS_DIGEST = "b5cbde9d464709d16f26479db127a7619851327172dff0f0f5e10aeb48a193f1";
+const MCP_RESULT_DIGEST = "d191467341a0427ed5bb9d604cf7c9a558a1ccc94d56424158dd51fc60f2feff";
+
+function isStep(event: RunnerTraceEvent): event is StepEvent {
+  return event.kind === "step";
+}
+
+test("trace tap: agent-start then one step event per model step, in order", async () => {
+  const server = startMockLlm([
+    {
+      kind: "toolCalls",
+      toolCalls: [
+        { id: "call-1", name: "read_dispute", arguments: JSON.stringify({ dispute: DISPUTE }) },
+      ],
+    },
+    {
+      kind: "toolCalls",
+      toolCalls: [
+        {
+          id: "call-2",
+          name: "fetch_evidence_file",
+          arguments: JSON.stringify({ dispute: DISPUTE, file: "a.txt" }),
+        },
+      ],
+    },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) },
+  ]);
+  const events: RunnerTraceEvent[] = [];
+  try {
+    const provider = createOpenAICompatible({ name: "mock", baseURL: server.url });
+    const runner = makeAgentRunner(provider.chatModel("mock-model"));
+    const verdict = await runner.runVerdict(
+      context({
+        tools: makeJuratTools(TRACE_DEPS),
+        maxSteps: 5,
+        trace: (event: RunnerTraceEvent) => events.push(event),
+      }),
+    );
+    assert.deepEqual(verdict, GOOD_VERDICT); // the tap never disturbs the verdict
+
+    assert.equal(events.length, 4);
+    assert.deepEqual(events[0], { kind: "agent-start", model: "mock-model", maxSteps: 5 });
+
+    const steps = events.filter(isStep);
+    assert.deepEqual(
+      steps.map((s) => s.n),
+      [1, 2, 3],
+    ); // N steps → N events, in order
+
+    const rd = steps[0].toolCalls[0];
+    assert.equal(rd.name, "read_dispute");
+    assert.deepEqual(rd.args, { dispute: DISPUTE }); // builtin → raw args
+    assert.equal(rd.resultDigest, READ_DISPUTE_DIGEST);
+    assert.equal(rd.bytes, 53);
+    assert.equal(typeof rd.ms, "number");
+
+    const fe = steps[1].toolCalls[0];
+    assert.equal(fe.name, "fetch_evidence_file");
+    assert.deepEqual(fe.args, { dispute: DISPUTE, file: "a.txt" });
+    assert.equal(fe.resultDigest, FETCH_EVIDENCE_DIGEST);
+    assert.equal(fe.bytes, 49);
+
+    assert.deepEqual(steps[2].toolCalls, []); // text-only final step
+    for (const s of steps) assert.equal(typeof s.usage, "object");
+
+    // ADR-0037 redaction: no evidence content, no verdict rationale/model text.
+    const json = JSON.stringify(events);
+    assert.ok(!json.includes("SECRET-EVIDENCE-TEXT"));
+    assert.ok(!json.includes(GOOD_VERDICT.rationale));
+  } finally {
+    await server.stop();
+  }
+});
+
+test("trace tap: non-builtin (MCP) tool args are digest-only", async () => {
+  const server = startMockLlm([
+    {
+      kind: "toolCalls",
+      toolCalls: [
+        { id: "call-9", name: "mcp_lookup", arguments: JSON.stringify({ q: "secret-mcp-query" }) },
+      ],
+    },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) }, // phase-2 re-ask
+  ]);
+  const events: RunnerTraceEvent[] = [];
+  const tools = {
+    ...makeJuratTools(TRACE_DEPS),
+    mcp_lookup: tool({
+      description: "stand-in for an operator-configured MCP tool",
+      inputSchema: z.object({ q: z.string() }),
+      execute: async ({ q }) => ({ hit: q }),
+    }),
+  };
+  try {
+    const provider = createOpenAICompatible({ name: "mock", baseURL: server.url });
+    await makeAgentRunner(provider.chatModel("mock-model")).runVerdict(
+      context({ tools, trace: (event: RunnerTraceEvent) => events.push(event) }),
+    );
+    const tc = events.filter(isStep)[0].toolCalls[0];
+    assert.equal(tc.name, "mcp_lookup");
+    assert.ok(!("args" in tc), "MCP tool args must never appear in a trace");
+    assert.equal(tc.argsDigest, MCP_ARGS_DIGEST);
+    assert.equal(tc.resultDigest, MCP_RESULT_DIGEST);
+    assert.ok(!JSON.stringify(events).includes("secret-mcp-query"));
+  } finally {
+    await server.stop();
+  }
+});
+
+test("trace tap: digests are stable across runs", async () => {
+  const runOnce = async (): Promise<string> => {
+    const server = startMockLlm([
+      {
+        kind: "toolCalls",
+        toolCalls: [
+          { id: "c", name: "read_dispute", arguments: JSON.stringify({ dispute: DISPUTE }) },
+        ],
+      },
+      { kind: "text", text: JSON.stringify(GOOD_VERDICT) },
+      { kind: "text", text: JSON.stringify(GOOD_VERDICT) }, // phase-2 re-ask
+    ]);
+    const events: RunnerTraceEvent[] = [];
+    try {
+      const provider = createOpenAICompatible({ name: "mock", baseURL: server.url });
+      await makeAgentRunner(provider.chatModel("mock-model")).runVerdict(
+        context({ tools: makeJuratTools(TRACE_DEPS), trace: (event) => events.push(event) }),
+      );
+      return events.filter(isStep)[0].toolCalls[0].resultDigest;
+    } finally {
+      await server.stop();
+    }
+  };
+  assert.equal(await runOnce(), READ_DISPUTE_DIGEST);
+  assert.equal(await runOnce(), READ_DISPUTE_DIGEST);
+});
+
+test("trace tap: BUILTIN_TOOL_NAMES pins the closed builtin set (redaction gate)", () => {
+  assert.deepEqual(
+    Object.keys(BUILTIN_TOOL_NAMES).sort(),
+    Object.keys(makeJuratTools(TRACE_DEPS)).sort(),
   );
 });

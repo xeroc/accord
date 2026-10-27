@@ -1,10 +1,11 @@
 ---
 # accord-24t6
 title: Jury telemetry — trace push, WS watch, sealed verdicts, durable replay (ADR-0037)
-status: todo
+status: completed
 type: milestone
+priority: normal
 created_at: 2026-10-23T09:32:33Z
-updated_at: 2026-10-23T09:32:33Z
+updated_at: 2026-10-23T11:20:02Z
 ---
 
 Live jury telemetry (ADR-0037): jurat pushes signed agent-trace batches to the evidence daemon; websites subscribe per-dispute over WebSocket and watch the jury work in real time; every verified batch is durable on the store seam for replay. Off-chain only — no program change, no qedspec delta.

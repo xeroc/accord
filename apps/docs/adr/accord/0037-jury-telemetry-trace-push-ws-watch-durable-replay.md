@@ -53,7 +53,7 @@ delta.
   text.** Evidence plaintext is juror-bound by construction (ADR-0006/0034);
   routing it into a public watch feed would undo the entire delivery-crypto
   stack. Intermediate model text can quote evidence — same leak, softer
-  justification. → tool calls carry `{name, args (builtin four only),
+  justification. → tool calls carry `{name, args (builtin set only),
   resultDigest, bytes, ms}` + token usage; MCP tool args are digest-only
   (untrusted surface); rationale ships only inside the sealed envelope. "How" =
   the tool sequence; "why" = the post-unseal rationale.

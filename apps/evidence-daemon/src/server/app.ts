@@ -8,6 +8,7 @@ import { cors } from "hono/cors";
 import type { ServerDeps } from "./handlers.js";
 import { evidenceRoutes } from "./routes.js";
 import { domainRoutes } from "./domain.js";
+import { traceRoutes } from "./trace.js";
 
 export interface AppOptions {
   /** Per-peer-IP requests/min. 0 disables the limiter. Default: 0. */
@@ -32,6 +33,11 @@ export interface AppOptions {
    * `"*"` (allow any origin). Set to a specific origin to restrict.
    */
   readonly corsOrigin?: string;
+  /**
+   * Mount the trace ingest route (ADR-0037). False (default) ⇒ POST /trace
+   * 404s — maps TRACE_ENABLED.
+   */
+  readonly traceEnabled?: boolean;
 }
 
 interface RateBucket {
@@ -115,8 +121,10 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
     await next();
   });
 
-  app.route("/", evidenceRoutes(deps));
+  app.route("/", evidenceRoutes(deps, opts.traceEnabled ?? false));
   app.route("/", domainRoutes(deps));
+  // Trace replay (ADR-0037) — 404s until the trace seam is wired.
+  app.route("/", traceRoutes(deps));
 
   // /healthz — bean accord-u1pu implements the real S3+RPC probe; the server
   // boots with this stub so main() serves immediately.

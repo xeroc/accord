@@ -24,4 +24,5 @@ export * from "./options.js";
 export * from "./parse.js";
 export * from "./publish.js";
 export * from "./delivery-key.js";
+export * from "./trace.js";
 export * from "./fetch.js";
