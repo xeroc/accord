@@ -1,5 +1,17 @@
 # @useaccord/evidence-daemon
 
+## 0.7.0
+
+### Minor Changes
+
+- [#24](https://github.com/xeroc/accord/pull/24) [`d22f72d`](https://github.com/xeroc/accord/commit/d22f72d716875bb9d441f19f70b387f5790d4286) Thanks [@xeroc](https://github.com/xeroc)! - Domain CAS sub-documents: `PUT /domains/{ref}/{doc}?subaccord=<addr>` + `GET /domains/{ref}/{doc}`. Per-item public docs namespaced under an anchor Subaccord's `domain_ref` (e.g. an Arbitrable's per-thesis docs under its shared court — identity/proof mode pin one doc per domain_ref and cannot host per-item docs). Content-addressed (`sha256(body) == doc`, no proof mode), chain-anchored (`domain_ref == ref`, same create-first poll), dual-written to the bare `domains/{sha256(body)}` key so bare-hash fetch keeps working. Open namespace by design — abuse bounds: per-IP rate limit, per-doc cap, forever retention.
+
+### Patch Changes
+
+- Updated dependencies [[`71dafcb`](https://github.com/xeroc/accord/commit/71dafcb4f42fba11cb5629226baee99f3ea43fdd), [`1e4ad2e`](https://github.com/xeroc/accord/commit/1e4ad2ee4c7b08516392d84100bc9317c8728b79)]:
+  - @useaccord/sdk@0.7.0
+  - @useaccord/synod@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

@@ -1,0 +1,29 @@
+# @useaccord/jurat
+
+## 0.7.0
+
+### Minor Changes
+
+- [#24](https://github.com/xeroc/accord/pull/24) [`b1fe6b7`](https://github.com/xeroc/accord/commit/b1fe6b7ca25427d6c93a3b5ede344acdaf8cadd2) Thanks [@xeroc](https://github.com/xeroc)! - Add `@useaccord/jurat` (agentic juror daemon, v1 in progress): Telegram notify channel — verdict + alert messages with a never-reject contract so send failures can't crash the duty pipeline (bean accord-4qyb).
+
+### Patch Changes
+
+- [#24](https://github.com/xeroc/accord/pull/24) [`b13c587`](https://github.com/xeroc/accord/commit/b13c587ed0bce8490d0792d25a1ee4d0df669549) Thanks [@xeroc](https://github.com/xeroc)! - jurat: compose the daemon runtime in `src/main.ts` (bean accord-vruh) — the v1 pipeline modules existed and were unit-tested, but the entry point never mounted them, so `pnpm dev` booted and idled. New: `src/runtime.ts` (scan handler: join gates → executor with logged decisions; duty state machine: track → evidence → verdict → commit → reveal with the SPEC failure policy), file-backed duty/vote stores (`src/state/stores.ts`), WS hint layer kicking off-cycle scans, and the config knobs to drive it (`JURAT_SCAN_INTERVAL_MS`, `JURAT_MIN_SOL_LAMPORTS`, optional `JURAT_EVIDENCE_URL` + `JURAT_DELIVERY_KEY_PATH` — the delivery key is generated on first boot). SPEC/README/.env.example updated to match. The lockstep bump for the rest of the workspace comes from the `fixed` group in `.changeset/config.json` at version time — not from this frontmatter.
+
+  Follow-up (bean accord-fwl7): joins stake exactly the pool's own `min_stake` — there is no `JURAT_STAKE_AMOUNT` (a single configured amount cannot be unit-correct across pools with different staking mints; upstaking stays a manual operator action). Budget arithmetic (`JURAT_STAKE_BUDGET` / cap / reserve / book sums) is now per staking token, and zero-minimum pools are rejected at the gates.
+
+- [#24](https://github.com/xeroc/accord/pull/24) [`6303d7b`](https://github.com/xeroc/accord/commit/6303d7b440ff60f076e54c7d6566b229c8c2f60c) Thanks [@xeroc](https://github.com/xeroc)! - Jurat Surfpool e2e: `tests/src/jurat.spec.ts` drives the full agentic-juror duty loop green (reconcile scan → join gates → auto-join → dispute → VRF draw → mock-LLM verdict through the real provider ladder + runner → commit → reveal, with `Round.reveals` and the verdict notice asserted, dryRun OFF) plus the failing-LLM twin (retry ladder exhausted → clean abstain + alert, no vote). Joining the suite required a `loadBook` robustness fix: the first-run ENOENT path now duck-types `code` instead of `instanceof Error`, which breaks on cross-realm errors (jest ESM vm contexts, workers).
+
+- [#24](https://github.com/xeroc/accord/pull/24) [`bcb8c8e`](https://github.com/xeroc/accord/commit/bcb8c8eee90069ca57fc4cf90a49182eb0c98694) Thanks [@xeroc](https://github.com/xeroc)! - feat(jurat): duty pipeline — commit path, failure path, duty tracker, agent toolset, verdict runner, provider ladder, reveal path, evidence intake
+
+  - Commit path (`src/vote/commit.ts`): 32-byte salt generation with persist-before-send, SDK `commitHash`+`commit` wiring gated to the on-chain commit window `[review_end, commit_end)`, and a `DRY_RUN` gate that logs + notifies instead of sending a transaction (bean accord-0ytn).
+  - Failure path (`src/duty/failures.ts` + `src/duty/types.ts`): every failure source maps to a persisted abstention + Telegram alert; the module structurally cannot cast a vote (bean accord-5mpb).
+  - Duty tracker (`src/duty/tracker.ts`): decoded `Round` → `DutyRecord` for our seat (`Round.jurors[0..juror_count)`), chain-clock window math mirroring the commit.rs/reveal.rs gates (incl. early reveal on full panel), ADR-0021 redraw supersession (same round_idx, attempt+1 → fresh duty or `redrawn-out` closure), idempotent reconcile rescan (bean accord-fgxw).
+  - Agent toolset (`src/agent/tools.ts`): four Zod-typed read-only tools (read_dispute, read_subaccord, fetch_evidence_file, read_domain_doc) over injected seams, MCP servers from config via `@ai-sdk/mcp` `createMCPClient`, merged behind the builtin set (builtin wins on collision); no key/shell/fs-write surface exists (bean accord-gww8).
+  - Verdict runner (`src/agent/runner.ts`): `runVerdict(AgentContext) → Verdict` via `generateText({ tools, stopWhen: stepCountIs })` + `Output.object` structured output; `VerdictRunner` interface as the container seam; malformed, schema-invalid, or out-of-bounds verdicts throw `MalformedVerdictError` (pipeline abstains, never repairs) (bean accord-o2dc).
+  - Provider ladder (`src/agent/provider.ts`): `createOpenAICompatible` primary+fallback endpoints with in-place exponential-backoff retries (`maxRetries: 0` on the SDK — the ladder owns retries), `RetryLadderExhaustedError` when both burn out; malformed verdicts short-circuit the ladder instead of re-rolling (bean accord-ot16).
+  - Reveal path (`src/vote/reveal.ts`): reveal at window open (incl. the reveal.rs all-committed early open) with the exact persisted salt+vote, DRY_RUN gate, idempotent; salt loss alerts and throws `SaltLostError` — a wrong guess is a guaranteed on-chain RevealMismatch, so none is ever tried (bean accord-qk0q).
+  - Evidence intake (`src/duty/evidence.ts`): ADR-0034 delivery-key handling (file-backed generate-once storage + daemon registration self-heal), juror-bound bundle fetch → decrypt → documents, optional domain-doc fetch (ADR-0027 CAS), and `assembleDutyContext` wiring the read-only tools over the decrypted bundle; unavailable/malformed bundles alert + throw — a partial context is never assembled (bean accord-z801).
+
+- Updated dependencies [[`71dafcb`](https://github.com/xeroc/accord/commit/71dafcb4f42fba11cb5629226baee99f3ea43fdd), [`1e4ad2e`](https://github.com/xeroc/accord/commit/1e4ad2ee4c7b08516392d84100bc9317c8728b79)]:
+  - @useaccord/sdk@0.7.0

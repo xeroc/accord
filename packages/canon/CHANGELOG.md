@@ -1,5 +1,12 @@
 # @useaccord/canon
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [[`71dafcb`](https://github.com/xeroc/accord/commit/71dafcb4f42fba11cb5629226baee99f3ea43fdd), [`1e4ad2e`](https://github.com/xeroc/accord/commit/1e4ad2ee4c7b08516392d84100bc9317c8728b79)]:
+  - @useaccord/sdk@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

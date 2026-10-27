@@ -1,5 +1,12 @@
 # @useaccord/landing
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/ui@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
