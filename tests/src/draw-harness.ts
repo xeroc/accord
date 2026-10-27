@@ -157,26 +157,30 @@ export async function warpTo(env: TestEnv, targetSec: bigint): Promise<void> {
 }
 
 /**
- * Warp until reveal is OPEN for this round (ADR-0038-safe). The on-chain gate
- * is `(now >= commit_end || all committed) && now < reveal_end`, and a
- * panel-full commit re-anchors `reveal_end` to `last_commit + reveal_window`,
- * which can sit before `commit_end + 1`. Reads the round FRESH (a pre-commit
- * read still holds the scheduled deadline) and lands at
- * `min(commit_end, reveal_end − panel − 3)`: on the scheduled clock that is
- * `commit_end`; on a re-anchored clock it reserves one second per reveal tx
- * (Surfpool advances the clock ~1s per confirmed tx) below `reveal_end`. The
- * re-anchored branch always coincides with a fully-committed panel, so the
- * `all committed` arm satisfies the lower gate.
+ * Warp until reveal is OPEN for this round (ADR-0038-safe, machine-speed
+ * independent). The on-chain gate is
+ * `(now >= commit_end || commit_count == juror_count) && now < reveal_end`.
+ *
+ * - Panel fully committed ⇒ reveal is ALREADY open via the `all committed`
+ *   arm, and the panel-full commit re-anchored `reveal_end` to
+ *   `last_commit + reveal_window` (ADR-0038) — the full re-anchored window
+ *   (2d under harness defaults) is headroom, so reveal IMMEDIATELY: no warp.
+ * - Panel partial ⇒ no re-anchor can have happened (it only fires on the
+ *   panel-full commit), so `reveal_end` is the scheduled
+ *   `commit_end + reveal_window` — warp to `commit_end` and the whole
+ *   `reveal_window` is headroom.
+ *
+ * Never budget a fixed number of seconds against the Surfnet clock: its
+ * per-tx advance varies from ~0s on a fast laptop to ~5s per tx on a loaded
+ * CI runner, which is what broke the release merges #27/#28 (`#6036
+ * RevealWindowClosed` — the old `panel + 3` reserve was consumed by the
+ * reveal txs themselves).
  */
 export async function warpToRevealWindow(env: TestEnv, roundPda: Address): Promise<void> {
   const round = await readRound(env, roundPda);
   if (!round) throw new Error(`round not found: ${roundPda}`);
-  const panel = BigInt(round.jurorCount);
-  const target =
-    round.commitEnd < round.revealEnd - panel - 2n
-      ? round.commitEnd
-      : round.revealEnd - panel - 3n;
-  await warpTo(env, target);
+  if (round.commitCount === round.jurorCount) return;
+  await warpTo(env, round.commitEnd);
 }
 
 // ---------------------------------------------------------------------------
