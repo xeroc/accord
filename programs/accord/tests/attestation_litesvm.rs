@@ -774,8 +774,10 @@ fn gated_stake_rejects_soon_expiring_attestation() {
     let juror = Keypair::new();
     arm_juror(&mut env, &juror, 10_000);
     let att = Pubkey::new_unique();
-    // horizon = (60+60+60+3600) × 4 = 15_120; an attestation expiring before
-    // now + horizon must be rejected even though it is currently valid.
+    // The horizon is (review+commit+reveal+appeal) × (max_appeals+1); with this
+    // pool's 60s windows it stays in the hundreds of seconds whatever the
+    // appeal floor is (MIN_APPEAL_WINDOW_SECS is a policy knob — 3600 once,
+    // 1 now). Expire at now+1: valid now, but lapses within the lifecycle.
     let now = now_of(&env.ctx);
     set_sas_attestation(
         &mut env.ctx,
@@ -783,7 +785,7 @@ fn gated_stake_rejects_soon_expiring_attestation() {
         &env.credential,
         &env.schema,
         &juror.pubkey(),
-        now + 1_000, // valid now, but lapses within the dispute lifecycle
+        now + 1,
     );
     let (_, _, path) = build_root_and_path(&[], TEST_DEPTH, 0);
     let r = do_stake(&mut env, &juror, 5_000, path, Some(att));
