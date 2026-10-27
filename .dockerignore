@@ -1,8 +1,9 @@
 # Docker build context filter for the pnpm-workspace image builds.
 #
-# cranker/Dockerfile and evidence-daemon/Dockerfile build from the repo ROOT
-# (they need pnpm-lock.yaml, pnpm-workspace.yaml, and packages/sdk). This file
-# keeps that context small and stops stale artifacts from poisoning `pnpm install`.
+# cranker/Dockerfile, evidence-daemon/Dockerfile and jurat/Dockerfile build
+# from the repo ROOT (they need pnpm-lock.yaml, pnpm-workspace.yaml, and
+# packages/sdk). This file keeps that context small and stops stale artifacts
+# from poisoning `pnpm install`.
 
 # Dependencies & build outputs (materialized inside the image)
 **/node_modules
@@ -30,8 +31,20 @@ Makefile
 # `dir/*` not `dir` — excluding the dir node itself makes re-inclusion impossible.)
 apps/app/*
 !apps/app/package.json
+apps/cli/*
+!apps/cli/package.json
 apps/landing/*
 !apps/landing/package.json
+apps/canon/*
+!apps/canon/package.json
+apps/synod/*
+!apps/synod/package.json
+apps/hanse/*
+!apps/hanse/package.json
+apps/pitch/*
+!apps/pitch/package.json
+apps/remotion/*
+!apps/remotion/package.json
 tests/*
 !tests/package.json
 # apps/docs is MkDocs (no package.json); pnpm skips it in the apps/* glob.

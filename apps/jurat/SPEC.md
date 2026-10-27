@@ -66,12 +66,15 @@ vote — a fake Schelling signal is worse than silence.
   at reveal-window open; random 32 B salt per dispute persisted until
   reveal.
 - Telegram verdict + alert messages (channel interface for future sinks).
+- Container runtime: `apps/jurat/Dockerfile` (workspace pnpm + bun image,
+  `ghcr.io/xeroc/useaccord-jurat` from the Release workflow). State lives in
+  `JURAT_STATE_DIR` (volume `/app/state`); the operator keypair is mounted
+  read-only at `JURAT_KEYPAIR_PATH`.
 
 ## Out of scope (v1)
 
-Median/scalar pools, web/search tools, Docker runtime, auto token
-acquisition, multiple juror personas, domain-doc parsing as a join gate,
-auto-unstake/exit policy.
+Median/scalar pools, web/search tools, auto token acquisition, multiple
+juror personas, domain-doc parsing as a join gate, auto-unstake/exit policy.
 
 ## Chain interface
 

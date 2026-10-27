@@ -20,16 +20,24 @@ WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # Copy EVERY workspace member's manifest: --frozen-lockfile validates the full
 # graph the lockfile was generated against, so partial manifests fail it.
+# Keep this list in sync with the `importers:` section of pnpm-lock.yaml.
 
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/canon/package.json packages/canon/
 COPY packages/synod/package.json packages/synod/
+COPY packages/ui/package.json packages/ui/
 
 COPY apps/cli/package.json apps/cli/
 COPY apps/app/package.json apps/app/
 COPY apps/cranker/package.json apps/cranker/
 COPY apps/landing/package.json apps/landing/
 COPY apps/evidence-daemon/package.json apps/evidence-daemon/
+COPY apps/jurat/package.json apps/jurat/
+COPY apps/canon/package.json apps/canon/
+COPY apps/synod/package.json apps/synod/
+COPY apps/hanse/package.json apps/hanse/
+COPY apps/pitch/package.json apps/pitch/
+COPY apps/remotion/package.json apps/remotion/
 
 COPY tests/package.json tests/
 RUN pnpm install --frozen-lockfile
