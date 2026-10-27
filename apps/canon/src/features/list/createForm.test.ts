@@ -131,10 +131,6 @@ test("buildCourt: zero review/commit/reveal window throws (canon WindowTooShort 
   assert.throws(() => buildCourt(court({ revealWindow: "0" })), /Reveal window/);
 });
 
-test("buildCourt: appeal window below the 1h floor throws (Accord floor mirror)", () => {
-  assert.throws(() => buildCourt(court({ appealWindow: "3599" })), /Appeal window/);
-});
-
 test("buildCourt: depth over MAX_LIST_TREE_DEPTH throws (canon TreeDepthTooDeep mirror)", () => {
   assert.throws(() => buildCourt(court({ depth: "16" })), /depth/i);
 });

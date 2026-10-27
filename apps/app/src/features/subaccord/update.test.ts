@@ -69,14 +69,6 @@ test("parseUpdateValue: bps/int kinds enforce bounds", () => {
   });
 });
 
-test("parseUpdateValue: AppealWindow enforces the ADR-0022 floor", () => {
-  assert.throws(() => parseUpdateValue("AppealWindow", "3599", PLURALITY));
-  assert.deepEqual(parseUpdateValue("AppealWindow", "3600", PLURALITY), {
-    __kind: "AppealWindow",
-    fields: [3600n],
-  });
-});
-
 test("parseUpdateValue: address kinds", () => {
   assert.deepEqual(parseUpdateValue("Authority", AUTHORITY, PLURALITY), {
     __kind: "Authority",

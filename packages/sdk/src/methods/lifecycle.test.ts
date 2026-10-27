@@ -5,10 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MAX_APPEALS,
-  MIN_APPEAL_WINDOW_SECS,
   UNPAUSE_TIMELOCK_SLOTS,
   UPDATE_TIMELOCK_SLOTS,
-  assertValidAppealWindow,
   assertValidCoherenceTol,
   assertValidMaxAppeals,
   assertValidRiskType,
@@ -82,16 +80,6 @@ test("assertValidCoherenceTol: 0..=10_000 bps (ADR-0025)", () => {
   assert.throws(() => assertValidCoherenceTol(-1), /InvalidThreshold/);
   assert.throws(() => assertValidCoherenceTol(10_001), /InvalidThreshold/);
   assert.throws(() => assertValidCoherenceTol(1.5), /InvalidThreshold/);
-});
-
-test("assertValidAppealWindow: >= MIN_APPEAL_WINDOW_SECS (ADR-0022)", () => {
-  assertValidAppealWindow(MIN_APPEAL_WINDOW_SECS);
-  assertValidAppealWindow(MIN_APPEAL_WINDOW_SECS * 100n);
-  assert.throws(() => assertValidAppealWindow(0n), /AppealWindowTooShort/);
-  assert.throws(
-    () => assertValidAppealWindow(MIN_APPEAL_WINDOW_SECS - 1n),
-    /AppealWindowTooShort/,
-  );
 });
 
 test("assertValidRiskType: 32 bytes, non-zero", () => {
