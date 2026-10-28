@@ -1,5 +1,11 @@
 # @useaccord/ui
 
+## 0.8.2
+
+### Patch Changes
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`272e9ca`](https://github.com/xeroc/accord/commit/272e9caa429c80ffb3cc4d994f4c37209ec25141) Thanks [@xeroc](https://github.com/xeroc)! - jurat: file-backed delivery-key storage no longer eats a key byte when the 64-byte keypair's last byte is `\r` followed by editor `\n` contamination (read as a `\r\n` pair, trimmed to 63 bytes, then rejected) — the trim now stops at 64 bytes. ui: storybook vitest project `testTimeout` raised to 60s; the default 15s starved long stories under full-suite browser parallelism.
+
 ## 0.8.1
 
 No changes in this release.
