@@ -423,6 +423,14 @@ async function runVerdictPipeline(
     confidence: verdict?.confidence ?? 1,
     dryRun: result.dryRun,
   });
+
+  // Our commit completed the panel (commitCount is the pre-commit fetch, so
+  // +1 is exactly us; concurrent commits only make the panel fuller): the
+  // chain flipped the round to Reveal — reveal now instead of idling out the
+  // commit window (reveal.rs early-open, ADR-0038 panel-full shrink).
+  if (result.sent && round.commitCount + 1 === round.jurorCount) {
+    await tryReveal(deps, signal, round, now, true, trace);
+  }
 }
 
 async function tryReveal(

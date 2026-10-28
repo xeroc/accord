@@ -358,6 +358,17 @@ test("open duty in commit phase → verdict → commit → notice; record commit
   expect(rec.verdicts[0]).toMatchObject({ dispute: DISPUTE, option: 1, dryRun: false });
 });
 
+test("commit completing the panel → reveal fires in the same pass (early open)", async () => {
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture({ commitCount: 1 }), disputeFixture(DisputeState.Commit)),
+    joinChain: subReader(subFixture()) as never,
+  });
+  await runDuty(deps, dutySignal());
+  const record = await deps.store.load(DISPUTE as string, 0);
+  expect(record?.status).toBe("revealed");
+  expect(rec.sends).toHaveLength(2); // commit tx + immediate reveal tx
+});
+
 test("open duty in review phase → no verdict, no tx (agent waits for the window)", async () => {
   const { deps, rec } = makeDeps({
     chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Review)),
