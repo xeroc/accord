@@ -35,13 +35,22 @@ export interface TraceBatchMessage {
 /**
  * Canonical JSON: object keys sorted recursively (byte-wise), no whitespace,
  * arrays order-preserving. Primitives via `JSON.stringify` (string quoting,
- * number formatting); `undefined` is not representable and never occurs in a
- * validated batch.
+ * number formatting). `undefined` mirrors `JSON.stringify` exactly — object
+ * entries with an `undefined` value are skipped, array elements render as
+ * `null` — because the signer canonicalizes the IN-MEMORY batch while the
+ * daemon re-canonicalizes the parsed wire body, and only a JSON.stringify-
+ * stable form hashes identically on both sides. (ai@7's usage normalization
+ * materializes optional fields as explicit `undefined`; skipping them here
+ * is what keeps step-event batches verifying.)
  */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) as string;
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  if (Array.isArray(value)) {
+    return `[${value.map((el) => canonicalJson(el ?? null)).join(",")}]`;
+  }
+  const entries = Object.entries(value)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
 

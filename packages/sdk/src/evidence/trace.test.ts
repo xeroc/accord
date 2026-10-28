@@ -9,7 +9,12 @@ import { getBase58Decoder } from "@solana/kit";
 import assert from "node:assert/strict";
 import { ed25519 } from "@noble/curves/ed25519";
 
-import { buildTraceBatchMessage, canonicalJson, verifyTraceBatchSig } from "./trace.js";
+import {
+  buildTraceBatchMessage,
+  canonicalJson,
+  verifyTraceBatchSig,
+  type TraceBatchMessage,
+} from "./trace.js";
 
 const SEED = new Uint8Array(32).fill(7);
 const PUB = ed25519.getPublicKey(SEED);
@@ -24,7 +29,7 @@ const BATCH = {
   events: [{ type: "step", n: 1 }, { type: "verdict", optionIndex: 0 }],
 };
 
-function sign(b: typeof BATCH, seed: Uint8Array = SEED): Uint8Array {
+function sign(b: TraceBatchMessage, seed: Uint8Array = SEED): Uint8Array {
   return ed25519.sign(buildTraceBatchMessage(b), seed);
 }
 
@@ -34,6 +39,42 @@ test("canonicalJson sorts keys recursively and emits no whitespace", () => {
 
 test("source key order does not change the canonical form", () => {
   assert.equal(canonicalJson({ seq: 1, v: 1 }), canonicalJson({ v: 1, seq: 1 }));
+});
+
+// Production regression (bean accord-r64v): every jurat batch carrying a
+// step event 403'd with "signature does not verify for juror" — stepEvent
+// passes ai@7's LanguageModelUsage through raw, and its normalization
+// materializes optional fields as explicit `undefined` (e.g.
+// inputTokenDetails.cacheWriteTokens). The sink signs the IN-MEMORY batch;
+// the daemon re-canonicalizes the parsed wire body — canonicalJson must
+// mirror JSON.stringify's undefined semantics exactly or the hashes desync.
+const STEP_WITH_USAGE = {
+  kind: "step",
+  n: 1,
+  toolCalls: [],
+  usage: {
+    inputTokens: 100,
+    inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: undefined, noCacheTokens: 100 },
+    outputTokens: 50,
+    totalTokens: 150,
+  },
+};
+
+test("canonicalJson mirrors JSON.stringify for undefined — entries skipped, array elements null", () => {
+  assert.equal(canonicalJson({ a: 1, b: undefined }), '{"a":1}');
+  assert.equal(canonicalJson([1, undefined]), "[1,null]");
+});
+
+test("canonicalJson is stable across the JSON wire round-trip", () => {
+  const value = { seq: 4, events: [STEP_WITH_USAGE] };
+  assert.equal(canonicalJson(value), canonicalJson(JSON.parse(JSON.stringify(value))));
+});
+
+test("a batch whose events carry explicit undefined verifies after the wire round-trip", () => {
+  const batch: TraceBatchMessage = { ...BATCH, events: [STEP_WITH_USAGE] };
+  const sig = sign(batch);
+  const wire: TraceBatchMessage = { ...batch, events: JSON.parse(JSON.stringify(batch.events)) };
+  assert.equal(verifyTraceBatchSig(PUB, wire, sig), true);
 });
 
 test("verifyTraceBatchSig round-trips a juror-signed batch", () => {
