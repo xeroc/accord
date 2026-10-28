@@ -1,5 +1,14 @@
 # @useaccord/synod-app
 
+## 0.8.2
+
+### Patch Changes
+
+- Updated dependencies [[`272e9ca`](https://github.com/xeroc/accord/commit/272e9caa429c80ffb3cc4d994f4c37209ec25141)]:
+  - @useaccord/ui@0.8.2
+  - @useaccord/sdk@0.8.2
+  - @useaccord/synod@0.8.2
+
 ## 0.8.1
 
 ### Patch Changes

@@ -1,5 +1,40 @@
 # @useaccord/jurat
 
+## 0.8.2
+
+### Patch Changes
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`272e9ca`](https://github.com/xeroc/accord/commit/272e9caa429c80ffb3cc4d994f4c37209ec25141) Thanks [@xeroc](https://github.com/xeroc)! - jurat: file-backed delivery-key storage no longer eats a key byte when the 64-byte keypair's last byte is `\r` followed by editor `\n` contamination (read as a `\r\n` pair, trimmed to 63 bytes, then rejected) — the trim now stops at 64 bytes. ui: storybook vitest project `testTimeout` raised to 60s; the default 15s starved long stories under full-suite browser parallelism.
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`7e7a6d7`](https://github.com/xeroc/accord/commit/7e7a6d7ecccdd4c1a0c82da429db31f1a06471ce) Thanks [@xeroc](https://github.com/xeroc)! - Jurat hint layer: `SeatDrawn` log hints are now filtered to the operator's own juror key. When our seat lands, the daemon immediately logs + Telegram-alerts "duty received: seat N on dispute D (round R)" and kicks an off-cycle reconcile scan; foreign seats no longer trigger full scans.
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`6c80903`](https://github.com/xeroc/accord/commit/6c8090330b7c03ebd53eaebf0df2efec3a423208) Thanks [@xeroc](https://github.com/xeroc)! - jurat: reveal immediately when the operator's commit completes the panel — the pre-commit `commit_count + 1 === juror_count` case now sends the reveal tx in the same duty pass instead of waiting for the commit window to elapse (on-chain reveal early-open already admits it).
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`f8febcd`](https://github.com/xeroc/accord/commit/f8febcdfcbe029174ef03331ec702c273231d953) Thanks [@xeroc](https://github.com/xeroc)! - jurat: fix ADR-0037 trace pushes rejected 403 by the evidence daemon
+
+  Two bugs, both caught at the jurat↔daemon seam:
+
+  1. `signTraceBatch` hex-encoded the Ed25519 signature while the daemon's
+     ingest decodes `sig` as base64 (ADR-0037 wire format) — every push failed
+     signature verification and was dropped with `[trace] push rejected (403)`.
+     Now base64, hashed via the SDK's shared `buildTraceBatchMessage` (single
+     canonical-form implementation).
+  2. `JURAT_TRACE_MODE=open` stripped the verdict's `unsealAt` as
+     `{ ...event, unsealAt: undefined }` — an explicitly-undefined key survives
+     `Object.entries` in jurat's local canonical form (rendered `null`) but
+     vanishes in the JSON wire form the daemon re-canonicalizes, desyncing the
+     signature hash. Any batch containing a verdict frame still 403'd after (1).
+     The key is now deleted before queueing.
+
+  Pinned by a cross-contract test in jurat (sink sig → daemon-side
+  `verifyTraceBatchSig`) and a new cross-app integration suite in the
+  evidence-daemon (real sink over real HTTP → real ingest pipeline + FsTraceStore
+  → replay via `GET /trace/:dispute`). Rejection warns now surface the daemon's
+  `{"error":…}` reason body.
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.8.2
+
 ## 0.8.1
 
 ### Patch Changes

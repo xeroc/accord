@@ -1,5 +1,17 @@
 # @useaccord/tests
 
+## 0.8.2
+
+### Patch Changes
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`83ec6a6`](https://github.com/xeroc/accord/commit/83ec6a6a595ef6ddd4b7370355cdd4c16c5a9464) Thanks [@xeroc](https://github.com/xeroc)! - evidence-daemon image: the build stage never COPYed `apps/jurat`, but the daemon's trace tests import jurat's trace sink source (`bun-run, never emitted`) — the image typecheck failed TS2307. tests: fork tripwire in `createTestEnv` (refuse mainnet/devnet-forked Surfnets with a clear error) + crash-safety unpause guard in the pause spec so a mid-test failure can't leave the singleton paused and cascade `[#6010](https://github.com/xeroc/accord/issues/6010) ProgramPaused` into every sibling spec.
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`0a5fb30`](https://github.com/xeroc/accord/commit/0a5fb30dd155773fc04e55b028a19ea57999d00b) Thanks [@xeroc](https://github.com/xeroc)! - e2e harness: slot warps migrated off the Clock-sysvar `surfnet_setAccount` workaround to `surfnet_timeTravel { absoluteSlot }` (`warpForwardSlots`/new `warpToSlot`) — surfpool 1.7.0 rejects sysvar writes as managed (surfpool#895) and lands absolute slots exactly (pre-1.7 wrapped mod slotsInEpoch). Suite now REQUIRES surfpool >= 1.7.0. `cheat()` surfaces `error.data` so rejections aren't opaque "Internal error"s.
+- Updated dependencies []:
+  - @useaccord/canon@0.8.2
+  - @useaccord/sdk@0.8.2
+  - @useaccord/synod@0.8.2
+
 ## 0.8.1
 
 ### Patch Changes

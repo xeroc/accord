@@ -1,5 +1,14 @@
 # @useaccord/evidence-daemon
 
+## 0.8.2
+
+### Patch Changes
+
+- [#33](https://github.com/xeroc/accord/pull/33) [`83ec6a6`](https://github.com/xeroc/accord/commit/83ec6a6a595ef6ddd4b7370355cdd4c16c5a9464) Thanks [@xeroc](https://github.com/xeroc)! - evidence-daemon image: the build stage never COPYed `apps/jurat`, but the daemon's trace tests import jurat's trace sink source (`bun-run, never emitted`) — the image typecheck failed TS2307. tests: fork tripwire in `createTestEnv` (refuse mainnet/devnet-forked Surfnets with a clear error) + crash-safety unpause guard in the pause spec so a mid-test failure can't leave the singleton paused and cascade `[#6010](https://github.com/xeroc/accord/issues/6010) ProgramPaused` into every sibling spec.
+- Updated dependencies []:
+  - @useaccord/sdk@0.8.2
+  - @useaccord/synod@0.8.2
+
 ## 0.8.1
 
 ### Patch Changes
