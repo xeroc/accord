@@ -1,7 +1,13 @@
 /**
  * Trace replay route + handler (ADR-0037, bean accord-f6hh).
  *
- *   GET /trace/{dispute}?fromSeq=<n> → 200 seal-filtered envelopes
+ *   GET /trace/{dispute}?fromSeq=<n>&token=<t> → 200 seal-filtered envelopes
+ *
+ * Read gate (ADR-0037): the record is private to the dispute's FILER, served
+ * tokenless only when it is a published flip (isPublicTrace over the durable
+ * record). The filer mints a 5-minute token at POST /trace-token/{dispute};
+ * it rides `?token=` (browsers cannot header a WS upgrade). Gate deps absent
+ * ⇒ ungated (pre-gate deployments / unit suites).
  *
  * Reads the durable trace record (append-only, written at ingest) — pure
  * store + seal predicate, no in-memory state, so it answers correctly on any
@@ -14,6 +20,7 @@ import { Hono } from "hono";
 import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.js";
 import { ADDRESS } from "./routes.js";
 import { sealVisible } from "../pipeline/seal.js";
+import { isPublicTrace } from "../pipeline/trace-visibility.js";
 
 /**
  * Read side of the trace store seam (structural slice of the TraceStore port,
@@ -67,6 +74,26 @@ export function traceRoutes(deps: ServerDeps): Hono {
     }
     if (deps.traceReplay === undefined) {
       return Response.json({ error: "trace replay not enabled" }, { status: 404 });
+    }
+    // ADR-0037 read gate: published flips serve tokenless; otherwise the
+    // filer's token. Decided over the FULL durable record (fromSeq is a
+    // serving cursor, not a visibility window).
+    if (deps.traceReplaySource !== undefined && deps.traceTokens !== undefined) {
+      let record: readonly TraceEnvelope[];
+      try {
+        record = await deps.traceReplaySource.readEvents(dispute);
+      } catch (e) {
+        return Response.json(
+          { error: `trace read failed: ${e instanceof Error ? e.message : String(e)}` },
+          { status: 500 },
+        );
+      }
+      if (
+        !isPublicTrace(record, Date.now()) &&
+        !deps.traceTokens.verify(dispute, c.req.query("token"))
+      ) {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
     }
     const res = await deps.traceReplay(dispute, fromSeq);
     if (res.ok) return Response.json(res.body, { status: 200 });

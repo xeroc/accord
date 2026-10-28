@@ -34,6 +34,7 @@ import type { TraceBatch, TraceStore } from "../store/trace.js";
 import { ingestTrace, type TraceChainReader } from "../pipeline/trace.js";
 import { createApp } from "./app.js";
 import { createTraceReplayHandler, type TraceReplaySource } from "./trace.js";
+import { TraceTokenService } from "./trace-token.js";
 import { makeTraceSink } from "../../../jurat/src/trace/sink.ts";
 import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
@@ -510,5 +511,52 @@ describe("jurat TraceSink → POST /trace → GET /trace (cross-app)", () => {
     } finally {
       server.stop(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /trace read gate (ADR-0037): flip-publication + filer token
+// ---------------------------------------------------------------------------
+
+describe("GET /trace/:dispute (read gate)", () => {
+  function gatedApp(source: TraceReplaySource, tokens = new TraceTokenService()) {
+    return createApp({
+      ...makeDeps(createTraceReplayHandler(source)),
+      traceReplaySource: source,
+      traceTokens: tokens,
+    });
+  }
+
+  it("public flip serves tokenless", async () => {
+    const now = Date.now();
+    const source = fakeSource([
+      envelope(1, { kind: "verdict", optionIndex: 1, unsealAt: now - 1 }),
+    ]);
+    const res = await gatedApp(source).request(`/trace/${REPLAY_DISPUTE}`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as TraceEnvelope[]).map((e) => e.seq)).toEqual([1]);
+  });
+
+  it("hold 401s tokenless", async () => {
+    const source = fakeSource([envelope(1, { kind: "verdict", optionIndex: 0 })]);
+    const res = await gatedApp(source).request(`/trace/${REPLAY_DISPUTE}`);
+    expect(res.status).toBe(401);
+  });
+
+  it("hold + valid filer token serves", async () => {
+    const source = fakeSource([envelope(1, { kind: "verdict", optionIndex: 0 })]);
+    const tokens = new TraceTokenService();
+    const { token } = tokens.mint(REPLAY_DISPUTE);
+    const res = await gatedApp(source, tokens).request(`/trace/${REPLAY_DISPUTE}?token=${token}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("sealed flip + no token 401s", async () => {
+    const now = Date.now();
+    const source = fakeSource([
+      envelope(1, { kind: "verdict", optionIndex: 1, unsealAt: now + 600_000 }),
+    ]);
+    const res = await gatedApp(source).request(`/trace/${REPLAY_DISPUTE}`);
+    expect(res.status).toBe(401);
   });
 });

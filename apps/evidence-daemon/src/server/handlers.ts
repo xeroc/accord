@@ -14,6 +14,8 @@
 import type { DomainPreimageProof } from "../pipeline/domain.js";
 import type { Sealable } from "../pipeline/seal.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
+import type { TraceReplaySource } from "./trace.js";
+import type { TraceTokenService } from "./trace-token.js";
 
 /** 32-byte SHA-256 digest, hex- or base58-style opaque to the server. */
 export type Hash = string;
@@ -319,4 +321,16 @@ export interface ServerDeps {
    * side by {@link ./trace.ts}.
    */
   readonly traceReplay?: TraceReplayHandler;
+
+  /**
+   * ADR-0037 read gate: raw record source for the flip-publication check
+   * (isPublicTrace) on GET /trace. Optional: absent ⇒ ungated replay.
+   */
+  readonly traceReplaySource?: TraceReplaySource;
+
+  /**
+   * ADR-0037 read gate: filer-token mint/verify shared by /trace and /watch.
+   * Optional: absent ⇒ ungated replay.
+   */
+  readonly traceTokens?: TraceTokenService;
 }

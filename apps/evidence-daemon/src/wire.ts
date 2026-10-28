@@ -42,6 +42,7 @@ import {
   type BundleDecryptor,
 } from "./pipeline/synod-manifest";
 import { getDomain, putDomain, putSubdocument } from "./pipeline/domain";
+import { TraceTokenService } from "./server/trace-token.js";
 import { ingestTrace } from "./pipeline/trace";
 import { createTraceReplayHandler } from "./server/trace";
 import type { TraceBatch, TraceStore } from "./store/trace";
@@ -150,6 +151,13 @@ export interface WireDeps {
    * the single-replica WatchHub here; unset ⇒ ingest stays durable-only.
    */
   readonly traceFanout?: (batch: TraceBatch) => void;
+  /**
+   * Filer read-token service (ADR-0037 read gate) shared by GET /trace, the
+   * token mint route and the WS /watch authorize seam. main.ts supplies the
+   * same instance to all three; unset ⇒ createServerDeps constructs one
+   * (gate active, single service per process either way).
+   */
+  readonly traceTokens?: TraceTokenService;
 }
 
 export function createServerDeps(deps: WireDeps): ServerDeps {
@@ -753,6 +761,8 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     manifest: manifestHandler,
     traceIngest,
     traceReplay: createTraceReplayHandler(deps.traceStore),
+    traceReplaySource: deps.traceStore,
+    traceTokens: deps.traceTokens ?? new TraceTokenService(),
     publicKeys: deps.publicKeys,
     health: deps.health,
   };

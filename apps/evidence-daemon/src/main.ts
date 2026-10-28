@@ -14,7 +14,7 @@
  * delivery (ADR-0006).
  */
 import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
-import { address, type TransactionSigner } from "@solana/kit";
+import { address, type Address, type TransactionSigner } from "@solana/kit";
 import { Accord } from "@useaccord/sdk";
 import { mkdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -38,7 +38,10 @@ import { WatchHub, watchRoutes, websocketHandlers, type WatchSocketData } from "
 import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
+import { TraceTokenService, traceTokenRoutes } from "./server/trace-token.js";
+import { isPublicTrace } from "./pipeline/trace-visibility.js";
 import { buildKeyringPublicKeys } from "./server/public-keys.js";
+import { readDispute } from "./chain/reader.js";
 
 /**
  * Read-only RPC needs an `Accord` (which takes a signer for its write path),
@@ -173,6 +176,10 @@ function main(): void {
     );
   };
 
+  // ADR-0037 read gate: one token service shared by the mint route, GET
+  // /trace (via ServerDeps) and the WS /watch authorize seam below.
+  const traceTokens = new TraceTokenService();
+
   const deps = createServerDeps({
     store,
     domainStore,
@@ -187,6 +194,7 @@ function main(): void {
     keyring,
     health,
     publicKeys,
+    traceTokens,
   });
 
   const app = createApp(deps, {
@@ -206,13 +214,32 @@ function main(): void {
   }
   const tls = hasTls ? { cert: Bun.file(cfg.tls!.cert), key: Bun.file(cfg.tls!.key) } : undefined;
 
+  // WS /watch gate (ADR-0037): same rule as GET /trace — published flip
+  // (isPublicTrace over the durable record) OR a valid filer token.
+  const authorizeWatch = async (dispute: string, token: string | undefined): Promise<boolean> => {
+    try {
+      const record = await traceStore.readEvents(dispute as Address);
+      if (isPublicTrace(record, Date.now())) return true;
+    } catch {
+      // unreadable record ⇒ fall through to the token check
+    }
+    return traceTokens.verify(dispute, token);
+  };
+
   // TDZ-safe: watchRoutes closes over `server`; the binding is set right after
   // listen, before any upgrade request can arrive.
   // eslint-disable-next-line prefer-const -- closure reads the binding before its assignment (TDZ)
   let server: Bun.Server<WatchSocketData> | undefined;
   app.route(
     "/",
-    watchRoutes(hub, () => server),
+    watchRoutes(hub, () => server, authorizeWatch),
+  );
+  app.route(
+    "/",
+    traceTokenRoutes({
+      tokens: traceTokens,
+      readDispute: (d) => readDispute(accord, d),
+    }),
   );
   server = Bun.serve<WatchSocketData>({
     port: cfg.port,
