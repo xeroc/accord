@@ -1,10 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "./src",
+    // Tests import jurat source directly (`../jurat/src/trace/sink.ts`) —
+    // jurat is bun-run, never emitted, so source-with-.ts-extension is the
+    // only import surface. noEmit makes rootDir/outDir inert; dropping
+    // rootDir lets the pulled-in jurat files compile under this project.
     "outDir": "./dist",
     "lib": ["ES2020"],
     "types": ["bun"],
+    "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": ["src"],

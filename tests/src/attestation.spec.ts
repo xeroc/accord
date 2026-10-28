@@ -260,8 +260,13 @@ describe("e2e: attestation-gated Subaccords (requires Surfpool)", () => {
     return getAddressDecoder().decode(bytes) as Address;
   }
   /** File + VRF-arm one dispute (filer = payer — the facade signer) against
-   * the tracker's live root. Distinct nonces keep the PDA unique per call. */
-  let drawNonce = 4711n;
+   * the tracker's live root. Random start + increment keeps the PDA unique:
+   * dispute PDAs seed on [filer, nonce] only (no subaccord), so a fixed start
+   * re-collides with the previous run on a persistent Surfnet. */
+  let drawNonce = crypto.getRandomValues(new Uint8Array(8)).reduce(
+    (acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)),
+    0n,
+  );
   async function armDrawDispute(): Promise<Address> {
     await setTokenBalance(env, env.payer.address, mint, 1_000_000n);
     const filerAta = await ata(mint, env.payer.address);
