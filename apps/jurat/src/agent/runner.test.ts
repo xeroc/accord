@@ -13,9 +13,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tool } from "ai";
 import { z } from "zod";
+import { ed25519 } from "@noble/curves/ed25519";
+import { verifyTraceBatchSig } from "@useaccord/sdk/evidence";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { BUILTIN_TOOL_NAMES, makeJuratTools } from "./tools.ts";
+import { signTraceBatch } from "../trace/sink.ts";
 import { startMockLlm } from "./testing/mock-llm.ts";
+import { BUILTIN_TOOL_NAMES, makeJuratTools } from "./tools.ts";
 import {
   MalformedVerdictError,
   makeAgentRunner,
@@ -438,6 +441,52 @@ test("trace tap: agent-start then one step event per model step, in order", asyn
     const json = JSON.stringify(events);
     assert.ok(!json.includes("SECRET-EVIDENCE-TEXT"));
     assert.ok(!json.includes(GOOD_VERDICT.rationale));
+  } finally {
+    await server.stop();
+  }
+});
+
+test("trace tap: step events sign+verify across the JSON wire round-trip (ai@7 usage shape)", async () => {
+  // accord-r64v: stepEvent passes LanguageModelUsage through raw; ai@7
+  // materializes optional fields as explicit `undefined`. The sink signs the
+  // in-memory object, the daemon re-canonicalizes the parsed wire body — any
+  // canonical divergence 403s the push and the batch is dropped (observed:
+  // every step event of every real run). Real provider normalization in the
+  // loop, so the regression cannot rot into a hand-built lookalike.
+  const server = startMockLlm([
+    {
+      kind: "toolCalls",
+      toolCalls: [
+        { id: "call-1", name: "read_dispute", arguments: JSON.stringify({ dispute: DISPUTE }) },
+      ],
+    },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) },
+    { kind: "text", text: JSON.stringify(GOOD_VERDICT) }, // phase-2 re-ask
+  ]);
+  const events: RunnerTraceEvent[] = [];
+  try {
+    const provider = createOpenAICompatible({ name: "mock", baseURL: server.url });
+    const runner = makeAgentRunner(provider.chatModel("mock-model"));
+    await runner.runVerdict(
+      context({
+        maxSteps: 5,
+        trace: (event: RunnerTraceEvent) => events.push(event),
+      }),
+    );
+    const steps = events.filter(isStep);
+    assert.ok(steps.length >= 1);
+    const seed = new Uint8Array(32).fill(3);
+    const ident = { juror: "Juror111111111111111111111111111111111111111", dispute: DISPUTE };
+    const sig = signTraceBatch({ v: 1, seq: 1, events: steps }, ident, seed);
+    const wireEvents: unknown[] = JSON.parse(JSON.stringify(steps));
+    assert.equal(
+      verifyTraceBatchSig(
+        ed25519.getPublicKey(seed),
+        { v: 1, juror: ident.juror, dispute: ident.dispute, seq: 1, events: wireEvents },
+        Buffer.from(sig, "base64"),
+      ),
+      true,
+    );
   } finally {
     await server.stop();
   }
