@@ -10,9 +10,9 @@
 // path). The list creator is a dedicated funded keypair so the authority gate
 // is exercised against a wallet that is NOT the fee payer.
 //
-// SURFPOOL CLOCK NOTE: same workaround as lifecycle.update.spec.ts —
-// UPDATE_TIMELOCK_SLOTS == slotsInEpoch, so warpForwardSlots wraps the Clock
-// sysvar's slot; we overwrite the slot field directly via surfnet_setAccount.
+// SURFPOOL CLOCK NOTE: same migration as lifecycle.update.spec.ts —
+// warpToSlot (surfnet_timeTravel absoluteSlot, surfpool >= 1.7.0) lands the
+// exact deadline slot; the old Clock-sysvar setAccount is rejected (surfpool#895).
 import {
   CANON_PROGRAM_ID,
   createList,
@@ -25,7 +25,7 @@ import {
   executeSubaccordUpdate,
   getPendingUpdateDecoder,
   getSubaccordDecoder,
-  UPDATE_TIMELOCK_SLOTS,
+
   type UpdatePayload,
 } from "@useaccord/sdk";
 import {
@@ -35,34 +35,11 @@ import {
 } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { warpForwardSlots, setAccountRaw } from "./setup/cheats.js";
+import { warpToSlot } from "./setup/cheats.js";
 import { createMint } from "./setup/tokens.js";
 import { fetchDecoded } from "./setup/assertions.js";
 import { DEFAULT_PUBKEY } from "./setup/fixtures.js";
 
-const CLOCK_SYSVAR = "SysvarC1ock11111111111111111111111111111111" as Address;
-
-/**
- * Overwrite the Clock sysvar's `slot` field (u64@0) to an absolute value —
- * copy of the lifecycle.update.spec.ts helper (surfpool wraps slot at
- * slotsInEpoch == UPDATE_TIMELOCK_SLOTS).
- */
-async function setClockSlot(env: TestEnv, slot: bigint): Promise<void> {
-  const res = await env.rpc
-    .getAccountInfo(CLOCK_SYSVAR, { encoding: "base64" })
-    .send();
-  if (!res.value) throw new Error("Clock sysvar not found");
-  const bytes = new Uint8Array(Buffer.from(res.value.data[0], "base64"));
-  const dv = new DataView(bytes.buffer);
-  dv.setBigUint64(0, slot, true);
-  await setAccountRaw(env, CLOCK_SYSVAR, {
-    lamports: Number(res.value.lamports),
-    data: bytes,
-    owner: res.value.owner as Address,
-    executable: false,
-    rentEpoch: 0,
-  });
-}
 
 describe("e2e: canon.update — retuning path (requires Surfpool)", () => {
   let env: TestEnv;
@@ -180,10 +157,9 @@ describe("e2e: canon.update — retuning path (requires Surfpool)", () => {
       (await fetchDecoded(env, subaccord, getSubaccordDecoder()))!.alphaBps,
     ).toBe(1_000); // canonical default — unchanged
 
-    // Advance past the deadline (surfpool wraps slots at slotsInEpoch, hence
-    // the direct Clock-sysvar overwrite) and execute again.
-    await warpForwardSlots(env, UPDATE_TIMELOCK_SLOTS);
-    await setClockSlot(env, executeAfterSlot);
+    // Advance TO the deadline (exact absoluteSlot landing, surfpool >= 1.7.0)
+    // and execute again.
+    await warpToSlot(env, executeAfterSlot);
     await env.sendIx(
       executeSubaccordUpdate(
         env.accord.adapter,
