@@ -1,11 +1,10 @@
 /**
  * Trace replay route + handler (ADR-0037, bean accord-f6hh).
  *
- *   GET /trace/{dispute}?fromSeq=<n>&token=<t> → 200 seal-filtered envelopes
- *
- * Read gate (ADR-0037): the record is private to the dispute's FILER, served
- * tokenless only when it is a published flip (isPublicTrace over the durable
- * record). The filer mints a 5-minute token at POST /trace-token/{dispute};
+ * Read gate (ADR-0037, inveigo ADR-0013 amendment): the record is private to
+ * the dispute's FILER, served tokenless only when jurat has stamped it public
+ * (POST /trace-public on a FLIP commit — the daemon never interprets event
+ * payloads). The filer mints a 5-minute token at POST /trace-token/{dispute};
  * it rides `?token=` (browsers cannot header a WS upgrade). Gate deps absent
  * ⇒ ungated (pre-gate deployments / unit suites).
  *
@@ -20,7 +19,6 @@ import { Hono } from "hono";
 import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.js";
 import { ADDRESS } from "./routes.js";
 import { sealVisible } from "../pipeline/seal.js";
-import { isPublicTrace } from "../pipeline/trace-visibility.js";
 
 /**
  * Read side of the trace store seam (structural slice of the TraceStore port,
@@ -28,6 +26,14 @@ import { isPublicTrace } from "../pipeline/trace-visibility.js";
  */
 export interface TraceReplaySource {
   readEvents(dispute: string, juror?: string, fromSeq?: number): Promise<readonly TraceEnvelope[]>;
+}
+
+/**
+ * Public-stamp probe (ADR-0037 read gate): satisfied by the TraceStore impls
+ * (`isPublic`). Dispute-keyed, like the read API.
+ */
+export interface TracePublicSource {
+  isPublic(dispute: string): Promise<boolean>;
 }
 
 /**
@@ -75,23 +81,20 @@ export function traceRoutes(deps: ServerDeps): Hono {
     if (deps.traceReplay === undefined) {
       return Response.json({ error: "trace replay not enabled" }, { status: 404 });
     }
-    // ADR-0037 read gate: published flips serve tokenless; otherwise the
-    // filer's token. Decided over the FULL durable record (fromSeq is a
-    // serving cursor, not a visibility window).
-    if (deps.traceReplaySource !== undefined && deps.traceTokens !== undefined) {
-      let record: readonly TraceEnvelope[];
+    // ADR-0037 read gate (ADR-0013 amendment): jurat-stamped-public disputes
+    // serve tokenless; otherwise the filer's token. Stamp check failure ⇒
+    // 500 (never fail open on an unreadable store).
+    if (deps.tracePublic !== undefined && deps.traceTokens !== undefined) {
+      let pub: boolean;
       try {
-        record = await deps.traceReplaySource.readEvents(dispute);
+        pub = await deps.tracePublic.isPublic(dispute);
       } catch (e) {
         return Response.json(
           { error: `trace read failed: ${e instanceof Error ? e.message : String(e)}` },
           { status: 500 },
         );
       }
-      if (
-        !isPublicTrace(record, Date.now()) &&
-        !deps.traceTokens.verify(dispute, c.req.query("token"))
-      ) {
+      if (!pub && !deps.traceTokens.verify(dispute, c.req.query("token"))) {
         return Response.json({ error: "unauthorized" }, { status: 401 });
       }
     }

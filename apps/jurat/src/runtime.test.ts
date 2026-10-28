@@ -624,8 +624,18 @@ test("runDaemon: stop() awaits the in-flight scan before resolving", async () =>
 
 // --- trace emitters (bean accord-w4j7, ADR-0037) -----------------------------
 
-function captureSink(events: TraceEvent[]): TraceSink {
-  return { emit: (event) => void events.push(event), drain: async () => {} };
+function captureSink(
+  events: TraceEvent[],
+  publishes: { count: number; reject?: Error } = { count: 0 },
+): TraceSink {
+  return {
+    emit: (event) => void events.push(event),
+    drain: async () => {},
+    publishTrace: async () => {
+      if (publishes.reject) throw publishes.reject;
+      publishes.count++;
+    },
+  };
 }
 
 test("trace: full duty emits duty-open → evidence → agent events → verdict → commit", async () => {
@@ -695,6 +705,59 @@ test("trace: DRY_RUN commit carries dryRun:true and no tx", async () => {
   });
   await runDuty(deps, dutySignal());
   expect(events.at(-1)).toEqual({ kind: "commit", dryRun: true });
+});
+
+// --- FLIP publication (inveigo ADR-0013 amendment) ---------------------------
+
+test("publish: FLIP vote (option 1) publishes once after a REAL commit", async () => {
+  const events: TraceEvent[] = [];
+  const publishes = { count: 0 };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () => captureSink(events, publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(publishes.count).toBe(1);
+  // published only after the commit frame, never before the vote landed
+  expect(events.at(-1)?.kind).toBe("commit");
+});
+
+test("publish: HOLD vote (option 0) never publishes", async () => {
+  const publishes = { count: 0 };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    verdict: async () => ({ optionIndex: 0, rationale: "hold", confidence: 0.9 }),
+    trace: () => captureSink([], publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(publishes.count).toBe(0);
+});
+
+test("publish: DRY_RUN commit never publishes", async () => {
+  const publishes = { count: 0 };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    dryRun: true,
+    trace: () => captureSink([], publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(publishes.count).toBe(0);
+});
+
+test("publish: rejected publish logs + alerts, duty still completes", async () => {
+  const publishes = { count: 0, reject: new Error("trace-public rejected (401)") };
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () => captureSink([], publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(rec.verdicts).toHaveLength(1); // duty pipeline completed
+  expect(rec.alerts.some((a) => a.includes("trace-public failed"))).toBe(true);
+  expect(rec.logs.some((l) => l.includes("publish failed"))).toBe(true);
 });
 
 test("trace: abstain path emits abstain{failure, reason}", async () => {

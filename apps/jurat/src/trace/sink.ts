@@ -116,6 +116,12 @@ export interface TraceSink {
   emit(event: TraceEvent): void;
   /** Resolves when the queue is drained and no push is in flight; never rejects. */
   drain(): Promise<void>;
+  /**
+   * Notify the daemon this dispute's trace is PUBLIC — the FLIP commit leg
+   * (inveigo ADR-0013 amendment). Unlike emit this MAY reject; the runtime
+   * fire-and-reports (log + alert), never letting it disturb voting.
+   */
+  publishTrace(): Promise<void>;
 }
 
 /** Construction options. `url` unset → no-op sink (JURAT_TRACE_URL absent). */
@@ -158,7 +164,11 @@ export function signTraceBatch(
 /** Build the sink. Unset `url` → no-op; everything else never throws. */
 export function makeTraceSink(options: TraceSinkOptions): TraceSink {
   if (options.url === undefined) {
-    return { emit: () => {}, drain: () => Promise.resolve() };
+    return {
+      emit: () => {},
+      drain: () => Promise.resolve(),
+      publishTrace: () => Promise.resolve(),
+    };
   }
 
   const endpoint =
@@ -222,9 +232,33 @@ export function makeTraceSink(options: TraceSinkOptions): TraceSink {
     }
   }
 
+  // FLIP publication (inveigo ADR-0013 amendment): same auth as batch
+  // pushes — the juror hot key over the canonical EMPTY batch (seq 0, no
+  // events), exactly the message the daemon's /trace-public gate verifies.
+  // May reject; the runtime fire-and-reports (log + alert).
+  async function publishTrace(): Promise<void> {
+    const sig = signTraceBatch({ v: 1, seq: 0, events: [] }, options, options.seed);
+    const res = await fetch(
+      `${options.url!.replace(/\/+$/, "")}/trace-public/` +
+        `${encodeURIComponent(options.subaccord)}/${encodeURIComponent(options.dispute)}/` +
+        encodeURIComponent(options.juror),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ v: 1, sig }),
+        signal: AbortSignal.timeout(pushTimeoutMs),
+      },
+    );
+    if (!res.ok) {
+      const reason = await res.text().catch(() => "");
+      throw new Error(`trace-public rejected (${res.status}): ${reason.slice(0, 200)}`);
+    }
+  }
+
   return {
     emit,
     drain: () => tail,
+    publishTrace,
   };
 }
 

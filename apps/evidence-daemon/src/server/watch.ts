@@ -11,8 +11,9 @@
  *
  * Read gate (ADR-0037): the optional `authorize` seam runs BEFORE the IP
  * slot is reserved or the socket upgrades — false ⇒ 401 JSON. main.ts wires
- * it to the same rule as GET /trace: published flip (isPublicTrace over the
- * replay source) OR a valid filer token from `?token=` (browsers cannot
+ * it to the same rule as GET /trace: the durable public stamp (flipped by
+ * jurat via POST /trace-public) OR a valid filer token from `?token=`
+ * (browsers cannot
  * header a WS upgrade). Absent ⇒ ungated (pre-gate deployments).
  *
  * Fan-out state is single-replica in-memory (ADR-0037 locked decision);

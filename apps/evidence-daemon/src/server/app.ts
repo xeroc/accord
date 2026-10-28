@@ -9,6 +9,7 @@ import type { ServerDeps } from "./handlers.js";
 import { evidenceRoutes } from "./routes.js";
 import { domainRoutes } from "./domain.js";
 import { traceRoutes } from "./trace.js";
+import { tracePublicRoutes } from "./trace-public.js";
 
 export interface AppOptions {
   /** Per-peer-IP requests/min. 0 disables the limiter. Default: 0. */
@@ -125,6 +126,8 @@ export function createApp(deps: ServerDeps, opts: AppOptions = {}): Hono {
   app.route("/", domainRoutes(deps));
   // Trace replay (ADR-0037) — 404s until the trace seam is wired.
   app.route("/", traceRoutes(deps));
+  // Trace publication (ADR-0013 amendment) — 404s until the seam is wired.
+  app.route("/", tracePublicRoutes(deps));
 
   // /healthz — bean accord-u1pu implements the real S3+RPC probe; the server
   // boots with this stub so main() serves immediately.

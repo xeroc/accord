@@ -66,7 +66,7 @@ describe("createServerDeps wires the trace read side (ADR-0037)", () => {
   it("GET /trace/:dispute serves the filer with a token, 401s tokenless (read gate)", async () => {
     const { app, dir, traceTokens } = makeApp();
     try {
-      // Fresh record is private (no published flip): tokenless 401 proves the
+      // Fresh record is private (no public stamp): tokenless 401 proves the
       // gate deps are wired; the filer token then opens the (empty) record.
       const denied = await app.request(`http://x/trace/${DISPUTE}`);
       expect(denied.status).toBe(401);

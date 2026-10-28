@@ -39,7 +39,6 @@ import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
 import { createHealthProbe } from "./server/health.js";
 import { TraceTokenService, traceTokenRoutes } from "./server/trace-token.js";
-import { isPublicTrace } from "./pipeline/trace-visibility.js";
 import { buildKeyringPublicKeys } from "./server/public-keys.js";
 import { readDispute } from "./chain/reader.js";
 
@@ -214,14 +213,14 @@ function main(): void {
   }
   const tls = hasTls ? { cert: Bun.file(cfg.tls!.cert), key: Bun.file(cfg.tls!.key) } : undefined;
 
-  // WS /watch gate (ADR-0037): same rule as GET /trace — published flip
-  // (isPublicTrace over the durable record) OR a valid filer token.
+  // WS /watch gate (ADR-0037, inveigo ADR-0013 amendment): same rule as GET
+  // /trace — the durable public stamp (flipped by jurat via POST
+  // /trace-public on a FLIP commit) OR a valid filer token.
   const authorizeWatch = async (dispute: string, token: string | undefined): Promise<boolean> => {
     try {
-      const record = await traceStore.readEvents(dispute as Address);
-      if (isPublicTrace(record, Date.now())) return true;
+      if (await traceStore.isPublic(dispute as Address)) return true;
     } catch {
-      // unreadable record ⇒ fall through to the token check
+      // unreadable stamp ⇒ fall through to the token check
     }
     return traceTokens.verify(dispute, token);
   };

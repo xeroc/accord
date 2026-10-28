@@ -417,6 +417,24 @@ async function runVerdictPipeline(
     log(`duty: dry-run commit held for ${signal.dispute}:${signal.roundIdx} vote ${vote}`);
   }
   trace?.emit({ kind: "commit", tx: result.signature, dryRun: result.dryRun });
+  // FLIP publication (inveigo ADR-0013 amendment): Final+1 = FLIP per inveigo
+  // settle.rs — the pot pays out, so the trace goes public. Only on a REAL
+  // commit (dry-run holds never publish; the held-recommit path counts — its
+  // `vote` IS the committed side). Fire-and-report: a failed publish logs +
+  // alerts but never disturbs the duty pipeline.
+  if (result.sent && vote === 1n) {
+    try {
+      await trace?.publishTrace();
+    } catch (e) {
+      log(
+        `trace: publish failed for ${signal.dispute}: ` +
+          `${e instanceof Error ? e.message : String(e)}`,
+      );
+      await deps.channel.alert(
+        `trace-public failed for ${signal.dispute} (FLIP commit ${result.signature})`,
+      );
+    }
+  }
   await deps.channel.verdict({
     dispute: signal.dispute,
     option: Number(vote),
