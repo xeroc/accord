@@ -1,6 +1,6 @@
 {
   "name": "@useaccord/jurat",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
   "description": "Jurat — autonomous agentic juror daemon for the Accord arbitration protocol (ADR-0036)",
   "type": "module",
