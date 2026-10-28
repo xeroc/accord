@@ -1,5 +1,12 @@
 # @useaccord/landing
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/ui@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes
