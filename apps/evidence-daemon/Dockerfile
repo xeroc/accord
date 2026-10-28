@@ -59,6 +59,12 @@ COPY packages/synod packages/synod
 
 COPY apps/evidence-daemon apps/evidence-daemon
 
+# Source-only: the daemon's tests import jurat's trace sink directly
+# (`src/server/trace.test.ts` → `../../../jurat/src/trace/sink.ts`) — jurat is
+# bun-run and never emitted, so its source must be present for typecheck.
+# Deps are already installed workspace-wide; jurat's own build is never run.
+COPY apps/jurat apps/jurat
+
 # SDK compiles src/generated (committed) -> dist/. No anchor/IDL step needed.
 RUN pnpm --filter @useaccord/sdk  \
   --filter @useaccord/canon \

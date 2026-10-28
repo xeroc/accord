@@ -103,4 +103,31 @@ describe("e2e: lifecycle.pause.timelock (requires Surfpool)", () => {
     expect(afterExec!.paused).toBe(false);
     expect(afterExec!.pendingUnpauseAfter.__option).toBe("None");
   }, 120_000);
+
+  // Crash safety: this is the ONLY spec that pauses the program. If the body
+  // dies between `pause` and `execute_unpause` (e.g. a Surfnet cheatcode
+  // hiccup — surfpool 1.7.0's surfnet_setAccount Internal error, 2026-10-28),
+  // the singleton stays paused and every sibling spec on this Surfnet fails
+  // with #6010 ProgramPaused. Lift the pause best-effort on teardown.
+  afterAll(async () => {
+    if (!env?.up) return;
+    try {
+      const { accordState } = await initializePause(
+        env.accord.adapter,
+        env.programId,
+        env.payer.address,
+      );
+      const state = await fetchDecoded(env, accordState, getAccordStateDecoder());
+      if (!state?.paused) return;
+      await env.sendIx(
+        proposeUnpause(env.accord.adapter, env.programId, env.payer.address, accordState),
+      );
+      await warpForwardSlots(env, UNPAUSE_TIMELOCK_SLOTS);
+      await env.sendIx(
+        executeUnpause(env.accord.adapter, env.programId, env.payer.address, accordState),
+      );
+    } catch {
+      // best effort — the Surfnet may itself be wedged; nothing more to do
+    }
+  });
 });
