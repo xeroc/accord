@@ -28,6 +28,7 @@ import type { Address, Instruction } from "@solana/kit";
 import { findRoundPda, type AccordVotingClient, type Dispute, type Round } from "@useaccord/sdk";
 
 import type { Config } from "./config";
+import type { AccordEventHandlers } from "./chain/events";
 import type {
   DutySignal,
   HeldStake,
@@ -509,6 +510,45 @@ export interface DaemonHandle {
   stop(): Promise<void>;
   /** WS-hint entry point — never stacks with an in-flight scan. */
   kick(): void;
+}
+
+// --- WS hint handlers (bean accord-thgk) ---------------------------------------
+
+/** Seam inputs for {@link makeHintHandlers}: our key, the daemon kick, sinks. */
+export interface HintHandlersDeps {
+  /** The single operator key — the juror a seat must name to be ours. */
+  readonly juror: Address;
+  /** Request an off-cycle scan (`DaemonHandle.kick`). */
+  readonly kick: () => void;
+  /** Operator notification (`NotifyChannel.alert` — never rejects). */
+  alert(message: string): void | Promise<void>;
+  /** Operational log; defaults to `console.log`. */
+  log?(message: string): void;
+}
+
+/**
+ * The composition layer `events.ts` documents: only OUR `SeatDrawn` is a
+ * duty — identify it right away (log + operator alert "duty received") and
+ * kick an immediate scan. Foreign seats are ignored (a live network draws
+ * constantly; every kick is a full reconcile). The other hints carry no
+ * juror, so they just kick. Hints stay non-authoritative either way: the
+ * scan re-verifies membership against `Round.jurors[]` before acting.
+ */
+export function makeHintHandlers(deps: HintHandlersDeps): AccordEventHandlers {
+  const log = deps.log ?? console.log;
+  return {
+    onSeatDrawn: (e) => {
+      if (e.juror !== deps.juror) return;
+      const msg = `duty received: seat ${e.seat} on dispute ${e.dispute} (round ${e.roundIdx})`;
+      log(msg);
+      void deps.alert(msg);
+      deps.kick();
+    },
+    onSubaccordCreated: () => deps.kick(),
+    onRedrawn: () => deps.kick(),
+    onDisputeCreated: () => deps.kick(),
+    onError: (err) => log(`hints: dropped event (${errMessage(err)})`),
+  };
 }
 
 /**

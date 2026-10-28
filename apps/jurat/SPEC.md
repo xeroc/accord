@@ -89,6 +89,11 @@ second hand-rolled implementation):
   (credential-gated pools — `findSasAttestation` memcmp scan, ADR-0024),
   `Ruling` (post-settlement observation).
 - Program logs subscription for hint events; accounts are authoritative.
+  The hint layer (`makeHintHandlers`, `src/runtime.ts`) filters `SeatDrawn`
+  to our operator key: our seat landing is identified right away — logged +
+  alerted to the operator as "duty received" — and kicks an off-cycle scan.
+  Foreign seats are ignored; the scan re-verifies membership against
+  `Round.jurors[]` before anything is acted on.
 
 ## Duty flow
 

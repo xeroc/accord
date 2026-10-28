@@ -56,6 +56,7 @@ import { fileDutyStore, fileVoteStore } from "./state/stores";
 import {
   joinBudgetFromConfig,
   joinPolicyFromConfig,
+  makeHintHandlers,
   runDaemon,
   type RuntimeChain,
   type RuntimeDeps,
@@ -282,20 +283,20 @@ export async function main(): Promise<void> {
   });
 
   // WS log hints: timely, never authoritative (accounts are the truth).
+  // SeatDrawn is filtered to OUR juror (makeHintHandlers) — a duty received
+  // is identified + alerted the moment the seat lands, then kicked.
   void (async () => {
     while (!abort.signal.aborted) {
       try {
         await subscribeAccordEvents(
           chain.rpcSubscriptions,
           ACCORD_PROGRAM_ID,
-          {
-            onSubaccordCreated: () => daemon.kick(),
-            onSeatDrawn: () => daemon.kick(),
-            onRedrawn: () => daemon.kick(),
-            onDisputeCreated: () => daemon.kick(),
-            onError: (err) =>
-              log(`hints: dropped event (${err instanceof Error ? err.message : String(err)})`),
-          },
+          makeHintHandlers({
+            juror: chain.address,
+            kick: () => daemon.kick(),
+            alert: (message) => channel.alert(message),
+            log,
+          }),
           abort.signal,
         );
       } catch (e) {
