@@ -1,11 +1,11 @@
 ---
 # accord-9952
 title: Re-anchor round windows at the last state change — eager-panel fast finality (program + docs)
-status: todo
+status: completed
 type: task
 priority: high
 created_at: 2026-10-26T19:08:53Z
-updated_at: 2026-10-26T19:08:53Z
+updated_at: 2026-10-28T13:45:40Z
 ---
 
 ## Why (user-reported, devnet)
