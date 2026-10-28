@@ -92,7 +92,7 @@ export function createFileDeliveryKeyStorage(path: string): DeliveryKeyStorage {
         // orphan the daemon registration).
         const end =
           raw.length > 64 && raw.at(-1) === 0x0a
-            ? raw.length - (raw.at(-2) === 0x0d ? 2 : 1)
+            ? Math.max(64, raw.length - (raw.at(-2) === 0x0d ? 2 : 1))
             : raw.length;
         return raw.slice(0, end);
       } catch {

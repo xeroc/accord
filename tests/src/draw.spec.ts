@@ -11,7 +11,7 @@
 // LiteSVM (accumulator_litesvm.rs).
 //
 // injectCommittedVrf (setup/vrf.ts) writes `committed_vrf` + `frozen_root`
-// directly via surfnet_setAccount. Requires Surfpool on port 8905; auto-skips
+// directly via surfnet_setAccount. Requires Surfpool on port 8899; auto-skips
 // on the offline CI lane (fx.up === false).
 import { cancelDispute, vrfSeed } from "@useaccord/sdk";
 
@@ -93,6 +93,7 @@ describe("e2e: draw_seat (accumulator + deterministic sortition) — requires Su
   });
 
   it("H-2: pre-draw cancel of a partially drawn panel requires the Round + JurorStake accounts", async () => {
+    if (!fx.up) return; // offline CI lane
 
     const nonce = crypto
       .getRandomValues(new Uint8Array(8))

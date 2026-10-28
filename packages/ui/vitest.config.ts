@@ -36,6 +36,9 @@ export default defineConfig({
         ],
         test: {
           name: "storybook",
+          // ponytail: default 15s starves under full-suite browser parallelism
+          // (Live story: 0.6s isolated, 17s wall under load) — 60s ceiling.
+          testTimeout: 60_000,
           browser: {
             enabled: true,
             headless: true,
