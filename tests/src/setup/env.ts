@@ -105,6 +105,26 @@ export async function createTestEnv(
 
   const up = await isValidatorUp(rpc);
 
+  // Fork tripwire: `surfpool start` with no datasource flag forks MAINNET by
+  // default (surfpool >= 1.5) — the deployment runbook then swaps in our .so,
+  // but every PDA (AccordState, Subaccords, stakes) stays mainnet state, and
+  // the specs die as opaque NotPauseAuthority/#6010 cascades. A Surfnet for
+  // this suite must be a fresh simnet (`make run_surfpool` = `--offline`).
+  if (up) {
+    const genesis = await rpc.getGenesisHash().send();
+    const forked = [
+      "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", // mainnet-beta
+      "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG", // devnet
+    ].includes(genesis);
+    if (forked) {
+      throw new Error(
+        `TestEnv: Surfnet at ${endpoint} is a network fork (genesis ${genesis}) — ` +
+          "specs would run against foreign program state. Start a fresh simnet: " +
+          "`make run_surfpool` (surfpool start --yes --offline --db :memory:).",
+      );
+    }
+  }
+
   // Always wire the pipeline — it's lazy; nothing connects until `sendIx`.
   const subs = createSolanaRpcSubscriptions(wsEndpoint);
   const sendAndConfirm = sendAndConfirmTransactionFactory({

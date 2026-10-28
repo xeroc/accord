@@ -89,6 +89,11 @@ second hand-rolled implementation):
   (credential-gated pools — `findSasAttestation` memcmp scan, ADR-0024),
   `Ruling` (post-settlement observation).
 - Program logs subscription for hint events; accounts are authoritative.
+  The hint layer (`makeHintHandlers`, `src/runtime.ts`) filters `SeatDrawn`
+  to our operator key: our seat landing is identified right away — logged +
+  alerted to the operator as "duty received" — and kicks an off-cycle scan.
+  Foreign seats are ignored; the scan re-verifies membership against
+  `Round.jurors[]` before anything is acted on.
 
 ## Duty flow
 
@@ -114,9 +119,13 @@ second hand-rolled implementation):
 ```
 
 Vote timing is ASAP: commit as soon as a valid verdict exists inside the
-commit window; reveal at reveal-window open. The salt lives in local state
-from verdict until reveal — losing it makes the commit unrevealable (accepted
-risk; the state dir is backed up like a hot wallet's memory).
+commit window; reveal at reveal-window open — or immediately, when our own
+commit completes the panel (pre-commit `commit_count + 1 === juror_count`):
+the chain's early-open relaxation (`reveal.rs`) already admits the reveal, so
+the same pass sends it instead of idling out the commit window. The salt
+lives in local state from verdict until reveal — losing it makes the commit
+unrevealable (accepted risk; the state dir is backed up like a hot wallet's
+memory).
 
 ## Join evaluator gates
 

@@ -10,6 +10,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519";
 import { canonicalJson } from "../agent/runner.ts";
+import { verifyTraceBatchSig } from "@useaccord/sdk/evidence";
 import { makeTraceSink, signTraceBatch, type TraceBatchBody, type TraceEvent } from "./sink.ts";
 
 const SEED = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
@@ -24,7 +25,7 @@ function expectedSig(batch: Omit<TraceBatchBody, "sig">, juror: string, dispute:
   const hash = createHash("sha256")
     .update(canonicalJson({ v: batch.v, juror, dispute, seq: batch.seq, events: batch.events }))
     .digest();
-  return Buffer.from(ed25519.sign(hash, SEED)).toString("hex");
+  return Buffer.from(ed25519.sign(hash, SEED)).toString("base64");
 }
 
 interface Captured {
@@ -191,6 +192,25 @@ describe("signTraceBatch — deterministic over canonical JSON", () => {
     expect(signTraceBatch(payload, { ...IDENT, dispute: "DispOther" }, SEED)).not.toBe(base);
     expect(signTraceBatch({ ...payload, seq: 8 }, IDENT, SEED)).not.toBe(base);
   });
+  it("sig verifies with the daemon-side verifier (SDK wire contract, ADR-0037)", () => {
+    // The daemon decodes `sig` as BASE64 and verifies with the shared SDK
+    // helper — the exact code path of POST /trace ingest. Pins the encoding:
+    // hex sigs decode to garbage and 403 every push (found in prod).
+    const sig = signTraceBatch(payload, IDENT, SEED);
+    expect(
+      verifyTraceBatchSig(
+        ed25519.getPublicKey(SEED),
+        {
+          v: payload.v,
+          juror: IDENT.juror,
+          dispute: IDENT.dispute,
+          seq: payload.seq,
+          events: payload.events,
+        },
+        Buffer.from(sig, "base64"),
+      ),
+    ).toBe(true);
+  });
 
   it("sig verifies against the hot-key public key", () => {
     const sig = signTraceBatch(payload, IDENT, SEED);
@@ -205,6 +225,6 @@ describe("signTraceBatch — deterministic over canonical JSON", () => {
         }),
       )
       .digest();
-    expect(ed25519.verify(Buffer.from(sig, "hex"), hash, ed25519.getPublicKey(SEED))).toBe(true);
+    expect(ed25519.verify(Buffer.from(sig, "base64"), hash, ed25519.getPublicKey(SEED))).toBe(true);
   });
 });

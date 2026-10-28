@@ -4,8 +4,10 @@
 // 1-day snapshot challenge, the 3-day appeal window) read `Clock::unix_timestamp`;
 // its timelocks (propose/execute update, propose/execute unpause) read
 // `Clock::slot`. Surfpool advances these only with real time, so we drive them
-// via `surfnet_timeTravel`. VRF injection + token setup use `surfnet_setAccount`
-// / `surfnet_setTokenAccount`.
+// via `surfnet_timeTravel` (REQUIRES surfpool >= 1.7.0: exact `absoluteSlot`
+// landings; sysvar `surfnet_setAccount` is rejected as managed — surfpool#895).
+// VRF injection + token setup use `surfnet_setAccount`
+// / `surfnet_setTokenAccount` — never on sysvars.
 //
 // IMPORTANT: time-warp is GLOBAL on the surfnet, so the e2e suite MUST run
 // serially (jest `maxWorkers: 1`). Every warp here is computed from the LIVE
@@ -40,7 +42,12 @@ export async function cheat<T = unknown>(
     error?: { message: string; data?: unknown };
   };
   if (error) {
-    throw new Error(`cheat ${method} failed: ${error.message}`);
+    // surfpool buries the actionable reason in `data` while `message` is a
+    // generic "Internal error" (e.g. managed-sysvar rejections, past-slot
+    // travel) — surface both or the failure is undiagnosable (surfpool#895).
+    const why =
+      error.data === undefined ? "" : ` — ${JSON.stringify(error.data)}`;
+    throw new Error(`cheat ${method} failed: ${error.message}${why}`);
   }
   return result as T;
 }
@@ -61,43 +68,10 @@ export async function readClock(env: TestEnv): Promise<ClockView> {
 }
 
 /**
- * Overwrite the Clock sysvar's slot and/or unix_timestamp in-place. Surfpool's
- * `surfnet_timeTravel` wraps the slot at `slotsInEpoch` (432000) on a fork, so
- * for deterministic large warps (esp. UPDATE_TIMELOCK_SLOTS) we set the field
- * directly — Surfpool honours the overwritten Clock for `Clock::get()`. Only
- * the given fields are mutated; the rest of the 40-byte sysvar is preserved.
- */
-export async function setClock(
-  env: TestEnv,
-  fields: { slot?: bigint; unixTimestamp?: bigint },
-): Promise<ClockView> {
-  const account = await env.rpc
-    .getAccountInfo(CLOCK_SYSVAR, { encoding: "base64" })
-    .send();
-  if (!account.value) {
-    throw new Error("Clock sysvar not readable — is this a Surfpool surfnet?");
-  }
-  const bytes = Buffer.from(account.value.data[0], "base64");
-  if (fields.slot !== undefined) bytes.writeBigUInt64LE(fields.slot, 0);
-  if (fields.unixTimestamp !== undefined) {
-    bytes.writeBigInt64LE(fields.unixTimestamp, 32);
-  }
-  await setAccountRaw(env, CLOCK_SYSVAR, {
-    lamports: account.value.lamports,
-    data: new Uint8Array(bytes),
-    owner: account.value.owner,
-    executable: false,
-  });
-  return readClock(env);
-}
-
-/**
  * Advance `Clock::unix_timestamp` by `seconds` (window gates: commit/reveal/
  * snapshot-challenge/appeal). Uses `surfnet_timeTravel` — surfpool re-derives
  * the timestamp per block, so a sysvar byte-overwrite would be ephemeral; the
- * cheatcode advances surfpool's internal clock persistently. (Slot warps use
- * `setClock` instead — see {@link warpForwardSlots} — because timeTravel wraps
- * the slot at `slotsInEpoch`.)
+ * cheatcode advances surfpool's internal clock persistently.
  */
 export async function warpForwardSeconds(
   env: TestEnv,
@@ -109,13 +83,33 @@ export async function warpForwardSeconds(
   return readClock(env);
 }
 
+/**
+ * Jump `Clock::slot` to an absolute slot (timelock deadlines: propose/execute
+ * update, unpause). `surfnet_timeTravel { absoluteSlot }` lands exactly and
+ * recomputes epoch/leader fields — on surfpool >= 1.7.0, which this suite
+ * REQUIRES: pre-1.7 `absoluteSlot` wrapped modulo `slotsInEpoch` (which is why
+ * this used to be a raw Clock-sysvar `surfnet_setAccount`), and since 1.7.0
+ * sysvar writes are rejected outright (managed sysvars — surfpool#895).
+ */
+export async function warpToSlot(
+  env: TestEnv,
+  slot: bigint,
+): Promise<ClockView> {
+  const n = BigInt(slot);
+  if (n < 0n || n > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`slot out of JSON-safe range: ${n}`);
+  }
+  await cheat(env, "surfnet_timeTravel", [{ absoluteSlot: Number(n) }]);
+  return readClock(env);
+}
+
 /** Advance `Clock::slot` by `slots` (timelock gates: update / unpause). */
 export async function warpForwardSlots(
   env: TestEnv,
   slots: number | bigint,
 ): Promise<ClockView> {
   const now = await readClock(env);
-  return setClock(env, { slot: now.slot + BigInt(slots) });
+  return warpToSlot(env, now.slot + BigInt(slots));
 }
 
 /** Replace an account's full on-chain state (raw bytes → hex data + owner/lamports). */

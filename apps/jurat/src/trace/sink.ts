@@ -20,10 +20,10 @@
  * emit, so the daemon releases them at push; sealed mode forwards the
  * emitter's `unsealAt` (= round revealEnd) untouched.
  */
-import { createHash } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519";
+import { buildTraceBatchMessage } from "@useaccord/sdk/evidence";
 import type { FailureKind } from "../duty/types.ts";
-import { canonicalJson, type RunnerTraceEvent } from "../agent/runner.ts";
+import type { RunnerTraceEvent } from "../agent/runner.ts";
 
 /** Queue cap — oldest event dropped when full (ADR-0037 failure contract). */
 export const TRACE_QUEUE_CAP = 256;
@@ -136,25 +136,23 @@ export interface TraceSinkOptions {
 /**
  * Ed25519 signature over sha256(canonical JSON of {v, juror, dispute, seq,
  * events}) — deterministic, verified daemon-side against the juror address
- * from the live Round.
+ * from the live Round. The hash comes from the SDK's shared implementation
+ * (single canonical form, ADR-0037) and the signature is BASE64 — the wire
+ * format the daemon's `base64ToBytes` ingest decodes.
  */
 export function signTraceBatch(
   batch: { v: 1; seq: number; events: TraceEvent[] },
   ident: { juror: string; dispute: string },
   seed: Uint8Array,
 ): string {
-  const hash = createHash("sha256")
-    .update(
-      canonicalJson({
-        v: batch.v,
-        juror: ident.juror,
-        dispute: ident.dispute,
-        seq: batch.seq,
-        events: batch.events,
-      }),
-    )
-    .digest();
-  return Buffer.from(ed25519.sign(hash, seed)).toString("hex");
+  const hash = buildTraceBatchMessage({
+    v: batch.v,
+    juror: ident.juror,
+    dispute: ident.dispute,
+    seq: batch.seq,
+    events: batch.events,
+  });
+  return Buffer.from(ed25519.sign(hash, seed)).toString("base64");
 }
 
 /** Build the sink. Unset `url` → no-op; everything else never throws. */
@@ -175,11 +173,18 @@ export function makeTraceSink(options: TraceSinkOptions): TraceSink {
   let tail: Promise<void> = Promise.resolve();
 
   function emit(event: TraceEvent): void {
-    queue.push(
-      event.kind === "verdict" && options.mode === "open"
-        ? { ...event, unsealAt: undefined }
-        : event,
-    );
+    let queued: TraceEvent = event;
+    if (event.kind === "verdict" && options.mode === "open") {
+      // DELETE `unsealAt`, never `{ ...event, unsealAt: undefined }`: an
+      // explicitly-undefined key survives Object.entries in the local
+      // canonical form (rendered `null`) but vanishes in the JSON wire form
+      // the daemon re-canonicalizes — the signature hash desyncs (caught by
+      // the cross-app suite in evidence-daemon's trace tests).
+      const rest: VerdictEvent = { ...event };
+      delete rest.unsealAt;
+      queued = rest;
+    }
+    queue.push(queued);
     if (queue.length > TRACE_QUEUE_CAP) queue.shift(); // drop-oldest
     if (!scheduled) {
       scheduled = true;
@@ -203,8 +208,12 @@ export function makeTraceSink(options: TraceSinkOptions): TraceSink {
           signal: AbortSignal.timeout(pushTimeoutMs),
         });
         if (!res.ok) {
+          // The daemon's 4xx body carries {"error": reason} — surface it; it
+          // names the gate that rejected (sig / round-membership / shape).
+          const reason = await res.text().catch(() => "");
           console.warn(
-            `[trace] push rejected (${res.status}) — batch from seq ${batch.seq} dropped`,
+            `[trace] push rejected (${res.status}) — batch from seq ${batch.seq} dropped: ` +
+              reason.slice(0, 200),
           );
         }
       } catch (err) {

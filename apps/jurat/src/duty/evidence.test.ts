@@ -137,6 +137,20 @@ test("file storage tolerates a text-tool trailing newline (fixed 64-byte format)
   }
 });
 
+test("file storage never trims key bytes: last byte 0x0d + appended \\n stays 64", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jurat-delkey-cr-"));
+  try {
+    // A key ending in \r followed by editor \n must not read as \r\n contamination.
+    const key = new Uint8Array(64).fill(7);
+    key[63] = 0x0d;
+    await writeFile(join(dir, "delivery.key"), new Uint8Array([...key, 0x0a]));
+    const storage = createFileDeliveryKeyStorage(join(dir, "delivery.key"));
+    assert.deepEqual(await storage.get(), key);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("file storage: null when absent, round-trips the keypair, generate-once via ensure", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jurat-delkey-"));
   try {

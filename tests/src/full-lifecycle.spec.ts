@@ -41,7 +41,7 @@ const DRAWN = 1;
 const ROUND_RESOLVED = 5;
 const FINAL = 6;
 
-describe("e2e: full lifecycle — requires Surfpool port 8905", () => {
+describe("e2e: full lifecycle — requires Surfpool port 8899", () => {
   let env: TestEnv;
 
   beforeAll(async () => {

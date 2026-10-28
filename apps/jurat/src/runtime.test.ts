@@ -24,8 +24,15 @@ import {
   runDuty,
   joinPolicyFromConfig,
   joinBudgetFromConfig,
+  makeHintHandlers,
 } from "./runtime";
 import type { RuntimeDeps, RuntimeChain } from "./runtime";
+import type {
+  DisputeCreatedEvent,
+  RedrawnEvent,
+  SeatDrawnEvent,
+  SubaccordCreatedEvent,
+} from "./chain/events";
 import { RetryLadderExhaustedError } from "./agent/provider";
 import { MalformedVerdictError, type AgentContext } from "./agent/runner";
 import { EvidenceUnavailableError } from "./duty/evidence";
@@ -356,6 +363,17 @@ test("open duty in commit phase → verdict → commit → notice; record commit
   expect(rec.sends).toHaveLength(1); // the commit tx
   expect(rec.verdicts).toHaveLength(1);
   expect(rec.verdicts[0]).toMatchObject({ dispute: DISPUTE, option: 1, dryRun: false });
+});
+
+test("commit completing the panel → reveal fires in the same pass (early open)", async () => {
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture({ commitCount: 1 }), disputeFixture(DisputeState.Commit)),
+    joinChain: subReader(subFixture()) as never,
+  });
+  await runDuty(deps, dutySignal());
+  const record = await deps.store.load(DISPUTE as string, 0);
+  expect(record?.status).toBe("revealed");
+  expect(rec.sends).toHaveLength(2); // commit tx + immediate reveal tx
 });
 
 test("open duty in review phase → no verdict, no tx (agent waits for the window)", async () => {
@@ -750,4 +768,87 @@ test("trace: dead trace endpoint never fails the duty", async () => {
   const record = await deps.store.load(DISPUTE as string, 0);
   expect(record?.status).toBe("committed");
   expect(rec.verdicts).toHaveLength(1);
+});
+
+// --- hint handlers: SeatDrawn filter → duty received (bean accord-thgk) ------
+
+function seatDrawn(juror: Address): SeatDrawnEvent {
+  return { kind: "SeatDrawn", dispute: DISPUTE, roundIdx: 0, seat: 2, juror };
+}
+
+test("hints: our seat drawn → duty-received log + alert + kick", () => {
+  const kicks: number[] = [];
+  const alerts: string[] = [];
+  const logs: string[] = [];
+  const handlers = makeHintHandlers({
+    juror: JUROR,
+    kick: () => kicks.push(1),
+    alert: (m) => alerts.push(m),
+    log: (m) => logs.push(m),
+  });
+  handlers.onSeatDrawn?.(seatDrawn(JUROR));
+  expect(kicks).toHaveLength(1);
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]).toContain("duty received");
+  expect(alerts[0]).toContain(String(DISPUTE));
+  expect(alerts[0]).toContain("seat 2");
+  expect(logs.at(-1)).toBe(alerts[0]);
+});
+
+test("hints: another juror's seat drawn → ignored (no kick, no alert)", () => {
+  const kicks: number[] = [];
+  const alerts: string[] = [];
+  const handlers = makeHintHandlers({
+    juror: JUROR,
+    kick: () => kicks.push(1),
+    alert: (m) => alerts.push(m),
+    log: () => {},
+  });
+  handlers.onSeatDrawn?.(seatDrawn(OTHER));
+  expect(kicks).toHaveLength(0);
+  expect(alerts).toHaveLength(0);
+});
+
+test("hints: redraw / subaccord / dispute-created kick without alert", () => {
+  const kicks: number[] = [];
+  const alerts: string[] = [];
+  const handlers = makeHintHandlers({
+    juror: JUROR,
+    kick: () => kicks.push(1),
+    alert: (m) => alerts.push(m),
+    log: () => {},
+  });
+  const redrawn: RedrawnEvent = { kind: "Redrawn", dispute: DISPUTE, roundIdx: 1, drawAttempt: 2 };
+  const created: SubaccordCreatedEvent = {
+    kind: "SubaccordCreated",
+    creator: OTHER,
+    subaccord: SUB,
+    stakingToken: MINT,
+    feeToken: MINT,
+    domainRef: new Uint8Array(),
+  };
+  const dispute: DisputeCreatedEvent = {
+    kind: "DisputeCreated",
+    dispute: DISPUTE,
+    subaccord: SUB,
+    filer: OTHER,
+    numOptions: 2,
+  };
+  handlers.onRedrawn?.(redrawn);
+  handlers.onSubaccordCreated?.(created);
+  handlers.onDisputeCreated?.(dispute);
+  expect(kicks).toHaveLength(3);
+  expect(alerts).toHaveLength(0);
+});
+
+test("hints: onError logs the dropped event, never throws", () => {
+  const logs: string[] = [];
+  const handlers = makeHintHandlers({
+    juror: JUROR,
+    kick: () => {},
+    alert: () => {},
+    log: (m) => logs.push(m),
+  });
+  handlers.onError?.(new Error("boom"), "raw");
+  expect(logs.at(-1)).toContain("boom");
 });

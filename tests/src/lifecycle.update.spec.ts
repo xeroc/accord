@@ -15,12 +15,12 @@
 // Kit's `signTransactionMessageWithSigners`. `execute` is permissionless, so
 // it goes through the payer facade.
 //
-// SURFPOOL CLOCK NOTE: UPDATE_TIMELOCK_SLOTS (432_000) == slotsInEpoch, so
-// warpForwardSlots wraps the Clock sysvar's slot modulo the epoch and can never
-// reach the deadline. We fix this by reading executeAfterSlot from the
-// PendingUpdate and directly overwriting the Clock sysvar's slot field to that
-// value via surfnet_setAccount (the cheatcode equivalent of the LiteSVM
-// warp_to_slot).
+// SURFPOOL CLOCK NOTE: UPDATE_TIMELOCK_SLOTS (432_000) == slotsInEpoch, so on
+// surfpool < 1.7.0 timeTravel's absoluteSlot wrapped modulo the epoch and could
+// never reach the deadline — hence a raw Clock-sysvar surfnet_setAccount. Since
+// surfpool 1.7.0 sysvar writes are rejected (managed sysvars, surfpool#895) and
+// absoluteSlot lands exactly; we read executeAfterSlot from the PendingUpdate
+// and warpToSlot() to it.
 import {
   Accord,
   createSubaccord,
@@ -28,42 +28,17 @@ import {
   executeSubaccordUpdate,
   getSubaccordDecoder,
   getPendingUpdateDecoder,
-  UPDATE_TIMELOCK_SLOTS,
   Aggregation,
   type UpdatePayload,
 } from "@useaccord/sdk";
 import type { Address } from "@solana/kit";
 
 import { createTestEnv, fundSigner, type TestEnv } from "./setup/env.js";
-import { warpForwardSlots, setAccountRaw } from "./setup/cheats.js";
+import { warpToSlot } from "./setup/cheats.js";
 import { createMint } from "./setup/tokens.js";
 import { fetchDecoded } from "./setup/assertions.js";
 import { defaultSubaccordArgs } from "./setup/fixtures.js";
 
-const CLOCK_SYSVAR = "SysvarC1ock11111111111111111111111111111111" as Address;
-
-/**
- * Overwrite the Clock sysvar's `slot` field (u64@0) to an absolute value,
- * preserving the other fields. Works around the surfpool Clock slotIndex wrap
- * (UPDATE_TIMELOCK_SLOTS == slotsInEpoch == 432_000).
- */
-async function setClockSlot(env: TestEnv, slot: bigint): Promise<void> {
-  const res = await env.rpc
-    .getAccountInfo(CLOCK_SYSVAR, { encoding: "base64" })
-    .send();
-  if (!res.value) throw new Error("Clock sysvar not found");
-  const bytes = new Uint8Array(Buffer.from(res.value.data[0], "base64"));
-  // slot: u64 LE at offset 0
-  const dv = new DataView(bytes.buffer);
-  dv.setBigUint64(0, slot, true);
-  await setAccountRaw(env, CLOCK_SYSVAR, {
-    lamports: Number(res.value.lamports),
-    data: bytes, // Uint8Array → setAccountRaw converts to hex
-    owner: res.value.owner as Address,
-    executable: false,
-    rentEpoch: 0,
-  });
-}
 
 describe("e2e: lifecycle.update (requires Surfpool)", () => {
   let env: TestEnv;
@@ -145,12 +120,9 @@ describe("e2e: lifecycle.update (requires Surfpool)", () => {
       (await fetchDecoded(env, subaccord, getSubaccordDecoder()))!.minStake,
     ).toBe(1_000n);
 
-    // ── 5. Advance the clock past the 48h deadline ────────────────────────
-    // warpForwardSlots updates the surfnet's internal clock; then we fix the
-    // Clock sysvar's slot to the deadline (surfpool wraps slot at
-    // slotsInEpoch == UPDATE_TIMELOCK_SLOTS, so a direct set is required).
-    await warpForwardSlots(env, UPDATE_TIMELOCK_SLOTS);
-    await setClockSlot(env, executeAfterSlot);
+    // ── 5. Advance the clock TO the deadline ─────────────────────────────
+    // (exact absoluteSlot landing on surfpool >= 1.7.0 — see header note)
+    await warpToSlot(env, executeAfterSlot);
 
     // ── 6. Execute AFTER timelock: payload applied ────────────────────────
     const execAfterIx = executeSubaccordUpdate(
@@ -208,11 +180,10 @@ describe("e2e: lifecycle.update (requires Surfpool)", () => {
     }
 
     // The two proposals land in different slots, so their ETAs differ by at
-    // least one slot — arm the clock past the LATEST deadline. The clock is
-    // RE-SET before every execute: surfpool regenerates the Clock sysvar from
-    // its (epoch-wrapped) internal clock on each new block, so a single set
-    // only survives the immediately-following transaction.
-    await warpForwardSlots(env, UPDATE_TIMELOCK_SLOTS);
+    // least one slot — arm the clock once past the LATEST deadline. warpToSlot
+    // moves surfpool's internal clock, so the landing persists across blocks
+    // (and timeTravel cannot jump backwards — each execute only advances the
+    // slot further past maxEta, which still satisfies every deadline).
     const etas = await Promise.all(
       pendings.map(async (p) => {
         const pu = (await fetchDecoded(env, p, getPendingUpdateDecoder()))!;
@@ -220,9 +191,9 @@ describe("e2e: lifecycle.update (requires Surfpool)", () => {
       }),
     );
     const maxEta = etas.reduce((a, b) => (a > b ? a : b));
+    await warpToSlot(env, maxEta);
 
     for (const pendingUpdate of pendings) {
-      await setClockSlot(env, maxEta);
       await env.sendIx(
         executeSubaccordUpdate(
           env.accord.adapter,
