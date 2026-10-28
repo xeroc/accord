@@ -33,8 +33,9 @@ import { FsTraceStore } from "../store/trace-fs.js";
 import type { TraceBatch, TraceStore } from "../store/trace.js";
 import { ingestTrace, type TraceChainReader } from "../pipeline/trace.js";
 import { createApp } from "./app.js";
-import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.js";
 import { createTraceReplayHandler, type TraceReplaySource } from "./trace.js";
+import { makeTraceSink } from "../../../jurat/src/trace/sink.ts";
+import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
 
 // ---------------------------------------------------------------------------
@@ -214,6 +215,8 @@ interface MakeAppOpts {
   readonly traceEnabled?: boolean;
   readonly chain?: TraceChainReader;
   readonly store?: TraceStore;
+  /** Wire traceReplay over the (same) store — arms GET /trace/:dispute. */
+  readonly replay?: boolean;
 }
 
 function makeApp(opts: MakeAppOpts = {}) {
@@ -251,6 +254,7 @@ function makeApp(opts: MakeAppOpts = {}) {
         ? { ok: true, status: out.status }
         : { ok: false, status: out.status, error: out.reason };
     },
+    ...(opts.replay ? { traceReplay: createTraceReplayHandler(opts.store ?? store) } : {}),
   };
   return createApp(deps, { traceEnabled: opts.traceEnabled ?? true });
 }
@@ -453,5 +457,58 @@ describe("POST /trace — happy path", () => {
     const res = await app.request(post(signedBody()));
     expect(res.status).toBe(201);
     expect(fanned).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// jurat TraceSink → daemon ingest — cross-app integration (ADR-0037)
+// ---------------------------------------------------------------------------
+//
+// The route suites above sign with the SDK helper and jurat's suite verifies
+// its own output; neither runs the OTHER side. This block runs jurat's REAL
+// sink (its signer, encoder, batching, fetch) over real HTTP (Bun.serve)
+// into the REAL app + pipeline + FsTraceStore, then reads the batches back
+// through the replay route. This is the seam where the hex-vs-base64 sig
+// encoding bug lived (every push 403'd in prod while both halves were green
+// in isolation) — a regression here fails this suite first.
+
+describe("jurat TraceSink → POST /trace → GET /trace (cross-app)", () => {
+  it("real sink batches land durably and replay back through the real route", async () => {
+    const app = makeApp({ replay: true, chain: chainWith([JUROR_PUB]) });
+    const server = Bun.serve({ port: 0, fetch: app.fetch });
+    const sink = makeTraceSink({
+      url: `http://localhost:${server.port}`,
+      mode: "open",
+      juror: JUROR,
+      subaccord: SUB,
+      dispute: DISPUTE,
+      seed: JUROR_SEED,
+    });
+    try {
+      sink.emit({
+        kind: "duty-open",
+        round: 0,
+        seat: 1,
+        reviewEnd: 1,
+        commitEnd: 2,
+        revealEnd: 3,
+      });
+      sink.emit({ kind: "verdict", optionIndex: 0, rationale: "r", confidence: 0.5, unsealAt: 1 });
+      await sink.drain();
+
+      // The sink drops rejected batches with only a console.warn — the
+      // durable store is the assertion: nothing lands on a 403.
+      const es = await store.readEvents(DISPUTE, JUROR);
+      expect(es.map((e) => e.seq)).toEqual([1, 1]);
+      expect(es.map((e) => e.event.kind)).toEqual(["duty-open", "verdict"]);
+      // open mode strips unsealAt at emit → the frame replays unsealed.
+      expect("unsealAt" in es[1]!.event).toBe(false);
+
+      const replay = await app.request(`/trace/${DISPUTE}`);
+      expect(replay.status).toBe(200);
+      expect(((await replay.json()) as TraceEnvelope[]).map((e) => e.seq)).toEqual([1, 1]);
+    } finally {
+      server.stop(true);
+    }
   });
 });
