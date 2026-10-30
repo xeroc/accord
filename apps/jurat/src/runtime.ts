@@ -549,22 +549,34 @@ export interface HintHandlersDeps {
  * duty — identify it right away (log + operator alert "duty received") and
  * kick an immediate scan. Foreign seats are ignored (a live network draws
  * constantly; every kick is a full reconcile). The other hints carry no
- * juror, so they just kick. Hints stay non-authoritative either way: the
- * scan re-verifies membership against `Round.jurors[]` before acting.
+ * juror, so they log what identifies them and kick. Hints stay
+ * non-authoritative either way: the scan re-verifies membership against
+ * `Round.jurors[]` before acting.
  */
 export function makeHintHandlers(deps: HintHandlersDeps): AccordEventHandlers {
   const log = deps.log ?? console.log;
   return {
     onSeatDrawn: (e) => {
       if (e.juror !== deps.juror) return;
-      const msg = `duty received: seat ${e.seat} on dispute ${e.dispute} (round ${e.roundIdx})`;
+      const msg =
+        `duty received: SeatDrawn seat ${e.seat} on dispute ${e.dispute} ` +
+        `(round ${e.roundIdx}) juror ${e.juror}`;
       log(msg);
       void deps.alert(msg);
       deps.kick();
     },
-    onSubaccordCreated: () => deps.kick(),
-    onRedrawn: () => deps.kick(),
-    onDisputeCreated: () => deps.kick(),
+    onRedrawn: (e) => {
+      log(`hints: Redrawn dispute ${e.dispute} (round ${e.roundIdx}) — kicking scan`);
+      deps.kick();
+    },
+    onSubaccordCreated: (e) => {
+      log(`hints: SubaccordCreated subaccord ${e.subaccord} — kicking scan`);
+      deps.kick();
+    },
+    onDisputeCreated: (e) => {
+      log(`hints: DisputeCreated dispute ${e.dispute} subaccord ${e.subaccord} — kicking scan`);
+      deps.kick();
+    },
     onError: (err) => log(`hints: dropped event (${errMessage(err)})`),
   };
 }

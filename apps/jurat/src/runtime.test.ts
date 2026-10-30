@@ -856,30 +856,35 @@ test("hints: our seat drawn → duty-received log + alert + kick", () => {
   expect(alerts[0]).toContain(String(DISPUTE));
   expect(alerts[0]).toContain("seat 2");
   expect(logs.at(-1)).toBe(alerts[0]);
+  expect(logs.at(-1)).toContain("SeatDrawn");
+  expect(logs.at(-1)).toContain(String(JUROR));
 });
 
-test("hints: another juror's seat drawn → ignored (no kick, no alert)", () => {
+test("hints: another juror's seat drawn → ignored (no kick, no alert, no log)", () => {
   const kicks: number[] = [];
   const alerts: string[] = [];
+  const logs: string[] = [];
   const handlers = makeHintHandlers({
     juror: JUROR,
     kick: () => kicks.push(1),
     alert: (m) => alerts.push(m),
-    log: () => {},
+    log: (m) => logs.push(m),
   });
   handlers.onSeatDrawn?.(seatDrawn(OTHER));
   expect(kicks).toHaveLength(0);
   expect(alerts).toHaveLength(0);
+  expect(logs).toHaveLength(0);
 });
 
-test("hints: redraw / subaccord / dispute-created kick without alert", () => {
+test("hints: redraw / subaccord / dispute-created log identifying info + kick", () => {
   const kicks: number[] = [];
   const alerts: string[] = [];
+  const logs: string[] = [];
   const handlers = makeHintHandlers({
     juror: JUROR,
     kick: () => kicks.push(1),
     alert: (m) => alerts.push(m),
-    log: () => {},
+    log: (m) => logs.push(m),
   });
   const redrawn: RedrawnEvent = { kind: "Redrawn", dispute: DISPUTE, roundIdx: 1, drawAttempt: 2 };
   const created: SubaccordCreatedEvent = {
@@ -902,6 +907,14 @@ test("hints: redraw / subaccord / dispute-created kick without alert", () => {
   handlers.onDisputeCreated?.(dispute);
   expect(kicks).toHaveLength(3);
   expect(alerts).toHaveLength(0);
+  expect(logs).toHaveLength(3);
+  expect(logs[0]).toContain("Redrawn");
+  expect(logs[0]).toContain(String(DISPUTE));
+  expect(logs[1]).toContain("SubaccordCreated");
+  expect(logs[1]).toContain(String(SUB));
+  expect(logs[2]).toContain("DisputeCreated");
+  expect(logs[2]).toContain(String(DISPUTE));
+  expect(logs[2]).toContain(String(SUB));
 });
 
 test("hints: onError logs the dropped event, never throws", () => {
