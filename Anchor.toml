@@ -7,8 +7,15 @@ package_manager = "pnpm"
 resolution = true
 skip-lint = false
 
+[programs.mainnet]
+accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
+canon = "can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs"
+synod = "GdV5rbRd579LUs3zB2PkbBsJNCMSj55rwWdikGuobHeC"
+
 [programs.devnet]
 accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
+canon = "can5ZhfgQpi7jymkxE7uEv4ZVm3X2f51KThTUtdWrFs"
+synod = "GdV5rbRd579LUs3zB2PkbBsJNCMSj55rwWdikGuobHeC"
 
 [programs.localnet]
 accord = "cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed"
