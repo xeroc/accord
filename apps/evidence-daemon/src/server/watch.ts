@@ -9,6 +9,13 @@
  *             seal-visible send; sealed frames arm an unseal timer that
  *             re-fans out at unsealAt
  *
+ * Read gate (ADR-0037): the optional `authorize` seam runs BEFORE the IP
+ * slot is reserved or the socket upgrades — false ⇒ 401 JSON. main.ts wires
+ * it to the same rule as GET /trace: the durable public stamp (flipped by
+ * jurat via POST /trace-public) OR a valid filer token from `?token=`
+ * (browsers cannot
+ * header a WS upgrade). Absent ⇒ ungated (pre-gate deployments).
+ *
  * Fan-out state is single-replica in-memory (ADR-0037 locked decision);
  * durable replay is the store (GET /trace works on any replica). WS ignores
  * CORS; the per-IP connection cap is hygiene, not auth.
@@ -212,13 +219,17 @@ export function websocketHandlers(hub: WatchHub): Bun.WebSocketHandler<WatchSock
 export function watchRoutes(
   hub: WatchHub,
   getServer: () => Bun.Server<WatchSocketData> | undefined,
+  authorize?: (dispute: string, token: string | undefined) => Promise<boolean>,
 ): Hono {
   const app = new Hono();
 
-  app.get("/watch/:dispute", (c) => {
+  app.get("/watch/:dispute", async (c) => {
     const dispute = c.req.param("dispute");
     if (!ADDRESS.test(dispute)) {
       return Response.json({ error: "invalid dispute" }, { status: 400 });
+    }
+    if (authorize !== undefined && !(await authorize(dispute, c.req.query("token")))) {
+      return Response.json({ error: "unauthorized" }, { status: 401 });
     }
     const server = getServer();
     if (server === undefined) {

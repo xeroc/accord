@@ -93,6 +93,12 @@ export interface RuntimeDeps {
   tokenBalance?(owner: Address, mint: Address): Promise<bigint>;
   /** Chain-clock now (unix seconds) — windows are chain-time, not wall-time. */
   now(): Promise<number>;
+  /**
+   * Deadline wake: fires an off-cycle scan when a deadline (commit-window
+   * open) arrives, so verdict work starts on the window instead of the next
+   * scan tick. Optional — absent = scan-cadence only (tests, embeds).
+   */
+  scheduleWake?(key: string, wakeAtMs: number): void;
   log?(message: string): void;
 }
 
@@ -262,7 +268,14 @@ export async function runDuty(deps: RuntimeDeps, signal: DutySignal): Promise<vo
       );
       return;
     }
-    if (phase === "review") return; // agent waits for the commit window
+    if (phase === "review") {
+      // The on-chain commit gate (commit.rs) rejects any earlier tx — but the
+      // START of the work must not wait for the next scan (120s in deployment):
+      // schedule a wake at reviewEnd + 1s so evidence+LLM begin the moment the
+      // commit window opens. No scheduleWake (tests, embeds) = old behavior.
+      deps.scheduleWake?.(`${signal.dispute}:${signal.roundIdx}`, (windows.reviewEnd + 1) * 1000);
+      return; // agent waits for the commit window
+    }
     if (phase !== "commit") {
       await abstain(
         voteDeps,
@@ -417,6 +430,24 @@ async function runVerdictPipeline(
     log(`duty: dry-run commit held for ${signal.dispute}:${signal.roundIdx} vote ${vote}`);
   }
   trace?.emit({ kind: "commit", tx: result.signature, dryRun: result.dryRun });
+  // FLIP publication (inveigo ADR-0013 amendment): Final+1 = FLIP per inveigo
+  // settle.rs — the pot pays out, so the trace goes public. Only on a REAL
+  // commit (dry-run holds never publish; the held-recommit path counts — its
+  // `vote` IS the committed side). Fire-and-report: a failed publish logs +
+  // alerts but never disturbs the duty pipeline.
+  if (result.sent && vote === 1n) {
+    try {
+      await trace?.publishTrace();
+    } catch (e) {
+      log(
+        `trace: publish failed for ${signal.dispute}: ` +
+          `${e instanceof Error ? e.message : String(e)}`,
+      );
+      await deps.channel.alert(
+        `trace-public failed for ${signal.dispute} (FLIP commit ${result.signature})`,
+      );
+    }
+  }
   await deps.channel.verdict({
     dispute: signal.dispute,
     option: Number(vote),
@@ -512,6 +543,50 @@ export interface DaemonHandle {
   kick(): void;
 }
 
+export interface WakeSchedulerDeps {
+  /** Fired when a deadline arrives (the daemon's off-cycle scan). */
+  readonly wake: () => void;
+  /** Timer seams — injectable for tests. */
+  readonly setTimeoutFn?: (fn: () => void, ms: number) => unknown;
+  readonly clearTimeoutFn?: (handle: unknown) => void;
+}
+
+/**
+ * Deadline scheduler for duty windows: one timer per tracked deadline, keyed
+ * `dispute:round`. A LATER deadline for an existing key never overrides an
+ * earlier one (the earlier wake sees the duty through), an earlier one
+ * replaces it. Wakes never stack — firing just requests an off-cycle scan,
+ * and the scan re-schedules only if the duty is still short of its window.
+ */
+export function makeWakeScheduler(deps: WakeSchedulerDeps): {
+  schedule(key: string, wakeAtMs: number): void;
+  dispose(): void;
+} {
+  const setTimeoutFn = deps.setTimeoutFn ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+  const clearTimeoutFn =
+    deps.clearTimeoutFn ?? ((handle: unknown) => clearTimeout(handle as NodeJS.Timeout));
+  const pending = new Map<string, { handle: unknown; atMs: number }>();
+  return {
+    schedule(key, wakeAtMs) {
+      const existing = pending.get(key);
+      if (existing && existing.atMs <= wakeAtMs) return; // earlier-or-equal already set
+      if (existing) clearTimeoutFn(existing.handle);
+      const handle = setTimeoutFn(
+        () => {
+          pending.delete(key);
+          deps.wake();
+        },
+        Math.max(wakeAtMs - Date.now(), 0),
+      );
+      pending.set(key, { handle, atMs: wakeAtMs });
+    },
+    dispose() {
+      for (const { handle } of pending.values()) clearTimeoutFn(handle);
+      pending.clear();
+    },
+  };
+}
+
 // --- WS hint handlers (bean accord-thgk) ---------------------------------------
 
 /** Seam inputs for {@link makeHintHandlers}: our key, the daemon kick, sinks. */
@@ -531,22 +606,34 @@ export interface HintHandlersDeps {
  * duty — identify it right away (log + operator alert "duty received") and
  * kick an immediate scan. Foreign seats are ignored (a live network draws
  * constantly; every kick is a full reconcile). The other hints carry no
- * juror, so they just kick. Hints stay non-authoritative either way: the
- * scan re-verifies membership against `Round.jurors[]` before acting.
+ * juror, so they log what identifies them and kick. Hints stay
+ * non-authoritative either way: the scan re-verifies membership against
+ * `Round.jurors[]` before acting.
  */
 export function makeHintHandlers(deps: HintHandlersDeps): AccordEventHandlers {
   const log = deps.log ?? console.log;
   return {
     onSeatDrawn: (e) => {
       if (e.juror !== deps.juror) return;
-      const msg = `duty received: seat ${e.seat} on dispute ${e.dispute} (round ${e.roundIdx})`;
+      const msg =
+        `duty received: SeatDrawn seat ${e.seat} on dispute ${e.dispute} ` +
+        `(round ${e.roundIdx}) juror ${e.juror}`;
       log(msg);
       void deps.alert(msg);
       deps.kick();
     },
-    onSubaccordCreated: () => deps.kick(),
-    onRedrawn: () => deps.kick(),
-    onDisputeCreated: () => deps.kick(),
+    onRedrawn: (e) => {
+      log(`hints: Redrawn dispute ${e.dispute} (round ${e.roundIdx}) — kicking scan`);
+      deps.kick();
+    },
+    onSubaccordCreated: (e) => {
+      log(`hints: SubaccordCreated subaccord ${e.subaccord} — kicking scan`);
+      deps.kick();
+    },
+    onDisputeCreated: (e) => {
+      log(`hints: DisputeCreated dispute ${e.dispute} subaccord ${e.subaccord} — kicking scan`);
+      deps.kick();
+    },
     onError: (err) => log(`hints: dropped event (${errMessage(err)})`),
   };
 }

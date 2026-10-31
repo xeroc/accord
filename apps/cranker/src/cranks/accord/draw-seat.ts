@@ -164,7 +164,10 @@ export const drawSeatHandler: CrankHandler = async (ctx, action) => {
   const disputeBytes = addressBytes(dispute.address);
   const roundIdx = d.currentRound;
   const drawAttempt = round?.data.drawAttempt ?? 0;
-  const panel = panelSizeForRound(roundIdx);
+  // Panel size from the dispute's OWN terms (the program enforces
+  // terms.min_jury_size — assuming the default 3 on N=1 pools made the
+  // sortition retry a phantom seat 128× per cycle).
+  const panel = panelSizeForRound(roundIdx, d.terms.minJurySize);
   if (panel === null) {
     ctx.log("draw_seat", dispute.address, "skip: round idx out of range");
     return;

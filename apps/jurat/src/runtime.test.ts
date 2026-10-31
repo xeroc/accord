@@ -21,6 +21,7 @@ import {
 import {
   handleScan,
   runDaemon,
+  makeWakeScheduler,
   runDuty,
   joinPolicyFromConfig,
   joinBudgetFromConfig,
@@ -387,6 +388,63 @@ test("open duty in review phase → no verdict, no tx (agent waits for the windo
   expect(record?.status).toBe("open");
 });
 
+test("review-phase duty schedules a commit wake at reviewEnd + 1s", async () => {
+  // The deployed scan interval is 120s — without the wake, evidence+LLM only
+  // START on the next scan after the window opens (measured +7min commits).
+  const wakes: Array<[string, number]> = [];
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Review)),
+    now: async () => 500, // < reviewEnd 1000
+    scheduleWake: (key, atMs) => wakes.push([key, atMs]),
+  });
+  await runDuty(deps, dutySignal(DisputeState.Review));
+  expect(wakes).toEqual([[`${DISPUTE}:0`, 1_001_000]]); // (reviewEnd 1000s + 1s) → ms
+  expect(rec.sends).toHaveLength(0);
+});
+
+// --- makeWakeScheduler: earliest-per-key deadlines, coalesced wake -----------
+
+test("wake scheduler keeps the earliest deadline per key and fires once", () => {
+  const timers = new Map<unknown, () => void>();
+  let wakes = 0;
+  const scheduler = makeWakeScheduler({
+    wake: () => wakes++,
+    setTimeoutFn: (fn) => {
+      const handle = { fn };
+      timers.set(handle, fn);
+      return handle;
+    },
+    clearTimeoutFn: (handle) => timers.delete(handle),
+  });
+  scheduler.schedule("d:0", 5_000);
+  scheduler.schedule("d:0", 8_000); // later — ignored, 5s stays
+  expect(timers.size).toBe(1);
+  scheduler.schedule("d:0", 3_000); // earlier — reschedules
+  expect(timers.size).toBe(1);
+  for (const fn of timers.values()) fn();
+  expect(wakes).toBe(1);
+  scheduler.dispose();
+});
+
+test("wake scheduler dispose clears pending timers", () => {
+  const timers = new Map<unknown, () => void>();
+  let wakes = 0;
+  const scheduler = makeWakeScheduler({
+    wake: () => wakes++,
+    setTimeoutFn: (fn) => {
+      const handle = { fn };
+      timers.set(handle, fn);
+      return handle;
+    },
+    clearTimeoutFn: (handle) => timers.delete(handle),
+  });
+  scheduler.schedule("d:0", 5_000);
+  scheduler.dispose();
+  expect(timers.size).toBe(0);
+  for (const fn of [...timers.values()]) fn();
+  expect(wakes).toBe(0);
+});
+
 test("ladder exhausted → abstain retry-ladder-exhausted; no vote tx", async () => {
   const { deps, rec } = makeDeps({
     chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
@@ -624,8 +682,18 @@ test("runDaemon: stop() awaits the in-flight scan before resolving", async () =>
 
 // --- trace emitters (bean accord-w4j7, ADR-0037) -----------------------------
 
-function captureSink(events: TraceEvent[]): TraceSink {
-  return { emit: (event) => void events.push(event), drain: async () => {} };
+function captureSink(
+  events: TraceEvent[],
+  publishes: { count: number; reject?: Error } = { count: 0 },
+): TraceSink {
+  return {
+    emit: (event) => void events.push(event),
+    drain: async () => {},
+    publishTrace: async () => {
+      if (publishes.reject) throw publishes.reject;
+      publishes.count++;
+    },
+  };
 }
 
 test("trace: full duty emits duty-open → evidence → agent events → verdict → commit", async () => {
@@ -695,6 +763,59 @@ test("trace: DRY_RUN commit carries dryRun:true and no tx", async () => {
   });
   await runDuty(deps, dutySignal());
   expect(events.at(-1)).toEqual({ kind: "commit", dryRun: true });
+});
+
+// --- FLIP publication (inveigo ADR-0013 amendment) ---------------------------
+
+test("publish: FLIP vote (option 1) publishes once after a REAL commit", async () => {
+  const events: TraceEvent[] = [];
+  const publishes = { count: 0 };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () => captureSink(events, publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(publishes.count).toBe(1);
+  // published only after the commit frame, never before the vote landed
+  expect(events.at(-1)?.kind).toBe("commit");
+});
+
+test("publish: HOLD vote (option 0) never publishes", async () => {
+  const publishes = { count: 0 };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    verdict: async () => ({ optionIndex: 0, rationale: "hold", confidence: 0.9 }),
+    trace: () => captureSink([], publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(publishes.count).toBe(0);
+});
+
+test("publish: DRY_RUN commit never publishes", async () => {
+  const publishes = { count: 0 };
+  const { deps } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    dryRun: true,
+    trace: () => captureSink([], publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(publishes.count).toBe(0);
+});
+
+test("publish: rejected publish logs + alerts, duty still completes", async () => {
+  const publishes = { count: 0, reject: new Error("trace-public rejected (401)") };
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Commit)),
+    trace: () => captureSink([], publishes),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+  });
+  await runDuty(deps, dutySignal());
+  expect(rec.verdicts).toHaveLength(1); // duty pipeline completed
+  expect(rec.alerts.some((a) => a.includes("trace-public failed"))).toBe(true);
+  expect(rec.logs.some((l) => l.includes("publish failed"))).toBe(true);
 });
 
 test("trace: abstain path emits abstain{failure, reason}", async () => {
@@ -793,30 +914,35 @@ test("hints: our seat drawn → duty-received log + alert + kick", () => {
   expect(alerts[0]).toContain(String(DISPUTE));
   expect(alerts[0]).toContain("seat 2");
   expect(logs.at(-1)).toBe(alerts[0]);
+  expect(logs.at(-1)).toContain("SeatDrawn");
+  expect(logs.at(-1)).toContain(String(JUROR));
 });
 
-test("hints: another juror's seat drawn → ignored (no kick, no alert)", () => {
+test("hints: another juror's seat drawn → ignored (no kick, no alert, no log)", () => {
   const kicks: number[] = [];
   const alerts: string[] = [];
+  const logs: string[] = [];
   const handlers = makeHintHandlers({
     juror: JUROR,
     kick: () => kicks.push(1),
     alert: (m) => alerts.push(m),
-    log: () => {},
+    log: (m) => logs.push(m),
   });
   handlers.onSeatDrawn?.(seatDrawn(OTHER));
   expect(kicks).toHaveLength(0);
   expect(alerts).toHaveLength(0);
+  expect(logs).toHaveLength(0);
 });
 
-test("hints: redraw / subaccord / dispute-created kick without alert", () => {
+test("hints: redraw / subaccord / dispute-created log identifying info + kick", () => {
   const kicks: number[] = [];
   const alerts: string[] = [];
+  const logs: string[] = [];
   const handlers = makeHintHandlers({
     juror: JUROR,
     kick: () => kicks.push(1),
     alert: (m) => alerts.push(m),
-    log: () => {},
+    log: (m) => logs.push(m),
   });
   const redrawn: RedrawnEvent = { kind: "Redrawn", dispute: DISPUTE, roundIdx: 1, drawAttempt: 2 };
   const created: SubaccordCreatedEvent = {
@@ -839,6 +965,14 @@ test("hints: redraw / subaccord / dispute-created kick without alert", () => {
   handlers.onDisputeCreated?.(dispute);
   expect(kicks).toHaveLength(3);
   expect(alerts).toHaveLength(0);
+  expect(logs).toHaveLength(3);
+  expect(logs[0]).toContain("Redrawn");
+  expect(logs[0]).toContain(String(DISPUTE));
+  expect(logs[1]).toContain("SubaccordCreated");
+  expect(logs[1]).toContain(String(SUB));
+  expect(logs[2]).toContain("DisputeCreated");
+  expect(logs[2]).toContain(String(DISPUTE));
+  expect(logs[2]).toContain(String(SUB));
 });
 
 test("hints: onError logs the dropped event, never throws", () => {

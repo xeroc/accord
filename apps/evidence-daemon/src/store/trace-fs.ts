@@ -18,7 +18,7 @@
  */
 
 import type { Address } from "@solana/kit";
-import { appendFile, mkdir, readdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { FsStoreConfig } from "./fs.js";
@@ -118,5 +118,27 @@ export class FsTraceStore implements TraceStore {
       throw e;
     }
     return entries.filter((f) => f.endsWith(".jsonl")).map((f) => f.slice(0, -".jsonl".length));
+  }
+
+  /**
+   * Public stamp: marker file `{rootDir}/traces-public/{dispute}`. A rewrite
+   * of the constant body is a byte-identical no-op — idempotent by construction.
+   */
+  async markPublic(dispute: Address): Promise<void> {
+    assertTraceAddress("dispute", dispute);
+    const path = join(this.rootDir, "traces-public", dispute);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, "1", "utf-8");
+  }
+
+  async isPublic(dispute: Address): Promise<boolean> {
+    assertTraceAddress("dispute", dispute);
+    try {
+      await readFile(join(this.rootDir, "traces-public", dispute), "utf-8");
+      return true;
+    } catch (e) {
+      if (isNotFound(e)) return false;
+      throw e;
+    }
   }
 }

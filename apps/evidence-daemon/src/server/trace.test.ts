@@ -31,9 +31,11 @@ import bs58 from "bs58";
 import { loadServerConfig } from "../config.js";
 import { FsTraceStore } from "../store/trace-fs.js";
 import type { TraceBatch, TraceStore } from "../store/trace.js";
-import { ingestTrace, type TraceChainReader } from "../pipeline/trace.js";
 import { createApp } from "./app.js";
+import { ingestTrace, type TraceChainReader } from "../pipeline/trace.js";
+import { publishTrace } from "./trace-public.js";
 import { createTraceReplayHandler, type TraceReplaySource } from "./trace.js";
+import { TraceTokenService } from "./trace-token.js";
 import { makeTraceSink } from "../../../jurat/src/trace/sink.ts";
 import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
@@ -452,6 +454,10 @@ describe("POST /trace — happy path", () => {
       async readEvents() {
         return [];
       },
+      async markPublic() {},
+      async isPublic() {
+        return false;
+      },
     };
     const app = makeApp({ store: failing });
     const res = await app.request(post(signedBody()));
@@ -510,5 +516,142 @@ describe("jurat TraceSink → POST /trace → GET /trace (cross-app)", () => {
     } finally {
       server.stop(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /trace read gate (ADR-0037, inveigo ADR-0013 amendment): durable
+// jurat-stamped public flag + filer token — the daemon never interprets
+// verdict frames anymore.
+// ---------------------------------------------------------------------------
+
+describe("GET /trace/:dispute (read gate)", () => {
+  function gatedApp(
+    source: TraceReplaySource,
+    isPublic: (dispute: string) => Promise<boolean>,
+    tokens = new TraceTokenService(),
+  ) {
+    return createApp({
+      ...makeDeps(createTraceReplayHandler(source)),
+      tracePublic: { isPublic },
+      traceTokens: tokens,
+    });
+  }
+
+  it("stamped dispute serves tokenless", async () => {
+    const source = fakeSource([envelope(1, { kind: "verdict", optionIndex: 0 })]);
+    const res = await gatedApp(source, async () => true).request(`/trace/${REPLAY_DISPUTE}`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as TraceEnvelope[]).map((e) => e.seq)).toEqual([1]);
+  });
+
+  it("UNSTAMPED flip verdict frame 401s tokenless (no derivation)", async () => {
+    const now = Date.now();
+    const source = fakeSource([
+      envelope(1, { kind: "verdict", optionIndex: 1, unsealAt: now - 1 }),
+    ]);
+    const res = await gatedApp(source, async () => false).request(`/trace/${REPLAY_DISPUTE}`);
+    expect(res.status).toBe(401);
+  });
+
+  it("unstamped + valid filer token serves", async () => {
+    const source = fakeSource([envelope(1, { kind: "verdict", optionIndex: 0 })]);
+    const tokens = new TraceTokenService();
+    const { token } = tokens.mint(REPLAY_DISPUTE);
+    const res = await gatedApp(source, async () => false, tokens).request(
+      `/trace/${REPLAY_DISPUTE}?token=${token}`,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("stamp probe failure 500s (never fail open)", async () => {
+    const source = fakeSource([]);
+    const res = await gatedApp(source, () => Promise.reject(new Error("s3 down"))).request(
+      `/trace/${REPLAY_DISPUTE}`,
+    );
+    expect(res.status).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /trace-public/{subaccord}/{dispute}/{juror} (ADR-0013 amendment)
+// ---------------------------------------------------------------------------
+
+describe("POST /trace-public (publish endpoint)", () => {
+  function publishApp(opts: { chain?: TraceChainReader; stamp?: TraceStore } = {}) {
+    const stamp = opts.stamp ?? new FsTraceStore({ rootDir });
+    const deps: ServerDeps = {
+      ...makeDeps(),
+      tracePublish: async (subaccord, dispute, juror, body) => {
+        const out = await publishTrace(subaccord, dispute, juror, body, {
+          store: stamp,
+          chain: opts.chain ?? chainWith([JUROR_PUB]),
+        });
+        return out.status === 204
+          ? { ok: true, status: 204 }
+          : { ok: false, status: out.status, error: out.reason };
+      },
+    };
+    return { app: createApp(deps, { traceEnabled: true }), stamp };
+  }
+
+  /** Signed publish body: {v:1, sig} over the canonical EMPTY batch. */
+  function signedPublish(seed: Uint8Array = JUROR_SEED): string {
+    const sig = ed25519.sign(
+      buildTraceBatchMessage({ v: 1, juror: JUROR, dispute: DISPUTE, seq: 0, events: [] }),
+      seed,
+    );
+    return JSON.stringify({ v: 1, sig: Buffer.from(sig).toString("base64") });
+  }
+
+  it("valid juror sig → 204 + dispute stamped public (idempotent re-post)", async () => {
+    const { app, stamp } = publishApp();
+    const url = `http://x/trace-public/${SUB}/${DISPUTE}/${JUROR}`;
+    const post = () =>
+      new Request(url, {
+        method: "POST",
+        body: signedPublish(),
+        headers: { "content-type": "application/json" },
+      });
+    expect((await app.request(post())).status).toBe(204);
+    expect(await stamp.isPublic(DISPUTE)).toBe(true);
+    expect((await app.request(post())).status).toBe(204); // idempotent
+  });
+
+  it("bad sig → 401, no stamp", async () => {
+    const { app, stamp } = publishApp();
+    const res = await app.request(`http://x/trace-public/${SUB}/${DISPUTE}/${JUROR}`, {
+      method: "POST",
+      body: signedPublish(OUTSIDER_SEED),
+    });
+    expect(res.status).toBe(401);
+    expect(await stamp.isPublic(DISPUTE)).toBe(false);
+  });
+
+  it("non-drawn juror → 403", async () => {
+    const { app } = publishApp({ chain: chainWith([OUTSIDER_PUB]) });
+    const res = await app.request(`http://x/trace-public/${SUB}/${DISPUTE}/${JUROR}`, {
+      method: "POST",
+      body: signedPublish(),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("malformed address → 400; missing route wiring → 404", async () => {
+    const { app } = publishApp();
+    const res = await app.request(`http://x/trace-public/${SUB}/not-an-address/${JUROR}`, {
+      method: "POST",
+      body: signedPublish(),
+    });
+    expect(res.status).toBe(400);
+    const unwired = createApp(makeDeps(), { traceEnabled: true });
+    expect(
+      (
+        await unwired.request(`http://x/trace-public/${SUB}/${DISPUTE}/${JUROR}`, {
+          method: "POST",
+          body: signedPublish(),
+        })
+      ).status,
+    ).toBe(404);
   });
 });

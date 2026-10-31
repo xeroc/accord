@@ -174,6 +174,33 @@ describe("trace sink — failure contract (never throw, never stall)", () => {
   });
 });
 
+describe("trace sink — publishTrace (FLIP notification, ADR-0013 amendment)", () => {
+  it("POSTs /trace-public/{sub}/{dispute}/{juror} signed over the empty batch", async () => {
+    const { url, posts } = captureServer();
+    await sink(url).publishTrace();
+    expect(posts).toHaveLength(1);
+    expect(posts[0]!.path).toBe(`/trace-public/${IDENT.subaccord}/${IDENT.dispute}/${IDENT.juror}`);
+    const body = posts[0]!.body as unknown as { v: number; sig: string };
+    expect(body.v).toBe(1);
+    // Same signing scheme as batches, over the canonical EMPTY batch (seq 0).
+    expect(body.sig).toBe(expectedSig({ v: 1, seq: 0, events: [] }, IDENT.juror, IDENT.dispute));
+  });
+
+  it("no-URL sink: publishTrace is a no-op", async () => {
+    await sink(undefined).publishTrace();
+  });
+
+  it("daemon rejection propagates (runtime fire-and-reports)", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: async () =>
+        Response.json({ error: "signature does not verify for juror" }, { status: 401 }),
+    });
+    servers.push(async () => server.stop(true));
+    await expect(sink(`http://localhost:${server.port}`).publishTrace()).rejects.toThrow(/401/);
+  });
+});
+
 describe("signTraceBatch — deterministic over canonical JSON", () => {
   const payload = {
     v: 1 as const,

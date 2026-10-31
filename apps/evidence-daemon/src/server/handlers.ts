@@ -14,6 +14,8 @@
 import type { DomainPreimageProof } from "../pipeline/domain.js";
 import type { Sealable } from "../pipeline/seal.js";
 import type { KeyringPublicKeys } from "./public-keys.js";
+import type { TracePublicSource } from "./trace.js";
+import type { TraceTokenService } from "./trace-token.js";
 
 /** 32-byte SHA-256 digest, hex- or base58-style opaque to the server. */
 export type Hash = string;
@@ -290,6 +292,18 @@ export type TraceIngestHandler = (
   body: unknown,
 ) => Promise<TraceIngestResult>;
 
+export type TracePublishResult =
+  | { readonly ok: true; readonly status: 204 }
+  | { readonly ok: false; readonly status: 400 | 401 | 403; readonly error: string };
+
+/** POST /trace-public/{subaccord}/{dispute}/{juror} (inveigo ADR-0013 amendment). */
+export type TracePublishHandler = (
+  subaccord: string,
+  dispute: string,
+  juror: string,
+  body: unknown,
+) => Promise<TracePublishResult>;
+
 export interface ServerDeps {
   readonly ingest: IngestHandler;
   readonly ingestFile: IngestFileHandler;
@@ -319,4 +333,19 @@ export interface ServerDeps {
    * side by {@link ./trace.ts}.
    */
   readonly traceReplay?: TraceReplayHandler;
+
+  readonly tracePublish?: TracePublishHandler;
+
+  /**
+   * ADR-0037 read gate (inveigo ADR-0013 amendment): durable public-stamp
+   * probe on GET /trace — jurat flips it via POST /trace-public. Optional:
+   * absent ⇒ ungated replay.
+   */
+  readonly tracePublic?: TracePublicSource;
+
+  /**
+   * ADR-0037 read gate: filer-token mint/verify shared by /trace and /watch.
+   * Optional: absent ⇒ ungated replay.
+   */
+  readonly traceTokens?: TraceTokenService;
 }

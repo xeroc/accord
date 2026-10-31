@@ -23,6 +23,7 @@ import { FsDeliveryKeyStore } from "./store/delivery-key-fs.js";
 import { FsTraceStore } from "./store/trace-fs.js";
 import { createServerDeps } from "./wire.js";
 import { createApp } from "./server/app.js";
+import { TraceTokenService } from "./server/trace-token.js";
 import { buildKeyringPublicKeys } from "./server/public-keys.js";
 
 const DISPUTE = "Jura111111111111111111111111111111111111111";
@@ -42,6 +43,7 @@ function makeApp() {
   const keyring = EnvKeyring.fromEnv(
     `${bs58.encode(new Uint8Array(32).fill(1))},${bs58.encode(new Uint8Array(32).fill(2))}`,
   );
+  const traceTokens = new TraceTokenService();
   const deps = createServerDeps({
     store: new FsStore({ rootDir: dir }),
     domainStore: new FsDomainStore({ rootDir: dir }),
@@ -55,15 +57,21 @@ function makeApp() {
     keyring,
     health: async () => ({ ok: true }),
     publicKeys: buildKeyringPublicKeys(keyring),
+    traceTokens,
   });
-  return { app: createApp(deps, { traceEnabled: true }), dir };
+  return { app: createApp(deps, { traceEnabled: true }), dir, traceTokens };
 }
 
 describe("createServerDeps wires the trace read side (ADR-0037)", () => {
-  it("GET /trace/:dispute answers 200 — not 'trace replay not enabled'", async () => {
-    const { app, dir } = makeApp();
+  it("GET /trace/:dispute serves the filer with a token, 401s tokenless (read gate)", async () => {
+    const { app, dir, traceTokens } = makeApp();
     try {
-      const res = await app.request(`http://x/trace/${DISPUTE}`);
+      // Fresh record is private (no public stamp): tokenless 401 proves the
+      // gate deps are wired; the filer token then opens the (empty) record.
+      const denied = await app.request(`http://x/trace/${DISPUTE}`);
+      expect(denied.status).toBe(401);
+      const { token } = traceTokens.mint(DISPUTE);
+      const res = await app.request(`http://x/trace/${DISPUTE}?token=${token}`);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual([]);
     } finally {

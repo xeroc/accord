@@ -42,7 +42,9 @@ import {
   type BundleDecryptor,
 } from "./pipeline/synod-manifest";
 import { getDomain, putDomain, putSubdocument } from "./pipeline/domain";
+import { TraceTokenService } from "./server/trace-token.js";
 import { ingestTrace } from "./pipeline/trace";
+import { publishTrace } from "./server/trace-public.js";
 import { createTraceReplayHandler } from "./server/trace";
 import type { TraceBatch, TraceStore } from "./store/trace";
 import {
@@ -150,6 +152,13 @@ export interface WireDeps {
    * the single-replica WatchHub here; unset ⇒ ingest stays durable-only.
    */
   readonly traceFanout?: (batch: TraceBatch) => void;
+  /**
+   * Filer read-token service (ADR-0037 read gate) shared by GET /trace, the
+   * token mint route and the WS /watch authorize seam. main.ts supplies the
+   * same instance to all three; unset ⇒ createServerDeps constructs one
+   * (gate active, single service per process either way).
+   */
+  readonly traceTokens?: TraceTokenService;
 }
 
 export function createServerDeps(deps: WireDeps): ServerDeps {
@@ -255,6 +264,18 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     });
     return out.status === 200 || out.status === 201
       ? { ok: true, status: out.status }
+      : { ok: false, status: out.status, error: out.reason };
+  };
+
+  // Trace publication (ADR-0013 amendment): same auth chain as ingest, but
+  // the effect is the durable public stamp — never a payload interpretation.
+  const tracePublish: ServerDeps["tracePublish"] = async (subaccord, dispute, juror, body) => {
+    const out = await publishTrace(subaccord, dispute, juror, body, {
+      store: deps.traceStore,
+      chain: deliverChain,
+    });
+    return out.status === 204
+      ? { ok: true, status: 204 }
       : { ok: false, status: out.status, error: out.reason };
   };
 
@@ -752,7 +773,10 @@ export function createServerDeps(deps: WireDeps): ServerDeps {
     deliveryKeyGet: deliveryKeyGetHandler,
     manifest: manifestHandler,
     traceIngest,
+    tracePublish,
     traceReplay: createTraceReplayHandler(deps.traceStore),
+    tracePublic: deps.traceStore,
+    traceTokens: deps.traceTokens ?? new TraceTokenService(),
     publicKeys: deps.publicKeys,
     health: deps.health,
   };

@@ -174,3 +174,21 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
     expect(mock.objects.size).toBe(0);
   });
 });
+
+describe("S3TraceStore — public stamp (ADR-0013 amendment)", () => {
+  test("markPublic puts traces-public/{dispute}; isPublic head-checks it", async () => {
+    const { store, mock } = setup();
+    expect(await store.isPublic(DISPUTE)).toBe(false);
+    await store.markPublic(DISPUTE);
+    await store.markPublic(DISPUTE); // idempotent
+    expect(mock.objects.has(`${BUCKET}/traces-public/${DISPUTE}`)).toBe(true);
+    expect(await store.isPublic(DISPUTE)).toBe(true);
+    expect(await store.isPublic(JUROR_A)).toBe(false);
+  });
+
+  test("path hygiene: non-base58 dispute rejected before any S3 call", async () => {
+    const { store, mock } = setup();
+    await expect(store.markPublic("../evil" as Address)).rejects.toThrow(/dispute/);
+    expect(mock.objects.size).toBe(0);
+  });
+});

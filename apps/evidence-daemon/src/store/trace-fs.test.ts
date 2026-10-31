@@ -149,3 +149,19 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     expect(await readdir(rootDir)).toEqual([]); // nothing was ever created
   });
 });
+
+describe("FsTraceStore — public stamp (ADR-0013 amendment)", () => {
+  test("markPublic → isPublic true; idempotent re-mark; others unstamped", async () => {
+    const store = new FsTraceStore({ rootDir });
+    expect(await store.isPublic(DISPUTE)).toBe(false);
+    await store.markPublic(DISPUTE);
+    await store.markPublic(DISPUTE); // idempotent
+    expect(await store.isPublic(DISPUTE)).toBe(true);
+    expect(await store.isPublic(JUROR_A)).toBe(false);
+  });
+
+  test("path hygiene: non-base58 dispute rejected", async () => {
+    const store = new FsTraceStore({ rootDir });
+    await expect(store.markPublic("../evil" as Address)).rejects.toThrow(/dispute/);
+  });
+});

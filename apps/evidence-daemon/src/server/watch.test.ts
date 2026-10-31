@@ -228,3 +228,30 @@ describe("WS /watch/:dispute", () => {
     expect(seqs(await c.atLeast(3))).toEqual([2, 3]); // seq 1 dropped, order kept
   });
 });
+
+// ADR-0037 read gate: authorize=false must 401 before any upgrade — checked
+// at route level (no socket, no server binding).
+describe("GET /watch/:dispute (read gate)", () => {
+  it("authorize=false ⇒ 401 JSON before reserveIp/upgrade", async () => {
+    const hub = new WatchHub({});
+    const app = watchRoutes(
+      hub,
+      () => undefined,
+      async () => false,
+    );
+    const res = await app.request(`/watch/${DISPUTE}`);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("authorize=true proceeds to the (absent) server binding ⇒ 404", async () => {
+    const hub = new WatchHub({});
+    const app = watchRoutes(
+      hub,
+      () => undefined,
+      async () => true,
+    );
+    const res = await app.request(`/watch/${DISPUTE}`);
+    expect(res.status).toBe(404);
+  });
+});

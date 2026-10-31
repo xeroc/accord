@@ -25,10 +25,13 @@ import {
   type Base64EncodedBytes,
   type Commitment,
   getBase64Decoder,
+  getBase64Encoder,
+  getAddressCodec,
   type GetProgramAccountsMemcmpFilter,
   type RpcSubscriptions,
   type SolanaRpcSubscriptionsApi,
 } from "@solana/kit";
+import { createHash } from "node:crypto";
 import { DISPUTE_DISCRIMINATOR } from "@useaccord/sdk";
 
 import { log } from "./log.js";
@@ -203,4 +206,137 @@ export class ProgramAccountListener {
 function stringifyErr(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+// --- VrfCommitted log listener ------------------------------------------------
+//
+// `commit_vrf_callback` writes the Dispute account (so the account listener
+// above fires) AND emits the `VrfCommitted` event (events.rs) carrying the
+// dispute address. Subscribing to the program logs gives draw_seat a second,
+// deterministic trigger at the exact moment the randomness lands — the draw
+// no longer depends on the account-write notification surviving an rpcpool WS
+// hiccup.
+
+/** First 8 bytes of sha256("event:VrfCommitted") — the Anchor event tag. */
+const VRF_COMMITTED_DISCRIMINATOR = createHash("sha256")
+  .update("event:VrfCommitted")
+  .digest()
+  .subarray(0, 8);
+
+/**
+ * Pull the committed dispute out of a tx's log lines. Anchor emits events as
+ * `Program data: <base64(discriminator ++ borsh fields)>`; VrfCommitted is
+ * `{ dispute: Pubkey, vrf_result: [u8; 32], frozen_root: [u8; 32] }`. Returns
+ * null when no (decodable) VrfCommitted event is present.
+ */
+export function vrfCommittedFromLogs(logs: readonly string[]): Address | null {
+  for (const line of logs) {
+    if (!line.startsWith("Program data: ")) continue;
+    // Kit's base64 ENCODER maps the base64 string → bytes (the decoder goes
+    // the other way — see DISPUTE_FILTER_BYTES above).
+    try {
+      const bytes = getBase64Encoder().encode(line.slice("Program data: ".length));
+      if (bytes.length < 8 + 96) continue;
+      if (!VRF_COMMITTED_DISCRIMINATOR.every((b, i) => bytes[i] === b)) continue;
+      return getAddressCodec().decode(bytes.subarray(8, 40));
+    } catch {
+      continue; // malformed payload — not our event
+    }
+  }
+  return null;
+}
+
+/** What the log listener drives when the VRF result commits. */
+export interface VrfLogTarget {
+  /** Act on the committed randomness (draw seats immediately). */
+  onCommitted(dispute: Address): Promise<void>;
+}
+
+export interface VrfLogListenerOptions {
+  rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  programId: Address;
+  target: VrfLogTarget;
+  /** Default `"confirmed"`. */
+  commitment?: Commitment;
+  log?: (msg: string) => void;
+  backoffMs?: (attempt: number) => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Subscribes to the Accord program's log stream and dispatches the dispute
+ * whenever a `VrfCommitted` event crosses it — the deterministic trigger for
+ * the draw. Same reconnect discipline as {@link ProgramAccountListener}.
+ */
+export class VrfLogListener {
+  private readonly opts: {
+    rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+    programId: Address;
+    target: VrfLogTarget;
+    commitment: Commitment;
+    log: (msg: string) => void;
+    backoffMs: (attempt: number) => number;
+    sleep: (ms: number) => Promise<void>;
+  };
+  private readonly abort = new AbortController();
+  private running = false;
+
+  constructor(options: VrfLogListenerOptions) {
+    this.opts = {
+      rpcSubscriptions: options.rpcSubscriptions,
+      programId: options.programId,
+      target: options.target,
+      commitment: options.commitment ?? "confirmed",
+      log: options.log ?? ((m) => log(m)),
+      backoffMs: options.backoffMs ?? defaultBackoff,
+      sleep: options.sleep ?? defaultSleep,
+    };
+  }
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    void this.run();
+  }
+
+  stop(): void {
+    if (!this.running) return;
+    this.running = false;
+    this.abort.abort();
+  }
+
+  private async run(): Promise<void> {
+    let attempt = 0;
+    while (this.running) {
+      try {
+        await this.subscribeOnce();
+        attempt = 0;
+      } catch (err) {
+        if (!this.running) break;
+        const delay = this.opts.backoffMs(attempt);
+        this.opts.log(`[vrf-log] WS disconnected: ${stringifyErr(err)} — retry in ${delay}ms`);
+        attempt += 1;
+        await this.opts.sleep(delay);
+      }
+    }
+    this.opts.log("[vrf-log] stopped");
+  }
+
+  private async subscribeOnce(): Promise<void> {
+    const stream = await this.opts.rpcSubscriptions
+      .logsNotifications({ mentions: [this.opts.programId] }, { commitment: this.opts.commitment })
+      .subscribe({ abortSignal: this.abort.signal });
+
+    this.opts.log(`[vrf-log] subscribed to ${this.opts.programId} logs`);
+
+    for await (const notification of stream) {
+      if (notification.value.err) continue; // failed txs emit no live events
+      const dispute = vrfCommittedFromLogs(notification.value.logs ?? []);
+      if (dispute === null) continue;
+      this.opts.log(`[vrf-log] VrfCommitted -> dispatch ${dispute}`);
+      void this.opts.target
+        .onCommitted(dispute)
+        .catch((e) => this.opts.log(`[vrf-log] onCommitted ${dispute} failed: ${stringifyErr(e)}`));
+    }
+  }
 }

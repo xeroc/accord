@@ -140,4 +140,35 @@ export class S3TraceStore implements TraceStore {
     } while (token !== undefined);
     return keys;
   }
+
+  /**
+   * Public stamp: marker object `traces-public/{dispute}`. PutObject is
+   * atomic and the body constant — idempotent by construction.
+   */
+  async markPublic(dispute: Address): Promise<void> {
+    assertTraceAddress("dispute", dispute);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: `traces-public/${dispute}`,
+        Body: "1",
+        ...(this.sse ? { ServerSideEncryption: this.sse } : {}),
+        ...(this.kmsKeyId ? { SSEKMSKeyId: this.kmsKeyId } : {}),
+      }),
+    );
+  }
+
+  async isPublic(dispute: Address): Promise<boolean> {
+    assertTraceAddress("dispute", dispute);
+    try {
+      await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: `traces-public/${dispute}` }),
+      );
+      return true;
+    } catch (e) {
+      // Some S3-compatible backends (MinIO variants) emit NoSuchKey on HEAD too.
+      if (!(e instanceof NotFound) && !(e instanceof NoSuchKey)) throw e;
+      return false;
+    }
+  }
 }

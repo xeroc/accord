@@ -155,5 +155,15 @@ export interface TraceStore {
    * the ingest seq gate (`seq <= last` ⇒ idempotent no-op, ADR-0037 §3).
    */
   lastSeq(subaccord: Address, dispute: Address, juror: Address): Promise<number | null>;
+  /**
+   * Durably mark a dispute's trace record PUBLIC (inveigo ADR-0013
+   * amendment): jurat — not the daemon — decides publication and notifies
+   * via POST /trace-public when its committed vote is the FLIP side
+   * (Final+1 = FLIP per inveigo settle.rs; Final+0 = HOLD stays private).
+   * Idempotent; dispute-keyed like the read API. No un-publish.
+   */
+  markPublic(dispute: Address): Promise<void>;
+  /** True iff {@link TraceStore.markPublic} has stamped this dispute. */
+  isPublic(dispute: Address): Promise<boolean>;
   readEvents(dispute: Address, juror?: Address, fromSeq?: number): Promise<TraceEnvelope[]>;
 }

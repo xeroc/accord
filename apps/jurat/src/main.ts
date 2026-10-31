@@ -57,7 +57,9 @@ import {
   joinBudgetFromConfig,
   joinPolicyFromConfig,
   makeHintHandlers,
+  makeWakeScheduler,
   runDaemon,
+  type DaemonHandle,
   type RuntimeChain,
   type RuntimeDeps,
 } from "./runtime";
@@ -239,6 +241,11 @@ export async function main(): Promise<void> {
 
   // --- runtime + hint layer ----------------------------------------------------
 
+  // Deadline wakes (commit-window open) ride the daemon's off-cycle scan.
+  // The daemon is assigned just below — the closure only fires after start().
+  const wake = { daemon: undefined as DaemonHandle | undefined };
+  const wakeScheduler = makeWakeScheduler({ wake: () => wake.daemon?.kick() });
+
   const deps: RuntimeDeps = {
     juror: chain.address,
     stateDir: config.stateDir,
@@ -264,6 +271,7 @@ export async function main(): Promise<void> {
       send: (ix) => chain.sendIx(ix),
     },
     tokenBalance: joinChain.tokenBalance,
+    scheduleWake: (key, wakeAtMs) => wakeScheduler.schedule(key, wakeAtMs),
     trace:
       config.trace &&
       makeTraceSinkBinder({
@@ -277,10 +285,12 @@ export async function main(): Promise<void> {
   };
 
   const abort = new AbortController();
+  abort.signal.addEventListener("abort", () => wakeScheduler.dispose(), { once: true });
   const daemon = await runDaemon(deps, {
     intervalMs: config.scanIntervalMs,
     signal: abort.signal,
   });
+  wake.daemon = daemon;
 
   // WS log hints: timely, never authoritative (accounts are the truth).
   // SeatDrawn is filtered to OUR juror (makeHintHandlers) — a duty received
