@@ -21,6 +21,7 @@ import {
 import {
   handleScan,
   runDaemon,
+  makeWakeScheduler,
   runDuty,
   joinPolicyFromConfig,
   joinBudgetFromConfig,
@@ -385,6 +386,63 @@ test("open duty in review phase → no verdict, no tx (agent waits for the windo
   expect(rec.sends).toHaveLength(0);
   const record = await deps.store.load(DISPUTE as string, 0);
   expect(record?.status).toBe("open");
+});
+
+test("review-phase duty schedules a commit wake at reviewEnd + 1s", async () => {
+  // The deployed scan interval is 120s — without the wake, evidence+LLM only
+  // START on the next scan after the window opens (measured +7min commits).
+  const wakes: Array<[string, number]> = [];
+  const { deps, rec } = makeDeps({
+    chain: dutyChain(roundFixture(), disputeFixture(DisputeState.Review)),
+    now: async () => 500, // < reviewEnd 1000
+    scheduleWake: (key, atMs) => wakes.push([key, atMs]),
+  });
+  await runDuty(deps, dutySignal(DisputeState.Review));
+  expect(wakes).toEqual([[`${DISPUTE}:0`, 1_001_000]]); // (reviewEnd 1000s + 1s) → ms
+  expect(rec.sends).toHaveLength(0);
+});
+
+// --- makeWakeScheduler: earliest-per-key deadlines, coalesced wake -----------
+
+test("wake scheduler keeps the earliest deadline per key and fires once", () => {
+  const timers = new Map<unknown, () => void>();
+  let wakes = 0;
+  const scheduler = makeWakeScheduler({
+    wake: () => wakes++,
+    setTimeoutFn: (fn) => {
+      const handle = { fn };
+      timers.set(handle, fn);
+      return handle;
+    },
+    clearTimeoutFn: (handle) => timers.delete(handle),
+  });
+  scheduler.schedule("d:0", 5_000);
+  scheduler.schedule("d:0", 8_000); // later — ignored, 5s stays
+  expect(timers.size).toBe(1);
+  scheduler.schedule("d:0", 3_000); // earlier — reschedules
+  expect(timers.size).toBe(1);
+  for (const fn of timers.values()) fn();
+  expect(wakes).toBe(1);
+  scheduler.dispose();
+});
+
+test("wake scheduler dispose clears pending timers", () => {
+  const timers = new Map<unknown, () => void>();
+  let wakes = 0;
+  const scheduler = makeWakeScheduler({
+    wake: () => wakes++,
+    setTimeoutFn: (fn) => {
+      const handle = { fn };
+      timers.set(handle, fn);
+      return handle;
+    },
+    clearTimeoutFn: (handle) => timers.delete(handle),
+  });
+  scheduler.schedule("d:0", 5_000);
+  scheduler.dispose();
+  expect(timers.size).toBe(0);
+  for (const fn of [...timers.values()]) fn();
+  expect(wakes).toBe(0);
 });
 
 test("ladder exhausted → abstain retry-ladder-exhausted; no vote tx", async () => {

@@ -79,7 +79,9 @@ export function resolveNextAction(
     }
     // VRF committed: fill the panel one seat at a time. Each draw_seat is its
     // own tx (1232-byte limit); the last seat transitions state → Drawn.
-    const panel = panelSizeForRound(dispute.currentRound);
+    // Panel size derives from the dispute's OWN terms — the default-3 fallback
+    // made N=1 pools (e.g. the Inveigo arena court) chase phantom seats.
+    const panel = panelSizeForRound(dispute.currentRound, dispute.terms.minJurySize);
     if (panel === null) return null;
     const seatsDrawn = round?.jurorCount ?? 0;
     if (seatsDrawn < panel) {

@@ -14,26 +14,24 @@
  *   CANON_GC_ENABLED       — toggle the canon close_item GC module (default on)
  *   CANON_PROGRAM_ID       — override the canon program id (optional)
  */
-import {
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-  type Account,
-  type Address,
-} from "@solana/kit";
+import { createSolanaRpc, createSolanaRpcSubscriptions, type Address } from "@solana/kit";
 import {
   Accord,
-  fetchMaybeDispute,
   findProgramIdentityPda,
   VRF_ORACLE_QUEUE,
   VRF_ORACLE_TEST_QUEUE,
-  type Dispute,
 } from "@useaccord/sdk";
 import { CANON_PROGRAM_ID } from "@useaccord/canon";
 
 import { removedCanonItemFilters } from "./canon-gc.js";
 import { createCrankDispatch } from "./dispatch.js";
-import { ProgramAccountListener } from "./listener.js";
-import { reconcileOnce, startReconciler, type ReconcilerConfig } from "./reconciler.js";
+import { ProgramAccountListener, VrfLogListener } from "./listener.js";
+import {
+  reconcileDispute,
+  reconcileOnce,
+  startReconciler,
+  type ReconcilerConfig,
+} from "./reconciler.js";
 import { register as registerAccordCancelDispute } from "./cranks/accord/cancel-dispute.js";
 import { register as registerAccordClaimRefund } from "./cranks/accord/claim-refund.js";
 import { register as registerAccordClaimFilingBounty } from "./cranks/accord/claim-filing-bounty.js";
@@ -174,6 +172,9 @@ async function main(): Promise<void> {
 
   // 8. Start the WS listener (latency optimisation — triggers immediate
   //    reconcile on Dispute account changes; 60s poll is authoritative regardless).
+  //    Scoped dispatches ITERATE resolve→execute with fresh state: a stale
+  //    snapshot that resolves a now-skippable action must not end the dispatch
+  //    (that left draw_seat waiting a full poll cycle, seen 2026-10-30/31).
   const listener = new ProgramAccountListener({
     rpcSubscriptions,
     programId: Accord.PROGRAM_ID,
@@ -184,18 +185,27 @@ async function main(): Promise<void> {
       },
       // Scoped sweep — just the one dispute the account notification named.
       onAccount: async (addr: Address) => {
-        const maybe = await fetchMaybeDispute(accord.rpc, addr);
-        if (!maybe.exists) return;
-        await reconcileOnce({
-          ...config,
-          fetchDisputes: async () => [maybe as Account<Dispute>],
-          fetchPendingUpdates: async () => [],
-        });
+        await reconcileDispute(config, addr);
       },
     },
     log: (msg) => log(msg),
   });
   listener.start();
+
+  // 8a. VrfCommitted log listener — deterministic draw trigger: the VRF
+  //     callback emits the event at the exact moment `draw_seat` becomes
+  //     legal, independent of the Dispute account-write notification.
+  const vrfListener = new VrfLogListener({
+    rpcSubscriptions,
+    programId: Accord.PROGRAM_ID,
+    target: {
+      onCommitted: async (addr: Address) => {
+        await reconcileDispute(config, addr);
+      },
+    },
+    log: (msg) => log(msg),
+  });
+  vrfListener.start();
 
   // 8b. Canon GC listener — Removed CanonItem notifications dispatch
   //     close_item immediately (rent bounty); the 60s reconciler sweep is the

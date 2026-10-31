@@ -93,6 +93,12 @@ export interface RuntimeDeps {
   tokenBalance?(owner: Address, mint: Address): Promise<bigint>;
   /** Chain-clock now (unix seconds) — windows are chain-time, not wall-time. */
   now(): Promise<number>;
+  /**
+   * Deadline wake: fires an off-cycle scan when a deadline (commit-window
+   * open) arrives, so verdict work starts on the window instead of the next
+   * scan tick. Optional — absent = scan-cadence only (tests, embeds).
+   */
+  scheduleWake?(key: string, wakeAtMs: number): void;
   log?(message: string): void;
 }
 
@@ -262,7 +268,14 @@ export async function runDuty(deps: RuntimeDeps, signal: DutySignal): Promise<vo
       );
       return;
     }
-    if (phase === "review") return; // agent waits for the commit window
+    if (phase === "review") {
+      // The on-chain commit gate (commit.rs) rejects any earlier tx — but the
+      // START of the work must not wait for the next scan (120s in deployment):
+      // schedule a wake at reviewEnd + 1s so evidence+LLM begin the moment the
+      // commit window opens. No scheduleWake (tests, embeds) = old behavior.
+      deps.scheduleWake?.(`${signal.dispute}:${signal.roundIdx}`, (windows.reviewEnd + 1) * 1000);
+      return; // agent waits for the commit window
+    }
     if (phase !== "commit") {
       await abstain(
         voteDeps,
@@ -528,6 +541,50 @@ export interface DaemonHandle {
   stop(): Promise<void>;
   /** WS-hint entry point — never stacks with an in-flight scan. */
   kick(): void;
+}
+
+export interface WakeSchedulerDeps {
+  /** Fired when a deadline arrives (the daemon's off-cycle scan). */
+  readonly wake: () => void;
+  /** Timer seams — injectable for tests. */
+  readonly setTimeoutFn?: (fn: () => void, ms: number) => unknown;
+  readonly clearTimeoutFn?: (handle: unknown) => void;
+}
+
+/**
+ * Deadline scheduler for duty windows: one timer per tracked deadline, keyed
+ * `dispute:round`. A LATER deadline for an existing key never overrides an
+ * earlier one (the earlier wake sees the duty through), an earlier one
+ * replaces it. Wakes never stack — firing just requests an off-cycle scan,
+ * and the scan re-schedules only if the duty is still short of its window.
+ */
+export function makeWakeScheduler(deps: WakeSchedulerDeps): {
+  schedule(key: string, wakeAtMs: number): void;
+  dispose(): void;
+} {
+  const setTimeoutFn = deps.setTimeoutFn ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+  const clearTimeoutFn =
+    deps.clearTimeoutFn ?? ((handle: unknown) => clearTimeout(handle as NodeJS.Timeout));
+  const pending = new Map<string, { handle: unknown; atMs: number }>();
+  return {
+    schedule(key, wakeAtMs) {
+      const existing = pending.get(key);
+      if (existing && existing.atMs <= wakeAtMs) return; // earlier-or-equal already set
+      if (existing) clearTimeoutFn(existing.handle);
+      const handle = setTimeoutFn(
+        () => {
+          pending.delete(key);
+          deps.wake();
+        },
+        Math.max(wakeAtMs - Date.now(), 0),
+      );
+      pending.set(key, { handle, atMs: wakeAtMs });
+    },
+    dispose() {
+      for (const { handle } of pending.values()) clearTimeoutFn(handle);
+      pending.clear();
+    },
+  };
 }
 
 // --- WS hint handlers (bean accord-thgk) ---------------------------------------

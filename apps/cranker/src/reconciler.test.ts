@@ -26,7 +26,7 @@ import {
 
 import { createCrankDispatch, type CrankAction, type CrankContext } from "./dispatch.js";
 import { SimulationError } from "./send.js";
-import { reconcileOnce, type ReconcilerConfig } from "./reconciler.js";
+import { reconcileDispute, reconcileOnce, type ReconcilerConfig } from "./reconciler.js";
 import type { CrankerWallet } from "./wallet.js";
 
 const Z32 = new Uint8Array(32);
@@ -631,4 +631,79 @@ test("Failed with an outstanding appeal bond at seed 0 → claim_refund roundIdx
   );
   expect(fired).toBe(1);
   expect(calls).toEqual([{ kind: "claim_refund", dispute: D_ADDR, roundIdx: 0 }]);
+});
+
+// --- reconcileDispute: iterate resolve→execute until settled (draw latency) ---
+
+test("reconcileDispute re-resolves after every action until nothing is left", async () => {
+  // The stale-snapshot bug this pins (seen live 2026-10-30/31): a dispatch
+  // resolved request_vrf off a pre-callback snapshot, the handler found
+  // committed_vrf already set and SKIPPED — and the dispatch ended. draw_seat
+  // then waited for the next 60s poll. The scoped dispatch re-resolves with
+  // fresh state after every executed action.
+  let fetches = 0;
+  const snapshots = [
+    dispute({ state: DisputeState.Created }),
+    dispute({
+      state: DisputeState.Created,
+      committedVrf: { __option: "Some" as const, value: Z32 },
+    }),
+    dispute({ state: DisputeState.Drawn }),
+  ];
+  const { d, calls } = recordingDispatch({
+    request_vrf: async () => {},
+    draw_seat: async () => {},
+  });
+  const fired = await reconcileDispute(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [],
+      fetchRound: async () => null,
+      fetchDisputeOne: async () => {
+        const snap = snapshots[Math.min(fetches, snapshots.length - 1)];
+        fetches++;
+        return { address: D_ADDR, data: snap } as unknown as Account<Dispute>;
+      },
+    }),
+    D_ADDR,
+    { sleep: async () => {} },
+  );
+  console.log("DBG fired", fired, "calls", calls.length);
+  expect(calls.map((c) => c.kind)).toEqual(["request_vrf", "draw_seat"]);
+  expect(fired).toBe(2);
+  expect(fetches).toBe(3); // third fetch resolves null → stop
+});
+
+test("concurrent reconcileDispute calls for one dispute coalesce into one run", async () => {
+  const gate = Promise.withResolvers<void>();
+  const entered = Promise.withResolvers<void>();
+  let fetches = 0;
+  const { d, calls } = recordingDispatch({ request_vrf: async () => {} });
+  const cfg = config({
+    dispatch: d,
+    fetchDisputes: async () => [],
+    fetchRound: async () => null,
+    fetchDisputeOne: async () => {
+      fetches++;
+      if (fetches === 1) {
+        entered.resolve();
+        await gate.promise;
+      }
+      // Second fetch: Drawn — the resolver settles and the run completes.
+      return {
+        address: D_ADDR,
+        data:
+          fetches === 2
+            ? dispute({ state: DisputeState.Drawn })
+            : dispute({ state: DisputeState.Created }),
+      } as unknown as Account<Dispute>;
+    },
+  });
+  const a = reconcileDispute(cfg, D_ADDR, { sleep: async () => {} });
+  const b = reconcileDispute(cfg, D_ADDR);
+  await entered.promise; // caller A is parked inside fetch 1 — B has entered by now
+  gate.resolve();
+  expect(await a).toBe(await b);
+  expect(fetches).toBe(2); // caller B never fetched — it rode A's run
+  expect(calls.map((c) => c.kind)).toEqual(["request_vrf"]);
 });

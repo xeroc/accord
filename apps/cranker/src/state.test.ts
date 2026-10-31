@@ -233,3 +233,15 @@ test("Closed and Failed are terminal → null", () => {
     expect(resolveNextAction(dispute({ state: s }), round(), 1n)).toBeNull();
   }
 });
+
+test("Created with VRF: seats complete at terms.minJurySize=1 → null (no phantom seat)", () => {
+  // N=1 pool (the Inveigo arena court): one drawn seat fills the panel. The
+  // resolver used to assume the default panel of 3 and kept resolving seats
+  // the program can never accept (seat-1 sortition retried 128× per cycle).
+  const d = dispute({
+    state: DisputeState.Created,
+    committedVrf: SOME_VRF,
+    terms: { ...dispute().terms, minJurySize: 1 },
+  });
+  expect(resolveNextAction(d, round({ jurorCount: 1 }), 1n)).toBeNull();
+});

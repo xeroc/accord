@@ -26,6 +26,7 @@ import {
   canExecuteAt,
   fetchMaybeAppealBond,
   fetchMaybeAccordState,
+  fetchMaybeDispute,
   fetchMaybeRound,
   findAllDisputes,
   findAllPendingUpdates,
@@ -76,6 +77,8 @@ export interface ReconcilerConfig {
   log?: (msg: string, fields?: Record<string, unknown>) => void;
   /** Override the dispute scan (tests). Defaults to `findAllDisputes(rpc)`. */
   fetchDisputes?: () => Promise<Account<Dispute>[]>;
+  /** Override a single-dispute fetch (scoped dispatch). Defaults to `fetchMaybeDispute(rpc, addr)`. */
+  fetchDisputeOne?: (addr: Address) => Promise<Account<Dispute> | null>;
   /** Override the round fetch (tests). Defaults to the SDK round PDA read. */
   fetchRound?: (dispute: Address, roundIdx: number) => Promise<Account<Round> | null>;
   /** Override the appeal-bond fetch (tests). Bond seed `roundIdx` is the
@@ -360,6 +363,70 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
   }
 
   return fired;
+}
+
+/**
+ * Scoped dispatch for latency-critical transitions (WS account writes, the
+ * `VrfCommitted` log trigger): re-resolve → execute → RE-RESOLVE with fresh
+ * state until the dispute settles. Live failure mode (2026-10-30): a dispatch
+ * resolved `request_vrf` off a pre-callback snapshot, the handler detected
+ * `committed_vrf already set` and skipped — and the dispatch ended, leaving
+ * `draw_seat` to the next poll cycle (+60s). Each iteration re-fetches the
+ * dispute; a cycle that does nothing settles the loop, a failed action
+ * settles it too (the poll is the backstop), and concurrent dispatches for
+ * the same dispute coalesce into one run.
+ */
+const scopedInflight = new Map<string, Promise<number>>();
+
+export async function reconcileDispute(
+  config: ReconcilerConfig,
+  addr: Address,
+  opts: { iterations?: number; pauseMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<number> {
+  const maxIterations = opts.iterations ?? 3;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const pauseMs = opts.pauseMs ?? 300;
+  const key = addr.toString();
+  const inflight = scopedInflight.get(key);
+  if (inflight !== undefined) return inflight;
+  const run = (async (): Promise<number> => {
+    let total = 0;
+    for (let i = 0; i < maxIterations; i++) {
+      if (i > 0) await sleep(pauseMs);
+      const fetched = await (config.fetchDisputeOne?.(addr) ??
+        fetchMaybeDispute(config.accord.rpc, addr));
+      // fetchDisputeOne returns a full Account (no `exists` tag); the default
+      // fetch returns a kit MaybeAccount — normalize to Account | null.
+      const snapshot =
+        fetched !== null && (!("exists" in fetched) || fetched.exists)
+          ? (fetched as Account<Dispute>)
+          : null;
+      if (snapshot === null) return total;
+      const fired = await reconcileOnce({
+        ...config,
+        fetchDisputes: async () => [snapshot],
+        // A single dispute never has PendingUpdates, and the Canon/Reclaim/
+        // Synod scans are noise on this path — neutralize them so the scoped
+        // dispatch stays two RPC reads + at most one tx.
+        fetchPendingUpdates: async () => [],
+        fetchAccordState: async () => null,
+        fetchReclaimableSlots: async () => [],
+        fetchCanonItems: async () => [],
+        fetchCanonLists: async () => [],
+        fetchRemovedCanonItems: async () => [],
+        fetchSynodCases: async () => [],
+      });
+      total += fired;
+      if (fired === 0) return total; // nothing resolved — settled
+    }
+    return total;
+  })();
+  scopedInflight.set(key, run);
+  try {
+    return await run;
+  } finally {
+    scopedInflight.delete(key);
+  }
 }
 
 /**
