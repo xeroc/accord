@@ -197,4 +197,10 @@ pub enum AccordError {
         "Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror."
     )]
     FeeDominatesSlash,
+    // --- zero-commitment sentinel (bean accord-wgk7) ---
+    // Appended at the tail: error codes are sequential and stable, so a
+    // mid-enum insert would renumber every later error and break generated
+    // clients (see `SlotAwaitingRecycle` precedent).
+    #[msg("Commitment must not be the all-zero sentinel.")]
+    ZeroCommitment,
 }

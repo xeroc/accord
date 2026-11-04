@@ -190,6 +190,43 @@ describe("e2e: voting commit-reveal-finalize (requires Surfpool)", () => {
     await expect(env.sendIx(instruction)).rejects.toThrow();
   }, 200_000);
 
+  it("commit with the all-zero sentinel commitment reverts, round untouched (SR4-M-1)", async () => {
+    if (!env.up) return; // offline CI lane
+    const accordState = await ensurePause(env);
+    const core = await armSubaccordAndJurors(env, accordState);
+    const fx: DrawFixture = { env, up: true, ...core };
+    const nonce = crypto
+      .getRandomValues(new Uint8Array(8))
+      .reduce((acc, b, i) => acc | (BigInt(b) << BigInt(i * 8)), 0n);
+    const armed = await armDispute(fx, nonce);
+    const memberships = await resolveDistinctPanel(fx, armed);
+    const roundPda = await submitDraw(fx, armed, memberships);
+
+    const seat0 = fx.jurors.find(
+      (x) => x.signer.address === toAddress(memberships[0]!.leaf.juror),
+    )!;
+    // Inside the commit window; submit the all-zero commitment — the
+    // uncommitted-slot sentinel — through the raw builder (the vote+salt
+    // facade can never produce it). Pre-fix this bumped commit_count with
+    // the slot left sentinel (replayable to panel size → early Reveal →
+    // honest no-show slashes); must revert ZeroCommitment, counter at 0.
+    const round = await readRound(env, roundPda);
+    await warpTo(env, round!.reviewEnd);
+    const instruction = seat0.accord.adapter.buildCommit({
+      programId: env.programId,
+      accounts: {
+        signer: seat0.signer.address,
+        subaccord: fx.subaccord,
+        dispute: armed.dispute,
+        round: roundPda,
+      },
+      commitment: new Uint8Array(32),
+    });
+    await expect(env.sendIx(instruction)).rejects.toThrow();
+    const after = await readRound(env, roundPda);
+    expect(after!.commitCount).toBe(0);
+  }, 200_000);
+
   it("ADR-0038: eager panel reaches Final at resolve_ts + appeal_window, not the scheduled windows", async () => {
     if (!env.up) return; // offline CI lane
 

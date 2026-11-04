@@ -127,6 +127,14 @@ lives in local state from verdict until reveal — losing it makes the commit
 unrevealable (accepted risk; the state dir is backed up like a hot wallet's
 memory).
 
+Duties advance **concurrently, independently, and bounded** (default 4,
+`JURAT_MAX_PARALLEL_DUTIES`): one dispute's slow LLM ladder must not eat a
+sibling's commit/reveal window. The bound caps provider + evidence burst; `1`
+restores fully sequential advancement. Joins stay sequential before the duty
+fan-out — budget accounting is order-dependent by design — and store writes
+serialize through a per-store tail so concurrent duty saves cannot lose
+records.
+
 ## Join evaluator gates
 
 A Subaccord is joinable only when ALL gates pass (ADR-0036; every knob in
@@ -217,6 +225,7 @@ rationale capped at 3500 chars) + alerts, posted to the Bot API
 | `JURAT_DRY_RUN` | Vote gate — `true` blocks all vote-shaped tx | `true` |
 | `JURAT_STATE_DIR` | Local state (duties, votes, join book) | `./state` |
 | `JURAT_SCAN_INTERVAL_MS` | Reconcile scan interval (the truth loop) | `60000` |
+| `JURAT_MAX_PARALLEL_DUTIES` | Max duties advanced concurrently per scan | `4` |
 | `JURAT_TELEGRAM_TOKEN` / `JURAT_TELEGRAM_CHAT_ID` | Notify channel (both or none; unset = stdout) | optional |
 | `JURAT_EVIDENCE_URL` | Evidence daemon base URL (both or none; unset = duties hold, join watch still runs) | optional |
 | `JURAT_DELIVERY_KEY_PATH` | X25519 Delivery Key file (ADR-0034), created on first run | optional (pair) |

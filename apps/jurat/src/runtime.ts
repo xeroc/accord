@@ -52,6 +52,9 @@ import type { NotifyChannel } from "./notify/channel";
 import { commitVote, CommitWindowClosedError, type VoteStore } from "./vote/commit";
 import { revealVote, RevealWindowClosedError, SaltLostError } from "./vote/reveal";
 
+/** Default duties advanced concurrently per scan when the seam is unset. */
+const DEFAULT_MAX_PARALLEL_DUTIES = 4;
+
 /** Unbounded range ceiling when the operator sets no max (u64 tops out below this). */
 const UNBOUNDED = 2n ** 128n;
 
@@ -94,6 +97,12 @@ export interface RuntimeDeps {
   /** Chain-clock now (unix seconds) — windows are chain-time, not wall-time. */
   now(): Promise<number>;
   /**
+   * Max duties advanced concurrently per scan (default 4). One duty's LLM
+   * ladder must not stall a sibling's commit window; the bound caps
+   * provider/evidence burst. 1 restores fully sequential advancement.
+   */
+  readonly maxParallelDuties?: number;
+  /**
    * Deadline wake: fires an off-cycle scan when a deadline (commit-window
    * open) arrives, so verdict work starts on the window instead of the next
    * scan tick. Optional — absent = scan-cadence only (tests, embeds).
@@ -129,6 +138,25 @@ export function joinBudgetFromConfig(config: Config): JoinBudget {
   };
 }
 
+/**
+ * Run `op` over `items` with at most `limit` in flight, starting in order.
+ * `op` owns its failure policy and never throws; a throw would fail the
+ * batch with the remaining items unstarted.
+ */
+async function runBounded<T>(
+  items: readonly T[],
+  limit: number,
+  op: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      await op(items[next++]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
 /** One scan result: evaluate every join candidate, then advance every duty. */
 export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Promise<void> {
   const log = deps.log ?? console.log;
@@ -137,7 +165,11 @@ export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Pr
       `${result.duties.length} actionable duty/duties`,
   );
   await handleJoins(deps, result.joinCandidates, result.heldStakes);
-  for (const signal of result.duties) {
+  // Duties advance concurrently (bounded): a slow LLM ladder on one dispute
+  // must not eat a sibling's commit/reveal window. Joins stay sequential —
+  // budget accounting is order-dependent by design.
+  const limit = Math.max(1, deps.maxParallelDuties ?? DEFAULT_MAX_PARALLEL_DUTIES);
+  await runBounded(result.duties, limit, async (signal) => {
     try {
       await runDuty(deps, signal);
     } catch (e) {
@@ -145,7 +177,7 @@ export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Pr
         `duty ${signal.dispute}:${signal.roundIdx} failed: ${errMessage(e)} — retrying next scan`,
       );
     }
-  }
+  });
 }
 
 async function handleJoins(

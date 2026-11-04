@@ -156,6 +156,8 @@ export const ACCORD_ERROR__EVEN_JURY_SIZE = 0x17b4; // 6068
 export const ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS = 0x17b5; // 6069
 /** FeeDominatesSlash: Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror. */
 export const ACCORD_ERROR__FEE_DOMINATES_SLASH = 0x17b6; // 6070
+/** ZeroCommitment: Commitment must not be the all-zero sentinel. */
+export const ACCORD_ERROR__ZERO_COMMITMENT = 0x17b7; // 6071
 
 export type AccordError =
   | typeof ACCORD_ERROR__ALREADY_PAUSED
@@ -228,7 +230,8 @@ export type AccordError =
   | typeof ACCORD_ERROR__VRF_ALREADY_COMMITTED
   | typeof ACCORD_ERROR__VRF_NOT_COMMITTED
   | typeof ACCORD_ERROR__WITHDRAWAL_PENDING
-  | typeof ACCORD_ERROR__WITHDRAWAL_TOO_EARLY;
+  | typeof ACCORD_ERROR__WITHDRAWAL_TOO_EARLY
+  | typeof ACCORD_ERROR__ZERO_COMMITMENT;
 
 let accordErrorMessages: Record<AccordError, string> | undefined;
 if (process.env["NODE_ENV"] !== "production") {
@@ -304,6 +307,7 @@ if (process.env["NODE_ENV"] !== "production") {
     [ACCORD_ERROR__VRF_NOT_COMMITTED]: `No VRF result committed for this dispute; the root is not yet frozen.`,
     [ACCORD_ERROR__WITHDRAWAL_PENDING]: `A withdrawal is already pending — complete it via withdraw before requesting another.`,
     [ACCORD_ERROR__WITHDRAWAL_TOO_EARLY]: `Withdrawal timelock has not elapsed yet.`,
+    [ACCORD_ERROR__ZERO_COMMITMENT]: `Commitment must not be the all-zero sentinel.`,
   };
 }
 

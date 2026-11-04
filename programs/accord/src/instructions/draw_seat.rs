@@ -215,12 +215,21 @@ impl<'info> DrawSeat<'info> {
             // Draw eligibility (2026-09-28, revised from REVIEW #5's
             // min + α·min): free stake ≥ min_stake — a juror holding exactly
             // min_stake is drawable; this draw's α·min_stake bond (reserved
-            // just below) comes out of the floor, not on top of it. The
-            // reservation still guarantees staked ≥ Σα_pending, so every
-            // pending slash stays covered (the settle cap stays a no-op). An
-            // incoherent juror's fold now lands below the floor and
-            // reconcile ejects them (zero-weight leaf — ADR for 2026-09-28).
-            let free_stake = js.staked.saturating_sub(js.slash_reserve);
+            // just below) comes out of the floor, not on top of it. An
+            // incoherent juror's fold lands below the floor and reconcile
+            // ejects them (zero-weight leaf — 2026-09-28).
+            //
+            // SR4-M-2 (review 2026-11-04): "free stake" is EFFECTIVE stake —
+            // `staked` net of pending `stake_delta`. Reading bare `staked`
+            // re-admitted settled-but-unreconciled losers at their pre-loss
+            // stake (the reserve was already released, the loss invisible to
+            // the canonical ledger), letting successive settlements slash the
+            // same principal until reconcile discarded the excess debt while
+            // winners kept the credits. With the gate on effective stake the
+            // reservation argument below holds across rounds too: a drawable
+            // juror's effective stake ≥ min_stake ≥ α·min_stake covers every
+            // pending slash, so the settle cap stays a true no-op.
+            let free_stake = effective_stake(js).saturating_sub(js.slash_reserve);
             require!(
                 free_stake >= dispute.terms.min_stake,
                 AccordError::InsufficientStake

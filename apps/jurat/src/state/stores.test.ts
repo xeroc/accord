@@ -44,6 +44,19 @@ const VOTE: VoteRecord = {
   updatedAt: 1_700_000_000,
 };
 
+test("concurrent saves of distinct records both survive (no lost update)", async () => {
+  const store = fileDutyStore(dir);
+  const records = [1, 2, 3, 4].map((i) => ({
+    ...DUTY,
+    dispute: `Disp${String(i).repeat(43).slice(0, 43)}`,
+    roundIdx: i,
+  }));
+  await Promise.all(records.map((r) => store.save(r)));
+  for (const r of records) {
+    expect(await store.load(r.dispute, r.roundIdx)).toEqual(r);
+  }
+});
+
 test("duty store: missing file loads undefined; save → load roundtrips", async () => {
   const store = fileDutyStore(dir);
   expect(await store.load(DUTY.dispute, 0)).toBeUndefined();

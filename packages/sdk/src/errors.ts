@@ -70,6 +70,7 @@ import {
   ACCORD_ERROR__EVEN_JURY_SIZE,
   ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS,
   ACCORD_ERROR__FEE_DOMINATES_SLASH,
+  ACCORD_ERROR__ZERO_COMMITMENT,
 } from "./generated/errors/accord.js";
 
 /**
@@ -169,6 +170,7 @@ export const AccordErrors = {
   EvenJurySize: err(ACCORD_ERROR__EVEN_JURY_SIZE, "EvenJurySize", "Round-1 jury size (min_jury_size) must be odd (tie avoidance)."),
   LadderExceedsMaxJurors: err(ACCORD_ERROR__LADDER_EXCEEDS_MAX_JURORS, "LadderExceedsMaxJurors", "The appeal ladder (min_jury_size, max_appeals) exceeds MAX_JURORS at its top round."),
   FeeDominatesSlash: err(ACCORD_ERROR__FEE_DOMINATES_SLASH, "FeeDominatesSlash", "Same-mint pool is fee-dominated: alpha_bps·min_stake/10_000 must cover MIN_SLASH_FEE_RATIO·fee_per_juror."),
+  ZeroCommitment: err(ACCORD_ERROR__ZERO_COMMITMENT, "ZeroCommitment", "Commitment must not be the all-zero sentinel."),
 } as const;
 
 export type AccordErrorName = keyof typeof AccordErrors;

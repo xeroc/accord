@@ -234,3 +234,11 @@ test("trace: garbage mode or mode without URL throws", () => {
   ).toThrow("JURAT_TRACE_MODE");
   expect(() => load({ ...VALID_ENV, JURAT_TRACE_MODE: "open" })).toThrow("JURAT_TRACE_URL");
 });
+
+test("maxParallelDuties: default 4, override parsed, 0 rejected", () => {
+  expect(load().maxParallelDuties).toBe(4);
+  expect(load({ ...VALID_ENV, JURAT_MAX_PARALLEL_DUTIES: "8" }).maxParallelDuties).toBe(8);
+  expect(() => load({ ...VALID_ENV, JURAT_MAX_PARALLEL_DUTIES: "0" })).toThrow(
+    /JURAT_MAX_PARALLEL_DUTIES/,
+  );
+});

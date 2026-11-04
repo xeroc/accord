@@ -6,9 +6,11 @@
  * `dispute:roundIdx`, written atomically (tmp + rename) on every save —
  * salts and duty lifecycle must survive a crash between writes. Both record
  * types are already JSON-safe (hex strings / decimal bigints), so records
- * serialize verbatim. ponytail: whole-file rewrite per save; volumes are one
- * record per drawn seat — switch to per-record files if duty volume ever
- * makes this hot.
+ * serialize verbatim. Saves chain through a per-store tail — duties advance
+ * concurrently and a bare whole-file read-modify-write would lose the slower
+ * writer. ponytail: whole-file rewrite per save; volumes are one record per
+ * drawn seat — switch to per-record files if duty volume ever makes this
+ * hot.
  */
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -47,14 +49,21 @@ function fileStore<T extends { dispute: string; roundIdx: number }>(
   load(dispute: string, roundIdx: number): Promise<T | undefined>;
   save(record: T): Promise<void>;
 } {
+  // Saves serialize through a tail: duties advance concurrently and the
+  // whole-file read-modify-write would otherwise lose the slower writer.
+  let tail: Promise<void> = Promise.resolve();
   return {
     async load(dispute, roundIdx) {
       return (await loadRecords<T>(file))[`${dispute}:${roundIdx}`];
     },
     async save(record) {
-      const records = await loadRecords<T>(file);
-      records[`${record.dispute}:${record.roundIdx}`] = record;
-      await saveRecords(file, records);
+      const write = async () => {
+        const records = await loadRecords<T>(file);
+        records[`${record.dispute}:${record.roundIdx}`] = record;
+        await saveRecords(file, records);
+      };
+      tail = tail.then(write, write); // a failed predecessor never blocks
+      await tail;
     },
   };
 }

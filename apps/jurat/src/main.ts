@@ -272,6 +272,7 @@ export async function main(): Promise<void> {
     },
     tokenBalance: joinChain.tokenBalance,
     scheduleWake: (key, wakeAtMs) => wakeScheduler.schedule(key, wakeAtMs),
+    maxParallelDuties: config.maxParallelDuties,
     trace:
       config.trace &&
       makeTraceSinkBinder({
