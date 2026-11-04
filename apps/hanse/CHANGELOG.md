@@ -1,5 +1,12 @@
 # @useaccord/hanse
 
+## 0.8.5
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/ui@0.8.5
+
 ## 0.8.4
 
 ### Patch Changes

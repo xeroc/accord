@@ -1,5 +1,13 @@
 # @useaccord/remotion
 
+## 0.8.5
+
+### Patch Changes
+
+- Updated dependencies [[`290ac3f`](https://github.com/xeroc/accord/commit/290ac3fe563de6d8d267003d118f2512b8d64749), [`2586b68`](https://github.com/xeroc/accord/commit/2586b68305438e0c6a7598f99eb9cc87efb9c2f4)]:
+  - @useaccord/sdk@0.8.5
+  - @useaccord/ui@0.8.5
+
 ## 0.8.4
 
 ### Patch Changes
