@@ -48,6 +48,16 @@ impl<'info> Commit<'info> {
             .position(|j| *j == juror_key)
             .ok_or(AccordError::NotDrawnJuror)?;
 
+        // The all-zero slot is the "uncommitted" sentinel (the
+        // `CommitAlreadyExists` gate below, and `reveal`'s `CommitMissing`
+        // gate). Accepting it as a submission would leave the slot
+        // indistinguishable from "never committed" while bumping
+        // `commit_count` — a drawn juror could replay zeros up to panel size,
+        // flip the dispute to Reveal early, and slash the locked-out jurors
+        // as no-shows (bean accord-wgk7). Reject it here, before any state
+        // mutates, so the sentinel stays unambiguous.
+        require!(commitment != [0u8; 32], AccordError::ZeroCommitment);
+
         require!(
             round.commits[idx] == [0u8; 32],
             AccordError::CommitAlreadyExists

@@ -3282,6 +3282,141 @@ fn commit_all_jurors_flips_to_reveal_before_commit_end() {
     }
 }
 
+/// Submit `commit` for `juror` with a raw (possibly all-zero) commitment.
+/// Returns the execution result unchecked so tests can assert rejection.
+fn do_commit_raw(
+    env: &mut AccEnv,
+    dispute: Pubkey,
+    rnd: Pubkey,
+    juror: &Keypair,
+    commitment: [u8; 32],
+) -> TransactionResult {
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::Commit {
+            juror: juror.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::Commit { commitment })
+        .instruction()
+        .unwrap();
+    env.ctx.execute_instruction(ix, &[juror]).unwrap()
+}
+
+// ─── zero-commitment sentinel replay (security review, bean accord-wgk7) ────
+
+/// The all-zero slot is the "uncommitted" sentinel (`reveal`'s CommitMissing
+/// gate, `commit`'s CommitAlreadyExists gate). Accepting it as a *submission*
+/// leaves the slot indistinguishable from "never committed" while bumping
+/// `commit_count` — one juror could replay the counter to panel size, flip the
+/// dispute to Reveal early, and slash the locked-out jurors as no-shows.
+#[test]
+fn commit_rejects_all_zero_commitment_leaves_state_untouched() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        review_end,
+        ..
+    } = setup_drawn_panel_3();
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+
+    let (_, leaf_idx) = drawn[0];
+    let r = do_commit_raw(&mut env, dispute, rnd, &jurors[leaf_idx], [0u8; 32]);
+    assert!(
+        !r.is_success(),
+        "all-zero commitment must be rejected; logs={:?}",
+        r.logs()
+    );
+
+    // Rejected call must leave counter and state unchanged.
+    let acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
+    assert_eq!(round.commit_count, 0, "counter untouched by rejected commit");
+    drop(acc);
+    let d =
+        Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+            .unwrap();
+    assert_eq!(d.state, DisputeState::Drawn, "state untouched");
+}
+
+/// The review's lockout repro, neutralized: Mallory (seat 0) submits zero
+/// twice — both rejected, counter unmoved — then a valid commitment. The
+/// remaining panel must still be able to commit, and only the third real
+/// commitment flips the dispute to Reveal.
+#[test]
+fn commit_zero_replay_cannot_flip_early_or_lock_out_panel() {
+    let DrawnPanel {
+        mut env,
+        dispute,
+        rnd,
+        jurors,
+        drawn,
+        review_end,
+        commit_end,
+        ..
+    } = setup_drawn_panel_3();
+
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(&mut env, review_end - now + 1);
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    assert!(now < commit_end);
+
+    let (_, mallory) = drawn[0];
+    for _ in 0..2 {
+        let r = do_commit_raw(&mut env, dispute, rnd, &jurors[mallory], [0u8; 32]);
+        assert!(
+            !r.is_success(),
+            "zero replay must be rejected every time; logs={:?}",
+            r.logs()
+        );
+    }
+    let acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
+    assert_eq!(round.commit_count, 0, "replayed zeros must not bump the counter");
+    drop(acc);
+
+    // Mallory's real commitment counts once…
+    let vote = 0u64;
+    let salt = [1u8; 32];
+    let comm = hashv(&[
+        &vote.to_le_bytes(),
+        &salt,
+        jurors[mallory].pubkey().as_ref(),
+    ])
+    .to_bytes();
+    do_commit_raw(&mut env, dispute, rnd, &jurors[mallory], comm).assert_success();
+
+    // …and the honest panel is NOT locked out: both still commit, dispute
+    // reaches Reveal only at the third real commitment.
+    for (i, &(seat, leaf_idx)) in drawn.iter().enumerate().skip(1) {
+        let salt = [(i + 1) as u8; 32];
+        let comm = hashv(&[
+            &vote.to_le_bytes(),
+            &salt,
+            jurors[leaf_idx].pubkey().as_ref(),
+        ])
+        .to_bytes();
+        do_commit_raw(&mut env, dispute, rnd, &jurors[leaf_idx], comm).assert_success();
+        let _ = seat;
+    }
+
+    let d =
+        Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+            .unwrap();
+    assert_eq!(d.state, DisputeState::Reveal, "Reveal only via 3 real commits");
+    let acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&acc.data[8..]);
+    assert_eq!(round.commit_count, 3, "counter == distinct committers");
+}
+
 #[test]
 fn reveal_blocked_until_all_committed_inside_commit_window() {
     let DrawnPanel {
