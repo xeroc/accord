@@ -1,20 +1,24 @@
 /**
- * WS /watch/{dispute} — live jury-telemetry fan-out (ADR-0037, bean
+ * WS /watch/{dispute}?sub= — live jury-telemetry fan-out (ADR-0037, bean
  * accord-heqb). Replay-then-live with seal-on-read on every send.
  *
  *   connect → hello → replay (store tail ∪ ring buffer, seal-filtered,
  *             deduped by juror:seq) → live frames
- *   publish(dispute, envelopes) — the ingest entry (POST /trace, bean
- *             accord-lmcc): ring (bounded, drop-oldest) + immediate
- *             seal-visible send; sealed frames arm an unseal timer that
- *             re-fans out at unsealAt
+ *   publish(subaccord, dispute, envelopes) — the ingest entry (POST
+ *             /trace, bean accord-lmcc): ring (bounded, drop-oldest) +
+ *             immediate seal-visible send; sealed frames arm an unseal
+ *             timer that re-fans out at unsealAt
+ *
+ * Subaccord scope (REQUIRED `?sub=`): dispute PDAs are cluster-agnostic
+ * (same program IDs on every cluster), so every fan-out key is the pair
+ * (subaccord, dispute) — two clusters' cycles at one address never mix.
  *
  * Read gate (ADR-0037): the optional `authorize` seam runs BEFORE the IP
  * slot is reserved or the socket upgrades — false ⇒ 401 JSON. main.ts wires
  * it to the same rule as GET /trace: the durable public stamp (flipped by
  * jurat via POST /trace-public) OR a valid filer token from `?token=`
- * (browsers cannot
- * header a WS upgrade). Absent ⇒ ungated (pre-gate deployments).
+ * (browsers cannot header a WS upgrade). Absent ⇒ ungated (pre-gate
+ * deployments).
  *
  * Fan-out state is single-replica in-memory (ADR-0037 locked decision);
  * durable replay is the store (GET /trace works on any replica). WS ignores
@@ -27,8 +31,8 @@ import { ADDRESS } from "./routes.js";
 import type { TraceReplaySource } from "./trace.js";
 import { UnsealScheduler, sealVisible } from "../pipeline/seal.js";
 
-/** Upgrade payload → `ws.data`. */
 export interface WatchSocketData {
+  readonly subaccord: string;
   readonly dispute: string;
   readonly ip: string;
   /** Keepalive latch: set on open/pong, cleared by each ping sweep. */
@@ -58,13 +62,16 @@ interface SealedEnvelope {
 
 const dedupeKey = (env: TraceEnvelope): string => `${env.juror}:${env.seq}`;
 
+/** Fan-out key: the (subaccord, dispute) pair — see the module header. */
+const scopeKey = (subaccord: string, dispute: string): string => `${subaccord}:${dispute}`;
+
 export class WatchHub {
   private readonly subscribers = new Map<string, Set<ServerWebSocket<WatchSocketData>>>();
   private readonly ring = new Map<string, TraceEnvelope[]>();
   private readonly ipCounts = new Map<string, number>();
   private readonly keepalive: Timer;
-  private readonly scheduler = new UnsealScheduler<SealedEnvelope>((dispute, sealed) => {
-    this.send(dispute, sealed.envelope);
+  private readonly scheduler = new UnsealScheduler<SealedEnvelope>((key, sealed) => {
+    this.send(key, sealed.envelope);
   });
 
   constructor(private readonly opts: WatchOptions = {}) {
@@ -80,23 +87,24 @@ export class WatchHub {
    * sealed frames arm the unseal timer. Never throws — a fan-out failure
    * must not stall the ingest pipeline.
    */
-  publish(dispute: string, envelopes: readonly TraceEnvelope[]): void {
-    const ring = this.ringFor(dispute);
+  publish(subaccord: string, dispute: string, envelopes: readonly TraceEnvelope[]): void {
+    const key = scopeKey(subaccord, dispute);
+    const ring = this.ringFor(key);
     const now = Date.now();
     for (const env of envelopes) {
       ring.push(env);
       if (ring.length > (this.opts.bufferPerDispute ?? DEFAULT_BUFFER)) ring.shift();
       if (sealVisible(env.event, now)) {
-        this.send(dispute, env);
+        this.send(key, env);
       } else {
         const unsealAt = env.event.unsealAt;
-        if (unsealAt !== undefined) this.scheduler.track(dispute, { unsealAt, envelope: env });
+        if (unsealAt !== undefined) this.scheduler.track(key, { unsealAt, envelope: env });
       }
     }
   }
 
-  subscriberCount(dispute: string): number {
-    return this.subscribers.get(dispute)?.size ?? 0;
+  subscriberCount(subaccord: string, dispute: string): number {
+    return this.subscribers.get(scopeKey(subaccord, dispute))?.size ?? 0;
   }
 
   /** Cancel unseal timers + keepalive sweep (shutdown). */
@@ -122,12 +130,12 @@ export class WatchHub {
 
   /** Hello + replay (store tail ∪ ring, seal-filtered) then go live. */
   async onOpen(ws: ServerWebSocket<WatchSocketData>): Promise<void> {
-    const { dispute } = ws.data;
+    const { subaccord, dispute } = ws.data;
     ws.send(JSON.stringify({ type: "hello", dispute }));
 
     let storeFrames: readonly TraceEnvelope[] = [];
     try {
-      storeFrames = (await this.opts.replay?.readEvents(dispute)) ?? [];
+      storeFrames = (await this.opts.replay?.readEvents(subaccord, dispute)) ?? [];
     } catch {
       // Store down → ring still serves; the durable record takes the gap.
     }
@@ -138,16 +146,17 @@ export class WatchHub {
     for (const env of storeFrames) {
       if (this.sendTo(ws, env)) seen.add(dedupeKey(env));
     }
-    for (const env of this.ring.get(dispute) ?? []) {
+    for (const env of this.ring.get(scopeKey(subaccord, dispute)) ?? []) {
       if (!seen.has(dedupeKey(env))) this.sendTo(ws, env);
     }
     this.subscribe(ws);
   }
 
   onClose(ws: ServerWebSocket<WatchSocketData>): void {
-    const set = this.subscribers.get(ws.data.dispute);
+    const key = scopeKey(ws.data.subaccord, ws.data.dispute);
+    const set = this.subscribers.get(key);
     if (set !== undefined && set.delete(ws)) {
-      if (set.size === 0) this.subscribers.delete(ws.data.dispute);
+      if (set.size === 0) this.subscribers.delete(key);
       this.releaseIp(ws.data.ip);
     }
   }
@@ -163,25 +172,26 @@ export class WatchHub {
   }
 
   private subscribe(ws: ServerWebSocket<WatchSocketData>): void {
-    let set = this.subscribers.get(ws.data.dispute);
+    const key = scopeKey(ws.data.subaccord, ws.data.dispute);
+    let set = this.subscribers.get(key);
     if (set === undefined) {
       set = new Set();
-      this.subscribers.set(ws.data.dispute, set);
+      this.subscribers.set(key, set);
     }
     set.add(ws);
   }
 
-  private ringFor(dispute: string): TraceEnvelope[] {
-    let ring = this.ring.get(dispute);
+  private ringFor(key: string): TraceEnvelope[] {
+    let ring = this.ring.get(key);
     if (ring === undefined) {
       ring = [];
-      this.ring.set(dispute, ring);
+      this.ring.set(key, ring);
     }
     return ring;
   }
 
-  private send(dispute: string, env: TraceEnvelope): void {
-    for (const ws of this.subscribers.get(dispute) ?? []) this.sendTo(ws, env);
+  private send(key: string, env: TraceEnvelope): void {
+    for (const ws of this.subscribers.get(key) ?? []) this.sendTo(ws, env);
   }
 
   /** The one send path — seal-check at send time; a dead socket never throws. */
@@ -213,13 +223,13 @@ export function websocketHandlers(hub: WatchHub): Bun.WebSocketHandler<WatchSock
 }
 
 /**
- * GET /watch/:dispute — hono upgrade route. `getServer` supplies the owning
- * Bun.serve instance via closure (main.ts binds it after listen).
+ * GET /watch/:dispute?sub= — hono upgrade route. `getServer` supplies the
+ * owning Bun.serve instance via closure (main.ts binds it after listen).
  */
 export function watchRoutes(
   hub: WatchHub,
   getServer: () => Bun.Server<WatchSocketData> | undefined,
-  authorize?: (dispute: string, token: string | undefined) => Promise<boolean>,
+  authorize?: (subaccord: string, dispute: string, token: string | undefined) => Promise<boolean>,
 ): Hono {
   const app = new Hono();
 
@@ -228,7 +238,11 @@ export function watchRoutes(
     if (!ADDRESS.test(dispute)) {
       return Response.json({ error: "invalid dispute" }, { status: 400 });
     }
-    if (authorize !== undefined && !(await authorize(dispute, c.req.query("token")))) {
+    const subaccord = c.req.query("sub");
+    if (subaccord === undefined || !ADDRESS.test(subaccord)) {
+      return Response.json({ error: "invalid subaccord" }, { status: 400 });
+    }
+    if (authorize !== undefined && !(await authorize(subaccord, dispute, c.req.query("token")))) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
     const server = getServer();
@@ -239,7 +253,9 @@ export function watchRoutes(
     if (!hub.reserveIp(ip)) {
       return Response.json({ error: "too many watch connections" }, { status: 429 });
     }
-    const upgraded = server.upgrade(c.req.raw, { data: { dispute, ip, alive: false } });
+    const upgraded = server.upgrade(c.req.raw, {
+      data: { subaccord, dispute, ip, alive: false },
+    });
     if (!upgraded) {
       // ponytail: a reserved-but-never-opened slot can leak only if the WS
       // handshake dies mid-upgrade; Bun still fires close for those sockets.

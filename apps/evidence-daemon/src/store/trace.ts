@@ -156,14 +156,26 @@ export interface TraceStore {
    */
   lastSeq(subaccord: Address, dispute: Address, juror: Address): Promise<number | null>;
   /**
-   * Durably mark a dispute's trace record PUBLIC (inveigo ADR-0013
+   * Durably mark a (subaccord, dispute) trace record PUBLIC (inveigo ADR-0013
    * amendment): jurat — not the daemon — decides publication and notifies
    * via POST /trace-public when its committed vote is the FLIP side
    * (Final+1 = FLIP per inveigo settle.rs; Final+0 = HOLD stays private).
-   * Idempotent; dispute-keyed like the read API. No un-publish.
+   * Idempotent; scoped like the read API. No un-publish.
    */
-  markPublic(dispute: Address): Promise<void>;
-  /** True iff {@link TraceStore.markPublic} has stamped this dispute. */
-  isPublic(dispute: Address): Promise<boolean>;
-  readEvents(dispute: Address, juror?: Address, fromSeq?: number): Promise<TraceEnvelope[]>;
+  markPublic(subaccord: Address, dispute: Address): Promise<void>;
+  /** True iff {@link TraceStore.markPublic} has stamped this court's record. */
+  isPublic(subaccord: Address, dispute: Address): Promise<boolean>;
+  /**
+   * Read one court's record for a dispute. The subaccord scope is
+   * load-bearing: dispute PDAs are cluster-agnostic (same program IDs on
+   * every cluster), so two clusters can legitimately host different disputes
+   * at one address under different courts — an unscoped read would merge
+   * them into one record (observed: devnet+mainnet cycles interleaved).
+   */
+  readEvents(
+    subaccord: Address,
+    dispute: Address,
+    juror?: Address,
+    fromSeq?: number,
+  ): Promise<TraceEnvelope[]>;
 }

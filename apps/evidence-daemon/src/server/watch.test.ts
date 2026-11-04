@@ -21,6 +21,7 @@ import type { TraceEnvelope } from "./handlers.js";
 import type { TraceReplaySource } from "./trace.js";
 
 const DISPUTE = "1111111111111111111111111111111D";
+const SUB = "1111111111111111111111111111111S";
 const JUROR = "1111111111111111111111111111111J";
 
 /** Frames a client can receive: the hello ack or a trace envelope. */
@@ -66,7 +67,7 @@ function serve(hub: WatchHub): Bun.Server<WatchSocketData> {
 }
 
 /** Connect a WS client and buffer parsed frames. */
-function connect(server: Bun.Server<WatchSocketData>, path = `/watch/${DISPUTE}`) {
+function connect(server: Bun.Server<WatchSocketData>, path = `/watch/${DISPUTE}?sub=${SUB}`) {
   const ws = new WebSocket(`ws://127.0.0.1:${server.port}${path}`);
   sockets.push(ws);
   const frames: WatchFrame[] = [];
@@ -114,8 +115,8 @@ describe("WS /watch/:dispute", () => {
     await a.open;
     await a.atLeast(1); // hello
 
-    hub.publish(DISPUTE, [envelope(1, { type: "agent-start", model: "m" })]);
-    hub.publish(DISPUTE, [envelope(2, { type: "step", n: 1 })]);
+    hub.publish(SUB, DISPUTE, [envelope(1, { type: "agent-start", model: "m" })]);
+    hub.publish(SUB, DISPUTE, [envelope(2, { type: "step", n: 1 })]);
     expect(seqs(await a.atLeast(3))).toEqual([1, 2]);
 
     // Mid-duty connect: hello + replay of the ring, then live.
@@ -124,7 +125,7 @@ describe("WS /watch/:dispute", () => {
     expect(isHello(bFrames[0])).toBe(true);
     expect(seqs(bFrames)).toEqual([1, 2]);
 
-    hub.publish(DISPUTE, [envelope(3, { type: "commit", dryRun: true })]);
+    hub.publish(SUB, DISPUTE, [envelope(3, { type: "commit", dryRun: true })]);
     expect(seqs(await a.atLeast(4))).toEqual([1, 2, 3]);
     expect(seqs(await b.atLeast(4))).toEqual([1, 2, 3]);
   });
@@ -132,20 +133,24 @@ describe("WS /watch/:dispute", () => {
   it("replay = store tail, then ring tail (no duplicates), then live", async () => {
     const source: TraceReplaySource = {
       // Durable record already carries seq 1 (published before this process).
-      readEvents: () => Promise.resolve([envelope(1, { type: "agent-start", model: "m" })]),
+      readEvents: (sub: string, dispute: string) => {
+        expect(sub).toBe(SUB);
+        expect(dispute).toBe(DISPUTE);
+        return Promise.resolve([envelope(1, { type: "agent-start", model: "m" })]);
+      },
     };
     const hub = new WatchHub({ replay: source });
     const server = serve(hub);
 
     // Live-published frame is in the ring, not in the (static) store fake.
-    hub.publish(DISPUTE, [envelope(2, { type: "step", n: 1 })]);
+    hub.publish(SUB, DISPUTE, [envelope(2, { type: "step", n: 1 })]);
 
     const c = connect(server);
     const frames = await c.atLeast(3);
     expect(isHello(frames[0])).toBe(true);
     expect(seqs(frames)).toEqual([1, 2]); // store seq 1, ring seq 2 — no dupes
 
-    hub.publish(DISPUTE, [envelope(3, { type: "reveal", tx: "sig" })]);
+    hub.publish(SUB, DISPUTE, [envelope(3, { type: "reveal", tx: "sig" })]);
     expect(seqs(await c.atLeast(4))).toEqual([1, 2, 3]);
   });
 
@@ -158,7 +163,7 @@ describe("WS /watch/:dispute", () => {
     await a.open;
     await a.atLeast(1);
 
-    hub.publish(DISPUTE, [
+    hub.publish(SUB, DISPUTE, [
       envelope(1, { type: "step", n: 1 }),
       envelope(2, { type: "verdict", optionIndex: 0, unsealAt }),
     ]);
@@ -185,15 +190,15 @@ describe("WS /watch/:dispute", () => {
 
     const b = connect(server);
     await b.closed; // upgrade rejected over the cap
-    expect(hub.subscriberCount(DISPUTE)).toBe(1);
+    expect(hub.subscriberCount(SUB, DISPUTE)).toBe(1);
   });
 
   it("publish with no subscribers buffers in the ring without throwing", async () => {
     const hub = new WatchHub();
     const server = serve(hub);
 
-    hub.publish(DISPUTE, [envelope(1, { type: "agent-start", model: "m" })]);
-    hub.publish(DISPUTE, [envelope(2, { type: "step", n: 1 })]);
+    hub.publish(SUB, DISPUTE, [envelope(1, { type: "agent-start", model: "m" })]);
+    hub.publish(SUB, DISPUTE, [envelope(2, { type: "step", n: 1 })]);
 
     const late = connect(server);
     expect(seqs(await late.atLeast(3))).toEqual([1, 2]);
@@ -212,7 +217,7 @@ describe("WS /watch/:dispute", () => {
     setTimeout(() => wake.resolve(), 200);
     await wake.promise;
 
-    hub.publish(DISPUTE, [envelope(1, { type: "step", n: 1 })]);
+    hub.publish(SUB, DISPUTE, [envelope(1, { type: "step", n: 1 })]);
     expect(seqs(await a.atLeast(2))).toEqual([1]); // still connected + receiving
   });
 
@@ -220,9 +225,9 @@ describe("WS /watch/:dispute", () => {
     const hub = new WatchHub({ bufferPerDispute: 2 });
     const server = serve(hub);
 
-    hub.publish(DISPUTE, [envelope(1, { type: "step", n: 1 })]);
-    hub.publish(DISPUTE, [envelope(2, { type: "step", n: 2 })]);
-    hub.publish(DISPUTE, [envelope(3, { type: "step", n: 3 })]);
+    hub.publish(SUB, DISPUTE, [envelope(1, { type: "step", n: 1 })]);
+    hub.publish(SUB, DISPUTE, [envelope(2, { type: "step", n: 2 })]);
+    hub.publish(SUB, DISPUTE, [envelope(3, { type: "step", n: 3 })]);
 
     const c = connect(server);
     expect(seqs(await c.atLeast(3))).toEqual([2, 3]); // seq 1 dropped, order kept
@@ -239,7 +244,7 @@ describe("GET /watch/:dispute (read gate)", () => {
       () => undefined,
       async () => false,
     );
-    const res = await app.request(`/watch/${DISPUTE}`);
+    const res = await app.request(`/watch/${DISPUTE}?sub=${SUB}`);
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "unauthorized" });
   });
@@ -251,7 +256,16 @@ describe("GET /watch/:dispute (read gate)", () => {
       () => undefined,
       async () => true,
     );
-    const res = await app.request(`/watch/${DISPUTE}`);
+    const res = await app.request(`/watch/${DISPUTE}?sub=${SUB}`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /watch/:dispute (subaccord scope)", () => {
+  it("requires ?sub= — 400 without it, 400 on a malformed sub", async () => {
+    const hub = new WatchHub({});
+    const app = watchRoutes(hub, () => undefined);
+    expect((await app.request(`/watch/${DISPUTE}`)).status).toBe(400);
+    expect((await app.request(`/watch/${DISPUTE}?sub=not-an-address`)).status).toBe(400);
   });
 });

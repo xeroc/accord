@@ -7,10 +7,11 @@
  * ingest gate already no-ops seq ≤ last; this guard keeps the file honest
  * under direct replays). No delete — keep forever.
  *
- * `readEvents` scans `{rootDir}/traces/{sub}/{dispute}/` for every
- * subaccord shard: the read API is dispute-keyed while the path is
- * subaccord-sharded (one readdir + one open per juror file). Batches
- * with seq ≥ fromSeq expand to envelopes, ordered by (juror, seq).
+ * `readEvents` reads exactly one court's shard
+ * (`{rootDir}/traces/{sub}/{dispute}/` — the subaccord scope separates
+ * clusters: dispute PDAs are cluster-agnostic, two clusters can host
+ * different disputes at one address). Batches with seq ≥ fromSeq expand to
+ * envelopes, ordered by (juror, seq).
  *
  * Shares the FsStore rootDir (selected via `EVIDENCE_STORAGE=fs`); the
  * `traces/` prefix keeps the namespace clear of evidence objects, so
@@ -82,26 +83,24 @@ export class FsTraceStore implements TraceStore {
     return last === undefined ? null : last.seq;
   }
 
-  async readEvents(dispute: Address, juror?: Address, fromSeq = 0): Promise<TraceEnvelope[]> {
+  async readEvents(
+    subaccord: Address,
+    dispute: Address,
+    juror?: Address,
+    fromSeq = 0,
+  ): Promise<TraceEnvelope[]> {
+    assertTraceAddress("subaccord", subaccord);
     assertTraceAddress("dispute", dispute);
     if (juror !== undefined) assertTraceAddress("juror", juror);
-    const tracesRoot = join(this.rootDir, "traces");
-    let subs: string[];
-    try {
-      subs = await readdir(tracesRoot);
-    } catch (e) {
-      if (isNotFound(e)) return [];
-      throw e;
-    }
+    // One court's shard only — dispute PDAs are cluster-agnostic and the
+    // subaccord is what separates two clusters' cycles at one address.
+    const disputeDir = join(this.rootDir, "traces", subaccord, dispute);
+    const jurors = juror !== undefined ? [juror] : await this.listJurors(disputeDir);
     const envelopes: TraceEnvelope[] = [];
-    for (const sub of subs) {
-      const disputeDir = join(tracesRoot, sub, dispute);
-      const jurors = juror !== undefined ? [juror] : await this.listJurors(disputeDir);
-      for (const j of jurors) {
-        for (const b of await this.readBatches(join(disputeDir, `${j}.jsonl`))) {
-          if (b.seq < fromSeq) continue;
-          for (const event of b.events) envelopes.push(traceEnvelopeOf(b, event));
-        }
+    for (const j of jurors) {
+      for (const b of await this.readBatches(join(disputeDir, `${j}.jsonl`))) {
+        if (b.seq < fromSeq) continue;
+        for (const event of b.events) envelopes.push(traceEnvelopeOf(b, event));
       }
     }
     sortTraceEnvelopes(envelopes);
@@ -121,20 +120,23 @@ export class FsTraceStore implements TraceStore {
   }
 
   /**
-   * Public stamp: marker file `{rootDir}/traces-public/{dispute}`. A rewrite
-   * of the constant body is a byte-identical no-op — idempotent by construction.
+   * Public stamp: marker file `{rootDir}/traces-public/{subaccord}/{dispute}`.
+   * A rewrite of the constant body is a byte-identical no-op — idempotent by
+   * construction.
    */
-  async markPublic(dispute: Address): Promise<void> {
+  async markPublic(subaccord: Address, dispute: Address): Promise<void> {
+    assertTraceAddress("subaccord", subaccord);
     assertTraceAddress("dispute", dispute);
-    const path = join(this.rootDir, "traces-public", dispute);
+    const path = join(this.rootDir, "traces-public", subaccord, dispute);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "1", "utf-8");
   }
 
-  async isPublic(dispute: Address): Promise<boolean> {
+  async isPublic(subaccord: Address, dispute: Address): Promise<boolean> {
+    assertTraceAddress("subaccord", subaccord);
     assertTraceAddress("dispute", dispute);
     try {
-      await readFile(join(this.rootDir, "traces-public", dispute), "utf-8");
+      await readFile(join(this.rootDir, "traces-public", subaccord, dispute), "utf-8");
       return true;
     } catch (e) {
       if (isNotFound(e)) return false;

@@ -13,6 +13,8 @@ import type { DisputeView } from "../chain/reader.js";
 import { TraceTokenService, traceTokenRoutes } from "./trace-token.js";
 
 const DISPUTE: Address = address("11111111111111111111111111111111");
+const SUB: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const SUB_B: Address = address("4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T");
 
 const FILER_SEED = new Uint8Array(32).fill(3);
 const FILER_PUB = ed25519.getPublicKey(FILER_SEED);
@@ -51,14 +53,14 @@ function signed(seed: Uint8Array, dispute = DISPUTE, filer = FILER, ts = NOW_S):
 }
 
 function post(body: unknown, dispute: Address | string = DISPUTE): Request {
-  return new Request(`https://x/trace-token/${dispute}`, {
+  return new Request(`https://x/trace-token/${SUB}/${dispute}`, {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
   });
 }
 
-describe("POST /trace-token/:dispute", () => {
+describe("POST /trace-token/:subaccord/:dispute", () => {
   it("mints for the filer with a fresh valid signature", async () => {
     const tokens = new TraceTokenService(() => NOW_MS);
     const res = await app(async () => disputeView(FILER), tokens).request(
@@ -68,7 +70,8 @@ describe("POST /trace-token/:dispute", () => {
     const body = (await res.json()) as { token: string; expiresAt: number };
     expect(body.token).toMatch(/^[0-9a-f]{64}$/);
     expect(body.expiresAt).toBe(NOW_MS + 5 * 60_000);
-    expect(tokens.verify(DISPUTE, body.token)).toBe(true);
+    expect(tokens.verify(SUB, DISPUTE, body.token)).toBe(true);
+    expect(tokens.verify(SUB_B, DISPUTE, body.token)).toBe(false);
   });
 
   it("403 when the requester is not the on-chain filer", async () => {
@@ -100,13 +103,23 @@ describe("POST /trace-token/:dispute", () => {
     expect(
       (
         await a.request(
-          new Request("https://x/trace-token/11111111111111111111111111111111", {
+          new Request(`https://x/trace-token/${SUB}/11111111111111111111111111111111`, {
             method: "POST",
             body: "not json",
           }),
         )
       ).status,
     ).toBe(400);
+    expect(
+      (
+        await a.request(
+          new Request("https://x/trace-token/not-an-address/11111111111111111111111111111111", {
+            method: "POST",
+            body: JSON.stringify({ filer: FILER, ts: NOW_S, sig: signed(FILER_SEED) }),
+          }),
+        )
+      ).status,
+    ).toBe(400); // malformed subaccord
   });
 
   it("404 on an unknown dispute", async () => {
@@ -126,9 +139,9 @@ describe("POST /trace-token/:dispute", () => {
   it("minted token stops verifying after the TTL", async () => {
     let now = NOW_MS;
     const tokens = new TraceTokenService(() => now);
-    const { token } = tokens.mint(DISPUTE);
-    expect(tokens.verify(DISPUTE, token)).toBe(true);
+    const { token } = tokens.mint(SUB, DISPUTE);
+    expect(tokens.verify(SUB, DISPUTE, token)).toBe(true);
     now += 5 * 60_000 + 1;
-    expect(tokens.verify(DISPUTE, token)).toBe(false);
+    expect(tokens.verify(SUB, DISPUTE, token)).toBe(false);
   });
 });

@@ -265,15 +265,22 @@ export interface TraceEnvelope {
 }
 
 /**
- * GET /trace/{dispute}?fromSeq= (ADR-0037). → 200 seal-filtered envelopes
- * ordered by (juror, seq); 500 when the store read fails. Absent seam ⇒ the
- * route answers 404 (trace feature not wired).
+ * GET /trace/{dispute}?sub=&fromSeq= (ADR-0037, subaccord-scoped reads).
+ * → 200 seal-filtered envelopes ordered by (juror, seq); 500 when the store
+ * read fails. Absent seam ⇒ the route answers 404 (trace feature not wired).
+ * The subaccord scope is load-bearing: dispute PDAs are cluster-agnostic
+ * (same program IDs everywhere), so an unscoped read merges e.g. a devnet
+ * and a mainnet cycle that share one address into one record.
  */
 export type TraceReplayResult =
   | { readonly ok: true; readonly status: 200; readonly body: TraceEnvelope[] }
   | { readonly ok: false; readonly status: 500; readonly error: string };
 
-export type TraceReplayHandler = (dispute: string, fromSeq?: number) => Promise<TraceReplayResult>;
+export type TraceReplayHandler = (
+  subaccord: string,
+  dispute: string,
+  fromSeq?: number,
+) => Promise<TraceReplayResult>;
 
 /**
  * POST /trace/{subaccord}/{dispute}/{juror} (ADR-0037): authenticate the push

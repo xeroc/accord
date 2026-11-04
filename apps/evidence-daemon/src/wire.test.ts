@@ -27,6 +27,7 @@ import { TraceTokenService } from "./server/trace-token.js";
 import { buildKeyringPublicKeys } from "./server/public-keys.js";
 
 const DISPUTE = "Jura111111111111111111111111111111111111111";
+const SUB = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
 function stubSigner(): TransactionSigner {
   return {
@@ -68,10 +69,10 @@ describe("createServerDeps wires the trace read side (ADR-0037)", () => {
     try {
       // Fresh record is private (no public stamp): tokenless 401 proves the
       // gate deps are wired; the filer token then opens the (empty) record.
-      const denied = await app.request(`http://x/trace/${DISPUTE}`);
+      const denied = await app.request(`http://x/trace/${DISPUTE}?sub=${SUB}`);
       expect(denied.status).toBe(401);
-      const { token } = traceTokens.mint(DISPUTE);
-      const res = await app.request(`http://x/trace/${DISPUTE}?token=${token}`);
+      const { token } = traceTokens.mint(SUB, DISPUTE);
+      const res = await app.request(`http://x/trace/${DISPUTE}?sub=${SUB}&token=${token}`);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual([]);
     } finally {
