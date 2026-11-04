@@ -1,5 +1,33 @@
 # @useaccord/evidence-daemon
 
+## 0.9.0
+
+### Minor Changes
+
+- [#41](https://github.com/xeroc/accord/pull/41) [`5a3948d`](https://github.com/xeroc/accord/commit/5a3948dba68d67e91c6164da118eb9d64b9b3aa4) Thanks [@xeroc](https://github.com/xeroc)! - Subaccord-scoped trace reads. Dispute PDAs are cluster-agnostic (same program
+  IDs on every cluster), so a devnet and a mainnet dispute can share one address
+  under different courts — the old dispute-keyed read merged both cycles into one
+  record (a week-old devnet HOLD verdict replayed into a live mainnet fight, and
+  the (juror, seq) client dedup shadowed the real verdict). `GET /trace/{dispute}`
+  and `WS /watch/{dispute}` now REQUIRE `?sub=<subaccord>` and serve exactly that
+  court's record; the filer-token mint moves to `POST /trace-token/{subaccord}/{dispute}`
+  with tokens scoped to (subaccord, dispute); the public stamp is re-keyed to
+  `traces-public/{subaccord}/{dispute}`. Unscoped reads fail 400.
+
+### Patch Changes
+
+- [`84f543c`](https://github.com/xeroc/accord/commit/84f543c569067c0090c924967945d0adbc034da5) Thanks [@xeroc](https://github.com/xeroc)! - Fix production image crash on boot. `trace-token.ts` imports
+  `@noble/curves/ed25519` at runtime (ADR-0037 trace tokens), but
+  `@noble/curves` sat in `devDependencies` — `pnpm deploy --prod` pruned it
+  from the image and Bun died with `Cannot find module
+'@noble/curves/ed25519' from '/app/src/server/trace-token.ts'`. Moved to
+  `dependencies` (it was a devDep from bean accord-5wkt, when the import was
+  test-side only). Verified by reproducing the failed resolve against
+  `pnpm deploy --prod` output before, and a clean resolve after.
+- Updated dependencies []:
+  - @useaccord/sdk@0.9.0
+  - @useaccord/synod@0.9.0
+
 ## 0.8.5
 
 ### Patch Changes

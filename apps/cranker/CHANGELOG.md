@@ -1,5 +1,14 @@
 # @useaccord/cranker
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/canon@0.9.0
+  - @useaccord/sdk@0.9.0
+  - @useaccord/synod@0.9.0
+
 ## 0.8.5
 
 ### Patch Changes
