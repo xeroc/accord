@@ -163,6 +163,21 @@ pub(crate) fn empty_tree_root(depth: u8) -> [u8; 32] {
     h
 }
 
+/// Effective stake (SR4-M-2, review 2026-11-04): the canonical `staked`
+/// ledger net of pending settlement deltas, floored at 0. `staked` alone is
+/// stale between settlement and `reconcile_stake` — settlement deliberately
+/// leaves it untouched (the accumulator root commits to it) while losses
+/// accumulate in `stake_delta` and the `slash_reserve` bond is released.
+/// Every consumer that must know what a juror's stake is WORTH today (the
+/// `draw_seat` eligibility gate, the settlement slash cap) reads this, never
+/// bare `staked` — otherwise successive settlements slash collateral that
+/// pending losses already consumed and reconcile discards the excess debt
+/// while winners keep the credits (unbacked rewards).
+pub(crate) fn effective_stake(js: &JurorStake) -> u64 {
+    (js.staked as i128 + js.stake_delta as i128)
+        .clamp(0, u64::MAX as i128) as u64
+}
+
 /// Verify the leaf `(old_juror, old_stake)` at `index` authenticates against the
 /// stored `(stored_root, stored_sum)`, then recompute the root for a new leaf
 /// `(new_juror, new_stake)`. Used by `stake`/`unstake` to advance the canonical
@@ -595,15 +610,18 @@ pub(crate) fn settle_round_accounts(
             AccordError::InvalidMembershipProof
         );
 
-        // SR2-L-3 (security review 2026-08-19): the credit pool must equal
-        // the debit pool — cap each juror's contribution at their live
-        // `staked`, exactly as the debit pass below does
-        // (`min(slash_per_juror, staked)`). `draw_seat`'s per-draw free-stake
-        // gate (`free ≥ min_stake + α·min_stake`) makes the cap a no-op
-        // today; keeping the two passes symmetric converts any future
-        // violation into a smaller payout instead of stake_delta rewards
-        // minted from nothing (ledger insolvency).
-        let staked = read_account::<JurorStake>(acct)?.staked;
+        // SR2-L-3 (2026-08-19) + SR4-M-2 (2026-11-04): the credit pool must
+        // equal the COLLECTIBLE debit pool — cap each juror's contribution
+        // at their effective stake (`staked` net of pending `stake_delta`),
+        // exactly as the debit pass below does. Netting the delta matters
+        // across ROUNDS: settlement releases `slash_reserve` without
+        // touching `staked` (the accumulator root commits to it), so a
+        // settled-but-unreconciled loser's canonical `staked` still counts
+        // principal that pending losses already consumed — successive
+        // settlements would slash the same collateral twice and reconcile
+        // would floor the loser at 0, discarding debt while winners keep
+        // full credits (ledger claims > vault custody).
+        let staked = effective_stake(&read_account::<JurorStake>(acct)?);
         if judge_coherent(round.reveals[i]) {
             coherent_count += 1;
         } else {
@@ -675,7 +693,7 @@ pub(crate) fn settle_round_accounts(
             let slash_delta = if is_coherent {
                 0i64
             } else {
-                -(slash_per_juror.min(js.staked) as i64)
+                -(slash_per_juror.min(effective_stake(js)) as i64)
             };
             js.stake_delta =
                 js.stake_delta

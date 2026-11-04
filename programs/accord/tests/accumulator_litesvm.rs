@@ -4904,6 +4904,318 @@ fn do_redraw(dd: &mut DrawnDispute) -> TransactionResult {
         .unwrap()
 }
 
+// ─── unreconciled losses vs custody backing (SR4-M-2, bean accord-maz4) ────
+//
+// Settlement caps each slash at min(slash, staked) and draw_seat gates on
+// staked − slash_reserve; both read the canonical ledger BLIND to pending
+// `stake_delta` losses. A settled-but-unreconciled juror therefore keeps full
+// selection weight and passes the draw gate at their pre-loss stake, and
+// successive settlements slash the same principal repeatedly — reconcile then
+// floors the loser at 0 (discarding excess debt) while winners keep full
+// credits: Σ staked > Σ deposited, i.e. unbacked rewards (ledger insolvency).
+// Fix under test: both the gate and the settle cap read stake NET of pending
+// deltas (`effective_stake`).
+
+/// Stake `stakes` under the stock pool, returning keypairs + accumulator
+/// leaves. Mirrors the inline loops in `drawn_panel_with`.
+fn stake_pool(env: &mut AccEnv, stakes: &[u64]) -> (Vec<Keypair>, Vec<(Pubkey, u64)>) {
+    let mut jurors: Vec<Keypair> = Vec::new();
+    let mut leaves: Vec<(Pubkey, u64)> = Vec::new();
+    for (i, &stake) in stakes.iter().enumerate() {
+        let juror = Keypair::new();
+        arm_juror(env, &juror, 10_000);
+        let (_, _, path) = build_root_and_path(&leaves, TEST_DEPTH, i as u32);
+        do_stake(env, &juror, stake, path).assert_success();
+        leaves.push((juror.pubkey(), stake));
+        jurors.push(juror);
+    }
+    (jurors, leaves)
+}
+
+/// File a fresh 2-option dispute (ADR-0030 fee `(J+1)·fpj`, J=3). VRF/root
+/// freeze is left to the caller — tests choose their own VRF. Returns
+/// `(dispute, round_pda)`.
+fn file_dispute_nonce(env: &mut AccEnv, nonce: u64) -> (Pubkey, Pubkey) {
+    let filer = Keypair::new();
+    env.ctx
+        .svm
+        .airdrop(&filer.pubkey(), 50 * LAMPORTS_PER_SOL)
+        .unwrap();
+    let fata = juror_ata(&filer.pubkey(), &env.mint);
+    create_token_account(&mut env.ctx, &fata, &env.mint, &filer.pubkey(), 100_000_000);
+    let dispute = dispute_pda(&filer.pubkey(), nonce);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::CreateDispute {
+            filer: filer.pubkey(),
+            rent_payer: filer.pubkey(),
+            subaccord: env.subaccord,
+            accord_state: pause_pda(),
+            dispute,
+            fee_token: env.mint,
+            filer_token_account: fata,
+            fee_vault: vault_ata(&env.subaccord, &env.mint),
+            token_program: TOKEN_PROGRAM_ID,
+            associated_token_program: spl_associated_token_account::ID,
+            system_program: system_program::ID,
+        })
+        .args(instruction::CreateDispute {
+            options: vec![[0u8; 32], [1u8; 32]],
+            evidence_hash: [0u8; 32],
+            nonce,
+            fee: 4 * TEST_FPJ,
+        })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&filer])
+        .unwrap()
+        .assert_success();
+    (dispute, round_pda(&dispute, 0))
+}
+
+/// Freeze a caller-chosen VRF + the live root for `dispute`.
+fn inject_vrf(env: &mut AccEnv, dispute: Pubkey, vrf: [u8; 32]) {
+    let sub = read_subaccord(env);
+    inject_vrf_freeze(&mut env.ctx, &dispute, vrf, sub.root_hash, sub.total_stake);
+}
+
+/// Drive one full dispute to Final: draw the 3-seat panel, commit+reveal
+/// vote 0 for every seat EXCEPT `silent_leaf` (no-show), finalize the round,
+/// expire the appeal window, settle via `finalize_dispute`.
+fn settle_silent_loser_round(
+    env: &mut AccEnv,
+    jurors: &[Keypair],
+    leaves: &[(Pubkey, u64)],
+    silent_leaf: usize,
+    nonce: u64,
+) {
+    let (dispute, rnd) = file_dispute_nonce(env, nonce);
+    let vrf = dispute.to_bytes();
+    inject_vrf(env, dispute, vrf);
+    let panel = submit_draw_panel(env, dispute, rnd, &vrf, 0, 0, 3, leaves);
+    let votes: Vec<Option<u64>> = panel
+        .iter()
+        .map(|&(_, leaf, _)| if leaf == silent_leaf { None } else { Some(0u64) })
+        .collect();
+    commit_reveal_votes(env, dispute, rnd, jurors, &panel, &votes);
+
+    // finalize_round at reveal_end (2/3 revealed — no early resolve).
+    let round_acc = env.ctx.svm.get_account(&rnd).unwrap();
+    let round: &accord::state::Round = bytemuck::from_bytes(&round_acc.data[8..]);
+    let reveal_end = round.reveal_end;
+    drop(round_acc);
+    let now = env.ctx.svm.get_sysvar::<Clock>().unix_timestamp;
+    warp_seconds(env, reveal_end - now + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeRound {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeRound {})
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    // Appeal window, then settle (finalize_dispute runs settlement with the
+    // drawn JurorStake PDAs as remaining accounts).
+    let d = Dispute::try_deserialize(&mut &env.ctx.svm.get_account(&dispute).unwrap().data[..])
+        .unwrap();
+    warp_seconds(env, d.terms.appeal_window as i64 + 1);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::FinalizeDispute {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            dispute,
+            round: rnd,
+        })
+        .args(instruction::FinalizeDispute {})
+        .instruction()
+        .unwrap();
+    let mut accts = ix.accounts.clone();
+    for &(_, leaf_idx, _) in &panel {
+        accts.push(solana_program::instruction::AccountMeta {
+            pubkey: juror_stake_pda(&env.subaccord, &leaves[leaf_idx].0),
+            is_signer: false,
+            is_writable: true,
+        });
+    }
+    let ix = solana_program::instruction::Instruction {
+        program_id: ix.program_id,
+        accounts: accts,
+        data: ix.data,
+    };
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+}
+
+/// File a dispute whose seat-0/retry-0 sortition sample selects `leaf_idx`,
+/// then submit that seat and assert the draw is REJECTED.
+///
+/// Mirrors what a cranker legitimately faces against an ineligible-but-
+/// weighted leaf: the on-chain retry rule (tzo0, draw_seat.rs) demands every
+/// prior retry be a GENUINE collision with an already-seated range, so a
+/// rejected juror at the first sample cannot be skipped past (`retries` may
+/// not cherry-pick) and, `seat == round.juror_count` being sequential, the
+/// panel simply cannot form — the dispute exits via the pre-draw cancel
+/// timeout. The test picks the VRF deterministically (counter VRFs until
+/// seat 0 lands on the excluded leaf; ~20% of the pool weight, a handful of
+/// hashes) so the rejection is exercised at the exact seat a cranker hits.
+fn excluded_first_seat_is_rejected(
+    env: &mut AccEnv,
+    leaves: &[(Pubkey, u64)],
+    leaf_idx: usize,
+    nonce: u64,
+) {
+    let (dispute, rnd) = file_dispute_nonce(env, nonce);
+    let total: u64 = leaves.iter().map(|(_, s)| s).sum();
+    let prefixes: Vec<u64> = {
+        let mut p = Vec::with_capacity(leaves.len());
+        let mut a = 0u64;
+        for (_, s) in leaves {
+            p.push(a);
+            a += s;
+        }
+        p
+    };
+    let mut vrf = [0u8; 32];
+    for c in 0..100_000u64 {
+        vrf[..8].copy_from_slice(&c.to_le_bytes());
+        let seed = vrf_seed(&vrf, &dispute, 0, 0);
+        if seat_leaf(&seed, 0, 0, total, &prefixes, leaves) == leaf_idx {
+            break;
+        }
+    }
+    inject_vrf(env, dispute, vrf);
+    let r = submit_draw_seat(env, dispute, rnd, 0, 0, leaf_idx, leaves);
+    assert!(
+        !r.is_success(),
+        "net-depleted juror (leaf {leaf_idx}) must not pass the draw gate; logs={:?}",
+        r.logs()
+    );
+}
+
+/// Reconcile juror `idx`, mirroring the on-chain leaf rewrite (sub-min folds
+/// eject to a ZERO-weight leaf) into the local `leaves` snapshot so the next
+/// juror's Merkle path verifies against the updated root.
+fn reconcile_juror(env: &mut AccEnv, leaves: &mut [(Pubkey, u64)], idx: usize) {
+    let (_, _, proof) = build_root_and_path(leaves, TEST_DEPTH, idx as u32);
+    let js_pda = juror_stake_pda(&env.subaccord, &leaves[idx].0);
+    let ix = env
+        .ctx
+        .program()
+        .accounts(accounts::ReconcileStake {
+            caller: env.creator.pubkey(),
+            subaccord: env.subaccord,
+            juror_stake: js_pda,
+        })
+        .args(instruction::ReconcileStake { path: proof })
+        .instruction()
+        .unwrap();
+    env.ctx
+        .execute_instruction(ix, &[&env.creator])
+        .unwrap()
+        .assert_success();
+
+    let js = read_juror_stake(env, &env.subaccord, &leaves[idx].0);
+    assert_eq!(js.stake_delta, 0, "reconcile must zero the delta");
+    let min_stake = read_subaccord(env).min_stake;
+    let leaf_amount = if js.staked > 0 && js.staked < min_stake {
+        0 // ejection (2026-09-28): sub-min fold → zero-weight leaf
+    } else {
+        js.staked
+    };
+    leaves[idx].1 = leaf_amount;
+}
+
+/// SR4-M-2 core: after one settled-but-unreconciled loss, X (staked 1_050,
+/// pending −100, effective 950) must NOT pass the draw gate — pre-fix the
+/// gate read `staked` (1_050 ≥ min_stake 1_000) and re-admitted depleted
+/// collateral for a second slash against the same principal.
+#[test]
+fn draw_gate_reads_pending_losses() {
+    let mut env = setup_accumulator();
+    let (jurors, leaves) = stake_pool(&mut env, &[1_050, 2_000, 2_000]);
+
+    settle_silent_loser_round(&mut env, &jurors, &leaves, 0, 1);
+    let x = read_juror_stake(&env, &env.subaccord, &leaves[0].0);
+    assert_eq!(x.stake_delta, -100, "one α=10% slash of min_stake 1_000");
+    assert_eq!(x.staked, 1_050, "canonical ledger untouched pre-reconcile");
+    assert_eq!(x.slash_reserve, 0, "reserve released at settlement");
+    assert_eq!(x.active_draws, 0);
+
+    // Dispute 2: a VRF selecting X at seat 0 — the draw must revert
+    // (effective 950 < 1_000). The panel cannot skip past X (tzo0: retries
+    // must be genuine collisions), so the dispute stalls toward the pre-draw
+    // cancel — the liveness price of never slashing unbacked rewards.
+    excluded_first_seat_is_rejected(&mut env, &leaves, 0, 2);
+
+    // Reconcile X folds −100 → 950: sub-min → CLEAN EJECTION — leaf zeroed,
+    // `staked = 0`, the backed 950 banked into `pending_withdrawal` (the
+    // two-phase withdrawal rail). No debt discarded.
+    let mut leaves = leaves;
+    reconcile_juror(&mut env, &mut leaves, 0);
+    let x = read_juror_stake(&env, &env.subaccord, &leaves[0].0);
+    assert_eq!(x.staked, 0);
+    assert_eq!(x.pending_withdrawal, 950);
+    assert_eq!(leaves[0].1, 0, "ejected juror's leaf weight zeroed");
+}
+
+/// SR4-M-2 conservation pin: N successive silent-loser settlements, then
+/// reconcile, must keep Σ staked == Σ deposited. Pre-fix the 4th draw
+/// re-admitted X (staked read blind) and kept minting winner credits against
+/// the same principal.
+#[test]
+fn sequential_slashes_conserve_custody() {
+    let mut env = setup_accumulator();
+    let (jurors, leaves) = stake_pool(&mut env, &[1_250, 2_000, 2_000]);
+    let deposited: u64 = leaves.iter().map(|(_, s)| s).sum();
+
+    // X stays drawable for three rounds (effective 1_250 → 1_150 → 1_050),
+    // each settlement slashing the fully-backed 100.
+    for nonce in 1..=3u64 {
+        settle_silent_loser_round(&mut env, &jurors, &leaves, 0, nonce);
+    }
+    let x = read_juror_stake(&env, &env.subaccord, &leaves[0].0);
+    assert_eq!(x.stake_delta, -300, "three capped slashes, no reuses");
+
+    // Round 4: effective 950 < min_stake → X's seat rejected.
+    excluded_first_seat_is_rejected(&mut env, &leaves, 0, 4);
+
+    // Reconcile all three (root-aware, sequential): custody conserved.
+    let mut leaves = leaves;
+    for idx in 0..3 {
+        reconcile_juror(&mut env, &mut leaves, idx);
+    }
+    assert_eq!(leaves[0].1, 0, "X ejected (950 < 1_000 floor)");
+    // Custody conserved: Σ (staked + pending_withdrawal) == Σ deposited —
+    // X's ejection banks the 950 remainder onto the withdrawal rail.
+    let claims: Vec<(u64, u64)> = (0..3)
+        .map(|i| {
+            let js = read_juror_stake(&env, &env.subaccord, &leaves[i].0);
+            (js.staked, js.pending_withdrawal)
+        })
+        .collect();
+    assert_eq!(claims, vec![(0, 950), (2_150, 0), (2_150, 0)]);
+    assert_eq!(
+        claims.iter().map(|(s, p)| s + p).sum::<u64>(),
+        deposited,
+        "Σ (staked + pending_withdrawal) must equal Σ deposited — no unbacked rewards"
+    );
+}
+
 fn dispute_state(dd: &DrawnDispute) -> DisputeState {
     Dispute::try_deserialize(&mut &dd.env.ctx.svm.get_account(&dd.dispute).unwrap().data[..])
         .unwrap()
