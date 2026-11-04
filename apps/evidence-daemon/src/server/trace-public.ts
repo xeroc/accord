@@ -87,7 +87,7 @@ export async function publishTrace(
     return { status: 403, reason: "juror not drawn for this dispute" };
   }
 
-  await deps.store.markPublic(address(dispute));
+  await deps.store.markPublic(address(subaccord), address(dispute));
   return { status: 204 };
 }
 

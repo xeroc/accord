@@ -41,13 +41,11 @@ import type { ServerDeps, TraceEnvelope, TraceReplayHandler } from "./handlers.j
 import type { KeyringPublicKeys } from "./public-keys.js";
 
 // ---------------------------------------------------------------------------
-// GET /trace/{dispute} — seal-on-read replay (accord-f6hh)
-// ---------------------------------------------------------------------------
-
-// 32x '1' — valid base58 charset + length, opaque to the server.
 const REPLAY_DISPUTE = "1111111111111111111111111111111D";
 const REPLAY_JUROR = "1111111111111111111111111111111J";
+const REPLAY_SUB = "1111111111111111111111111111111S";
 
+// 32x '1' — valid base58 charset + length, opaque to the server.
 const REPLAY_STUB_PUBLIC_KEYS: KeyringPublicKeys = { operators: [] };
 
 function makeDeps(traceReplay?: TraceReplayHandler): ServerDeps {
@@ -93,12 +91,12 @@ function envelope(seq: number, event: Record<string, unknown>): TraceEnvelope {
 /** In-memory seam standing in for the TraceStore read side. */
 function fakeSource(
   envelopes: TraceEnvelope[],
-): TraceReplaySource & { calls: Array<[string, number | undefined]> } {
-  const calls: Array<[string, number | undefined]> = [];
+): TraceReplaySource & { calls: Array<[string, string, number | undefined]> } {
+  const calls: Array<[string, string, number | undefined]> = [];
   return {
     calls,
-    readEvents: (dispute: string, _juror?: string, fromSeq?: number) => {
-      calls.push([dispute, fromSeq]);
+    readEvents: (subaccord: string, dispute: string, _juror?: string, fromSeq?: number) => {
+      calls.push([subaccord, dispute, fromSeq]);
       return Promise.resolve(envelopes);
     },
   };
@@ -118,7 +116,7 @@ describe("GET /trace/:dispute (seal-on-read replay)", () => {
       envelope(4, { type: "verdict", optionIndex: 1, unsealAt: now - 1 }),
     ]);
 
-    const res = await replayApp(source).request(`/trace/${REPLAY_DISPUTE}`);
+    const res = await replayApp(source).request(`/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as TraceEnvelope[];
     expect(body.map((e) => e.seq)).toEqual([1, 3, 4]);
@@ -127,9 +125,11 @@ describe("GET /trace/:dispute (seal-on-read replay)", () => {
   it("forwards fromSeq to the store seam", async () => {
     const source = fakeSource([envelope(8, { type: "reveal", tx: "sig" })]);
 
-    const res = await replayApp(source).request(`/trace/${REPLAY_DISPUTE}?fromSeq=7`);
+    const res = await replayApp(source).request(
+      `/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}&fromSeq=7`,
+    );
     expect(res.status).toBe(200);
-    expect(source.calls).toEqual([[REPLAY_DISPUTE, 7]]);
+    expect(source.calls).toEqual([[REPLAY_SUB, REPLAY_DISPUTE, 7]]);
     const body = (await res.json()) as TraceEnvelope[];
     expect(body.map((e) => e.seq)).toEqual([8]);
   });
@@ -138,14 +138,14 @@ describe("GET /trace/:dispute (seal-on-read replay)", () => {
     const source = fakeSource([]);
     const a = replayApp(source);
     for (const bad of ["abc", "-1", "1.5"]) {
-      const res = await a.request(`/trace/${REPLAY_DISPUTE}?fromSeq=${bad}`);
+      const res = await a.request(`/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}&fromSeq=${bad}`);
       expect(res.status).toBe(400);
     }
     expect(source.calls).toHaveLength(0);
   });
 
   it("404s when the replay seam is not wired (feature off)", async () => {
-    const res = await replayApp().request(`/trace/${REPLAY_DISPUTE}`);
+    const res = await replayApp().request(`/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`);
     expect(res.status).toBe(404);
   });
 
@@ -153,17 +153,24 @@ describe("GET /trace/:dispute (seal-on-read replay)", () => {
     const res = await replayApp(fakeSource([])).request("/trace/not-an-address");
     expect(res.status).toBe(400);
   });
+  it("requires ?sub= — 400 without it, 400 on a malformed sub", async () => {
+    const a = replayApp(fakeSource([]));
+    expect((await a.request(`/trace/${REPLAY_DISPUTE}`)).status).toBe(400);
+    expect((await a.request(`/trace/${REPLAY_DISPUTE}?sub=not-an-address`)).status).toBe(400);
+  });
 
   it("500s when the store read fails", async () => {
     const failing: TraceReplaySource = {
       readEvents: () => Promise.reject(new Error("s3 down")),
     };
-    const res = await replayApp(failing).request(`/trace/${REPLAY_DISPUTE}`);
+    const res = await replayApp(failing).request(`/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`);
     expect(res.status).toBe(500);
   });
 
   it("200 + empty array for an empty record", async () => {
-    const res = await replayApp(fakeSource([])).request(`/trace/${REPLAY_DISPUTE}`);
+    const res = await replayApp(fakeSource([])).request(
+      `/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`,
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([]);
   });
@@ -314,7 +321,7 @@ describe("POST /trace — disabled", () => {
     const app = makeApp({ traceEnabled: false });
     const res = await app.request(post(signedBody()));
     expect(res.status).toBe(404);
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
   });
 });
 
@@ -358,7 +365,7 @@ describe("POST /trace — limits", () => {
     const events = [{ type: "step", pad: "x".repeat(263_000) }];
     const res = await app.request(post(signedBody({ events })));
     expect(res.status).toBe(413);
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
   });
 
   it("rejects over 64 events with 413; exactly 64 is accepted", async () => {
@@ -381,7 +388,7 @@ describe("POST /trace — envelope shape", () => {
     expect((await app.request(post({ v: 1, seq: 1, events: [] }))).status).toBe(400); // no sig
     expect((await app.request(post({ ...good, events: "nope" }))).status).toBe(400);
     expect((await app.request(post({ ...good, events: ["nope"] }))).status).toBe(400);
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
   });
 });
 
@@ -390,7 +397,7 @@ describe("POST /trace — authentication (accord-sith)", () => {
     const app = makeApp();
     const res = await app.request(post(signedBody({}, OUTSIDER_SEED))); // signed by the wrong key
     expect(res.status).toBe(403);
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
     expect(fanned).toEqual([]);
   });
 
@@ -398,7 +405,7 @@ describe("POST /trace — authentication (accord-sith)", () => {
     const app = makeApp();
     const res = await app.request(post(signedBody({ juror: OUTSIDER }, OUTSIDER_SEED)));
     expect(res.status).toBe(403);
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
   });
 
   it("rejects with 403 when no round is drawn yet", async () => {
@@ -413,7 +420,7 @@ describe("POST /trace — seq gate", () => {
     expect((await app.request(post(signedBody({ seq: 2 })))).status).toBe(201);
     expect((await app.request(post(signedBody({ seq: 2 })))).status).toBe(200); // same
     expect((await app.request(post(signedBody({ seq: 1 })))).status).toBe(200); // stale
-    const es = await store.readEvents(DISPUTE, JUROR);
+    const es = await store.readEvents(SUB, DISPUTE, JUROR);
     expect(es.map((e) => e.seq)).toEqual([2]); // one batch, one event
     expect(fanned).toHaveLength(1);
   });
@@ -424,7 +431,7 @@ describe("POST /trace — seq gate", () => {
     expect(
       (await app.request(post(signedBody({ seq: 5, events: [{ type: "step", n: 1 }] })))).status,
     ).toBe(201);
-    expect((await store.readEvents(DISPUTE, JUROR)).map((e) => e.seq)).toEqual([1, 5]);
+    expect((await store.readEvents(SUB, DISPUTE, JUROR)).map((e) => e.seq)).toEqual([1, 5]);
   });
 });
 
@@ -434,7 +441,7 @@ describe("POST /trace — happy path", () => {
     const events = [{ type: "duty-open" }, { type: "step", n: 1 }];
     const res = await app.request(post(signedBody({ seq: 1, events })));
     expect(res.status).toBe(201);
-    const es = await store.readEvents(DISPUTE, JUROR);
+    const es = await store.readEvents(SUB, DISPUTE, JUROR);
     expect(es.map((e) => e.seq)).toEqual([1, 1]);
     expect(es[0]!.event).toEqual({ type: "duty-open" });
     expect(es[1]!.event).toEqual({ type: "step", n: 1 });
@@ -504,13 +511,13 @@ describe("jurat TraceSink → POST /trace → GET /trace (cross-app)", () => {
 
       // The sink drops rejected batches with only a console.warn — the
       // durable store is the assertion: nothing lands on a 403.
-      const es = await store.readEvents(DISPUTE, JUROR);
+      const es = await store.readEvents(SUB, DISPUTE, JUROR);
       expect(es.map((e) => e.seq)).toEqual([1, 1]);
       expect(es.map((e) => e.event.kind)).toEqual(["duty-open", "verdict"]);
       // open mode strips unsealAt at emit → the frame replays unsealed.
       expect("unsealAt" in es[1]!.event).toBe(false);
 
-      const replay = await app.request(`/trace/${DISPUTE}`);
+      const replay = await app.request(`/trace/${DISPUTE}?sub=${SUB}`);
       expect(replay.status).toBe(200);
       expect(((await replay.json()) as TraceEnvelope[]).map((e) => e.seq)).toEqual([1, 1]);
     } finally {
@@ -528,7 +535,7 @@ describe("jurat TraceSink → POST /trace → GET /trace (cross-app)", () => {
 describe("GET /trace/:dispute (read gate)", () => {
   function gatedApp(
     source: TraceReplaySource,
-    isPublic: (dispute: string) => Promise<boolean>,
+    isPublic: (subaccord: string, dispute: string) => Promise<boolean>,
     tokens = new TraceTokenService(),
   ) {
     return createApp({
@@ -540,7 +547,9 @@ describe("GET /trace/:dispute (read gate)", () => {
 
   it("stamped dispute serves tokenless", async () => {
     const source = fakeSource([envelope(1, { kind: "verdict", optionIndex: 0 })]);
-    const res = await gatedApp(source, async () => true).request(`/trace/${REPLAY_DISPUTE}`);
+    const res = await gatedApp(source, async () => true).request(
+      `/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`,
+    );
     expect(res.status).toBe(200);
     expect(((await res.json()) as TraceEnvelope[]).map((e) => e.seq)).toEqual([1]);
   });
@@ -550,16 +559,18 @@ describe("GET /trace/:dispute (read gate)", () => {
     const source = fakeSource([
       envelope(1, { kind: "verdict", optionIndex: 1, unsealAt: now - 1 }),
     ]);
-    const res = await gatedApp(source, async () => false).request(`/trace/${REPLAY_DISPUTE}`);
+    const res = await gatedApp(source, async () => false).request(
+      `/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`,
+    );
     expect(res.status).toBe(401);
   });
 
   it("unstamped + valid filer token serves", async () => {
     const source = fakeSource([envelope(1, { kind: "verdict", optionIndex: 0 })]);
     const tokens = new TraceTokenService();
-    const { token } = tokens.mint(REPLAY_DISPUTE);
+    const { token } = tokens.mint(REPLAY_SUB, REPLAY_DISPUTE);
     const res = await gatedApp(source, async () => false, tokens).request(
-      `/trace/${REPLAY_DISPUTE}?token=${token}`,
+      `/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}&token=${token}`,
     );
     expect(res.status).toBe(200);
   });
@@ -567,7 +578,7 @@ describe("GET /trace/:dispute (read gate)", () => {
   it("stamp probe failure 500s (never fail open)", async () => {
     const source = fakeSource([]);
     const res = await gatedApp(source, () => Promise.reject(new Error("s3 down"))).request(
-      `/trace/${REPLAY_DISPUTE}`,
+      `/trace/${REPLAY_DISPUTE}?sub=${REPLAY_SUB}`,
     );
     expect(res.status).toBe(500);
   });
@@ -614,7 +625,7 @@ describe("POST /trace-public (publish endpoint)", () => {
         headers: { "content-type": "application/json" },
       });
     expect((await app.request(post())).status).toBe(204);
-    expect(await stamp.isPublic(DISPUTE)).toBe(true);
+    expect(await stamp.isPublic(SUB, DISPUTE)).toBe(true);
     expect((await app.request(post())).status).toBe(204); // idempotent
   });
 
@@ -625,7 +636,7 @@ describe("POST /trace-public (publish endpoint)", () => {
       body: signedPublish(OUTSIDER_SEED),
     });
     expect(res.status).toBe(401);
-    expect(await stamp.isPublic(DISPUTE)).toBe(false);
+    expect(await stamp.isPublic(SUB, DISPUTE)).toBe(false);
   });
 
   it("non-drawn juror → 403", async () => {

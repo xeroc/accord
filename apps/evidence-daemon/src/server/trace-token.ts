@@ -1,12 +1,15 @@
 /**
  * Trace read tokens (ADR-0037 read gate).
  *
- *   POST /trace-token/{dispute}  body { filer, ts, sig }  → 200 { token, expiresAt }
+ *   POST /trace-token/{subaccord}/{dispute}  body { filer, ts, sig }  → 200 { token, expiresAt }
  *
  * `sig` = hex(Ed25519(utf8(`trace-read:${dispute}:${filer}:${ts}`))) signed by
  * the filer key; `ts` = unix seconds within ±300 of now. The daemon verifies
  * the signature, then that the requester IS the on-chain filer
- * (`readDispute`), then mints a random 32-byte token (5-minute TTL).
+ * (`readDispute` — checked against THIS cluster's chain, which is the
+ * cross-cluster guard: a wallet that filed a same-address dispute on another
+ * cluster still has to be this cluster's filer to mint here), then mints a
+ * random 32-byte token (5-minute TTL) scoped to (subaccord, dispute).
  *
  * Tokens ride the URL query `?token=` on GET /trace and the WS /watch upgrade
  * (browsers cannot header a WS upgrade). In-memory Map — single-replica,
@@ -42,26 +45,27 @@ const HEX64 = /^(?:[0-9a-fA-F]{2}){64}$/;
 
 /** Mint/verify short-lived read tokens. Clock injectable for tests. */
 export class TraceTokenService {
+  /** Tokens are scoped to one court's record: (subaccord, dispute). */
   private readonly entries = new Map<string, { token: string; expiresAt: number }>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  mint(dispute: string): { token: string; expiresAt: number } {
+  mint(subaccord: string, dispute: string): { token: string; expiresAt: number } {
     const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
     const expiresAt = this.now() + TOKEN_TTL_MS;
-    this.entries.set(dispute, { token, expiresAt });
+    this.entries.set(`${subaccord}:${dispute}`, { token, expiresAt });
     return { token, expiresAt };
   }
 
-  /** True iff the token is the live one for this dispute and unexpired. */
-  verify(dispute: string, token: string | undefined): boolean {
+  /** True iff the token is the live one for this court's dispute, unexpired. */
+  verify(subaccord: string, dispute: string, token: string | undefined): boolean {
     if (token === undefined) return false;
-    const e = this.entries.get(dispute);
+    const e = this.entries.get(`${subaccord}:${dispute}`);
     if (e === undefined) return false;
     if (this.now() >= e.expiresAt) {
-      this.entries.delete(dispute);
+      this.entries.delete(`${subaccord}:${dispute}`);
       return false;
     }
     return e.token === token;
@@ -84,7 +88,11 @@ export function traceTokenRoutes(deps: TraceTokenRoutesDeps): Hono {
   const verifySig = deps.verifySig ?? verifyEd25519;
   const now = deps.now ?? Date.now;
 
-  app.post("/trace-token/:dispute", async (c) => {
+  app.post("/trace-token/:subaccord/:dispute", async (c) => {
+    const subaccord = c.req.param("subaccord");
+    if (!ADDRESS.test(subaccord)) {
+      return Response.json({ error: "invalid subaccord" }, { status: 400 });
+    }
     const dispute = c.req.param("dispute");
     if (!ADDRESS.test(dispute)) {
       return Response.json({ error: "invalid dispute" }, { status: 400 });
@@ -121,7 +129,7 @@ export function traceTokenRoutes(deps: TraceTokenRoutesDeps): Hono {
     if (!verifySig(traceReadMessage(dispute, filer, ts), sigBytes, filer)) {
       return Response.json({ error: "bad signature" }, { status: 401 });
     }
-    return Response.json(deps.tokens.mint(dispute), { status: 200 });
+    return Response.json(deps.tokens.mint(subaccord, dispute), { status: 200 });
   });
 
   return app;

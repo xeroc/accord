@@ -26,6 +26,7 @@ import { S3TraceStore } from "./trace-s3.js";
 import type { TraceBatch, TraceEventRecord } from "./trace.js";
 
 const SUB: Address = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const SUB_B: Address = address("4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T");
 const DISPUTE: Address = address("11111111111111111111111111111111");
 // "9xQe…" sorts before "ATok…" — pins the (juror, seq) cross-juror order.
 const JUROR_A: Address = address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
@@ -112,7 +113,7 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
     await store.appendBatch(batch(2));
     expect(mock.objects.has(keyFor(JUROR_A, 1))).toBe(true);
     expect(mock.objects.has(keyFor(JUROR_A, 2))).toBe(true);
-    const es = await store.readEvents(DISPUTE);
+    const es = await store.readEvents(SUB, DISPUTE);
     expect(es.map((e) => e.seq)).toEqual([1, 2]);
     expect(es[0]!.event).toEqual({ type: "step", n: 1 });
   });
@@ -123,7 +124,7 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
     expect(mock.puts).toHaveLength(1);
     await store.appendBatch(batch(1, [{ type: "step", n: 9 }])); // same seq, different body
     expect(mock.puts).toHaveLength(1);
-    expect((await store.readEvents(DISPUTE))[0]!.event).toEqual({ type: "step", n: 1 });
+    expect((await store.readEvents(SUB, DISPUTE))[0]!.event).toEqual({ type: "step", n: 1 });
   });
 
   test("replay = prefix list + sort: out-of-order puts read back ordered by (juror, seq)", async () => {
@@ -132,7 +133,7 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
     await store.appendBatch(batch(1, undefined, JUROR_B));
     await store.appendBatch(batch(1, undefined, JUROR_A));
     await store.appendBatch(batch(2, undefined, JUROR_B));
-    expect(seqs(await store.readEvents(DISPUTE))).toEqual([
+    expect(seqs(await store.readEvents(SUB, DISPUTE))).toEqual([
       `${JUROR_B}/1`,
       `${JUROR_B}/2`,
       `${JUROR_A}/1`,
@@ -145,16 +146,24 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
     await store.appendBatch(batch(1, undefined, JUROR_A));
     await store.appendBatch(batch(2, undefined, JUROR_A));
     await store.appendBatch(batch(1, undefined, JUROR_B));
-    expect(seqs(await store.readEvents(DISPUTE, JUROR_A))).toEqual([
+    expect(seqs(await store.readEvents(SUB, DISPUTE, JUROR_A))).toEqual([
       `${JUROR_A}/1`,
       `${JUROR_A}/2`,
     ]);
-    expect(seqs(await store.readEvents(DISPUTE, JUROR_A, 2))).toEqual([`${JUROR_A}/2`]);
+    expect(seqs(await store.readEvents(SUB, DISPUTE, JUROR_A, 2))).toEqual([`${JUROR_A}/2`]);
   });
 
   test("empty namespace reads as []", async () => {
     const { store } = setup();
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
+  });
+
+  test("subaccord scope: two courts' records at one dispute address never mix", async () => {
+    const { store } = setup();
+    await store.appendBatch(batch(1));
+    await store.appendBatch({ ...batch(2), subaccord: SUB_B });
+    expect((await store.readEvents(SUB, DISPUTE)).map((e) => e.seq)).toEqual([1]);
+    expect((await store.readEvents(SUB_B, DISPUTE)).map((e) => e.seq)).toEqual([2]);
   });
 
   test("lastSeq: highest stored seq, or null when none", async () => {
@@ -176,19 +185,20 @@ describe("S3TraceStore — appendBatch/readEvents", () => {
 });
 
 describe("S3TraceStore — public stamp (ADR-0013 amendment)", () => {
-  test("markPublic puts traces-public/{dispute}; isPublic head-checks it", async () => {
+  test("markPublic puts traces-public/{sub}/{dispute}; isPublic head-checks it", async () => {
     const { store, mock } = setup();
-    expect(await store.isPublic(DISPUTE)).toBe(false);
-    await store.markPublic(DISPUTE);
-    await store.markPublic(DISPUTE); // idempotent
-    expect(mock.objects.has(`${BUCKET}/traces-public/${DISPUTE}`)).toBe(true);
-    expect(await store.isPublic(DISPUTE)).toBe(true);
-    expect(await store.isPublic(JUROR_A)).toBe(false);
+    expect(await store.isPublic(SUB, DISPUTE)).toBe(false);
+    await store.markPublic(SUB, DISPUTE);
+    await store.markPublic(SUB, DISPUTE); // idempotent
+    expect(mock.objects.has(`${BUCKET}/traces-public/${SUB}/${DISPUTE}`)).toBe(true);
+    expect(await store.isPublic(SUB, DISPUTE)).toBe(true);
+    expect(await store.isPublic(SUB, JUROR_A)).toBe(false);
   });
 
   test("path hygiene: non-base58 dispute rejected before any S3 call", async () => {
     const { store, mock } = setup();
-    await expect(store.markPublic("../evil" as Address)).rejects.toThrow(/dispute/);
+    await expect(store.markPublic("../evil" as Address, DISPUTE)).rejects.toThrow(/subaccord/);
+    await expect(store.markPublic(SUB, "../evil" as Address)).rejects.toThrow(/dispute/);
     expect(mock.objects.size).toBe(0);
   });
 });

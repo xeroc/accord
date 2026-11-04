@@ -117,3 +117,32 @@ References: ADR-0036 (Jurat), ADR-0011 (daemon), ADR-0006/0034 (evidence
 confidentiality the redaction rules protect), ADR-0027 (namespace-scope
 precedent for plaintext operator data), ADR-0029 (the outcome labels that make
 the corpus valuable).
+
+## Amendment (2026-11-04): subaccord-scoped reads
+
+Dispute PDAs are cluster-agnostic — Accord runs the same program IDs on every
+cluster, and a dispute address is derived only from `[dispute, filer, nonce]`.
+When two clusters' nonce counters align for the same filer wallet (observed:
+devnet and mainnet both at `dispute_seq = 16`), the two disputes at that one
+address are different fights under different courts. The original read API was
+dispute-keyed; `FsTraceStore.readEvents` deliberately merged every
+`traces/{sub}/{dispute}/` shard, so both cycles replayed as one record — a
+week-old devnet HOLD verdict appeared inside a live mainnet watch screen, and
+the `(juror, seq)` client dedup then shadowed the real verdict frame.
+
+Decision: **every read surface is scoped by the court.** `GET /trace/{dispute}`
+and `WS /watch/{dispute}` take a REQUIRED `?sub=<subaccord>`; the store reads
+one shard; the WS ring/subscriber keys and the filer-token mint/verify are
+`(subaccord, dispute)` pairs; the public stamp moves to
+`traces-public/{subaccord}/{dispute}` (ingest was already court-sharded — only
+the read side ignored it). The mint route becomes
+`POST /trace-token/{subaccord}/{dispute}`; the signed message format is frozen
+unchanged — the on-chain filer check against the serving cluster's chain is the
+cross-cluster guard for token mints. The subaccord is the cluster discriminator
+in practice because courts derive from cluster-specific mints; an explicit
+cluster namespace would additionally require migrating the corpus for no
+additional safety.
+
+Consumers updated in the same change: the inveigo app passes the boss's
+`subaccord` on every trace read. Existing unscoped requests now fail `400` —
+loud, by design.

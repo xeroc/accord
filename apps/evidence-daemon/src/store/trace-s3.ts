@@ -7,12 +7,12 @@
  * same-seq re-pushes are byte-identical after sig verification anyway),
  * absent ⇒ PutObject (atomic put).
  *
- * `readEvents` = prefix list + sort: paginated ListObjectsV2 over `traces/`,
- * keep keys shaped `traces/{sub}/{dispute}/{juror}/{seq}.json` for the
- * dispute (and juror, when given), GET + parse
- * each, filter seq ≥ fromSeq, order by (juror, seq). The read API is
- * dispute-keyed while the key space is subaccord-sharded, so the whole
- * `traces/` prefix is listed. No delete — keep forever.
+ * `readEvents` = prefix list + sort: paginated ListObjectsV2 over the ONE
+ * court's prefix `traces/{sub}/{dispute}/` (the subaccord scope separates
+ * clusters — dispute PDAs are cluster-agnostic), keep keys shaped
+ * `traces/{sub}/{dispute}/{juror}/{seq}.json` (and the juror, when given),
+ * GET + parse each, filter seq ≥ fromSeq, order by (juror, seq).
+ * No delete — keep forever.
  *
  * Shares the S3Store client/bucket (selected via `EVIDENCE_STORAGE=s3`); the
  * `traces/` prefix keeps the namespace clear of evidence objects, so
@@ -94,14 +94,20 @@ export class S3TraceStore implements TraceStore {
     return max;
   }
 
-  async readEvents(dispute: Address, juror?: Address, fromSeq = 0): Promise<TraceEnvelope[]> {
+  async readEvents(
+    subaccord: Address,
+    dispute: Address,
+    juror?: Address,
+    fromSeq = 0,
+  ): Promise<TraceEnvelope[]> {
+    assertTraceAddress("subaccord", subaccord);
     assertTraceAddress("dispute", dispute);
     if (juror !== undefined) assertTraceAddress("juror", juror);
     const envelopes: TraceEnvelope[] = [];
-    for (const key of await this.listKeys("traces/")) {
+    for (const key of await this.listKeys(`traces/${subaccord}/${dispute}/`)) {
       // traces/{subaccord}/{dispute}/{juror}/{seq}.json — direct segment match
       const parts = key.split("/");
-      if (parts.length !== 5 || parts[0] !== "traces" || parts[2] !== dispute) continue;
+      if (parts.length !== 5 || parts[2] !== dispute) continue;
       if (juror !== undefined && parts[3] !== juror) continue;
       if (!/^\d+\.json$/.test(parts[4]!)) continue;
       const b = await this.getBatch(key);
@@ -142,15 +148,16 @@ export class S3TraceStore implements TraceStore {
   }
 
   /**
-   * Public stamp: marker object `traces-public/{dispute}`. PutObject is
-   * atomic and the body constant — idempotent by construction.
+   * Public stamp: marker object `traces-public/{subaccord}/{dispute}`.
+   * PutObject is atomic and the body constant — idempotent by construction.
    */
-  async markPublic(dispute: Address): Promise<void> {
+  async markPublic(subaccord: Address, dispute: Address): Promise<void> {
+    assertTraceAddress("subaccord", subaccord);
     assertTraceAddress("dispute", dispute);
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
-        Key: `traces-public/${dispute}`,
+        Key: `traces-public/${subaccord}/${dispute}`,
         Body: "1",
         ...(this.sse ? { ServerSideEncryption: this.sse } : {}),
         ...(this.kmsKeyId ? { SSEKMSKeyId: this.kmsKeyId } : {}),
@@ -158,11 +165,15 @@ export class S3TraceStore implements TraceStore {
     );
   }
 
-  async isPublic(dispute: Address): Promise<boolean> {
+  async isPublic(subaccord: Address, dispute: Address): Promise<boolean> {
+    assertTraceAddress("subaccord", subaccord);
     assertTraceAddress("dispute", dispute);
     try {
       await this.client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: `traces-public/${dispute}` }),
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: `traces-public/${subaccord}/${dispute}`,
+        }),
       );
       return true;
     } catch (e) {

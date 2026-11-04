@@ -170,6 +170,7 @@ function main(): void {
   });
   const traceFanout = (batch: TraceBatch): void => {
     hub.publish(
+      batch.subaccord,
       batch.dispute,
       batch.events.map((e) => traceEnvelopeOf(batch, e)),
     );
@@ -215,14 +216,19 @@ function main(): void {
 
   // WS /watch gate (ADR-0037, inveigo ADR-0013 amendment): same rule as GET
   // /trace — the durable public stamp (flipped by jurat via POST
-  // /trace-public on a FLIP commit) OR a valid filer token.
-  const authorizeWatch = async (dispute: string, token: string | undefined): Promise<boolean> => {
+  // /trace-public on a FLIP commit) OR a valid filer token, both scoped to
+  // the caller's court (dispute PDAs are cluster-agnostic).
+  const authorizeWatch = async (
+    subaccord: string,
+    dispute: string,
+    token: string | undefined,
+  ): Promise<boolean> => {
     try {
-      if (await traceStore.isPublic(dispute as Address)) return true;
+      if (await traceStore.isPublic(subaccord as Address, dispute as Address)) return true;
     } catch {
       // unreadable stamp ⇒ fall through to the token check
     }
-    return traceTokens.verify(dispute, token);
+    return traceTokens.verify(subaccord, dispute, token);
   };
 
   // TDZ-safe: watchRoutes closes over `server`; the binding is set right after

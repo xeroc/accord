@@ -56,7 +56,7 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
         { type: "step", n: 2 },
       ]),
     );
-    const es = await store.readEvents(DISPUTE);
+    const es = await store.readEvents(SUB, DISPUTE);
     expect(es.map((e) => e.seq)).toEqual([1, 2, 2]);
     expect(es[0]!.v).toBe(1);
     expect(es[0]!.at).toBe(1001);
@@ -74,7 +74,7 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     const file = join(rootDir, "traces", SUB, DISPUTE, `${JUROR_A}.jsonl`);
     const lines = (await readFile(file, "utf-8")).trim().split("\n");
     expect(lines).toHaveLength(2);
-    const es = await store.readEvents(DISPUTE);
+    const es = await store.readEvents(SUB, DISPUTE);
     expect(es).toHaveLength(2);
     expect(es[1]!.event).toEqual({ type: "duty-open", round: 0 }); // first write wins
   });
@@ -83,7 +83,7 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     const store = new FsTraceStore({ rootDir });
     await store.appendBatch(batch(5));
     await store.appendBatch(batch(4));
-    expect((await store.readEvents(DISPUTE)).map((e) => e.seq)).toEqual([5]);
+    expect((await store.readEvents(SUB, DISPUTE)).map((e) => e.seq)).toEqual([5]);
   });
 
   test("fromSeq filters by batch seq", async () => {
@@ -91,7 +91,7 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     await store.appendBatch(batch(1));
     await store.appendBatch(batch(2));
     await store.appendBatch(batch(3));
-    expect((await store.readEvents(DISPUTE, undefined, 2)).map((e) => e.seq)).toEqual([2, 3]);
+    expect((await store.readEvents(SUB, DISPUTE, undefined, 2)).map((e) => e.seq)).toEqual([2, 3]);
   });
 
   test("juror filter + (juror, seq) ordering across jurors", async () => {
@@ -99,12 +99,12 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     await store.appendBatch(batch(1, undefined, JUROR_A));
     await store.appendBatch(batch(2, undefined, JUROR_A));
     await store.appendBatch(batch(1, undefined, JUROR_B));
-    expect(seqs(await store.readEvents(DISPUTE))).toEqual([
+    expect(seqs(await store.readEvents(SUB, DISPUTE))).toEqual([
       `${JUROR_B}/1`,
       `${JUROR_A}/1`,
       `${JUROR_A}/2`,
     ]);
-    expect(seqs(await store.readEvents(DISPUTE, JUROR_A))).toEqual([
+    expect(seqs(await store.readEvents(SUB, DISPUTE, JUROR_A))).toEqual([
       `${JUROR_A}/1`,
       `${JUROR_A}/2`,
     ]);
@@ -113,9 +113,27 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
   test("unknown dispute / juror reads as empty", async () => {
     const store = new FsTraceStore({ rootDir });
     await store.appendBatch(batch(1));
-    expect(await store.readEvents(DISPUTE, JUROR_B)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE, JUROR_B)).toEqual([]);
     const other: Address = address("4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T");
-    expect(await store.readEvents(other)).toEqual([]);
+    expect(await store.readEvents(SUB, other)).toEqual([]);
+  });
+
+  test("subaccord scope: two courts' records at one dispute address never mix", async () => {
+    // The live incident: dispute PDAs are cluster-agnostic, so a devnet and
+    // a mainnet cycle shared one address under different courts — an
+    // unscoped read merged both into one record.
+    const store = new FsTraceStore({ rootDir });
+    const SUB_B: Address = address("4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T");
+    await store.appendBatch(batch(1, [{ type: "duty-open", round: 0 }])); // court A
+    await store.appendBatch({
+      ...batch(2, [{ type: "verdict", optionIndex: 1 }]),
+      subaccord: SUB_B,
+    });
+    expect((await store.readEvents(SUB, DISPUTE)).map((e) => e.seq)).toEqual([1]);
+    expect((await store.readEvents(SUB_B, DISPUTE)).map((e) => e.seq)).toEqual([2]);
+    await store.markPublic(SUB, DISPUTE);
+    expect(await store.isPublic(SUB, DISPUTE)).toBe(true);
+    expect(await store.isPublic(SUB_B, DISPUTE)).toBe(false);
   });
 
   test("lastSeq: highest stored seq, or null when none", async () => {
@@ -145,7 +163,7 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
     await expect(store.appendBatch({ ...batch(1), juror: "a/b" as Address })).rejects.toThrow(
       /juror/,
     );
-    expect(await store.readEvents(DISPUTE)).toEqual([]);
+    expect(await store.readEvents(SUB, DISPUTE)).toEqual([]);
     expect(await readdir(rootDir)).toEqual([]); // nothing was ever created
   });
 });
@@ -153,15 +171,16 @@ describe("FsTraceStore — appendBatch/readEvents", () => {
 describe("FsTraceStore — public stamp (ADR-0013 amendment)", () => {
   test("markPublic → isPublic true; idempotent re-mark; others unstamped", async () => {
     const store = new FsTraceStore({ rootDir });
-    expect(await store.isPublic(DISPUTE)).toBe(false);
-    await store.markPublic(DISPUTE);
-    await store.markPublic(DISPUTE); // idempotent
-    expect(await store.isPublic(DISPUTE)).toBe(true);
-    expect(await store.isPublic(JUROR_A)).toBe(false);
+    expect(await store.isPublic(SUB, DISPUTE)).toBe(false);
+    await store.markPublic(SUB, DISPUTE);
+    await store.markPublic(SUB, DISPUTE); // idempotent
+    expect(await store.isPublic(SUB, DISPUTE)).toBe(true);
+    expect(await store.isPublic(SUB, JUROR_A)).toBe(false);
   });
 
-  test("path hygiene: non-base58 dispute rejected", async () => {
+  test("path hygiene: non-base58 segments rejected", async () => {
     const store = new FsTraceStore({ rootDir });
-    await expect(store.markPublic("../evil" as Address)).rejects.toThrow(/dispute/);
+    await expect(store.markPublic("../evil" as Address, DISPUTE)).rejects.toThrow(/subaccord/);
+    await expect(store.markPublic(SUB, "../evil" as Address)).rejects.toThrow(/dispute/);
   });
 });
