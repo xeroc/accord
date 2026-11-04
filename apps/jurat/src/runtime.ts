@@ -3,7 +3,9 @@
  * pipeline modules into the loop SPEC.md's duty-flow diagram describes.
  *
  *   scan (boot + interval, accounts = truth) ──▶ joins: gates → executor
- *                                            └─▶ duties: tracker → state machine
+ *                                            └─▶ duties: submitted to the
+ *                                                cross-scan scheduler — the
+ *                                                scan never waits on them
  *
  * Duty state machine (record.status × chain phase):
  *
@@ -52,9 +54,6 @@ import type { NotifyChannel } from "./notify/channel";
 import { commitVote, CommitWindowClosedError, type VoteStore } from "./vote/commit";
 import { revealVote, RevealWindowClosedError, SaltLostError } from "./vote/reveal";
 
-/** Default duties advanced concurrently per scan when the seam is unset. */
-const DEFAULT_MAX_PARALLEL_DUTIES = 4;
-
 /** Unbounded range ceiling when the operator sets no max (u64 tops out below this). */
 const UNBOUNDED = 2n ** 128n;
 
@@ -97,11 +96,11 @@ export interface RuntimeDeps {
   /** Chain-clock now (unix seconds) — windows are chain-time, not wall-time. */
   now(): Promise<number>;
   /**
-   * Max duties advanced concurrently per scan (default 4). One duty's LLM
-   * ladder must not stall a sibling's commit window; the bound caps
-   * provider/evidence burst. 1 restores fully sequential advancement.
+   * The cross-scan duty scheduler: scans submit duties here and move on —
+   * one duty's slow LLM ladder must not stall the truth loop or later
+   * scans' duties. Built in main via makeDutyScheduler(config.maxParallelDuties).
    */
-  readonly maxParallelDuties?: number;
+  readonly dutyScheduler: DutyScheduler;
   /**
    * Deadline wake: fires an off-cycle scan when a deadline (commit-window
    * open) arrives, so verdict work starts on the window instead of the next
@@ -139,25 +138,63 @@ export function joinBudgetFromConfig(config: Config): JoinBudget {
 }
 
 /**
- * Run `op` over `items` with at most `limit` in flight, starting in order.
- * `op` owns its failure policy and never throws; a throw would fail the
- * batch with the remaining items unstarted.
+ * Cross-scan duty scheduler: duties DETACH from the scan that spotted them.
+ * A scan submits its signals and moves on — a minutes-long adjudication must
+ * not hold the truth loop (or a later scan's new duties) hostage. The
+ * semaphore caps concurrent duty work at `limit`; a finished duty hands its
+ * slot to the next queued duty from ANY scan (FIFO refill). Keys are
+ * `dispute:roundIdx`: a signal already queued or running is skipped by later
+ * scans (no double verdict, no second salt); staleness from a redraw
+ * mid-flight is the on-chain gates' call — the next scan recovers.
  */
-async function runBounded<T>(
-  items: readonly T[],
-  limit: number,
-  op: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      await op(items[next++]!);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+export interface DutyScheduler {
+  /** Enqueue one duty; returns immediately. In-flight keys are skipped. */
+  submit(deps: RuntimeDeps, signal: DutySignal): void;
+  /** Resolves once no duty is queued or running (stop path). */
+  drain(): Promise<void>;
 }
 
-/** One scan result: evaluate every join candidate, then advance every duty. */
+/** Build a scheduler admitting at most `limit` (≥1) duties at once. */
+export function makeDutyScheduler(limit: number): DutyScheduler {
+  const tracked = new Map<string, Promise<void>>();
+  const queue: Array<() => void> = [];
+  let active = 0;
+  return {
+    submit(deps, signal) {
+      const key = `${signal.dispute}:${signal.roundIdx}`;
+      if (tracked.has(key)) return; // queued or running — its scan already owns it
+      const log = deps.log ?? console.log;
+      const { promise, resolve } = Promise.withResolvers<void>();
+      tracked.set(key, promise);
+      const start = () => {
+        void (async () => {
+          try {
+            await runDuty(deps, signal);
+          } catch (e) {
+            log(`duty ${key} failed: ${errMessage(e)} — retrying next scan`);
+          } finally {
+            tracked.delete(key);
+            resolve();
+            const next = queue.shift();
+            if (next === undefined)
+              active -= 1; // slot retired with its duty
+            else next(); // slot transfers synchronously to the queued duty
+          }
+        })();
+      };
+      if (active >= limit) queue.push(start);
+      else {
+        active += 1;
+        start();
+      }
+    },
+    drain: async () => {
+      await Promise.allSettled([...tracked.values()]);
+    },
+  };
+}
+
+/** One scan result: evaluate every join candidate, then submit every duty. */
 export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Promise<void> {
   const log = deps.log ?? console.log;
   log(
@@ -165,19 +202,12 @@ export async function handleScan(deps: RuntimeDeps, result: ReconcileResult): Pr
       `${result.duties.length} actionable duty/duties`,
   );
   await handleJoins(deps, result.joinCandidates, result.heldStakes);
-  // Duties advance concurrently (bounded): a slow LLM ladder on one dispute
-  // must not eat a sibling's commit/reveal window. Joins stay sequential —
-  // budget accounting is order-dependent by design.
-  const limit = Math.max(1, deps.maxParallelDuties ?? DEFAULT_MAX_PARALLEL_DUTIES);
-  await runBounded(result.duties, limit, async (signal) => {
-    try {
-      await runDuty(deps, signal);
-    } catch (e) {
-      log(
-        `duty ${signal.dispute}:${signal.roundIdx} failed: ${errMessage(e)} — retrying next scan`,
-      );
-    }
-  });
+  // Duties detach into the scheduler: the scan ends with its submissions, so
+  // a slow adjudication never delays the truth loop or later scans' duties.
+  // Joins stay sequential — budget accounting is order-dependent by design.
+  for (const signal of result.duties) {
+    deps.dutyScheduler.submit(deps, signal);
+  }
 }
 
 async function handleJoins(
@@ -712,12 +742,12 @@ export async function runDaemon(deps: RuntimeDeps, opts: DaemonOptions): Promise
   };
   if (opts.signal?.aborted) onAbort();
   else opts.signal?.addEventListener("abort", onAbort, { once: true });
-
   return {
     kick: () => void (inflight = guarded()),
     stop: async () => {
       onAbort();
       await inflight; // let an in-flight scan land — no dangling RPC after stop
+      await deps.dutyScheduler.drain(); // duties are detached; stop lands them too
       await promise;
     },
   };

@@ -20,6 +20,7 @@ import {
 
 import {
   handleScan,
+  makeDutyScheduler,
   runDaemon,
   makeWakeScheduler,
   runDuty,
@@ -192,6 +193,7 @@ function makeDeps(overrides: RuntimeOverrides = {}): { deps: RuntimeDeps; rec: R
         return "sig";
       },
     },
+    dutyScheduler: makeDutyScheduler(4),
     now: async () => 1_500,
     log: (m) => void rec.logs.push(m),
     ...rest,
@@ -645,10 +647,11 @@ test("abstained/revealed duties are skipped entirely", async () => {
   }
 });
 
-// --- parallel duties (bounded fan-out per scan) ----------------------------------
+// --- duty scheduler (detached, cross-scan, bounded) ------------------------------
 
 const DISPUTE_B = address("Disp" + "2".repeat(39));
 const DISPUTE_C = address("Disp" + "3".repeat(39));
+const DISPUTE_D = address("Disp" + "4".repeat(39));
 
 /** Rig-only context: the dispute rides the seam so the verdict fake can branch. */
 interface RigContext extends AgentContext {
@@ -656,63 +659,61 @@ interface RigContext extends AgentContext {
 }
 
 /**
- * Two duties + one poisoned sibling: A's verdict parks on a gate, B's verdict
- * resolves, C's round fetch throws. Proves duties advance concurrently and a
- * sibling failure/park never blocks the others. The midpoint assertion reads
- * B's VERDICT ENTRY, not its commit: the path to the verdict call is
- * microtask-pure (the commit path hashes via `crypto.subtle` — a threadpool
+ * Duty-scheduler rig: disputes in `park` hang inside their verdict until
+ * released (the minutes-long adjudication shape); everything else resolves
+ * instantly (the small-duty shape). DISPUTE_C is the poisoned sibling — its
+ * round fetch always throws. Midpoint assertions read VERDICT ENTRY (that
+ * path is microtask-pure; commits hash via `crypto.subtle`, a threadpool
  * macrotask no fixed drain boundary can order against).
  */
-function parallelRig(overrides: Partial<RuntimeDeps> = {}) {
-  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
-  const { promise: aEntered, resolve: markA } = Promise.withResolvers<void>();
-  let bVerdictCalled = false;
+function schedulerRig(limit: number, park: Address[]) {
+  const parked = new Set(park);
+  const entered = new Set<Address>();
+  const roundFetches = new Map<Address, number>();
+  const gates = new Map<Address, { promise: Promise<void>; resolve: () => void }>();
+  const dutyScheduler = makeDutyScheduler(limit);
   const { deps, rec } = makeDeps({
+    dutyScheduler,
     assembleContext: async (input) => ({
       context: { dispute: input.dispute } as RigContext,
       files: [],
     }),
     verdict: async (ctx) => {
-      if ((ctx as RigContext).dispute === DISPUTE_B) {
-        bVerdictCalled = true;
-      } else if ((ctx as RigContext).dispute === DISPUTE) {
-        markA();
-        await gate;
+      const d = (ctx as RigContext).dispute;
+      entered.add(d);
+      if (parked.has(d)) {
+        let gate = gates.get(d);
+        if (gate === undefined) {
+          gate = Promise.withResolvers<void>();
+          gates.set(d, gate);
+        }
+        await gate.promise;
       }
       return { optionIndex: 1, rationale: "clear", confidence: 0.9 };
     },
     chain: {
       fetchRound: async (d) => {
+        roundFetches.set(d, (roundFetches.get(d) ?? 0) + 1);
         if (d === DISPUTE_C) throw new Error("RPC boom");
         return roundFixture({ dispute: d });
       },
       fetchDispute: async () => disputeFixture(DisputeState.Commit),
     },
-    ...overrides,
   });
   return {
     deps,
     rec,
-    release,
-    aEntered,
-    bVerdictCalled: () => bVerdictCalled,
-    signals: [
-      { dispute: DISPUTE, subaccord: SUB, roundIdx: 0, jurorIndex: 0, state: DisputeState.Commit },
-      {
-        dispute: DISPUTE_B,
-        subaccord: SUB,
-        roundIdx: 0,
-        jurorIndex: 0,
-        state: DisputeState.Commit,
-      },
-      {
-        dispute: DISPUTE_C,
-        subaccord: SUB,
-        roundIdx: 0,
-        jurorIndex: 0,
-        state: DisputeState.Commit,
-      },
-    ] as DutySignal[],
+    scheduler: dutyScheduler,
+    signalFor: (d: Address): DutySignal => ({
+      dispute: d,
+      subaccord: SUB,
+      roundIdx: 0,
+      jurorIndex: 0,
+      state: DisputeState.Commit,
+    }),
+    entered: (d: Address) => entered.has(d),
+    roundFetches: (d: Address) => roundFetches.get(d) ?? 0,
+    release: (d: Address) => gates.get(d)?.resolve(),
   };
 }
 
@@ -723,14 +724,22 @@ async function drained(): Promise<void> {
   await promise;
 }
 
-test("scan advances duties in parallel: B reaches its verdict while A's is parked", async () => {
-  const rig = parallelRig();
-  const scan = handleScan(rig.deps, scanResult([], rig.signals));
-  await rig.aEntered;
-  await drained();
-  expect(rig.bVerdictCalled()).toBe(true); // sequential: B never starts under A's park
-  rig.release();
+test("duties detach from the scan: it settles while an adjudication runs; siblings advance", async () => {
+  const rig = schedulerRig(4, [DISPUTE]);
+  const scan = handleScan(
+    rig.deps,
+    scanResult([], [rig.signalFor(DISPUTE), rig.signalFor(DISPUTE_B), rig.signalFor(DISPUTE_C)]),
+  );
+  // The scan settles after SUBMISSIONS — the parked adjudication (still
+  // holding its gate below) never holds it hostage. That is the detach
+  // property; awaiting the scan under a parked duty is what the old pool
+  // could not do.
   await scan;
+  await drained();
+  expect(rig.entered(DISPUTE)).toBe(true); // parked in its verdict, gate held
+  expect(rig.entered(DISPUTE_B)).toBe(true); // the small sibling advanced concurrently
+  rig.release(DISPUTE);
+  await rig.scheduler.drain();
   expect(rig.rec.sends).toHaveLength(2); // A + B committed; C never sent
   expect((await rig.deps.store.load(DISPUTE, 0))?.status).toBe("committed");
   expect((await rig.deps.store.load(DISPUTE_B, 0))?.status).toBe("committed");
@@ -739,16 +748,75 @@ test("scan advances duties in parallel: B reaches its verdict while A's is parke
   ).toBe(true);
 });
 
-test("maxParallelDuties: 1 keeps duties sequential (the LLM burst knob)", async () => {
-  const rig = parallelRig({ maxParallelDuties: 1 });
-  const scan = handleScan(rig.deps, scanResult([], rig.signals));
-  await rig.aEntered;
+test("a later scan's adjudication starts while an earlier one is still parked", async () => {
+  const rig = schedulerRig(4, [DISPUTE, DISPUTE_D]);
+  // Awaiting a scan is cheap now: it settles after submissions, not duties.
+  await handleScan(rig.deps, scanResult([], [rig.signalFor(DISPUTE), rig.signalFor(DISPUTE_B)]));
   await drained();
-  expect(rig.bVerdictCalled()).toBe(false); // A holds the single slot
-  rig.release();
-  await scan;
-  expect(rig.rec.sends).toHaveLength(2);
+  expect(rig.entered(DISPUTE)).toBe(true);
+  expect(rig.entered(DISPUTE_B)).toBe(true);
+  // A NEW adjudication arrives in a later scan — it must take a free slot
+  // now, not queue behind the parked one (scan-level awaiting blocks here).
+  await handleScan(rig.deps, scanResult([], [rig.signalFor(DISPUTE_D)]));
+  await drained();
+  expect(rig.entered(DISPUTE_D)).toBe(true);
+  rig.release(DISPUTE);
+  rig.release(DISPUTE_D);
+  await rig.scheduler.drain();
+  for (const d of [DISPUTE, DISPUTE_B, DISPUTE_D]) {
+    expect((await rig.deps.store.load(d, 0))?.status).toBe("committed");
+  }
 });
+
+test("limit 1: a freed slot admits the next queued duty (the LLM burst knob)", async () => {
+  const rig = schedulerRig(1, [DISPUTE]);
+  await handleScan(rig.deps, scanResult([], [rig.signalFor(DISPUTE), rig.signalFor(DISPUTE_B)]));
+  await handleScan(rig.deps, scanResult([], [rig.signalFor(DISPUTE_D)]));
+  await drained();
+  expect(rig.entered(DISPUTE)).toBe(true);
+  expect(rig.entered(DISPUTE_B)).toBe(false); // queued: the single slot is held
+  expect(rig.entered(DISPUTE_D)).toBe(false);
+  rig.release(DISPUTE);
+  await rig.scheduler.drain();
+  expect(rig.entered(DISPUTE_B)).toBe(true);
+  expect(rig.entered(DISPUTE_D)).toBe(true);
+});
+
+test("an in-flight duty is not re-submitted by later scans (no double verdict)", async () => {
+  const rig = schedulerRig(4, [DISPUTE]);
+  await handleScan(rig.deps, scanResult([], [rig.signalFor(DISPUTE)]));
+  await drained();
+  expect(rig.roundFetches(DISPUTE)).toBe(1);
+  await handleScan(rig.deps, scanResult([], [rig.signalFor(DISPUTE)]));
+  await drained();
+  expect(rig.roundFetches(DISPUTE)).toBe(1); // re-submission must be skipped
+  rig.release(DISPUTE);
+  await rig.scheduler.drain();
+});
+
+test("runDaemon: stop() drains detached duty work before resolving", async () => {
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  const { deps } = makeDeps({
+    dutyScheduler: makeDutyScheduler(4),
+    assembleContext: async () => ({ context: {} as AgentContext, files: [] }),
+    verdict: async () => {
+      await gate;
+      return { optionIndex: 1, rationale: "clear", confidence: 0.9 };
+    },
+    chain: {
+      fetchDisputes: async () => [{ address: DISPUTE, data: disputeFixture(DisputeState.Commit) }],
+      fetchRound: async () => roundFixture(),
+      fetchDispute: async () => disputeFixture(DisputeState.Commit),
+    },
+  });
+  const daemon = await runDaemon(deps, { intervalMs: 10_000 });
+  let stopped = false;
+  void daemon.stop().then(() => (stopped = true));
+  await drained();
+  expect(stopped).toBe(false); // the duty is parked; stop must wait for it
+  release();
+  await daemon.stop();
+}, 2_000);
 
 test("runDaemon: stop() awaits the in-flight scan before resolving", async () => {
   const { promise: held, resolve: release } = Promise.withResolvers<void>();
