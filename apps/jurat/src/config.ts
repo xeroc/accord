@@ -89,6 +89,8 @@ export interface Config {
   readonly stateDir: string;
   /** Reconcile scan interval (ms) — the truth loop. Default 60_000. */
   readonly scanIntervalMs: number;
+  /** Max duties advanced concurrently per scan (LLM/evidence burst bound). Default 4. */
+  readonly maxParallelDuties: number;
   /** SOL the operator must retain for tx fees (join executor guard). Default 50_000_000. */
   readonly minSolLamports: bigint;
 }
@@ -140,6 +142,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     logfireService: optional(env.JURAT_LOGFIRE_SERVICE) ?? "jurat",
     stateDir: optional(env.JURAT_STATE_DIR) ?? "./state",
     scanIntervalMs: intFlag(env.JURAT_SCAN_INTERVAL_MS, 60_000, "JURAT_SCAN_INTERVAL_MS"),
+    maxParallelDuties: positiveIntFlag(
+      env.JURAT_MAX_PARALLEL_DUTIES,
+      4,
+      "JURAT_MAX_PARALLEL_DUTIES",
+    ),
     minSolLamports: bigIntFlag(env.JURAT_MIN_SOL_LAMPORTS, 50_000_000n, "JURAT_MIN_SOL_LAMPORTS"),
   };
 }
@@ -235,6 +242,13 @@ function optional(v: string | undefined): string | undefined {
 function intFlag(v: string | undefined, def: number, name: string): number {
   if (v === undefined || v.trim().length === 0) return def;
   return parseNonNegInt(v, name);
+}
+
+/** ≥1 integer flag — 0 would silently serialize all duties; reject the typo. */
+function positiveIntFlag(v: string | undefined, def: number, name: string): number {
+  const n = intFlag(v, def, name);
+  if (n < 1) throw new Error(`${name} must be a positive integer (>= 1), got: ${n}`);
+  return n;
 }
 
 function parseNonNegInt(v: string, name: string): number {

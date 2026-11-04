@@ -645,6 +645,111 @@ test("abstained/revealed duties are skipped entirely", async () => {
   }
 });
 
+// --- parallel duties (bounded fan-out per scan) ----------------------------------
+
+const DISPUTE_B = address("Disp" + "2".repeat(39));
+const DISPUTE_C = address("Disp" + "3".repeat(39));
+
+/** Rig-only context: the dispute rides the seam so the verdict fake can branch. */
+interface RigContext extends AgentContext {
+  dispute: Address;
+}
+
+/**
+ * Two duties + one poisoned sibling: A's verdict parks on a gate, B's verdict
+ * resolves, C's round fetch throws. Proves duties advance concurrently and a
+ * sibling failure/park never blocks the others. The midpoint assertion reads
+ * B's VERDICT ENTRY, not its commit: the path to the verdict call is
+ * microtask-pure (the commit path hashes via `crypto.subtle` — a threadpool
+ * macrotask no fixed drain boundary can order against).
+ */
+function parallelRig(overrides: Partial<RuntimeDeps> = {}) {
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  const { promise: aEntered, resolve: markA } = Promise.withResolvers<void>();
+  let bVerdictCalled = false;
+  const { deps, rec } = makeDeps({
+    assembleContext: async (input) => ({
+      context: { dispute: input.dispute } as RigContext,
+      files: [],
+    }),
+    verdict: async (ctx) => {
+      if ((ctx as RigContext).dispute === DISPUTE_B) {
+        bVerdictCalled = true;
+      } else if ((ctx as RigContext).dispute === DISPUTE) {
+        markA();
+        await gate;
+      }
+      return { optionIndex: 1, rationale: "clear", confidence: 0.9 };
+    },
+    chain: {
+      fetchRound: async (d) => {
+        if (d === DISPUTE_C) throw new Error("RPC boom");
+        return roundFixture({ dispute: d });
+      },
+      fetchDispute: async () => disputeFixture(DisputeState.Commit),
+    },
+    ...overrides,
+  });
+  return {
+    deps,
+    rec,
+    release,
+    aEntered,
+    bVerdictCalled: () => bVerdictCalled,
+    signals: [
+      { dispute: DISPUTE, subaccord: SUB, roundIdx: 0, jurorIndex: 0, state: DisputeState.Commit },
+      {
+        dispute: DISPUTE_B,
+        subaccord: SUB,
+        roundIdx: 0,
+        jurorIndex: 0,
+        state: DisputeState.Commit,
+      },
+      {
+        dispute: DISPUTE_C,
+        subaccord: SUB,
+        roundIdx: 0,
+        jurorIndex: 0,
+        state: DisputeState.Commit,
+      },
+    ] as DutySignal[],
+  };
+}
+
+/** One event-loop boundary — the microtask queue fully drains before it fires. */
+async function drained(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setImmediate(resolve);
+  await promise;
+}
+
+test("scan advances duties in parallel: B reaches its verdict while A's is parked", async () => {
+  const rig = parallelRig();
+  const scan = handleScan(rig.deps, scanResult([], rig.signals));
+  await rig.aEntered;
+  await drained();
+  expect(rig.bVerdictCalled()).toBe(true); // sequential: B never starts under A's park
+  rig.release();
+  await scan;
+  expect(rig.rec.sends).toHaveLength(2); // A + B committed; C never sent
+  expect((await rig.deps.store.load(DISPUTE, 0))?.status).toBe("committed");
+  expect((await rig.deps.store.load(DISPUTE_B, 0))?.status).toBe("committed");
+  expect(
+    rig.rec.logs.some((l) => l.includes(`${DISPUTE_C}:0 failed`) && l.includes("RPC boom")),
+  ).toBe(true);
+});
+
+test("maxParallelDuties: 1 keeps duties sequential (the LLM burst knob)", async () => {
+  const rig = parallelRig({ maxParallelDuties: 1 });
+  const scan = handleScan(rig.deps, scanResult([], rig.signals));
+  await rig.aEntered;
+  await drained();
+  expect(rig.bVerdictCalled()).toBe(false); // A holds the single slot
+  rig.release();
+  await scan;
+  expect(rig.rec.sends).toHaveLength(2);
+});
+
 test("runDaemon: stop() awaits the in-flight scan before resolving", async () => {
   const { promise: held, resolve: release } = Promise.withResolvers<void>();
   const { promise: secondScanEntered, resolve: markSecond } = Promise.withResolvers<void>();
