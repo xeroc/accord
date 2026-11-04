@@ -1,5 +1,27 @@
 # @useaccord/tests
 
+## 0.8.5
+
+### Patch Changes
+
+- the all-zero commitment sentinel (SR4-M-1, bean accord-wgk7)
+
+  - The all-zero slot doubles as the "uncommitted" sentinel (`CommitMissing` /
+    `CommitAlreadyExists` gates), but `commit` accepted an all-zero SUBMISSION:
+    a drawn juror could submit zeros repeatedly — each pass bumped
+    `commit_count` while leaving the slot sentinel — drive the counter to panel
+    size, flip the dispute to `Reveal` early, lock honest jurors out of
+    committing AND revealing, and have them slashed as no-shows at `redraw`.
+  - Fix: `require!(commitment != [0u8; 32], ZeroCommitment)` before any state
+    mutates; rejected calls leave counter + state untouched. Error variant
+    appended at the enum tail (codes are sequential + stable), SDK error map
+    entry added.
+
+- Updated dependencies [[`290ac3f`](https://github.com/xeroc/accord/commit/290ac3fe563de6d8d267003d118f2512b8d64749), [`2586b68`](https://github.com/xeroc/accord/commit/2586b68305438e0c6a7598f99eb9cc87efb9c2f4)]:
+  - @useaccord/sdk@0.8.5
+  - @useaccord/canon@0.8.5
+  - @useaccord/synod@0.8.5
+
 ## 0.8.4
 
 ### Patch Changes

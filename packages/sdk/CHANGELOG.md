@@ -1,5 +1,37 @@
 # @useaccord/sdk
 
+## 0.8.5
+
+### Patch Changes
+
+- [#39](https://github.com/xeroc/accord/pull/39) [`290ac3f`](https://github.com/xeroc/accord/commit/290ac3fe563de6d8d267003d118f2512b8d64749) Thanks [@xeroc](https://github.com/xeroc)! - draw_seat/settle: read stake net of pending settlement losses (SR4-M-2, bean accord-maz4)
+
+  - The draw eligibility gate and the settlement slash cap both read the
+    canonical `staked` ledger blind to pending `stake_delta` losses. A
+    settled-but-unreconciled loser kept full selection weight and passed the
+    gate at their pre-loss stake, so successive settlements slashed the same
+    principal repeatedly; `reconcile_stake` then floored the loser at 0
+    (discarding excess debt) while winners kept the credits — ledger claims
+    could exceed vault custody, with same-mint pools exposing fee claims to
+    the shortfall too.
+  - Fix: `effective_stake = staked + stake_delta` (floored at 0) now feeds
+    both the gate and both settle passes — cumulative debits are collectible
+    by construction. Custody conservation pinned by LiteSVM across sequential
+    disputes + reconcile orders.
+
+- the all-zero commitment sentinel (SR4-M-1, bean accord-wgk7)
+
+  - The all-zero slot doubles as the "uncommitted" sentinel (`CommitMissing` /
+    `CommitAlreadyExists` gates), but `commit` accepted an all-zero SUBMISSION:
+    a drawn juror could submit zeros repeatedly — each pass bumped
+    `commit_count` while leaving the slot sentinel — drive the counter to panel
+    size, flip the dispute to `Reveal` early, lock honest jurors out of
+    committing AND revealing, and have them slashed as no-shows at `redraw`.
+  - Fix: `require!(commitment != [0u8; 32], ZeroCommitment)` before any state
+    mutates; rejected calls leave counter + state untouched. Error variant
+    appended at the enum tail (codes are sequential + stable), SDK error map
+    entry added.
+
 ## 0.8.4
 
 No changes in this release.

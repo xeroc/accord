@@ -1,5 +1,13 @@
 # @useaccord/jurat
 
+## 0.8.5
+
+### Patch Changes
+
+- [#39](https://github.com/xeroc/accord/pull/39) [`4b57ae2`](https://github.com/xeroc/accord/commit/4b57ae27fdc75c58be587af71082d280a4fadf35) Thanks [@xeroc](https://github.com/xeroc)! - Jurat advances duties concurrently per scan (default 4, `JURAT_MAX_PARALLEL_DUTIES`; 1 restores fully sequential advancement). Previously `handleScan` ran duties strictly one-by-one, so one dispute's slow LLM ladder could eat a sibling duty's commit/reveal window — a starvation hazard, not just a throughput one. Joins stay sequential (budget accounting is order-dependent by design), and file-store saves now chain through a per-store tail so concurrent duty saves cannot lose records (whole-file read-modify-write was last-writer-wins).
+- Updated dependencies [[`290ac3f`](https://github.com/xeroc/accord/commit/290ac3fe563de6d8d267003d118f2512b8d64749), [`2586b68`](https://github.com/xeroc/accord/commit/2586b68305438e0c6a7598f99eb9cc87efb9c2f4)]:
+  - @useaccord/sdk@0.8.5
+
 ## 0.8.4
 
 ### Patch Changes
