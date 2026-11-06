@@ -29,3 +29,13 @@ updated_at: 2026-11-04T09:45:27Z
 - `concurrent saves of distinct records both survive (no lost update)` — lost-update repro against the file stores.
 - `maxParallelDuties: default 4, override parsed, 0 rejected` (config).
 - Full package suite (253 tests) + `tsc --noEmit` + eslint green.
+
+## REWRITTEN SCOPE (2026-11-04 — supersedes "bounded fan-out per scan" above)
+
+First cut bounded duties INSIDE the scan (`runBounded` worker pool, scan awaited all duties). Still wrong: one minutes-long adjudication kept the scan open, and the daemon's single-flight guard then blocked every later scan — newly arriving adjudications piled up behind it.
+
+- Duties now DETACH: `handleScan` submits signals to a cross-scan `DutyScheduler` (`makeDutyScheduler(limit)`) and settles immediately.
+- Semaphore with synchronous slot transfer: a finished duty hands its slot to the next queued duty from ANY scan (FIFO). No over-admission window (check + increment are one sync block).
+- Re-entry guard: keys `dispute:roundIdx` tracked from submit to completion; later scans skip in-flight duties (no double verdict / second salt). Redraw mid-flight = on-chain gate rejects, next scan recovers.
+- `runDaemon.stop()` drains the scheduler.
+- Test determinism notes: `handleJoins` does real file IO (`loadBook`) — one event-loop boundary cannot order against disk, so tests await the (now cheap) scan promise instead; midpoint assertions read verdict ENTRY (commit path hashes via `crypto.subtle`, a threadpool macrotask).

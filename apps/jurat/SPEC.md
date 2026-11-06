@@ -127,13 +127,21 @@ lives in local state from verdict until reveal — losing it makes the commit
 unrevealable (accepted risk; the state dir is backed up like a hot wallet's
 memory).
 
-Duties advance **concurrently, independently, and bounded** (default 4,
-`JURAT_MAX_PARALLEL_DUTIES`): one dispute's slow LLM ladder must not eat a
-sibling's commit/reveal window. The bound caps provider + evidence burst; `1`
-restores fully sequential advancement. Joins stay sequential before the duty
-fan-out — budget accounting is order-dependent by design — and store writes
-serialize through a per-store tail so concurrent duty saves cannot lose
-records.
+Duties advance **concurrently, independently, and bounded** through a
+cross-scan duty scheduler (`makeDutyScheduler`, default 4,
+`JURAT_MAX_PARALLEL_DUTIES`): a scan *submits* its duty signals and settles
+immediately — a minutes-long adjudication never holds the truth loop or a
+later scan's new duties hostage. The scheduler's semaphore caps concurrent
+duty work; a finished duty hands its slot to the next queued duty from ANY
+scan (FIFO refill — one adjudication plus small duties never blocks newly
+arriving adjudications). Keys are `dispute:roundIdx`: a duty already queued
+or running is skipped by later scans (no double verdict, no second salt);
+redraw staleness mid-flight is the on-chain gates' call, recovered next
+scan. The bound caps provider + evidence burst; `1` restores fully
+sequential advancement. Joins stay sequential inside the scan — budget
+accounting is order-dependent by design — `stop()` drains the scheduler
+before the daemon exits, and store writes serialize through a per-store
+tail so concurrent duty saves cannot lose records.
 
 ## Join evaluator gates
 

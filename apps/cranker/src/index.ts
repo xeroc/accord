@@ -14,7 +14,7 @@
  *   CANON_GC_ENABLED       — toggle the canon close_item GC module (default on)
  *   CANON_PROGRAM_ID       — override the canon program id (optional)
  */
-import { createSolanaRpc, createSolanaRpcSubscriptions, type Address } from "@solana/kit";
+import { address, createSolanaRpc, createSolanaRpcSubscriptions, type Address } from "@solana/kit";
 import {
   Accord,
   findProgramIdentityPda,
@@ -27,10 +27,12 @@ import { removedCanonItemFilters } from "./canon-gc.js";
 import { createCrankDispatch } from "./dispatch.js";
 import { ProgramAccountListener, VrfLogListener } from "./listener.js";
 import {
+  makeWakeScheduler,
   reconcileDispute,
   reconcileOnce,
   startReconciler,
   type ReconcilerConfig,
+  type WakeScheduler,
 } from "./reconciler.js";
 import { register as registerAccordCancelDispute } from "./cranks/accord/cancel-dispute.js";
 import { register as registerAccordClaimRefund } from "./cranks/accord/claim-refund.js";
@@ -142,7 +144,15 @@ async function main(): Promise<void> {
   // 4. Build the dispatch map with every crank registered.
   const dispatch = fullDispatch();
 
-  // 5. WebSocket subscriptions (program-log listener).
+  // 5. WebSocket subscriptions.
+  // Listeners dial a FRESH client per connection attempt: a kit client whose
+  // initial dial failed keeps serving the cached rejection for that
+  // (methodName, params) forever (subscription-coalescing cache), so a shared
+  // client never recovers without a process restart — the 2026-11-06 wedge.
+  // The send path below MAY share one client: signature-subscription hashes
+  // are unique per tx, so a poisoned hash never outlives that tx's retries
+  // (worst case one crank action delayed to the next 60s poll).
+  const createListenerRpcSubscriptions = () => createSolanaRpcSubscriptions(wsUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
 
   // 6. Assemble the reconciler config.
@@ -160,8 +170,25 @@ async function main(): Promise<void> {
     log,
   };
 
+  // 6b. Time-gate wakes: a WaitGate from the resolver arms a one-shot timer
+  // that runs a scoped dispatch the moment the gate opens (live cost of the
+  // poll-only path: finalize_dispute +21s past a 10s appeal window, 2026-11-06).
+  // The scheduler is assigned just below — the closures only fire after boot.
+  const wakes: { scheduler?: WakeScheduler } = {};
+  const wired: ReconcilerConfig = {
+    ...config,
+    scheduleWake: (key, wakeAtMs) => wakes.scheduler?.schedule(key, wakeAtMs),
+  };
+  wakes.scheduler = makeWakeScheduler({
+    wake: (key) => {
+      void reconcileDispute(wired, address(key)).catch(() => {
+        // scoped dispatch failure — the poll cycle is the backstop
+      });
+    },
+  });
+
   // 7. Start the 60s poll loop (fires immediately on boot).
-  const reconcilerHandle = startReconciler(config);
+  const reconcilerHandle = startReconciler(wired);
   log("cranker started", {
     address: wallet.address,
     rpcUrl,
@@ -176,16 +203,16 @@ async function main(): Promise<void> {
   //    snapshot that resolves a now-skippable action must not end the dispatch
   //    (that left draw_seat waiting a full poll cycle, seen 2026-10-30/31).
   const listener = new ProgramAccountListener({
-    rpcSubscriptions,
+    createRpcSubscriptions: createListenerRpcSubscriptions,
     programId: Accord.PROGRAM_ID,
     target: {
       // Full sweep — used on reconnect to close the gap.
       onResubscribe: async () => {
-        await reconcileOnce(config);
+        await reconcileOnce(wired);
       },
       // Scoped sweep — just the one dispute the account notification named.
       onAccount: async (addr: Address) => {
-        await reconcileDispute(config, addr);
+        await reconcileDispute(wired, addr);
       },
     },
     log: (msg) => log(msg),
@@ -196,11 +223,11 @@ async function main(): Promise<void> {
   //     callback emits the event at the exact moment `draw_seat` becomes
   //     legal, independent of the Dispute account-write notification.
   const vrfListener = new VrfLogListener({
-    rpcSubscriptions,
+    createRpcSubscriptions: createListenerRpcSubscriptions,
     programId: Accord.PROGRAM_ID,
     target: {
       onCommitted: async (addr: Address) => {
-        await reconcileDispute(config, addr);
+        await reconcileDispute(wired, addr);
       },
     },
     log: (msg) => log(msg),
@@ -212,7 +239,7 @@ async function main(): Promise<void> {
   //     backstop. Disabled together with the reconciler phase via
   //     CANON_GC_ENABLED.
   const canonListener = new ProgramAccountListener({
-    rpcSubscriptions,
+    createRpcSubscriptions: createListenerRpcSubscriptions,
     programId: canonProgramId,
     // Discriminator + state == Removed memcmp: only GC-eligible items arrive.
     filters: removedCanonItemFilters(),
@@ -243,6 +270,7 @@ async function main(): Promise<void> {
   const shutdown = (): void => {
     log("cranker shutting down");
     reconcilerHandle.stop();
+    wakes.scheduler?.dispose();
     listener.stop();
     canonListener.stop();
     process.exit(0);

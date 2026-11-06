@@ -26,7 +26,13 @@ import {
 
 import { createCrankDispatch, type CrankAction, type CrankContext } from "./dispatch.js";
 import { SimulationError } from "./send.js";
-import { reconcileDispute, reconcileOnce, type ReconcilerConfig } from "./reconciler.js";
+import {
+  makeWakeScheduler,
+  reconcileDispute,
+  reconcileOnce,
+  WAKE_EPSILON_MS,
+  type ReconcilerConfig,
+} from "./reconciler.js";
 import type { CrankerWallet } from "./wallet.js";
 
 const Z32 = new Uint8Array(32);
@@ -689,13 +695,14 @@ test("concurrent reconcileDispute calls for one dispute coalesce into one run", 
         entered.resolve();
         await gate.promise;
       }
-      // Second fetch: Drawn — the resolver settles and the run completes.
+      // Second+ fetches: Drawn — A's run settles; B's coalesced trigger then
+      // chains one fresh re-resolve (fired=0, settles too).
       return {
         address: D_ADDR,
         data:
-          fetches === 2
-            ? dispute({ state: DisputeState.Drawn })
-            : dispute({ state: DisputeState.Created }),
+          fetches === 1
+            ? dispute({ state: DisputeState.Created })
+            : dispute({ state: DisputeState.Drawn }),
       } as unknown as Account<Dispute>;
     },
   });
@@ -704,6 +711,102 @@ test("concurrent reconcileDispute calls for one dispute coalesce into one run", 
   await entered.promise; // caller A is parked inside fetch 1 — B has entered by now
   gate.resolve();
   expect(await a).toBe(await b);
-  expect(fetches).toBe(2); // caller B never fetched — it rode A's run
+  expect(fetches).toBe(3); // caller B never ran concurrently — it chained ONE re-resolve into A's run
   expect(calls.map((c) => c.kind)).toEqual(["request_vrf"]);
+});
+
+test("a trigger coalesced into a failing run chains a fresh re-resolve (draw_seat stall)", async () => {
+  // 2026-11-06 live stall: VrfCommitted dispatched while a doomed duplicate
+  // request_vrf was still in flight; the coalesced caller rode that run, which
+  // settled fired=0 without re-resolving — draw_seat then waited for the 60s
+  // poll (+38.5s measured). The coalesced trigger must chain a fresh fetch.
+  const gate = Promise.withResolvers<void>();
+  const entered = Promise.withResolvers<void>();
+  let fetches = 0;
+  const snapshots = [
+    dispute({ state: DisputeState.Created }), // stale — fires the doomed request_vrf
+    dispute({
+      state: DisputeState.Created,
+      committedVrf: { __option: "Some" as const, value: Z32 },
+    }), // VRF landed — draw_seat is due
+    dispute({ state: DisputeState.Drawn }), // settled
+  ];
+  const { d, calls } = recordingDispatch({
+    request_vrf: async () => {
+      throw new Error("VrfAlreadyCommitted");
+    },
+    draw_seat: async () => {},
+  });
+  const cfg = config({
+    dispatch: d,
+    fetchDisputes: async () => [],
+    fetchRound: async () => null,
+    fetchDisputeOne: async () => {
+      fetches++;
+      if (fetches === 1) {
+        entered.resolve();
+        await gate.promise;
+      }
+      const snap = snapshots[Math.min(fetches - 1, snapshots.length - 1)];
+      return { address: D_ADDR, data: snap } as unknown as Account<Dispute>;
+    },
+  });
+  const a = reconcileDispute(cfg, D_ADDR, { sleep: async () => {} });
+  await entered.promise; // A parked inside fetch 1
+  const b = reconcileDispute(cfg, D_ADDR); // coalesces — must chain, not die with A
+  gate.resolve();
+  expect(await a).toBe(await b);
+  expect(calls.map((c) => c.kind)).toEqual(["request_vrf", "draw_seat"]);
+  expect(fetches).toBe(3);
+});
+
+// --- WaitGate wakes (appeal-window latency, seen live 2026-11-06: +21s) -------
+
+test("time-gated dispute arms scheduleWake at gate-open and fires nothing", async () => {
+  const wakes: [string, number][] = [];
+  const { d, calls } = recordingDispatch({ finalize_dispute: async () => {} });
+  const fired = await reconcileOnce(
+    config({
+      dispatch: d,
+      fetchDisputes: async () => [
+        {
+          address: D_ADDR,
+          data: dispute({ state: DisputeState.RoundResolved }),
+        } as unknown as Account<Dispute>,
+      ],
+      fetchRound: async () => ({ address: R_ADDR, data: round() }) as unknown as Account<Round>,
+      scheduleWake: (key, at) => wakes.push([key, at]),
+    }),
+  );
+  // round() revealEnd = 10_000n, dispute() appealWindow = 100n, now = 1n:
+  // wait until 10_100n → wall ms + the 1s wall-vs-chain skew epsilon.
+  expect(fired).toBe(0);
+  expect(calls).toEqual([]);
+  expect(wakes).toEqual([[D_ADDR.toString(), (10_000 + 100) * 1000 + WAKE_EPSILON_MS]]);
+});
+
+test("makeWakeScheduler: earlier-or-equal wins, later never overrides, dispose clears", () => {
+  const fired: string[] = [];
+  const timers: { fn: () => void; delay: number; cleared?: boolean }[] = [];
+  const setTimeoutFn = (fn: () => void, ms: number): number => {
+    timers.push({ fn, delay: ms });
+    return timers.length - 1;
+  };
+  const clearTimeoutFn = (handle: unknown): void => {
+    timers[handle as number]!.cleared = true;
+  };
+  const scheduler = makeWakeScheduler({ wake: (k) => fired.push(k), setTimeoutFn, clearTimeoutFn });
+  const now = Date.now();
+  scheduler.schedule("a", now + 5_000);
+  scheduler.schedule("a", now + 9_000); // later — ignored
+  expect(timers).toHaveLength(1);
+  expect(timers[0]!.cleared).toBeUndefined();
+  scheduler.schedule("a", now + 2_000); // earlier — replaces
+  expect(timers[0]!.cleared).toBe(true);
+  expect(timers[1]!.delay).toBeLessThanOrEqual(2_000);
+  timers[1]!.fn(); // deadline arrives
+  expect(fired).toEqual(["a"]);
+  scheduler.schedule("b", now + 1_000);
+  scheduler.dispose();
+  expect(timers[2]!.cleared).toBe(true);
 });

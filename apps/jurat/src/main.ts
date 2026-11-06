@@ -56,6 +56,7 @@ import { fileDutyStore, fileVoteStore } from "./state/stores";
 import {
   joinBudgetFromConfig,
   joinPolicyFromConfig,
+  makeDutyScheduler,
   makeHintHandlers,
   makeWakeScheduler,
   runDaemon,
@@ -272,7 +273,7 @@ export async function main(): Promise<void> {
     },
     tokenBalance: joinChain.tokenBalance,
     scheduleWake: (key, wakeAtMs) => wakeScheduler.schedule(key, wakeAtMs),
-    maxParallelDuties: config.maxParallelDuties,
+    dutyScheduler: makeDutyScheduler(config.maxParallelDuties),
     trace:
       config.trace &&
       makeTraceSinkBinder({
