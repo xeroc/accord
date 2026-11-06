@@ -1,8 +1,8 @@
 /**
  * State resolver — pure mapping from a decoded (Dispute, Round) snapshot to the
- * next permissionless crank action, or `null` when the dispute is waiting on a
- * time window or a user action (commit / reveal / appeal).
- *
+ * next permissionless crank action, a {@link WaitGate} when the block is a
+ * time window the resolver itself can name, or `null` when the dispute is
+ * waiting on a user action (commit / reveal / appeal / panel fill).
  * Contract (milestone accord-27r5 §4): the reconciler fetches the current Round
  * (or a prior Round for settlement) and calls {@link resolveNextAction}; the
  * returned action, if any, is dispatched to the matching crank file. No side
@@ -38,15 +38,27 @@ export type CrankAction =
   | { readonly kind: "redraw" };
 
 /**
- * Resolve the next crank action for a (dispute, round) snapshot, or `null` when
- * waiting. `round` is `null` when the Round account does not yet exist (e.g. VRF
- * just committed, no seat drawn yet) — treated as 0 seats drawn.
+ * Time-gated wait: no action is legal yet, but one becomes legal at `until`
+ * (Unix seconds, chain clock) with no user input — the caller may arm a wake
+ * instead of waiting for the next poll tick. A `null` return carries no such
+ * deadline (user-action wait), so it never arms one.
+ */
+export interface WaitGate {
+  readonly kind: "wait";
+  readonly until: bigint;
+}
+
+/**
+ * Resolve the next crank action for a (dispute, round) snapshot, a wait gate,
+ * or `null` when waiting on a user action. `round` is `null` when the Round
+ * account does not yet exist (e.g. VRF just committed, no seat drawn yet) —
+ * treated as 0 seats drawn.
  */
 export function resolveNextAction(
   dispute: Dispute,
   round: Round | null,
   now: bigint,
-): CrankAction | null {
+): CrankAction | WaitGate | null {
   // --- Final: settle any prior unsettled round; the final round is settled by
   //     finalize_dispute itself, so only prior rounds need a crank. ---
   if (dispute.state === DisputeState.Final) {
@@ -111,7 +123,7 @@ export function resolveNextAction(
     ) {
       return { kind: "finalize_round" };
     }
-    return null; // review/commit/reveal windows still open
+    return { kind: "wait", until: round.revealEnd }; // review/commit/reveal windows still open
   }
 
   // --- RoundResolved: finalize_dispute once the appeal window closes; cancel
@@ -124,7 +136,7 @@ export function resolveNextAction(
     if (now >= round.revealEnd + dispute.terms.appealWindow) {
       return { kind: "finalize_dispute" };
     }
-    return null; // appeal window open — waiting on a user appeal
+    return { kind: "wait", until: round.revealEnd + dispute.terms.appealWindow }; // appeal window open
   }
 
   // Review is in the enum but no instruction assigns it; unreachable.

@@ -72,6 +72,12 @@ export interface ReconcilerConfig {
   programIdentity: Address;
   /** Poll interval. Default 60_000ms. */
   intervalMs?: number;
+  /**
+   * Arm a one-shot wake for a time-gated dispute (state.ts WaitGate) so the
+   * gate opening gets a scoped dispatch instead of waiting for the next poll
+   * tick. Optional — absent (tests, embeds) = poll-cadence only.
+   */
+  scheduleWake?: (key: string, wakeAtMs: number) => void;
   /** Wall clock returning Unix seconds. Default `Date.now()/1000`. */
   now?: () => bigint;
   log?: (msg: string, fields?: Record<string, unknown>) => void;
@@ -117,6 +123,8 @@ export interface ReclaimableSlot {
 /** u32::MAX sentinel — nextFree === this means "not on the free list". */
 const UINT32_MAX = 4294967295;
 
+/** Wake epsilon past a gate (ms) — reconciler `now` is wall clock, gates are chain time. */
+export const WAKE_EPSILON_MS = 1_000;
 export interface ReconcilerHandle {
   /** Stop the poll timer. Idempotent. */
   stop(): void;
@@ -205,6 +213,7 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
 
   let fired = 0;
   const disputes = await fetchDisputes();
+
   for (const dispute of disputes) {
     if (dispute.data.state === DisputeState.Closed) continue;
 
@@ -214,14 +223,23 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
     let action: CrankAction | null = null;
     let round = currentRound;
 
-    if (resolved !== null) {
+    if (resolved !== null && resolved.kind !== "wait") {
       action = stampDispute(resolved, dispute.address);
+    } else if (resolved !== null) {
+      // Time-gated, not user-blocked: the gate opens on its own — arm a wake
+      // (chain seconds → wall ms, +1s skew epsilon) instead of letting the
+      // next poll tick discover it (live cost of the poll-only path: +21s
+      // past a 10s appeal window, 2026-11-06).
+      config.scheduleWake?.(
+        dispute.address.toString(),
+        Number(resolved.until) * 1000 + WAKE_EPSILON_MS,
+      );
     } else if (dispute.data.state === DisputeState.Final) {
       // 2) No current-round action and Final? Scan prior rounds for settlement.
       for (let i = 0; i < dispute.data.currentRound; i++) {
         const prior = await fetchRound(dispute.address, i);
         const a = resolveNextAction(dispute.data, prior?.data ?? null, t);
-        if (a !== null) {
+        if (a !== null && a.kind !== "wait") {
           action = stampDispute(a, dispute.address);
           round = prior;
           break;
@@ -368,29 +386,52 @@ export async function reconcileOnce(config: ReconcilerConfig): Promise<number> {
 /**
  * Scoped dispatch for latency-critical transitions (WS account writes, the
  * `VrfCommitted` log trigger): re-resolve → execute → RE-RESOLVE with fresh
- * state until the dispute settles. Live failure mode (2026-10-30): a dispatch
- * resolved `request_vrf` off a pre-callback snapshot, the handler detected
- * `committed_vrf already set` and skipped — and the dispatch ended, leaving
- * `draw_seat` to the next poll cycle (+60s). Each iteration re-fetches the
- * dispute; a cycle that does nothing settles the loop, a failed action
- * settles it too (the poll is the backstop), and concurrent dispatches for
- * the same dispute coalesce into one run.
+ * state until the dispute settles. Live failure modes this loop pins:
+ * - 2026-10-30: a dispatch resolved `request_vrf` off a pre-callback snapshot,
+ *   the handler detected `committed_vrf already set` and skipped — and the
+ *   dispatch ended, leaving `draw_seat` to the next poll cycle (+60s).
+ * - 2026-11-06: the `VrfCommitted` trigger coalesced into a run that was busy
+ *   FAILING a stale duplicate `request_vrf`; that run settled fired=0 without
+ *   re-resolving and the coalesced trigger died with it — `draw_seat` again
+ *   waited for the poll (+38.5s measured). A coalesced trigger now chains one
+ *   fresh re-resolve after the run settles (bounded by `opts.reruns`).
+ * Each iteration re-fetches the dispute; a cycle that does nothing settles the
+ * loop, a failed action settles it too (the poll is the backstop), and
+ * concurrent dispatches for the same dispute coalesce into one run.
  */
 const scopedInflight = new Map<string, Promise<number>>();
+/** Disputes whose trigger coalesced into a run that already fetched — chained, never dropped. */
+const pendingRerun = new Set<string>();
 
 export async function reconcileDispute(
   config: ReconcilerConfig,
   addr: Address,
-  opts: { iterations?: number; pauseMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+  opts: {
+    iterations?: number;
+    /** Max chained re-resolves after coalesced triggers. Default 3. */
+    reruns?: number;
+    pauseMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
 ): Promise<number> {
   const maxIterations = opts.iterations ?? 3;
-  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const maxReruns = opts.reruns ?? 3;
+  const defaultSleep = (ms: number): Promise<void> => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, ms);
+    return promise;
+  };
+  const sleep = opts.sleep ?? defaultSleep;
   const pauseMs = opts.pauseMs ?? 300;
   const key = addr.toString();
   const inflight = scopedInflight.get(key);
-  if (inflight !== undefined) return inflight;
+  if (inflight !== undefined) {
+    pendingRerun.add(key); // chain one fresh re-resolve once the run settles
+    return inflight;
+  }
   const run = (async (): Promise<number> => {
     let total = 0;
+    let reruns = 0;
     for (let i = 0; i < maxIterations; i++) {
       if (i > 0) await sleep(pauseMs);
       const fetched = await (config.fetchDisputeOne?.(addr) ??
@@ -417,7 +458,14 @@ export async function reconcileDispute(
         fetchSynodCases: async () => [],
       });
       total += fired;
-      if (fired === 0) return total; // nothing resolved — settled
+      if (fired > 0) continue; // progress — re-resolve fresh (state moved)
+      // Nothing resolved: settle — unless a trigger coalesced in while this
+      // run was busy. Its snapshot is newer than ours; chain one fresh fetch.
+      if (pendingRerun.delete(key) && reruns++ < maxReruns) {
+        i = -1;
+        continue;
+      }
+      return total;
     }
     return total;
   })();
@@ -448,6 +496,52 @@ export function startReconciler(config: ReconcilerConfig): ReconcilerHandle {
   return {
     stop() {
       clearInterval(timer);
+    },
+  };
+}
+
+// --- time-gate wakes (WaitGate → scoped dispatch at gate-open) ---------------
+
+export interface WakeSchedulerDeps {
+  /** Fired when a deadline arrives — runs one scoped dispatch for that key. */
+  readonly wake: (key: string) => void;
+  /** Timer seams — injectable for tests. */
+  readonly setTimeoutFn?: (fn: () => void, ms: number) => unknown;
+  readonly clearTimeoutFn?: (handle: unknown) => void;
+}
+
+/**
+ * Per-dispute one-shot wakes armed by {@link ReconcilerConfig.scheduleWake}.
+ * A LATER deadline for an existing key never overrides an earlier one; an
+ * earlier one replaces it. Firing runs one scoped dispatch, which re-arms only
+ * if the dispute is still time-gated — wakes never stack into a loop.
+ */
+export interface WakeScheduler {
+  schedule(key: string, wakeAtMs: number): void;
+  dispose(): void;
+}
+
+export function makeWakeScheduler(deps: WakeSchedulerDeps): WakeScheduler {
+  const setTimeoutFn = deps.setTimeoutFn ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+  const clearTimeoutFn =
+    deps.clearTimeoutFn ??
+    ((handle: unknown) => clearTimeout(handle as Parameters<typeof clearTimeout>[0]));
+  const pending = new Map<string, { handle: unknown; atMs: number }>();
+  return {
+    schedule(key: string, wakeAtMs: number): void {
+      const existing = pending.get(key);
+      if (existing !== undefined && existing.atMs <= wakeAtMs) return; // earlier-or-equal armed
+      if (existing !== undefined) clearTimeoutFn(existing.handle);
+      const delay = Math.max(wakeAtMs - Date.now(), 0);
+      const handle = setTimeoutFn(() => {
+        pending.delete(key);
+        deps.wake(key);
+      }, delay);
+      pending.set(key, { handle, atMs: wakeAtMs });
+    },
+    dispose(): void {
+      for (const { handle } of pending.values()) clearTimeoutFn(handle);
+      pending.clear();
     },
   };
 }

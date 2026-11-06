@@ -661,12 +661,28 @@ export interface HintHandlersDeps {
   alert(message: string): void | Promise<void>;
   /** Operational log; defaults to `console.log`. */
   log?(message: string): void;
+  /**
+   * Delayed re-kicks after OUR SeatDrawn. The immediate kick races the RPC
+   * read replica (observed 2026-11-06: the scan at +450ms read pre-draw
+   * state → 0 duties → next timer scan 120s later). Empty = retries off
+   * (tests pinning only the alert path).
+   */
+  readonly seatRetryDelaysMs?: readonly number[];
+  /** Timer seam (tests). Defaults to the real `setTimeout`. */
+  readonly setTimeoutFn?: (fn: () => void, ms: number) => unknown;
 }
+
+/** Default SeatDrawn re-kick schedule: two retries inside typical replica lag. */
+const DEFAULT_SEAT_RETRY_DELAYS_MS: readonly number[] = [1_500, 4_000];
 
 /**
  * The composition layer `events.ts` documents: only OUR `SeatDrawn` is a
  * duty — identify it right away (log + operator alert "duty received") and
- * kick an immediate scan. Foreign seats are ignored (a live network draws
+ * kick an immediate scan, plus delayed re-kicks (`seatRetryDelaysMs`): a
+ * kicked scan that lands before the read replica caught up sees 0 duties and
+ * the next evidence is the 120s timer — the retries close that window.
+ * Redundant kicks are safe (the daemon gate coalesces, the duty scheduler
+ * skips tracked keys). Foreign seats are ignored (a live network draws
  * constantly; every kick is a full reconcile). The other hints carry no
  * juror, so they log what identifies them and kick. Hints stay
  * non-authoritative either way: the scan re-verifies membership against
@@ -674,6 +690,7 @@ export interface HintHandlersDeps {
  */
 export function makeHintHandlers(deps: HintHandlersDeps): AccordEventHandlers {
   const log = deps.log ?? console.log;
+  const setTimeoutFn = deps.setTimeoutFn ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
   return {
     onSeatDrawn: (e) => {
       if (e.juror !== deps.juror) return;
@@ -683,6 +700,9 @@ export function makeHintHandlers(deps: HintHandlersDeps): AccordEventHandlers {
       log(msg);
       void deps.alert(msg);
       deps.kick();
+      for (const delay of deps.seatRetryDelaysMs ?? DEFAULT_SEAT_RETRY_DELAYS_MS) {
+        setTimeoutFn(() => deps.kick(), delay);
+      }
     },
     onRedrawn: (e) => {
       log(`hints: Redrawn dispute ${e.dispute} (round ${e.roundIdx}) — kicking scan`);

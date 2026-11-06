@@ -136,9 +136,12 @@ test("Created with VRF, panel full → null (last draw_seat advanced state)", ()
   ).toBeNull();
 });
 
-test("Voting phase before reveal_end → null (windows open)", () => {
+test("Voting phase before reveal_end → wait gate at reveal_end", () => {
   for (const s of [DisputeState.Drawn, DisputeState.Commit, DisputeState.Reveal]) {
-    expect(resolveNextAction(dispute({ state: s }), round(), REVEAL_END - 1n)).toBeNull();
+    expect(resolveNextAction(dispute({ state: s }), round(), REVEAL_END - 1n)).toEqual({
+      kind: "wait",
+      until: REVEAL_END,
+    });
   }
 });
 
@@ -167,11 +170,11 @@ test("Voting phase, all revealed before reveal_end → finalize_round (early res
       round({ jurorCount: 3, revealCount: 2 }),
       REVEAL_END - 1n,
     ),
-  ).toBeNull();
+  ).toEqual({ kind: "wait", until: REVEAL_END });
   // Degenerate empty panel (0==0) must NOT early-finalize.
   expect(
     resolveNextAction(dispute({ state: DisputeState.Reveal }), round(), REVEAL_END - 1n),
-  ).toBeNull();
+  ).toEqual({ kind: "wait", until: REVEAL_END });
 });
 
 test("Voting phase past the post-draw grace → cancel_dispute", () => {
@@ -182,9 +185,12 @@ test("Voting phase past the post-draw grace → cancel_dispute", () => {
   expect(resolveNextAction(d, round(), deadline)).toEqual({ kind: "finalize_round" });
 });
 
-test("RoundResolved within the appeal window → null (waiting on appeal)", () => {
+test("RoundResolved within the appeal window → wait gate at appeal close", () => {
   const d = dispute({ state: DisputeState.RoundResolved });
-  expect(resolveNextAction(d, round(), REVEAL_END + APPEAL_WINDOW - 1n)).toBeNull();
+  expect(resolveNextAction(d, round(), REVEAL_END + APPEAL_WINDOW - 1n)).toEqual({
+    kind: "wait",
+    until: REVEAL_END + APPEAL_WINDOW,
+  });
 });
 
 test("RoundResolved at appeal close → finalize_dispute", () => {

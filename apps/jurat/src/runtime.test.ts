@@ -1079,6 +1079,7 @@ test("hints: our seat drawn → duty-received log + alert + kick", () => {
     kick: () => kicks.push(1),
     alert: (m) => alerts.push(m),
     log: (m) => logs.push(m),
+    seatRetryDelaysMs: [], // retries pinned by their own test below
   });
   handlers.onSeatDrawn?.(seatDrawn(JUROR));
   expect(kicks).toHaveLength(1);
@@ -1105,6 +1106,46 @@ test("hints: another juror's seat drawn → ignored (no kick, no alert, no log)"
   expect(kicks).toHaveLength(0);
   expect(alerts).toHaveLength(0);
   expect(logs).toHaveLength(0);
+});
+
+test("hints: our seat drawn schedules read-settle re-kicks (replica-lag race)", () => {
+  // 2026-11-06 live stall: the SeatDrawn kick at +450ms read pre-draw state
+  // (0 duties) and the next timer scan was 120s out. The delayed re-kicks
+  // close that window; foreign seats schedule nothing.
+  const kicks: number[] = [];
+  const scheduled: { fn: () => void; ms: number }[] = [];
+  const handlers = makeHintHandlers({
+    juror: JUROR,
+    kick: () => kicks.push(1),
+    alert: () => {},
+    log: () => {},
+    seatRetryDelaysMs: [1_500, 4_000],
+    setTimeoutFn: (fn, ms) => {
+      scheduled.push({ fn, ms });
+      return scheduled.length - 1;
+    },
+  });
+  handlers.onSeatDrawn?.(seatDrawn(JUROR));
+  expect(scheduled.map((t) => t.ms)).toEqual([1_500, 4_000]);
+  expect(kicks).toHaveLength(1); // immediate kick only — retries are pending
+  for (const t of scheduled) t.fn();
+  expect(kicks).toHaveLength(3);
+});
+
+test("hints: another juror's seat schedules no re-kicks", () => {
+  const scheduled: number[] = [];
+  const handlers = makeHintHandlers({
+    juror: JUROR,
+    kick: () => {},
+    alert: () => {},
+    log: () => {},
+    setTimeoutFn: (_fn, ms) => {
+      scheduled.push(ms);
+      return scheduled.length - 1;
+    },
+  });
+  handlers.onSeatDrawn?.(seatDrawn(OTHER));
+  expect(scheduled).toEqual([]);
 });
 
 test("hints: redraw / subaccord / dispute-created log identifying info + kick", () => {
