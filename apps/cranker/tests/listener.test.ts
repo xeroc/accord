@@ -16,6 +16,7 @@
 import { test, expect } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  createSolanaRpcSubscriptions,
   getBase64Encoder,
   getAddressEncoder,
   type Address,
@@ -23,6 +24,7 @@ import {
   type RpcSubscriptions,
   type SolanaRpcSubscriptionsApi,
 } from "@solana/kit";
+import type { Server } from "bun";
 import { DISPUTE_DISCRIMINATOR } from "@useaccord/sdk";
 import { ItemState } from "@useaccord/canon";
 import { canonItemStateFilter, removedCanonItemFilters } from "../src/canon-gc";
@@ -70,6 +72,15 @@ function fakeSubs(notifications: Address[]) {
   };
 }
 
+/** An open, idle subscription stream: iterator that never resolves. */
+function healthyStream(): AsyncIterable<never> {
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: () => Promise.withResolvers<IteratorResult<never>>().promise,
+    }),
+  };
+}
+
 test("ProgramAccountListener forwards caller filters and fires onAccount per notification", async () => {
   const canonFilters = removedCanonItemFilters();
   const { subs, seenConfig } = fakeSubs([DISPUTE_A, DISPUTE_B]);
@@ -77,7 +88,7 @@ test("ProgramAccountListener forwards caller filters and fires onAccount per not
   // Await the real signal — resolves once the second onAccount lands.
   const { promise: bothDone, resolve: signalBoth } = Promise.withResolvers<void>();
   const listener = new ProgramAccountListener({
-    rpcSubscriptions: subs,
+    createRpcSubscriptions: () => subs,
     programId: CANON_PROGRAM,
     filters: canonFilters,
     target: {
@@ -102,7 +113,7 @@ test("ProgramAccountListener defaults to the Dispute discriminator filter", asyn
   const { subs, seenConfig } = fakeSubs([DISPUTE_A]);
   const { promise: one, resolve: signalOne } = Promise.withResolvers<void>();
   const listener = new ProgramAccountListener({
-    rpcSubscriptions: subs,
+    createRpcSubscriptions: () => subs,
     programId: PROGRAM_ID,
     target: {
       onAccount: async () => signalOne(),
@@ -159,20 +170,24 @@ test("VrfLogListener dispatches the dispute on a matching event, ignores noise",
   const committed: Address[] = [];
   const { promise: done, resolve: signalDone } = Promise.withResolvers<void>();
   const listener = new VrfLogListener({
-    rpcSubscriptions: fakeLogSubs([
-      // A request_vrf tx with no event: ignored.
-      { err: null, logs: ["Program log: Instruction: RequestVrf"] },
-      // The callback tx carrying VrfCommitted: dispatched.
-      {
-        err: null,
-        logs: [
-          "Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed invoke [1]",
-          vrfCommittedDataLog(PROGRAM_ID),
-        ],
-      },
-      // A failed tx must not dispatch even if it logs the event.
-      { err: { InstructionError: [0, { Custom: 1 }] }, logs: [vrfCommittedDataLog(CANON_PROGRAM)] },
-    ]),
+    createRpcSubscriptions: () =>
+      fakeLogSubs([
+        // A request_vrf tx with no event: ignored.
+        { err: null, logs: ["Program log: Instruction: RequestVrf"] },
+        // The callback tx carrying VrfCommitted: dispatched.
+        {
+          err: null,
+          logs: [
+            "Program cordhVoshqRV6kzGBmM89A66wuusJGsDCvLMHPLyKed invoke [1]",
+            vrfCommittedDataLog(PROGRAM_ID),
+          ],
+        },
+        // A failed tx must not dispatch even if it logs the event.
+        {
+          err: { InstructionError: [0, { Custom: 1 }] },
+          logs: [vrfCommittedDataLog(CANON_PROGRAM)],
+        },
+      ]),
     programId: PROGRAM_ID,
     target: {
       onCommitted: async (d) => {
@@ -186,3 +201,170 @@ test("VrfLogListener dispatches the dispute on a matching event, ignores noise",
   listener.stop();
   expect(committed).toEqual([PROGRAM_ID]);
 });
+
+// --- Reconnect: a failed dial must never poison later attempts -------------
+//
+// kit's subscription-coalescing cache (`createSolanaRpcSubscriptions`) caches
+// the REJECTED promise when the initial dial fails, keyed by (methodName,
+// params) — that client never dials again for the same subscription. The
+// listeners work around it by building a fresh client per connection attempt.
+
+test(
+  "ProgramAccountListener dials a fresh client per attempt and recovers",
+  { timeoutMs: 5000 },
+  async () => {
+    const logs: string[] = [];
+    let dials = 0;
+    const { promise: healthyGate, resolve: heal } = Promise.withResolvers<void>();
+    let healthy = false;
+    const subs = {
+      programNotifications: () => ({
+        subscribe: async () => {
+          if (!healthy) throw new Error("WebSocket failed to connect");
+          return healthyStream();
+        },
+      }),
+    };
+    const { promise: failed, resolve: signalFailed } = Promise.withResolvers<void>();
+    const { promise: subscribed, resolve: signalSubscribed } = Promise.withResolvers<void>();
+    const listener = new ProgramAccountListener({
+      createRpcSubscriptions: () => {
+        dials += 1;
+        return subs as unknown as RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+      },
+      programId: PROGRAM_ID,
+      target: { onAccount: async () => {}, onResubscribe: async () => {} },
+      log: (m) => {
+        logs.push(m);
+        if (m.includes("WS disconnected")) signalFailed();
+        if (m.includes("subscribed")) signalSubscribed();
+      },
+      backoffMs: () => 0,
+      // Gate (endpoint healed) + Bun.sleep(0) event-loop yield — not a duration
+      // guess: the yield lets bun's per-test timeout fire while a pre-fix retry
+      // loop spins synchronously.
+      sleep: async () => {
+        await healthyGate.promise;
+        await Bun.sleep(0);
+      },
+    });
+    listener.start();
+    await failed; // first attempt failed (the transient outage)
+    healthy = true;
+    heal(); // release the backoff sleep — endpoint is back
+    await subscribed; // second attempt, fresh client, subscribed
+    listener.stop();
+    expect(logs.some((l) => l.includes(`subscribed to ${PROGRAM_ID}`))).toBeTrue();
+    expect(dials).toBeGreaterThanOrEqual(2);
+  },
+);
+
+test(
+  "VrfLogListener dials a fresh client per attempt and recovers",
+  { timeoutMs: 5000 },
+  async () => {
+    const logs: string[] = [];
+    let dials = 0;
+    const { promise: healthyGate, resolve: heal } = Promise.withResolvers<void>();
+    let healthy = false;
+    const subs = {
+      logsNotifications: () => ({
+        subscribe: async () => {
+          if (!healthy) throw new Error("WebSocket failed to connect");
+          return healthyStream();
+        },
+      }),
+    };
+    const { promise: failed, resolve: signalFailed } = Promise.withResolvers<void>();
+    const { promise: subscribed, resolve: signalSubscribed } = Promise.withResolvers<void>();
+    const listener = new VrfLogListener({
+      createRpcSubscriptions: () => {
+        dials += 1;
+        return subs as unknown as RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+      },
+      programId: PROGRAM_ID,
+      target: { onCommitted: async () => {} },
+      log: (m) => {
+        logs.push(m);
+        if (m.includes("WS disconnected")) signalFailed();
+        if (m.includes("subscribed")) signalSubscribed();
+      },
+      backoffMs: () => 0,
+      sleep: async () => {
+        await healthyGate.promise;
+        await Bun.sleep(0);
+      },
+    });
+    listener.start();
+    await failed;
+    healthy = true;
+    heal();
+    await subscribed;
+    listener.stop();
+    expect(logs.some((l) => l.includes(`subscribed to ${PROGRAM_ID}`))).toBeTrue();
+    expect(dials).toBeGreaterThanOrEqual(2);
+  },
+);
+test(
+  "ProgramAccountListener recovers against real kit after the endpoint comes back (coalescing-cache regression)",
+  { timeoutMs: 10000 },
+  async () => {
+    // Real `@solana/kit` client + a fake WS endpoint that refuses, then serves.
+    // With the pre-fix wiring (one process-lifetime client) the retry below
+    // would be served kit's cached rejected promise and never dial again.
+    // ponytail: this test does real socket I/O (refused TCP port, then the WS
+    // upgrade) — deterministic fake timers cannot produce a dead endpoint.
+    const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+    const port = probe.port;
+    probe.stop(true);
+
+    let connections = 0;
+    let server: Server | undefined;
+    const startServer = (): void => {
+      if (server !== undefined) return;
+      server = Bun.serve({
+        port,
+        hostname: "127.0.0.1",
+        fetch(req, s) {
+          return s.upgrade(req) ? undefined : new Response("no", { status: 400 });
+        },
+        websocket: {
+          open() {
+            connections += 1;
+          },
+          message(ws, msg) {
+            const req = JSON.parse(String(msg)) as { id: number; method: string };
+            if (req.method === "ping") return;
+            ws.send(JSON.stringify({ jsonrpc: "2.0", id: req.id, result: `sub-${req.id}` }));
+          },
+        },
+      });
+    };
+
+    const logs: string[] = [];
+    const { promise: subscribed, resolve: signalSubscribed } = Promise.withResolvers<void>();
+    const listener = new ProgramAccountListener({
+      createRpcSubscriptions: () => createSolanaRpcSubscriptions(`ws://127.0.0.1:${port}`),
+      programId: PROGRAM_ID,
+      target: { onAccount: async () => {}, onResubscribe: async () => {} },
+      log: (m) => {
+        logs.push(m);
+        // The outage ends the moment the first dial failure is observed.
+        if (m.includes("WS disconnected")) startServer();
+        if (m.includes("subscribed")) signalSubscribed();
+      },
+      backoffMs: () => 0,
+      sleep: async () => {
+        // Bun.sleep(0) — event-loop yield, not a duration guess: lets bun's
+        // per-test timeout fire while a pre-fix retry loop spins synchronously.
+        await Bun.sleep(0);
+      },
+    });
+    listener.start();
+    await subscribed; // bun's per-test timeout is the hang safety net
+    listener.stop();
+    server?.stop(true);
+    expect(logs.some((l) => l.includes(`subscribed to ${PROGRAM_ID}`))).toBeTrue();
+    expect(connections).toBeGreaterThanOrEqual(1);
+  },
+);

@@ -49,8 +49,15 @@ export interface ListenerTarget {
 }
 
 export interface ProgramAccountListenerOptions {
-  /** A subscriptions client built from `ACCORD_WS_URL` (see `.env.example`). */
-  rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /**
+   * Builds a fresh subscriptions client per connection attempt (from
+   * `ACCORD_WS_URL`, see `.env.example`). Per-attempt, NOT process-lifetime:
+   * when a kit client's initial dial fails, its subscription-coalescing cache
+   * keeps serving the rejected promise for that (methodName, params) forever,
+   * so reusing the client means never dialing again — the exact "only a
+   * restart fixes it" wedge. A healthy stream keeps its client for life.
+   */
+  createRpcSubscriptions: () => RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   /** The program id to watch (`ACCORD_PROGRAM_ID` from the SDK). */
   programId: Address;
   /** What each notification drives (the reconciler, or the canon GC dispatch). */
@@ -104,12 +111,13 @@ function defaultSleep(ms: number): Promise<void> {
  * target on every notification.
  *
  * Construct with explicit options (the service entry wires `ACCORD_WS_URL` →
- * `rpcSubscriptions`); call {@link ProgramAccountListener.start} to begin, and
- * {@link ProgramAccountListener.stop} for a clean shutdown.
+ * {@link ProgramAccountListenerOptions.createRpcSubscriptions}); call {@link
+ * ProgramAccountListener.start} to begin, and {@link ProgramAccountListener.stop}
+ * for a clean shutdown.
  */
 export class ProgramAccountListener {
   private readonly opts: {
-    rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+    createRpcSubscriptions: () => RpcSubscriptions<SolanaRpcSubscriptionsApi>;
     programId: Address;
     target: ListenerTarget;
     filters: readonly GetProgramAccountsMemcmpFilter[];
@@ -123,7 +131,7 @@ export class ProgramAccountListener {
 
   constructor(options: ProgramAccountListenerOptions) {
     this.opts = {
-      rpcSubscriptions: options.rpcSubscriptions,
+      createRpcSubscriptions: options.createRpcSubscriptions,
       programId: options.programId,
       target: options.target,
       filters: options.filters ?? DISPUTE_FILTERS,
@@ -173,7 +181,8 @@ export class ProgramAccountListener {
    * `onResubscribeFirst` triggers a full sweep on reconnect to close the gap.
    */
   private async subscribeOnce(onResubscribeFirst: boolean): Promise<void> {
-    const stream = await this.opts.rpcSubscriptions
+    const rpcSubscriptions = this.opts.createRpcSubscriptions();
+    const stream = await rpcSubscriptions
       .programNotifications(this.opts.programId, {
         commitment: this.opts.commitment,
         // Server-side filters: the RPC only delivers the watched account
@@ -253,7 +262,8 @@ export interface VrfLogTarget {
 }
 
 export interface VrfLogListenerOptions {
-  rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /** Fresh client per connection attempt — see {@link ProgramAccountListenerOptions.createRpcSubscriptions}. */
+  createRpcSubscriptions: () => RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   programId: Address;
   target: VrfLogTarget;
   /** Default `"confirmed"`. */
@@ -270,7 +280,7 @@ export interface VrfLogListenerOptions {
  */
 export class VrfLogListener {
   private readonly opts: {
-    rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+    createRpcSubscriptions: () => RpcSubscriptions<SolanaRpcSubscriptionsApi>;
     programId: Address;
     target: VrfLogTarget;
     commitment: Commitment;
@@ -283,7 +293,7 @@ export class VrfLogListener {
 
   constructor(options: VrfLogListenerOptions) {
     this.opts = {
-      rpcSubscriptions: options.rpcSubscriptions,
+      createRpcSubscriptions: options.createRpcSubscriptions,
       programId: options.programId,
       target: options.target,
       commitment: options.commitment ?? "confirmed",
@@ -323,7 +333,8 @@ export class VrfLogListener {
   }
 
   private async subscribeOnce(): Promise<void> {
-    const stream = await this.opts.rpcSubscriptions
+    const rpcSubscriptions = this.opts.createRpcSubscriptions();
+    const stream = await rpcSubscriptions
       .logsNotifications({ mentions: [this.opts.programId] }, { commitment: this.opts.commitment })
       .subscribe({ abortSignal: this.abort.signal });
 

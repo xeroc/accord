@@ -142,7 +142,15 @@ async function main(): Promise<void> {
   // 4. Build the dispatch map with every crank registered.
   const dispatch = fullDispatch();
 
-  // 5. WebSocket subscriptions (program-log listener).
+  // 5. WebSocket subscriptions.
+  // Listeners dial a FRESH client per connection attempt: a kit client whose
+  // initial dial failed keeps serving the cached rejection for that
+  // (methodName, params) forever (subscription-coalescing cache), so a shared
+  // client never recovers without a process restart — the 2026-11-06 wedge.
+  // The send path below MAY share one client: signature-subscription hashes
+  // are unique per tx, so a poisoned hash never outlives that tx's retries
+  // (worst case one crank action delayed to the next 60s poll).
+  const createListenerRpcSubscriptions = () => createSolanaRpcSubscriptions(wsUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
 
   // 6. Assemble the reconciler config.
@@ -176,7 +184,7 @@ async function main(): Promise<void> {
   //    snapshot that resolves a now-skippable action must not end the dispatch
   //    (that left draw_seat waiting a full poll cycle, seen 2026-10-30/31).
   const listener = new ProgramAccountListener({
-    rpcSubscriptions,
+    createRpcSubscriptions: createListenerRpcSubscriptions,
     programId: Accord.PROGRAM_ID,
     target: {
       // Full sweep — used on reconnect to close the gap.
@@ -196,7 +204,7 @@ async function main(): Promise<void> {
   //     callback emits the event at the exact moment `draw_seat` becomes
   //     legal, independent of the Dispute account-write notification.
   const vrfListener = new VrfLogListener({
-    rpcSubscriptions,
+    createRpcSubscriptions: createListenerRpcSubscriptions,
     programId: Accord.PROGRAM_ID,
     target: {
       onCommitted: async (addr: Address) => {
@@ -212,7 +220,7 @@ async function main(): Promise<void> {
   //     backstop. Disabled together with the reconciler phase via
   //     CANON_GC_ENABLED.
   const canonListener = new ProgramAccountListener({
-    rpcSubscriptions,
+    createRpcSubscriptions: createListenerRpcSubscriptions,
     programId: canonProgramId,
     // Discriminator + state == Removed memcmp: only GC-eligible items arrive.
     filters: removedCanonItemFilters(),
