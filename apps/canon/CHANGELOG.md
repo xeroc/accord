@@ -1,5 +1,14 @@
 # @useaccord/canon-app
 
+## 0.9.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/canon@0.9.1
+  - @useaccord/sdk@0.9.1
+  - @useaccord/ui@0.9.1
+
 ## 0.9.0
 
 ### Patch Changes

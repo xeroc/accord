@@ -1,5 +1,31 @@
 # @useaccord/cranker
 
+## 0.9.1
+
+### Patch Changes
+
+- [#43](https://github.com/xeroc/accord/pull/43) [`6831f14`](https://github.com/xeroc/accord/commit/6831f142f82db7a2e7f3121d67b0a1a7f5f048f1) Thanks [@xeroc](https://github.com/xeroc)! - Cranker: the WS listeners (`[listener]`, `[vrf-log]`, `[canon-gc]`) never
+  recovered from a transient `WebSocket failed to connect` — they retried every
+  30s forever and only a process restart helped. Root cause is in `@solana/kit`
+  (still present in 8.6.0): a client whose initial dial fails caches the
+  rejected subscription promise in its subscription-coalescing cache and serves
+  it for the lifetime of the client — identical (methodName, params) retries
+  never dial again. The listeners now build a fresh subscriptions client per
+  connection attempt, so a poisoned client is unreachable and every retry dials
+  for real. A regression test drives the real kit client against a local fake
+  WS endpoint that is down, then up, and asserts recovery.
+
+- [#43](https://github.com/xeroc/accord/pull/43) [`eb184c4`](https://github.com/xeroc/accord/commit/eb184c43531dd3c7b6eea081e9a3e258328cd9d3) Thanks [@xeroc](https://github.com/xeroc)! - Verdict latency batch (devnet 2026-11-06 profile, dispute 54q6wQox — 209.9s attack→settle, 73% polling overhead):
+
+  - cranker: a WS trigger coalesced into an in-flight scoped dispatch that settles without acting now chains one fresh re-resolve instead of dying with it (live cost: `draw_seat` +38.5s waiting for the 60s poll when the `VrfCommitted` trigger coalesced into a failing duplicate `request_vrf` run)
+  - cranker: `resolveNextAction` returns `{ kind: "wait", until }` for time-gated disputes (voting windows, appeal window) and the reconciler arms a one-shot wake that runs a scoped dispatch at gate-open (live cost: `finalize_dispute` +21s past a 10s appeal window under poll-only phasing)
+  - jurat: our `SeatDrawn` hint schedules read-settle re-kicks (+1.5s, +4s) — the immediate kick races the RPC read replica, and a 0-duty scan at +450ms previously fell through to the 120s timer (live cost: duty pickup +45s)
+
+- Updated dependencies []:
+  - @useaccord/canon@0.9.1
+  - @useaccord/sdk@0.9.1
+  - @useaccord/synod@0.9.1
+
 ## 0.9.0
 
 ### Patch Changes

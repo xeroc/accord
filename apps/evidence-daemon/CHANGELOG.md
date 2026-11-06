@@ -1,5 +1,13 @@
 # @useaccord/evidence-daemon
 
+## 0.9.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.9.1
+  - @useaccord/synod@0.9.1
+
 ## 0.9.0
 
 ### Minor Changes
