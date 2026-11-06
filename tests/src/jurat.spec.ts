@@ -62,6 +62,7 @@ import {
 import { commitVote, type VoteRecord, type VoteStore } from "../../apps/jurat/src/vote/commit.js";
 import { revealVote } from "../../apps/jurat/src/vote/reveal.js";
 import {
+  makeDutyScheduler,
   runDaemon,
   type DaemonHandle,
   type RuntimeDeps,
@@ -640,6 +641,7 @@ describe("e2e: jurat agentic juror — requires Surfpool", () => {
         tokenBalance: joinChain().tokenBalance,
         now: async () => Number((await readClock(env)).unixTimestamp), // live clock
         log: (m) => logs.push(m),
+        dutyScheduler: makeDutyScheduler(4),
       };
       daemon = await runDaemon(deps, { intervalMs: 200, signal: abort.signal });
 
