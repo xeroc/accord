@@ -1,5 +1,12 @@
 # @useaccord/pitch
 
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies [[`f409ed6`](https://github.com/xeroc/accord/commit/f409ed643ff566a0186af1f6631a830c34f3b524), [`cefaa9c`](https://github.com/xeroc/accord/commit/cefaa9c1bb9bf7048776c1aa999b2619e4c2122d)]:
+  - @useaccord/ui@0.10.0
+
 ## 0.9.1
 
 ### Patch Changes

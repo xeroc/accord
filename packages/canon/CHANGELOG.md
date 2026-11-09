@@ -1,5 +1,12 @@
 # @useaccord/canon
 
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @useaccord/sdk@0.10.0
+
 ## 0.9.1
 
 ### Patch Changes
