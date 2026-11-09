@@ -5,7 +5,7 @@ status: completed
 type: milestone
 priority: high
 created_at: 2026-11-09T09:31:02Z
-updated_at: 2026-11-09T09:49:13Z
+updated_at: 2026-11-09T10:00:11Z
 ---
 
 ## Design decisions (grilling 2026-11-09)
@@ -68,3 +68,12 @@ Section renders cards from a static array; strip beats driven by useWallClockFra
 - Verification: ui tsc+vitest (325 tests), landing tsc+vite build, storybook
   build, DOM/style/a11y pass on dev server (no violations from #jurat; the
   two axe findings in Footer/Mechanism pre-date this change).
+
+
+### Revision (2026-11-09 — strip simplification)
+
+Duty strip reworked on user direction: four progress boxes READ →
+ADJUDICATE → COMMIT → REVEAL, each filling border-default → amber over
+3s (90 frames) on the wall-clock loop; SealedVote + RulingStamp dropped.
+Operator band now full width with kit Button CTAs (default + outline).
+Reduced motion settles all four boxes complete (frame = LOOP).

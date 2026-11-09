@@ -6,9 +6,10 @@
 Landing: new "Machine jurors, on duty" section presenting Jurat, the
 open-source AI juror operator, between Heritage and Audience. Four
 capability cards (reads every page / minutes not weeks / abstains never
-guesses / open source, dry-run by default), a wall-clock duty strip
-(SCAN → EVIDENCE READ → VERDICT → commit/reveal → ruling stamp,
-reduced-motion settles), and operator CTAs to the repo and ADR-0036.
+guesses / open source, dry-run by default), a four-beat duty progress
+strip (READ → ADJUDICATE → COMMIT → REVEAL — each box fills to amber
+over 3s, reduced motion settles all four), and a full-width operator
+band with kit Button CTAs to the repo and ADR-0036.
 Copy law: defensible capability claims only, no traction claims.
 
 UI kit: vendored the free-tier reui components `icon-tile` and `frame`

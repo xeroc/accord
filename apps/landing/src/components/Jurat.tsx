@@ -1,14 +1,13 @@
 import { useMemo } from "react";
 import { CircleSlashIcon, FileTextIcon, GitBranchIcon, TimerIcon } from "lucide-react";
 import {
+  Button,
   Frame,
   FrameDescription,
   FrameHeader,
   FramePanel,
   FrameTitle,
   IconTile,
-  RulingStamp,
-  SealedVote,
   useWallClockFrame,
 } from "@useaccord/ui";
 
@@ -40,18 +39,36 @@ const CAPABILITIES = [
   },
 ] as const;
 
-// One jurat duty on the wall-clock loop: scan → read → verdict, then the
-// kit's own commit/reveal envelope and the ruling stamp. Same frame
-// contract as MechanismStrip; reduced-motion visitors see the settled end.
-const LOOP = 360; // frames @ 30fps = 12s
-const STAGES = [
-  { label: "SCAN", at: 24 },
-  { label: "EVIDENCE READ", at: 72 },
-  { label: "VERDICT · 87%", at: 120 },
-] as const;
-const COMMIT_AT = 180;
-const REVEAL_AT = 240;
-const STAMP_AT = 300;
+// One jurat duty as four progress bars: READ → ADJUDICATE → COMMIT →
+// REVEAL, each filling for 3s (90 frames @ 30fps) from the hairline
+// default to fully amber, then the loop restarts. Reduced-motion
+// visitors see all four settled.
+const LOOP = 360;
+const BEAT = 90;
+const DUTIES = ["READ", "ADJUDICATE", "COMMIT", "REVEAL"] as const;
+
+function DutyBox({ label, index, frame }: { label: string; index: number; frame: number }) {
+  const t = Math.min(Math.max((frame - index * BEAT) / BEAT, 0), 1);
+  const done = t >= 1;
+  return (
+    <div
+      className={`relative overflow-hidden rounded-lg border bg-raised ${done ? "border-amber" : "border-border"
+        }`}
+    >
+      <div
+        aria-hidden
+        className="absolute inset-y-0 left-0 bg-amber/15"
+        style={{ width: `${t * 100}%` }}
+      />
+      <p
+        className={`relative px-4 py-3 font-mono text-sm ${done ? "text-amber" : "text-muted-foreground"
+          }`}
+      >
+        {label}
+      </p>
+    </div>
+  );
+}
 
 function DutyStrip() {
   const live = useWallClockFrame({ fps: 30, loopFrames: LOOP });
@@ -61,44 +78,27 @@ function DutyStrip() {
       window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     [],
   );
-  const frame = reduced ? LOOP - 20 : live;
-
+  // LOOP itself never occurs in the live loop (frames run 0..359); the
+  // reduced-motion branch needs it so the final box reports t = 1.
+  const frame = reduced ? LOOP : live;
   return (
     <div
-      aria-label="One jurat duty: the daemon scans for a drawn seat, reads the evidence, computes a verdict, commits it sealed, reveals on schedule, and the majority ruling is stamped"
+      aria-label="One jurat duty in four three-second beats: read the evidence, adjudicate, commit the sealed vote, reveal on schedule"
       role="img"
-      className="mt-12 flex flex-col items-center gap-9 border-t border-border/60 pt-12"
+      className="pt-12"
     >
-      <div className="flex flex-wrap justify-center gap-3">
-        {STAGES.map((stage) => (
-          <span
-            key={stage.label}
-            className={
-              frame >= stage.at
-                ? "rounded-md border border-amber/60 bg-raised px-4 py-2 font-mono text-sm text-amber"
-                : "rounded-md border border-border bg-raised px-4 py-2 font-mono text-sm text-muted-foreground"
-            }
-          >
-            {stage.label}
-          </span>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {DUTIES.map((duty, i) => (
+          <DutyBox key={duty} label={duty} index={i} frame={frame} />
         ))}
       </div>
-
-      <SealedVote
-        frame={frame}
-        hash="jurat-01"
-        vote="YES"
-        commitAt={COMMIT_AT}
-        revealAt={REVEAL_AT}
-        tone="confirm"
-        toneAt={STAMP_AT}
-        className="h-auto rounded-md bg-raised px-5 py-2.5 font-mono text-lg"
-      />
-
-      <RulingStamp frame={frame} text="RULING: YES" at={STAMP_AT} size="md" />
     </div>
   );
 }
+
+const REPO_URL = "https://github.com/xeroc/accord/tree/main/apps/jurat";
+const ADR_URL =
+  "https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0036-jurat-agentic-juror-daemon.md";
 
 export function Jurat() {
   return (
@@ -134,28 +134,24 @@ export function Jurat() {
 
         <DutyStrip />
 
-        <div className="mt-12 max-w-2xl rounded-lg border border-border bg-raised px-6 py-5">
+        <div className="mt-12 rounded-lg border border-border bg-raised px-6 py-6">
           <p className="font-sans text-xl text-nearwhite">Run one yourself.</p>
-          <p className="mt-2 text-sm leading-relaxed text-body">
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-body">
             One daemon, one hot key. Jurat stakes into Subaccords that pass your filter, watches
             for its seats being drawn, and votes when the evidence is in. Coherent-majority fees
             flow back — that's the mechanism paying for honesty.
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <a
-              href="https://github.com/xeroc/accord/tree/main/apps/jurat"
-              className="text-amber underline-offset-4 transition-colors hover:underline"
-              rel="noopener"
-            >
-              Run a juror →
-            </a>
-            <a
-              href="https://github.com/xeroc/accord/blob/main/apps/docs/adr/accord/0036-jurat-agentic-juror-daemon.md"
-              className="text-body underline-offset-4 transition-colors hover:text-nearwhite hover:underline"
-              rel="noopener"
-            >
-              Read the design (ADR-0036)
-            </a>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Button asChild>
+              <a href={REPO_URL} rel="noopener">
+                Run a juror
+              </a>
+            </Button>
+            <Button variant="outline" asChild>
+              <a href={ADR_URL} rel="noopener">
+                Read the design (ADR-0036)
+              </a>
+            </Button>
           </div>
         </div>
       </div>
