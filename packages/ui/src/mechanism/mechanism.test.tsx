@@ -164,8 +164,8 @@ describe("CaseFiles", () => {
     const no = screen.getAllByText("NO");
     expect(yes.length).toBe(2);
     expect(no.length).toBe(2);
-    expect(yes[0].className).toContain("text-confirm");
-    expect(no[0].className).toContain("text-slash");
+    expect(yes[0]?.className).toContain("text-confirm");
+    expect(no[0]?.className).toContain("text-slash");
     expect(container.querySelector<HTMLElement>(".bg-amber.h-full")?.style.width).toBe("25%");
   });
 });
