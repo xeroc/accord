@@ -146,3 +146,39 @@ promises, not adoption. A usage-linked share means the ecosystem pays builders
 exactly when the ecosystem grows, with zero marginal cost when it doesn't. Flag
 as strategic: only worth doing if Arbitrable supply is the binding constraint —
 revisit after the first third-party integrations land.
+
+---
+
+## 8. BLS12-381 syscalls (SIMD-0388): harness probe first, then authority aggregate multisig
+
+**Where:** syscall bindings in `programs/accord` (the 5-arg `sol_curve_pairing_map` — pinocchio ≤0.10 binds the old 3-arg form, so `define_syscall!` directly; `solana-bls12-381-syscall` 0.1.1 is already in `Cargo.lock` transitively), Subaccord authority path (`propose_subaccord_update` / `execute_subaccord_update`), test harness (`make test_unit` LiteSVM + Surfpool e2e).
+
+**Change:** (a) **Probe the harness before anything else** — a ~20-line instruction calling `sol_curve_group_op` through `make test_unit` plus one Surfpool e2e. Our litesvm is 0.16/agave 4.2 (xeroc fork) and surfpool ≥1.7, so the syscalls are *probably* available, but unproven: Anza's own crypto-primitives-examples could not use surfpool/litesvm (both pinned to agave 3.1, syscalls absent) and fell back to Mollusk. If Surfpool lacks the activated feature set, the green-rule e2e mandate blocks shipping any BLS path until it catches up — better to know on day one. (b) **Subaccord authority aggregate multisig**: members' G2 keys folded into one running aggregate point on-chain (G2 add/sub ≈ 375 CU per fold), N approvals landing in a single tx, one pairing check (~43k CU) regardless of N. Replaces today's single authority key per Subaccord.
+
+**Why:** SIMD-0388 is **Activated — live on mainnet since epoch 986** (128-bit security vs BN254's ~100-bit). It gives G1/G2 add/sub/mul, point validation, decompression, and batch pairing (max 8 pairs/call); no Poseidon and no on-chain hash-to-curve. Juror auth today is runtime-verified Ed25519 — free — so BLS pays only where the runtime can't give the semantics: aggregation, threshold, pseudonymity. Authority multisig is the boring, isolated first win: no account-schema change, no consumer ripple, real governance hardening. It's also the exact pattern Anza's registry demo proves on-chain.
+
+**Gotchas to carry into any implementation:** clients must supply H(m) as a point (no on-chain hash-to-curve) — bind messages via the point bytes and reject identity points (`e(O,Q)=1` would forge). Measured CU (Anza, Mollusk/agave 4.3): G1 add ~300, G2 add ~375, G1/G2 mul ~4.8k/8.4k, 2-pair verify ~42.7k.
+
+---
+
+## 9. Pseudonymous juror panels via BLS-keyed accumulator leaves
+
+**Where:** MST leaf format (`LeafClaim` — `H(juror ‖ stake)` → `H(bls_pk ‖ stake)`), `draw_seat` (publishes `leaf.juror` into `round.jurors` and emits `SeatDrawn { juror }`), `commit`/`reveal` (signer auth → BLS signature verify), `JurorStake` PDA seeds, ADR-0024 attestation gate (binds credentials to the Pubkey), events surface.
+
+**Change:** the accumulator leaf commits to a juror-controlled BLS pubkey instead of the Solana Pubkey; registration requires **Proof of Possession** (sign `H(pk ‖ domain)` — the rogue-key defense, the same pattern the SIMD itself mandates for validator key registration). `draw_seat` records the leaf index + G2 point, never a wallet. `commit`/`reveal` authorize via `e(σ, g₂) =? e(H(c), bls_pk)` (~43k CU); the drawn juror recognizes their own leaf, nobody else can link leaf #N to a wallet. `JurorStake` reseeds from `hash(bls_pk)` so `slash_reserve`, fee claims, and `withdraw` authorize by key possession rather than tx signer.
+
+**Why:** today `draw_seat` publishes the panel at draw time (`round.jurors[seat] = leaf.juror`, `SeatDrawn { juror }`) — commit-reveal hides the *vote*, never the *voter*, so the panel is public through the entire bribe/coerce/DDoS window between draw and reveal. BLS-keyed leaves close the **on-chain** leak: accountability (stake, slashing) stays, linkability between wallet and vote goes. This directly addresses ADR-0001's noted PII surface for sensitive Subaccords — the "eventually KYC'd" concern becomes *unlinkable to the vote* rather than nonexistent.
+
+**Honest limits (state these in the ADR):** the staking-layer link remains — whoever watched wallet W create leaf #417 knows, so deposit hygiene (fresh wallet per stake, relay) is off-chain scope; fee withdrawal to the staking wallet re-correlates, mitigated by timing separation (withdraw post-finality, stealth-address style); ADR-0024's credential gate needs rework for pseudonymous members. This is an ADR-worthy redesign of stake/draw/commit/reveal/settle, triggered by actual Subaccord demand for panel privacy — not a patch.
+
+---
+
+## 10. Explicit non-goals from the SIMD-0388 review (so future-us doesn't re-derive)
+
+**More jurors via BLS — no.** `MAX_JURORS = 31` is bounded by the `Round` account size (~2.7 KB fixed arrays `jurors/commits/seat_prefix/seat_stake/reveals`), the 2N+1 appeal ladder (odd = no binary ties, ADR-0026), and one-seat-per-tx `draw_seat` (a 1232 B tx can't hold N Merkle proofs). None of these are cryptographic constraints; raising panel size is an account-layout + draw-protocol redesign orthogonal to BLS. Aggregate BLS vote verification (O(N) pairings ≈ 21k CU/pair, ~2M CU for 100 votes in one tx) removes a signature-verification bottleneck that doesn't exist today — per-juror Ed25519 is free at the runtime.
+
+**Threshold BLS beacon replacing the magicblock VRF — no.** t-of-n setup over a rotating staked pool is research-grade coordination; the VRF works.
+
+**Groth16-on-BLS12-381 (ZK "I'm a drawn juror and my vote counts") — parked.** The pairing syscall makes an on-chain Groth16 verifier possible in principle, but Poseidon is out of SIMD-0388's scope, so circuit hashing falls back to expensive in-circuit SHA-256. Revisit when tooling matures. If the ask is *hidden votes* rather than *hidden voters*, the ZK ElGamal proof program (SIMD-0153, mainnet since epoch 731, ~6k–111k CU/proof) is the lazy path.
+
+**Evidence-daemon re-encryption DLEQ proofs via pairing (`e(σ₁,P₂)·e(−σ₂,P₁) = 1`) — skipped.** Cute for ADR-0015, but the operator-keyring trust model doesn't demand on-chain proof of correct re-encryption.
