@@ -155,3 +155,4 @@ export {
 } from "./mechanism/draw-commit-reveal";
 export { PayoutFlow } from "./mechanism/payout-flow";
 export { DisputeFlow } from "./mechanism/dispute-flow";
+export { CaseFiles, CASE_FILES, type CaseFile, type CaseVisual } from "./mechanism/case-files";

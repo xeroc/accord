@@ -35,7 +35,6 @@ jobs:
           # https://github.com/actions/runner-images/issues/70
           VITE_VCS_REF: ${{ github.sha }}
           NODE_ENV: production
-          VITE_N8N_WEBHOOK_URL: ${{ secrets.PUBLIC_N8N_WEBHOOK_URL }}
 
       - name: Deploy to external repository
         uses: peaceiris/actions-gh-pages@v3
