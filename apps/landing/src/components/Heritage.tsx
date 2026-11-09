@@ -1,7 +1,7 @@
 // §5 — Heritage, not hype. Credibility without traction claims.
 const lineage = [
-  { year: "1960", name: "Schelling", body: "Independent agents converge on the obvious answer without communication." },
   { year: "~500 BCE", name: "Athenian sortition", body: "Draw the judges by lot. A committee can be captured; a random sample can't be bought in advance." },
+  { year: "1960", name: "Schelling", body: "Independent agents converge on the obvious answer without communication." },
   { year: "2019", name: "Kleros", body: "A Schelling-point court, 1,000+ disputes settled on Ethereum. The economics are proven." },
   { year: "now", name: "Accord", body: "The same economics, packaged as a composable Solana primitive." },
 ];
