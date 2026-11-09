@@ -78,6 +78,20 @@ export {
   TableCaption,
 } from "./primitives/table";
 
+// ReUI vendored — free-tier components from the reui registry
+// (components.json `@reui`), radix-nova style, rethemed through the
+// semantic tokens in theme.css. Source of truth stays the registry;
+// reinstall with `npx -y shadcn@latest add @reui/<name>`.
+export { IconTile, type IconTileProps } from "./components/reui/icon-tile";
+export {
+  Frame,
+  FramePanel,
+  FrameHeader,
+  FrameTitle,
+  FrameDescription,
+  FrameFooter,
+} from "./components/reui/frame";
+
 // Motion — choreographed enter/exit primitives.
 export { StaggerGroup, StaggerItem, Reveal, ErrorShake, EASE_EXPO } from "./motion";
 // Composed patterns — slot-based app chrome; still boundary-clean
@@ -141,3 +155,4 @@ export {
 } from "./mechanism/draw-commit-reveal";
 export { PayoutFlow } from "./mechanism/payout-flow";
 export { DisputeFlow } from "./mechanism/dispute-flow";
+export { CaseFiles, CASE_FILES, type CaseFile, type CaseVisual } from "./mechanism/case-files";

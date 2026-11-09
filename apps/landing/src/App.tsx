@@ -7,6 +7,7 @@ import { FinalCTA } from "./components/FinalCTA";
 import { Footer } from "./components/Footer";
 import { Heritage } from "./components/Heritage";
 import { Hero } from "./components/Hero";
+import { Jurat } from "./components/Jurat";
 import { Mechanism } from "./components/Mechanism";
 import { Nav } from "./components/Nav";
 import { BlurbPage } from "./blurb/BlurbPage";
@@ -68,6 +69,7 @@ function Landing() {
         <Mechanism />
         <Capture />
         <Heritage />
+        <Jurat />
         <Audience />
         <FinalCTA />
       </main>

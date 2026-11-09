@@ -91,3 +91,7 @@ clean: ## Remove build artifacts and node_modules
 deploy:
 	$(ANCHOR_COMMAND) program deploy --provider.cluster $(SOLANA_API) --provider.wallet $(ACCORD_DEPLOY_KEY_PATH)
 	# solana program write-buffer --keypair $(DEPLOY_KEY_PATH) --ws $(SOLANA_WS) ./target/deploy/accord.so
+
+check: build
+	pnpm run -r lint
+	pnpm run -r test

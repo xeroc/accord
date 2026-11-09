@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { CASE_FILES, CaseFiles } from "./case-files";
 import { JurorPool } from "./juror-pool";
 import { MonoChip, DeltaChip } from "./chips";
 import { RulingStamp } from "./ruling-stamp";
@@ -144,5 +145,27 @@ describe("chips", () => {
   it("DeltaChip renders sign, amount and label", () => {
     render(<DeltaChip tone="amber" sign="+" amount={25} label="fee" pop={1} />);
     expect(screen.getByText("+25 fee")).toBeInTheDocument();
+  });
+});
+
+describe("CaseFiles", () => {
+  it("renders eyebrow, title and status for every case", () => {
+    render(<CaseFiles frame={0} />);
+    for (const c of CASE_FILES) {
+      expect(screen.getByText(`CASE ${c.id} / ${c.type}`)).toBeInTheDocument();
+      expect(screen.getByText(c.title)).toBeInTheDocument();
+      expect(screen.getByText(c.status)).toBeInTheDocument();
+    }
+  });
+
+  it("verdicts split confirm and slash; the control bar settles at 25%", () => {
+    const { container } = render(<CaseFiles frame={0} />);
+    const yes = screen.getAllByText("YES");
+    const no = screen.getAllByText("NO");
+    expect(yes.length).toBe(2);
+    expect(no.length).toBe(2);
+    expect(yes[0]?.className).toContain("text-confirm");
+    expect(no[0]?.className).toContain("text-slash");
+    expect(container.querySelector<HTMLElement>(".bg-amber.h-full")?.style.width).toBe("25%");
   });
 });

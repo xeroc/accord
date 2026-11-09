@@ -40,8 +40,7 @@ body {
   outline-offset: 2px;
   border-radius: 1px;
 }
-/* Belt-and-suspenders: kill owned motion for reduced-motion users.
-   The prologue JS also short-circuits; this catches everything else. */
+/* Belt-and-suspenders: kill owned motion for reduced-motion users. */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -59,67 +58,3 @@ body {
 /* (The old static .grid-texture was replaced by the kit Backdrop —
    the living version of the same idea — in the Hero.) */
 
-/* Hero prologue one-shot → settle (from Hero.astro <style is:global>).
-   No-flash: <html class="js"> boots the prologue state before paint (inline
-   script in index.html head); .is-settled resolves to the hero. */
-[data-prologue-stage] {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 500ms var(--ease-expo);
-  pointer-events: none;
-}
-[data-hero-main] {
-  transition: opacity 600ms var(--ease-expo);
-}
-.js [data-prologue-stage] {
-  opacity: 1;
-}
-.js [data-hero-main] {
-  opacity: 0;
-}
-.js.is-settled [data-prologue-stage] {
-  opacity: 0;
-}
-.js.is-settled [data-hero-main] {
-  opacity: 1;
-}
-[data-beat] {
-  position: absolute;
-  inset: 0;
-  margin-inline: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transform: translateY(8px);
-  transition:
-    opacity 520ms var(--ease-expo),
-    transform 520ms var(--ease-expo);
-}
-[data-beat][data-active] {
-  opacity: 1;
-  transform: none;
-}
-[data-replay] {
-  position: absolute;
-  bottom: 1.75rem;
-  left: 50%;
-  transform: translateX(-50%);
-}
-@media (prefers-reduced-motion: reduce) {
-  .js [data-prologue-stage] {
-    opacity: 0 !important;
-  }
-  .js [data-hero-main] {
-    opacity: 1 !important;
-  }
-  [data-beat] {
-    transition: none;
-    transform: none;
-  }
-}

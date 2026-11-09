@@ -69,6 +69,7 @@ jobs:
             type=ref,event=tag
             type=ref,event=pr
             type=sha,format=short
+            type=raw,value=${{ inputs.version }}
             type=raw,value=${{ github.ref_name }}.${{ github.run_number }},enable={{is_default_branch}}
 
       - name: Build and push docker image

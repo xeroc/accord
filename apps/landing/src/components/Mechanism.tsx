@@ -16,6 +16,29 @@ export function Mechanism() {
           <pre className="overflow-x-auto px-5 py-6 font-mono text-sm leading-relaxed text-body"><code><span className="text-muted-foreground">// file a dispute from any program</span>{"\n"}<span className="text-amber">create_dispute</span>(subaccord, options, evidence_hash, fee) <span className="text-muted-foreground">→</span> dispute_id{"\n\n"}<span className="text-muted-foreground">// jurors drawn by VRF · commit · reveal · slash on incoherence</span>{"\n"}<span className="text-amber">get_ruling</span>(dispute_id) <span className="text-muted-foreground">→</span> winning_option</code></pre>
         </div>
 
+        {/* Narrow scope + near-zero integration cost — the two properties
+            that make the primitive adoptable. */}
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-border bg-raised px-6 py-5">
+            <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
+              Integration cost
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-body sm:text-base">
+              No governance token to acquire. No committee to brief. Adoption costs one
+              commit — the CPI is the integration.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border bg-raised px-6 py-5">
+            <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">
+              Scope, on purpose
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-body sm:text-base">
+              Accord never learns what the dispute is about. Your program files it, reads
+              the ruling, owns the consequence. Enforcement stays yours.
+            </p>
+          </div>
+        </div>
+
         <p className="mt-8 max-w-2xl text-lg text-body">
           Dispute resolution is a primitive: a call you make.
         </p>

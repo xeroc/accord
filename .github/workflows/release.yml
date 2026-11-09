@@ -57,6 +57,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -69,7 +70,10 @@ jobs:
 
   build-evidence-docker:
     name: Build Evidence Daemon Image
-    needs: [tests]
+    # Images ship only when a release actually published a new version — not on
+    # every main push. Tag = the released version (see release job outputs).
+    needs: [tests, release]
+    if: needs.release.outputs.published == 'true'
     permissions:
       packages: write
       contents: read
@@ -77,12 +81,12 @@ jobs:
     with:
       registry: ghcr.io
       package: evidence-daemon
-      version: "${{ github.ref_name }}.${{ github.run_number }}"
-      push: ${{ github.event_name != 'pull_request' }}
+      version: ${{ needs.release.outputs.version }}
 
   build-cranker-docker:
     name: Build Cranker Image
-    needs: [tests]
+    needs: [tests, release]
+    if: needs.release.outputs.published == 'true'
     permissions:
       packages: write
       contents: read
@@ -90,12 +94,12 @@ jobs:
     with:
       registry: ghcr.io
       package: cranker
-      version: "${{ github.ref_name }}.${{ github.run_number }}"
-      push: ${{ github.event_name != 'pull_request' }}
+      version: ${{ needs.release.outputs.version }}
 
   build-jurat-docker:
     name: Build Jurat Image
-    needs: [tests]
+    needs: [tests, release]
+    if: needs.release.outputs.published == 'true'
     permissions:
       packages: write
       contents: read
@@ -103,8 +107,7 @@ jobs:
     with:
       registry: ghcr.io
       package: jurat
-      version: "${{ github.ref_name }}.${{ github.run_number }}"
-      push: ${{ github.event_name != 'pull_request' }}
+      version: ${{ needs.release.outputs.version }}
 
   release:
     name: Version & Publish
@@ -113,6 +116,9 @@ jobs:
     # failed publish) and never before the test pipeline is green.
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      version: ${{ steps.tag.outputs.version }}
     permissions:
       contents: write # commit version changes + push tags
       pull-requests: write # version PR
@@ -122,7 +128,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v4
         with:
@@ -148,7 +154,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # v2 renamed its inputs (v1: version/publish/commit/title) — the old
       # names silently no-op here and would fall back to plain `changeset version`.
       - uses: changesets/action@v2
         id: changesets
@@ -163,8 +168,10 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
 
       - name: Tag umbrella version
+        id: tag
         if: steps.changesets.outputs.published == 'true'
         run: |
           V=$(node -p 'require("./packages/sdk/package.json").version')
+          echo "version=$V" >> "$GITHUB_OUTPUT"
           git tag "v$V"
           git push origin "v$V"

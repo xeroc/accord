@@ -1,4 +1,4 @@
-// §4 — Why it can't be captured. The three structural moats + antagonist stat.
+// §4 — Why it can't be captured. The structural moats.
 const pillars = [
   {
     n: "01",
@@ -9,11 +9,6 @@ const pillars = [
     n: "02",
     h: "Honesty is the profitable strategy.",
     p: "The Schelling point for a subjective question is truth. Vote honestly and the majority pays you; vote against it and you're slashed.",
-  },
-  {
-    n: "03",
-    h: "Two CPI calls. One commit.",
-    p: "Any Solana program. Integration is the CPI itself — no governance token to acquire, no committee to brief. The cost of switching is roughly zero.",
   },
 ];
 
@@ -41,14 +36,6 @@ export function Capture() {
           An accord, not a committee.
         </p>
 
-        <div className="mx-auto mt-12 max-w-3xl rounded-lg border border-slash/30 bg-slash/5 px-6 py-5">
-          <p className="font-mono text-xs uppercase tracking-[0.08em] text-slash">The failure mode, named</p>
-          <p className="mt-2 text-sm leading-relaxed text-body sm:text-base">
-            March 2025 — one actor with <span className="font-mono text-nearwhite">25%</span> of UMA tokens
-            flipped a <span className="font-mono text-nearwhite">$7M</span> Polymarket contract with his
-            own votes. Accord draws its jurors per dispute — there is no standing position to buy.
-          </p>
-        </div>
       </div>
     </section>
   );
