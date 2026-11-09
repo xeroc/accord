@@ -1,6 +1,6 @@
 import { Waitlist } from "./Waitlist";
 
-// §7 — Final CTA. The campaign question as the closing hook.
+// §8 — Final CTA. The campaign question as the closing hook.
 export function FinalCTA() {
   return (
     <section id="cta" className="border-t border-border/60 py-24 sm:py-32">

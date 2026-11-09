@@ -1,4 +1,4 @@
-// §6 — Who it's for. Single-audience focus + honest scope.
+// §7 — Who it's for. Single-audience focus + honest scope.
 export function Audience() {
   return (
     <section id="audience" className="border-t border-border/60 py-24 sm:py-32">
